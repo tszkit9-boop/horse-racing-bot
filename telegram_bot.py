@@ -53,7 +53,7 @@ logger.addHandler(console_handler)
 # ============================================================
 # 🔐 設定（請填你嘅資料）
 # ============================================================
-TOKEN = '你的Bot Token'          # 去 @BotFather 換新 Token
+TOKEN = '8848079617:AAGaWmM9IJa7raA2qBoErlRYPuddGlYHaJA'          # 去 @BotFather 換新 Token
 ADMIN_ID = '7988559873'          # 你嘅 Telegram ID
 
 # 訂閱用戶檔案
