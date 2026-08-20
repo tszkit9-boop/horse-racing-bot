@@ -2,6 +2,6 @@ pandas
 numpy
 requests
 xgboost
-catboost
+catboost==1.2.5
 scikit-learn
 scipy
