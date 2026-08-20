@@ -1,19 +1,20 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-predict_race_card.py - 終極完成版（已修正賠率處理）
+predict_race_card.py - GitHub Actions 相容版（無絕對路徑、無 Emoji）
 """
 
 import pandas as pd
 import numpy as np
 import pickle
-import re
+import os
+import sys
 import warnings
 warnings.filterwarnings('ignore')
 from catboost import CatBoostClassifier
 
 # ============================================================
-# 1. 定義 36 個特徵（訓練時使用嘅英文變量名，用於生成）
+# 1. 36 個特徵（英文名）
 # ============================================================
 FEATURES_EN = [
     'draw', 'act_wt', 'distance', 'rtg', 'avg_rank_last3',
@@ -33,7 +34,7 @@ FEATURES_EN = [
 ]
 
 # ============================================================
-# 2. 模型期望嘅特徵名稱（中文）及對應順序
+# 2. 模型期望嘅特徵名稱（中文）及順序
 # ============================================================
 EXPECTED_FEATURES = [
     'draw', 'weight', 'distance', 'Rtg.', '近3場平均名次',
@@ -49,7 +50,7 @@ EXPECTED_FEATURES = [
 ]
 
 # ============================================================
-# 3. 建立英文 → 中文/模型名稱 映射
+# 3. 名稱映射
 # ============================================================
 NAME_MAPPING = {
     'act_wt': 'weight',
@@ -86,10 +87,9 @@ NAME_MAPPING = {
     'total_injuries': '傷患總次數',
     'injury_severity': '傷患嚴重程度'
 }
-# draw, distance, win_odds 保持不變
 
 # ============================================================
-# 4. 其他輔助函數
+# 4. 輔助函數（同之前一樣）
 # ============================================================
 def standardize_columns(df):
     rename_map = {
@@ -117,14 +117,12 @@ def ensure_finish_position(df, df_name):
     for col in candidates:
         if col in df.columns:
             df.rename(columns={col: 'finish_position'}, inplace=True)
-            print(f"✅ {df_name}: 將欄位 '{col}' 重新命名為 'finish_position'")
             return df
     for col in df.columns:
         if '名' in col or '次' in col or 'rank' in col.lower():
             df.rename(columns={col: 'finish_position'}, inplace=True)
-            print(f"✅ {df_name}: 將欄位 '{col}' 重新命名為 'finish_position'")
             return df
-    raise KeyError(f"在 {df_name} 中找不到名次欄位，可用欄位: {df.columns.tolist()}")
+    raise KeyError(f"找不到名次欄位，可用欄位: {df.columns.tolist()}")
 
 def get_latest_features(race_df, history_df):
     history_df['race_date'] = pd.to_datetime(history_df['race_date'], errors='coerce')
@@ -149,120 +147,83 @@ def compute_stats(race_df, history_df, race_date):
     history_df = ensure_series(history_df)
     if history_df.columns.duplicated().any():
         history_df = history_df.loc[:, ~history_df.columns.duplicated(keep='first')]
-    
     for col in ['jockey', 'trainer', 'horse_id']:
         if col not in race_df.columns:
             race_df[col] = 0
-    
     hist = history_df[history_df['race_date'] < race_date].copy()
-    
     if hist.empty:
         for col in ['jockey_win_rate_50', 'trainer_win_rate_50', 'avg_rank_last3',
                     'distance_win_rate', 'jockey_horse_win_rate', 'going_win_rate',
                     'draw_win_rate', 'jockey_win_rate_5', 'jockey_win_rate_10']:
             race_df[col] = 0.0
         return race_df
-    
     if 'finish_position' not in hist.columns:
-        raise KeyError(f"歷史數據缺少 finish_position，可用欄位: {hist.columns.tolist()}")
+        raise KeyError("歷史數據缺少 finish_position")
     hist['finish_position'] = pd.to_numeric(hist['finish_position'], errors='coerce')
-    
     # 騎師勝率
     try:
         jockey_stats = hist.groupby('jockey').apply(lambda g: (g['finish_position']==1).sum()/max(len(g),1)).reset_index(name='jockey_win_rate_50')
         race_df = race_df.merge(jockey_stats, on='jockey', how='left')
-        if 'jockey_win_rate_50' not in race_df.columns:
-            race_df['jockey_win_rate_50'] = 0.0
         race_df['jockey_win_rate_50'] = race_df['jockey_win_rate_50'].fillna(0)
-    except Exception as e:
-        print(f"⚠️ 騎師勝率計算失敗: {e}，設為 0")
+    except:
         race_df['jockey_win_rate_50'] = 0.0
-    
-    # 練馬師勝率
     try:
         trainer_stats = hist.groupby('trainer').apply(lambda g: (g['finish_position']==1).sum()/max(len(g),1)).reset_index(name='trainer_win_rate_50')
         race_df = race_df.merge(trainer_stats, on='trainer', how='left')
-        if 'trainer_win_rate_50' not in race_df.columns:
-            race_df['trainer_win_rate_50'] = 0.0
         race_df['trainer_win_rate_50'] = race_df['trainer_win_rate_50'].fillna(0)
-    except Exception as e:
-        print(f"⚠️ 練馬師勝率計算失敗: {e}，設為 0")
+    except:
         race_df['trainer_win_rate_50'] = 0.0
-    
-    # 近3場平均名次
     try:
         last3 = hist.groupby('horse_id').apply(lambda g: g.sort_values('race_date').tail(3)['finish_position'].mean()).reset_index(name='avg_rank_last3')
         race_df = race_df.merge(last3, on='horse_id', how='left')
-        if 'avg_rank_last3' not in race_df.columns:
-            race_df['avg_rank_last3'] = 99.0
         race_df['avg_rank_last3'] = race_df['avg_rank_last3'].fillna(99)
-    except Exception as e:
-        print(f"⚠️ 近3場平均名次計算失敗: {e}，設為 99")
+    except:
         race_df['avg_rank_last3'] = 99.0
-    
-    # 同路程勝率
     try:
         def dist_win(g, dist):
             sub = g[g['distance']==dist]
             return 0.0 if len(sub)==0 else (sub['finish_position']==1).sum()/len(sub)
         race_df['distance_win_rate'] = race_df.apply(lambda r: dist_win(hist[hist['horse_id']==r['horse_id']], r['distance']), axis=1)
-    except Exception as e:
-        print(f"⚠️ 同路程勝率計算失敗: {e}，設為 0")
+    except:
         race_df['distance_win_rate'] = 0.0
-    
-    # 騎師+馬合作勝率
     try:
         def jh_win(g, j, h):
             sub = g[(g['jockey']==j) & (g['horse_id']==h)]
             return 0.0 if len(sub)==0 else (sub['finish_position']==1).sum()/len(sub)
         race_df['jockey_horse_win_rate'] = race_df.apply(lambda r: jh_win(hist, r['jockey'], r['horse_id']), axis=1)
-    except Exception as e:
-        print(f"⚠️ 騎師+馬合作勝率計算失敗: {e}，設為 0")
+    except:
         race_df['jockey_horse_win_rate'] = 0.0
-    
-    # 場地勝率
     try:
         def going_win(g, go):
             sub = g[g['going']==go]
             return 0.0 if len(sub)==0 else (sub['finish_position']==1).sum()/len(sub)
         race_df['going_win_rate'] = race_df.apply(lambda r: going_win(hist[hist['horse_id']==r['horse_id']], r['going']), axis=1)
-    except Exception as e:
-        print(f"⚠️ 場地勝率計算失敗: {e}，設為 0")
+    except:
         race_df['going_win_rate'] = 0.0
-    
-    # 檔位勝率
     try:
         def draw_win(g, dr):
             sub = g[g['draw']==dr]
             return 0.0 if len(sub)==0 else (sub['finish_position']==1).sum()/len(sub)
         race_df['draw_win_rate'] = race_df.apply(lambda r: draw_win(hist[hist['horse_id']==r['horse_id']], r['draw']), axis=1)
-    except Exception as e:
-        print(f"⚠️ 檔位勝率計算失敗: {e}，設為 0")
+    except:
         race_df['draw_win_rate'] = 0.0
-    
-    # 其他
     try:
         last_run = hist.groupby('horse_id')['race_date'].max().reset_index(name='last_date')
         race_df = race_df.merge(last_run, on='horse_id', how='left')
         race_df['days_since_last_run'] = (race_date - race_df['last_date']).dt.days.fillna(999)
-    except Exception as e:
-        print(f"⚠️ 出賽相隔日數計算失敗: {e}，設為 999")
+    except:
         race_df['days_since_last_run'] = 999
-    
     try:
         last_rtg = hist.groupby('horse_id').last()['rtg'].reset_index(name='last_rtg')
         race_df = race_df.merge(last_rtg, on='horse_id', how='left')
         race_df['rtg_change'] = (race_df['rtg'] - race_df['last_rtg']).fillna(0)
-    except Exception as e:
-        print(f"⚠️ 評分變化計算失敗: {e}，設為 0")
+    except:
         race_df['rtg_change'] = 0
-    
     try:
         race_df['races_last14days'] = race_df.apply(lambda r: len(hist[(hist['horse_id']==r['horse_id']) & (hist['race_date']>=race_date-pd.Timedelta(days=14))]), axis=1)
-    except Exception as e:
-        print(f"⚠️ 近14日出賽次數計算失敗: {e}，設為 0")
+    except:
         race_df['races_last14days'] = 0
-    
+    # 其餘補0
     for col in ['course_win_rate', 'course_avg_rank', 'weight_change', 'jockey_trainer_win_rate',
                 'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
                 'early_pace', 'finish_speed', 'last_trial_rank', 'last_trial_time',
@@ -273,38 +234,41 @@ def compute_stats(race_df, history_df, race_date):
             race_df[col] = 0
         else:
             race_df[col] = race_df[col].fillna(0)
-    
     return race_df
 
 # ============================================================
 # 5. 主程式
 # ============================================================
 def main():
-    print("📂 載入模型...")
+    # 設定工作目錄為腳本所在目錄
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(script_dir)
+    
+    print("[INFO] 載入模型...")
     try:
         with open('hk_racing_model.pkl', 'rb') as f:
             xgb_obj = pickle.load(f)
             xgb_model = xgb_obj[0] if isinstance(xgb_obj, tuple) else xgb_obj
-            print("⚠️ XGBoost 模型為 tuple，提取第一個元素" if isinstance(xgb_obj, tuple) else "")
-        
         cat_model = CatBoostClassifier()
         cat_model.load_model('hk_catboost_model.cbm')
-        
         with open('hk_ranking_model.pkl', 'rb') as f:
             rank_obj = pickle.load(f)
             rank_model = rank_obj[0] if isinstance(rank_obj, tuple) else rank_obj
-            print("⚠️ 排名模型為 tuple，提取第一個元素" if isinstance(rank_obj, tuple) else "")
-        
-        print("✅ 所有模型載入成功")
+        print("[OK] 所有模型載入成功")
     except Exception as e:
-        print(f"❌ 模型載入失敗: {e}")
-        return
+        print(f"[ERROR] 模型載入失敗: {e}")
+        sys.exit(1)
 
-    # ---- 讀取排位表 ----
-    print("📂 讀取排位表...")
-    df = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv')
-    print(f"📊 共 {len(df)} 筆記錄")
+    # 讀取排位表
+    print("[INFO] 讀取排位表...")
+    try:
+        df = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv')
+        print(f"[DATA] 共 {len(df)} 筆記錄")
+    except Exception as e:
+        print(f"[ERROR] 讀取排位表失敗: {e}")
+        sys.exit(1)
 
+    # 去重
     if df.columns.duplicated().any():
         df = df.loc[:, ~df.columns.duplicated(keep='first')]
     df = standardize_columns(df)
@@ -312,46 +276,50 @@ def main():
         df = df.loc[:, ~df.columns.duplicated(keep='first')]
     df = ensure_series(df)
 
-    # ---- 日期處理 ----
+    # 日期處理
     if 'race_date' not in df.columns:
-        print("❌ 找不到日期欄位")
-        return
+        print("[ERROR] 找不到日期欄位")
+        sys.exit(1)
     df['race_date'] = df['race_date'].astype(str).str.extract(r'(\d{8})')[0]
     df['race_date'] = pd.to_datetime(df['race_date'], format='%Y%m%d', errors='coerce')
     df = df.dropna(subset=['race_date'])
     if df.empty:
-        print("❌ 無有效日期")
-        return
+        print("[ERROR] 無有效日期")
+        sys.exit(1)
 
-    # ---- 場次處理 ----
+    # 場次處理
     if 'race_no' not in df.columns:
-        print("❌ 缺少 'race_no' 欄位")
-        return
+        print("[ERROR] 缺少 'race_no' 欄位")
+        sys.exit(1)
     df['race_no'] = df['race_no'].astype(str).str.extract(r'(\d+)')[0]
     df['race_no'] = pd.to_numeric(df['race_no'], errors='coerce')
     df = df.dropna(subset=['race_no'])
     if df.empty:
-        print("❌ 無有效場次")
-        return
+        print("[ERROR] 無有效場次")
+        sys.exit(1)
 
-    # ---- 選取最近一場第9場，若無則最後一場 ----
+    # 選取最近一場第9場，若無則最後一場
     latest_date = df['race_date'].max()
     if pd.isna(latest_date):
-        print("❌ 無法找到有效日期")
-        return
+        print("[ERROR] 無法找到有效日期")
+        sys.exit(1)
     race_sel = df[(df['race_date'] == latest_date) & (df['race_no'] == 9)]
     if race_sel.empty:
         max_race = df[df['race_date'] == latest_date]['race_no'].max()
         race_sel = df[(df['race_date'] == latest_date) & (df['race_no'] == max_race)]
     if race_sel.empty:
-        print("❌ 無法選取場次")
-        return
-    print(f"✅ 選取 {latest_date.strftime('%Y-%m-%d')} 第 {race_sel['race_no'].iloc[0]} 場，共 {len(race_sel)} 匹")
+        print("[ERROR] 無法選取場次")
+        sys.exit(1)
+    print(f"[OK] 選取 {latest_date.strftime('%Y-%m-%d')} 第 {race_sel['race_no'].iloc[0]} 場，共 {len(race_sel)} 匹")
 
-    # ---- 載入歷史數據 ----
-    print("📂 載入歷史數據...")
-    history = pd.read_csv('ALL_DATA_MERGED.csv')
-    print(f"✅ 歷史數據 {len(history)} 筆")
+    # 載入歷史數據
+    print("[INFO] 載入歷史數據...")
+    try:
+        history = pd.read_csv('ALL_DATA_MERGED.csv')
+        print(f"[DATA] 歷史數據 {len(history)} 筆")
+    except Exception as e:
+        print(f"[ERROR] 載入歷史數據失敗: {e}")
+        sys.exit(1)
     if history.columns.duplicated().any():
         history = history.loc[:, ~history.columns.duplicated(keep='first')]
     history = standardize_columns(history)
@@ -362,55 +330,50 @@ def main():
     history['race_date'] = pd.to_datetime(history['race_date'], errors='coerce')
     history = history.dropna(subset=['race_date'])
 
-    # ---- 生成特徵 ----
-    print("🧮 生成特徵...")
+    # 生成特徵
+    print("[INFO] 生成特徵...")
     race_sel = get_latest_features(race_sel, history)
     race_sel = compute_stats(race_sel, history, latest_date)
 
-    # ---- 賠率處理（已修正） ----
+    # 賠率處理
     if 'win_odds' not in race_sel.columns:
         race_sel['win_odds'] = 4.0
     else:
-        # 將 0 或 NaN 都換成 4.0
         race_sel['win_odds'] = race_sel['win_odds'].replace(0, 4.0)
         race_sel['win_odds'] = race_sel['win_odds'].fillna(4.0)
-    # 確保 win_odds 係數值型
     race_sel['win_odds'] = pd.to_numeric(race_sel['win_odds'], errors='coerce').fillna(4.0)
-
     race_sel['odds_rank_in_race'] = race_sel['win_odds'].rank(ascending=True)
 
-    # ---- 確保所有特徵存在 ----
+    # 確保所有特徵存在
     for f in FEATURES_EN:
         if f not in race_sel.columns:
             race_sel[f] = 0
         else:
             race_sel[f] = race_sel[f].fillna(0)
 
-    # 提取特徵矩陣（英文名）
     X = race_sel[FEATURES_EN].copy()
-    print(f"✅ X 形狀: {X.shape}")
+    print(f"[OK] X 形狀: {X.shape}")
 
     # 強制轉數值
     for col in X.columns:
         X[col] = pd.to_numeric(X[col], errors='coerce').fillna(0)
 
-    # ---------- 關鍵：將 X 嘅欄位名轉為模型期望嘅名稱 ----------
+    # 映射特徵名稱
     X.rename(columns=NAME_MAPPING, inplace=True)
     for col in EXPECTED_FEATURES:
         if col not in X.columns:
             X[col] = 0
     X = X[EXPECTED_FEATURES]
-    print("✅ 特徵名稱已映射為模型期望格式")
-    # ---------------------------------------------------------
+    print("[OK] 特徵名稱已映射")
 
-    # ---- 預測 ----
+    # 預測
     prob_xgb = xgb_model.predict_proba(X)[:, 1]
     prob_cat = cat_model.predict_proba(X)[:, 1]
     ensemble_weight = 25
     prob_final = (prob_xgb * ensemble_weight + prob_cat) / (ensemble_weight + 1)
     rank_score = rank_model.predict(X)
 
-    # ---- 輸出 ----
+    # 輸出
     result = race_sel[['horse_id', 'draw', 'win_odds']].copy()
     result.rename(columns={'horse_id': '馬匹編號'}, inplace=True)
     result['預測勝率'] = prob_final
@@ -418,15 +381,8 @@ def main():
     result['值博指數'] = result['預測勝率'] / result['win_odds']
     result = result.sort_values('值博指數', ascending=False)
 
-    print("\n" + "="*60)
-    print(f"🏇 {latest_date.strftime('%Y-%m-%d')} 第 {race_sel['race_no'].iloc[0]} 場 預測 TOP 5")
-    print("="*60)
-    for i, row in result.head(5).iterrows():
-        print(f"{row['馬匹編號']} (檔位 {row['draw']})  勝率 {row['預測勝率']:.2%}  值博指數 {row['值博指數']:.3f}")
-    print("="*60)
-
     result.to_csv('prediction_result.csv', index=False)
-    print("💾 結果已儲存至 prediction_result.csv")
+    print("[OK] 預測完成，結果已儲存至 prediction_result.csv")
 
 if __name__ == '__main__':
     main()
