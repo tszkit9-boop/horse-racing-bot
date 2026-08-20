@@ -1,0 +1,8 @@
+import { createFileRoute } from '@tanstack/react-router'
+import { Activity, CheckCircle2, CircleAlert, RotateCcw, Upload } from 'lucide-react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+
+export const Route = createFileRoute('/app/activity')({ component: ActivityPage })
+
+const events = [['Support Concierge', 'Restarted automatically after a failed health check', '8 minutes ago', 'success'], ['Daily Digest', 'Deployment completed successfully · v1.8.2', '42 minutes ago', 'success'], ['Onboarding Guide', 'Process paused by Alex Morgan', '2 hours ago', 'warning'], ['Workspace', 'New member Jon Kim joined the team', 'Yesterday', 'info']]
+function ActivityPage() { return <div className="space-y-6"><div><h1 className="font-serif text-4xl font-medium tracking-tight">Activity</h1><p className="mt-2 text-sm text-muted-foreground">A clear record of everything happening in your workspace.</p></div><Card className="border-border/70"><CardHeader><CardTitle className="text-base">Recent events</CardTitle></CardHeader><CardContent className="space-y-1">{events.map(([title, detail, time, type]) => <div className="flex gap-4 rounded-xl px-3 py-4 transition-colors hover:bg-muted/50" key={title + time}><div className="mt-0.5 rounded-lg bg-primary/10 p-2 text-primary">{type === 'success' ? <RotateCcw className="size-4" /> : type === 'warning' ? <CircleAlert className="size-4 text-amber-600" /> : type === 'info' ? <Upload className="size-4" /> : <CheckCircle2 className="size-4" />}</div><div><p className="text-sm font-semibold">{title}</p><p className="mt-1 text-sm text-muted-foreground">{detail}</p><p className="mt-2 text-xs text-muted-foreground/70">{time}</p></div></div>)}</CardContent></Card></div> }
