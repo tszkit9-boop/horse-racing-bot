@@ -22,7 +22,7 @@ from catboost import CatBoostClassifier
 # ============================================================
 # 🔐 Telegram 設定（同你 telegram_bot.py 一致）
 # ============================================================
-TELEGRAM_TOKEN = '你的Bot Token'   # 去 @BotFather 換新 Token
+TELEGRAM_TOKEN = '8848079617:AAGa3u5IZbPtMtbFleEGxIHqV9BuNK5nv3g'   # 去 @BotFather 換新 Token
 TELEGRAM_CHAT_ID = '7988559873'   # 你嘅 Telegram ID
 
 # ============================================================
