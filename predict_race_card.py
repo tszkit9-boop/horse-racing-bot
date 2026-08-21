@@ -1,9 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-predict_race_card.py - 完整版（自動顯示中文馬名）
-- Windows 相容（無 Emoji）
-- 由歷史數據自動建立 ID → 中文名 對照
+predict_race_card.py - 完整版（強制使用 horse_name_mapping.csv）
 """
 
 import sys
@@ -18,9 +16,7 @@ import warnings
 warnings.filterwarnings('ignore')
 from catboost import CatBoostClassifier
 
-# ============================================================
-# 1. 36 個特徵（英文名）
-# ============================================================
+# === 36 個特徵（英文名） ===
 FEATURES_EN = [
     'draw', 'act_wt', 'distance', 'rtg', 'avg_rank_last3',
     'jockey_win_rate_50', 'trainer_win_rate_50',
@@ -38,9 +34,6 @@ FEATURES_EN = [
     'total_injuries', 'injury_severity'
 ]
 
-# ============================================================
-# 2. 模型期望嘅特徵名稱（中文）及順序
-# ============================================================
 EXPECTED_FEATURES = [
     'draw', 'weight', 'distance', 'Rtg.', '近3場平均名次',
     '騎師近50場勝率', '練馬師近50場勝率', '同路程歷史勝率',
@@ -54,12 +47,8 @@ EXPECTED_FEATURES = [
     '傷患總次數', '傷患嚴重程度'
 ]
 
-# ============================================================
-# 3. 名稱映射（英文 → 模型期望嘅中文）
-# ============================================================
 NAME_MAPPING = {
-    'act_wt': 'weight',
-    'rtg': 'Rtg.',
+    'act_wt': 'weight', 'rtg': 'Rtg.',
     'avg_rank_last3': '近3場平均名次',
     'jockey_win_rate_50': '騎師近50場勝率',
     'trainer_win_rate_50': '練馬師近50場勝率',
@@ -92,11 +81,7 @@ NAME_MAPPING = {
     'total_injuries': '傷患總次數',
     'injury_severity': '傷患嚴重程度'
 }
-# draw, distance, win_odds 保持不變
 
-# ============================================================
-# 4. 輔助函數
-# ============================================================
 def standardize_columns(df):
     rename_map = {
         '騎師': 'jockey', '練馬師': 'trainer', '路程': 'distance',
@@ -106,7 +91,7 @@ def standardize_columns(df):
         '名次': 'finish_position', '最終名次': 'finish_position',
         'Position': 'finish_position', 'Rank': 'finish_position',
         'pos': 'finish_position', '排名': 'finish_position',
-        '馬名': 'horse_name'  # 加入中文名對應
+        '馬名': 'horse_name'
     }
     df.rename(columns=rename_map, inplace=True, errors='ignore')
     return df
@@ -241,23 +226,20 @@ def compute_stats(race_df, history_df, race_date):
             race_df[col] = race_df[col].fillna(0)
     return race_df
 
-# ============================================================
-# 5. 載入中文馬名對照（由歷史數據自動建立）
-# ============================================================
-def build_horse_name_map(history_df):
-    """從歷史數據提取 horse_id → 中文名 對照"""
+def build_horse_name_map():
+    """從 horse_name_mapping.csv 讀取 ID -> 中文名 映射"""
     name_map = {}
-    if 'horse_id' in history_df.columns and 'horse_name' in history_df.columns:
-        temp = history_df[['horse_id', 'horse_name']].drop_duplicates(subset=['horse_id'])
-        name_map = dict(zip(temp['horse_id'], temp['horse_name']))
-        print(f"[INFO] 成功載入 {len(name_map)} 個中文馬名")
-    else:
-        print("[WARN] 歷史數據中無 'horse_name' 欄位，將使用 horse_id")
+    try:
+        df_map = pd.read_csv('horse_name_mapping.csv')
+        if 'horse_id' in df_map.columns and '馬名' in df_map.columns:
+            name_map = dict(zip(df_map['horse_id'], df_map['馬名']))
+            print(f"[INFO] 從 horse_name_mapping.csv 載入 {len(name_map)} 個中文馬名")
+        else:
+            print("[WARN] horse_name_mapping.csv 欄位不正確，請檢查")
+    except FileNotFoundError:
+        print("[WARN] 找不到 horse_name_mapping.csv，將使用 horse_id")
     return name_map
 
-# ============================================================
-# 6. 主程式（無 Emoji）
-# ============================================================
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     os.chdir(script_dir)
@@ -344,8 +326,8 @@ def main():
     history['race_date'] = pd.to_datetime(history['race_date'], errors='coerce')
     history = history.dropna(subset=['race_date'])
 
-    # ---- 建立中文名對照表 ----
-    horse_name_map = build_horse_name_map(history)
+    # ---- 建立中文名對照表（讀取 mapping file） ----
+    horse_name_map = build_horse_name_map()
 
     print("[INFO] 生成特徵...")
     race_sel = get_latest_features(race_sel, history)
