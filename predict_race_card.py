@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-predict_race_card.py - 完整版（中文輸出 + 彩池推薦 + 歷史記錄）
+predict_race_card.py - 完整版（中文輸出 + 彩池推薦 + 歷史記錄 + Telegram 自動發送）
 """
 
 import sys
@@ -14,9 +14,16 @@ import numpy as np
 import pickle
 import os
 import warnings
+import requests
 from datetime import datetime
 warnings.filterwarnings('ignore')
 from catboost import CatBoostClassifier
+
+# ============================================================
+# 🔐 Telegram 設定（同你 telegram_bot.py 一致）
+# ============================================================
+TELEGRAM_TOKEN = '你的Bot Token'   # 去 @BotFather 換新 Token
+TELEGRAM_CHAT_ID = '7988559873'   # 你嘅 Telegram ID
 
 # ============================================================
 # 參數
@@ -130,7 +137,6 @@ def ensure_series(df):
     return df
 
 def get_latest_features(race_df, history_df):
-    # 確保 history 有 horse_id
     if 'horse_id' not in history_df.columns:
         for col in history_df.columns:
             col_low = col.lower()
@@ -140,7 +146,6 @@ def get_latest_features(race_df, history_df):
     if 'horse_id' not in history_df.columns:
         raise KeyError("歷史數據缺少 horse_id 欄位")
 
-    # 確保 history 有 race_date
     if 'race_date' not in history_df.columns:
         for col in history_df.columns:
             if 'date' in col.lower() or '日期' in col:
@@ -149,7 +154,6 @@ def get_latest_features(race_df, history_df):
     if 'race_date' not in history_df.columns:
         raise KeyError("歷史數據缺少 race_date 欄位")
 
-    # 確保 history 有 finish_position
     if 'finish_position' not in history_df.columns:
         for col in history_df.columns:
             if '名次' in col or 'position' in col.lower() or 'rank' in col.lower():
@@ -159,7 +163,6 @@ def get_latest_features(race_df, history_df):
     history_df['race_date'] = pd.to_datetime(history_df['race_date'], errors='coerce')
     history_df = history_df.dropna(subset=['race_date'])
 
-    # 統一 horse_id 類型為字串，避免 merge 錯誤
     history_df['horse_id'] = history_df['horse_id'].astype(str)
     race_df['horse_id'] = race_df['horse_id'].astype(str)
 
@@ -317,6 +320,21 @@ def generate_pool_recommendations(df, top_n=6):
         rec += f"  {horse_names[i]} > {horse_names[j]} > {horse_names[k]} > {horse_names[l]}\n"
 
     return rec
+
+# ============================================================
+# 📨 發送 Telegram 訊息（獨立函數）
+# ============================================================
+def send_telegram_message(text):
+    """發送訊息到你嘅 Telegram"""
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        response = requests.post(url, json={'chat_id': TELEGRAM_CHAT_ID, 'text': text}, timeout=10)
+        if response.status_code == 200:
+            print("[OK] Telegram 訊息發送成功")
+        else:
+            print(f"[WARN] Telegram 發送失敗：{response.status_code}")
+    except Exception as e:
+        print(f"[WARN] Telegram 發送失敗：{e}")
 
 # ============================================================
 # 主程式
@@ -508,6 +526,20 @@ def main():
         f.write(f"🏇 {display_date} 第 {display_race} 場\n")
         f.write(pool_rec)
     print("[OK] 彩池推薦已儲存至 pool_recommendations.txt")
+
+    # ===== 🚀 自動發送歷史記錄到 Telegram =====
+    print("\n[INFO] 發送預測結果到 Telegram...")
+    telegram_msg = f"📊 預測歷史記錄\n"
+    telegram_msg += f"📅 {display_date} 第 {display_race} 場\n"
+    telegram_msg += f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+    telegram_msg += "🏇 TOP 5\n"
+    for _, row in result.head(5).iterrows():
+        telegram_msg += f"{row['馬匹名稱']} (檔位 {row['檔位']}) 勝率 {row['預測勝率']:.2%} 值博指數 {row['值博指數']:.3f}\n"
+    
+    telegram_msg += f"\n📁 歷史記錄已儲存：{history_file}"
+    
+    send_telegram_message(telegram_msg)
+    print("[OK] 預測結果已發送到 Telegram")
 
 if __name__ == '__main__':
     main()
