@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-predict_race_card.py - 完整版（支援指定日期 + 場次，無數據時報錯）
+predict_race_card.py - 完整版（含彩池預測：獨贏/位置/連贏/位置Q/三重彩/四重彩）
 """
 
 import sys
@@ -13,6 +13,7 @@ import pandas as pd
 import numpy as np
 import pickle
 import os
+import itertools
 import warnings
 warnings.filterwarnings('ignore')
 from catboost import CatBoostClassifier
@@ -20,7 +21,7 @@ from catboost import CatBoostClassifier
 # ============================================================
 # 1. 解析 Command Line 參數
 # ============================================================
-parser = argparse.ArgumentParser(description='賽馬預測系統')
+parser = argparse.ArgumentParser(description='賽馬預測系統（含彩池推薦）')
 parser.add_argument('--date', type=str, help='指定日期，格式 YYYY-MM-DD')
 parser.add_argument('--race', type=int, default=9, help='指定場次號碼，預設 9')
 args = parser.parse_args()
@@ -32,7 +33,6 @@ if target_date:
     print(f"[INFO] 指定日期：{target_date}")
 else:
     print("[INFO] 自動選取最新日期")
-
 print(f"[INFO] 指定場次：第 {target_race_no} 場")
 
 # ============================================================
@@ -103,6 +103,9 @@ NAME_MAPPING = {
     'injury_severity': '傷患嚴重程度'
 }
 
+# ============================================================
+# 3. 輔助函數
+# ============================================================
 def standardize_columns(df):
     rename_map = {
         '騎師': 'jockey', '練馬師': 'trainer', '路程': 'distance',
@@ -261,7 +264,98 @@ def build_horse_name_map():
     return name_map
 
 # ============================================================
-# 3. 主程式
+# 4. 彩池推薦函數
+# ============================================================
+def generate_pool_recommendations(df, top_n=6):
+    """
+    根據預測勝率生成彩池推薦
+    df: 已排序嘅預測結果 DataFrame
+    top_n: 用於組合嘅馬匹數量（預設 6 匹）
+    """
+    # 取前 N 匹馬
+    top_horses = df.head(top_n)
+    horse_names = top_horses['馬匹名稱'].tolist()
+    probs = top_horses['預測勝率'].tolist()
+    
+    # 計算「組合得分」：勝率乘積 / 組合數量
+    def combo_score(indices):
+        score = 1.0
+        for i in indices:
+            score *= probs[i]
+        return score / len(indices)
+    
+    recommendations = []
+    
+    # 1. 獨贏推薦（直接用預測結果）
+    rec = "【獨贏】\n"
+    for i, row in top_horses.head(3).iterrows():
+        rec += f"  {row['馬匹名稱']} (勝率 {row['預測勝率']:.2%})\n"
+    recommendations.append(rec)
+    
+    # 2. 位置推薦（頭 4 匹）
+    rec = "【位置】\n"
+    for i, row in top_horses.head(4).iterrows():
+        rec += f"  {row['馬匹名稱']} (勝率 {row['預測勝率']:.2%})\n"
+    recommendations.append(rec)
+    
+    # 3. 連贏推薦（組合勝率最高嘅 2 匹組合）
+    rec = "【連贏】\n"
+    pairs = []
+    for i in range(min(len(horse_names), 5)):
+        for j in range(i+1, min(len(horse_names), 6)):
+            score = combo_score([i, j])
+            pairs.append((score, i, j))
+    pairs.sort(reverse=True)
+    for score, i, j in pairs[:5]:
+        rec += f"  {horse_names[i]} + {horse_names[j]}\n"
+    recommendations.append(rec)
+    
+    # 4. 位置Q推薦（連贏嘅擴展版，揀多啲組合）
+    rec = "【位置Q】\n"
+    q_pairs = []
+    for i in range(min(len(horse_names), 6)):
+        for j in range(i+1, min(len(horse_names), 8)):
+            if j < len(horse_names):
+                score = combo_score([i, j])
+                q_pairs.append((score, i, j))
+    q_pairs.sort(reverse=True)
+    for score, i, j in q_pairs[:6]:
+        rec += f"  {horse_names[i]} + {horse_names[j]}\n"
+    recommendations.append(rec)
+    
+    # 5. 三重彩推薦（前 3 名順序組合）
+    rec = "【三重彩】\n"
+    tierce_list = []
+    for i in range(min(len(horse_names), 4)):
+        for j in range(min(len(horse_names), 5)):
+            for k in range(min(len(horse_names), 6)):
+                if i != j and i != k and j != k:
+                    score = combo_score([i, j, k])
+                    tierce_list.append((score, i, j, k))
+    tierce_list.sort(reverse=True)
+    for score, i, j, k in tierce_list[:5]:
+        rec += f"  {horse_names[i]} > {horse_names[j]} > {horse_names[k]}\n"
+    recommendations.append(rec)
+    
+    # 6. 四重彩推薦（前 4 名順序組合）
+    rec = "【四重彩】\n"
+    quartet_list = []
+    for i in range(min(len(horse_names), 4)):
+        for j in range(min(len(horse_names), 5)):
+            for k in range(min(len(horse_names), 6)):
+                for l in range(min(len(horse_names), 7)):
+                    if len(set([i, j, k, l])) == 4:
+                        score = combo_score([i, j, k, l])
+                        quartet_list.append((score, i, j, k, l))
+    quartet_list.sort(reverse=True)
+    for score, i, j, k, l in quartet_list[:3]:
+        rec += f"  {horse_names[i]} > {horse_names[j]} > {horse_names[k]} > {horse_names[l]}\n"
+    recommendations.append(rec)
+    
+    return "\n".join(recommendations)
+
+# ============================================================
+# 5. 主程式
 # ============================================================
 def main():
     global target_date, target_race_no
@@ -321,20 +415,15 @@ def main():
         print("[ERROR] 無有效場次")
         sys.exit(1)
 
-    # ===== 選擇日期（修改：無數據時直接報錯） =====
+    # ===== 選擇日期（無數據時報錯） =====
     if target_date:
         selected_date = pd.to_datetime(target_date)
         if selected_date not in df['race_date'].values:
-            print(f"[ERROR] 日期 {target_date} 無數據，請更新排位表 (HKCJ_FULL_YEAR_DATA.csv)")
+            print(f"[ERROR] 日期 {target_date} 無數據，請更新排位表")
             sys.exit(1)
-    else:
-        # 自動選取最新日期
-        latest_date = df['race_date'].max()
-    
-    if target_date is None:
-        latest_date = df['race_date'].max()
-    else:
         latest_date = selected_date
+    else:
+        latest_date = df['race_date'].max()
     
     if pd.isna(latest_date):
         print("[ERROR] 無法找到有效日期")
@@ -427,8 +516,23 @@ def main():
     print(f"🏇 {display_date} 第 {display_race_no} 場 預測 TOP 5")
     print("="*50)
     for idx, row in result.head(5).iterrows():
-        print(f"{row['馬匹名稱']} (檔位 {row['檔位']})  勝率 {row['預測勝率']:.2f}%  值博指數 {row['值博指數']:.3f}")
+        print(f"{row['馬匹名稱']} (檔位 {row['檔位']})  勝率 {row['預測勝率']:.2%}  值博指數 {row['值博指數']:.3f}")
     print("="*50 + "\n")
+
+    # ---- 彩池推薦 ----
+    print("\n" + "="*50)
+    print("🎯 彩池推薦（基於預測勝率）")
+    print("="*50)
+    pool_rec = generate_pool_recommendations(result)
+    print(pool_rec)
+    print("="*50 + "\n")
+
+    # 儲存彩池推薦到檔案
+    with open('pool_recommendations.txt', 'w', encoding='utf-8') as f:
+        f.write(f"🏇 {display_date} 第 {display_race_no} 場 彩池推薦\n")
+        f.write("="*50 + "\n")
+        f.write(pool_rec)
+    print("[OK] 彩池推薦已儲存至 pool_recommendations.txt")
 
 if __name__ == '__main__':
     main()
