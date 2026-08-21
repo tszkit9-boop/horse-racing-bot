@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-predict_race_card.py - 純文字版（無 Emoji，Windows 相容）
+predict_race_card.py - 完整版（自動顯示中文馬名）
+- Windows 相容（無 Emoji）
+- 由歷史數據自動建立 ID → 中文名 對照
 """
 
 import sys
@@ -53,7 +55,7 @@ EXPECTED_FEATURES = [
 ]
 
 # ============================================================
-# 3. 名稱映射
+# 3. 名稱映射（英文 → 模型期望嘅中文）
 # ============================================================
 NAME_MAPPING = {
     'act_wt': 'weight',
@@ -103,7 +105,8 @@ def standardize_columns(df):
         '馬場': 'race_course', '實際負磅': 'act_wt',
         '名次': 'finish_position', '最終名次': 'finish_position',
         'Position': 'finish_position', 'Rank': 'finish_position',
-        'pos': 'finish_position', '排名': 'finish_position'
+        'pos': 'finish_position', '排名': 'finish_position',
+        '馬名': 'horse_name'  # 加入中文名對應
     }
     df.rename(columns=rename_map, inplace=True, errors='ignore')
     return df
@@ -239,7 +242,22 @@ def compute_stats(race_df, history_df, race_date):
     return race_df
 
 # ============================================================
-# 5. 主程式（無 Emoji）
+# 5. 載入中文馬名對照（由歷史數據自動建立）
+# ============================================================
+def build_horse_name_map(history_df):
+    """從歷史數據提取 horse_id → 中文名 對照"""
+    name_map = {}
+    if 'horse_id' in history_df.columns and 'horse_name' in history_df.columns:
+        # 取每個 horse_id 嘅第一個出現嘅中文名（通常都一樣）
+        temp = history_df[['horse_id', 'horse_name']].drop_duplicates(subset=['horse_id'])
+        name_map = dict(zip(temp['horse_id'], temp['horse_name']))
+        print(f"[INFO] 成功載入 {len(name_map)} 個中文馬名")
+    else:
+        print("[WARN] 歷史數據中無 'horse_name' 欄位，將使用 horse_id")
+    return name_map
+
+# ============================================================
+# 6. 主程式（無 Emoji）
 # ============================================================
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -263,7 +281,7 @@ def main():
     print("[INFO] 讀取排位表...")
     try:
         df = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv')
-        print(f"[DATA] 共 {len(df)} 筆記錄")
+        print(f"[DATA] 排位表共 {len(df)} 筆記錄")
     except Exception as e:
         print(f"[ERROR] 讀取排位表失敗: {e}")
         sys.exit(1)
@@ -327,9 +345,15 @@ def main():
     history['race_date'] = pd.to_datetime(history['race_date'], errors='coerce')
     history = history.dropna(subset=['race_date'])
 
+    # ---- 建立中文名對照表 ----
+    horse_name_map = build_horse_name_map(history)
+
     print("[INFO] 生成特徵...")
     race_sel = get_latest_features(race_sel, history)
     race_sel = compute_stats(race_sel, history, latest_date)
+
+    # ---- 加入中文名欄位 ----
+    race_sel['中文名'] = race_sel['horse_id'].map(horse_name_map).fillna(race_sel['horse_id'])
 
     if 'win_odds' not in race_sel.columns:
         race_sel['win_odds'] = 4.0
@@ -365,15 +389,24 @@ def main():
     prob_final = (prob_xgb * ensemble_weight + prob_cat) / (ensemble_weight + 1)
     rank_score = rank_model.predict(X)
 
-    result = race_sel[['horse_id', 'draw', 'win_odds']].copy()
-    result.rename(columns={'horse_id': '馬匹編號'}, inplace=True)
+    # ---- 輸出結果（含中文名） ----
+    result = race_sel[['中文名', 'draw', 'win_odds']].copy()
+    result.rename(columns={'中文名': '馬匹名稱', 'draw': '檔位', 'win_odds': '賠率'}, inplace=True)
     result['預測勝率'] = prob_final
     result['排名分數'] = rank_score
-    result['值博指數'] = result['預測勝率'] / result['win_odds']
+    result['值博指數'] = result['預測勝率'] / result['賠率']
     result = result.sort_values('值博指數', ascending=False)
 
     result.to_csv('prediction_result.csv', index=False)
     print("[OK] 預測完成，結果已儲存至 prediction_result.csv")
+
+    # ---- 同時顯示喺 Console ----
+    print("\n" + "="*50)
+    print(f"🏇 {latest_date.strftime('%Y-%m-%d')} 第 {race_sel['race_no'].iloc[0]} 場 預測 TOP 5")
+    print("="*50)
+    for idx, row in result.head(5).iterrows():
+        print(f"{row['馬匹名稱']} (檔位 {row['檔位']})  勝率 {row['預測勝率']:.2%}  值博指數 {row['值博指數']:.3f}")
+    print("="*50 + "\n")
 
 if __name__ == '__main__':
     main()
