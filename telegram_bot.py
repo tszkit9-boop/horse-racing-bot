@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Telegram Bot - 賽馬預測完整版（內建騎師診斷）
+Telegram Bot - 賽馬預測完整版（顯示所有名次 + 騎師診斷）
 """
 
 import sys
@@ -196,79 +196,77 @@ def cmd_horse(chat_id, horse_name_or_id):
             send_message(chat_id, f"❌ 找不到馬匹 {horse_name_or_id}")
             return
         total = len(horse_data)
+        name_col = get_name_columns(horse_data)
+        horse_name = horse_data[name_col].iloc[0] if name_col and not horse_data[name_col].iloc[0] is None else horse_data.iloc[0]['horse_id']
+        msg = f"🐴 馬匹：{horse_name}\n"
+        msg += f"馬匹編號：{horse_data.iloc[0]['horse_id']}\n"
+        msg += f"總出賽：{total}\n"
         finish_col = get_finish_column(horse_data)
         if finish_col is None:
-            wins = 0
-            recent = []
-        else:
-            valid_rank = horse_data[finish_col].dropna()
-            wins = (valid_rank == 1).sum() if len(valid_rank) > 0 else 0
-            sorted_data = horse_data.sort_values('race_date', ascending=False)
-            recent = sorted_data[finish_col].dropna().head(3).tolist()
-        win_rate = wins / total * 100 if total > 0 else 0
-        name_col = get_name_columns(horse_data)
-        if name_col and not horse_data[name_col].iloc[0] is None:
-            horse_name = horse_data[name_col].iloc[0]
-        else:
-            horse_name = horse_data.iloc[0]['horse_id']
-        msg = f"🐴 馬匹：{horse_name}\n馬匹編號：{horse_data.iloc[0]['horse_id']}\n總出賽：{total}\n"
-        if finish_col is not None and len(valid_rank) > 0:
-            msg += f"頭馬：{wins}\n勝率：{win_rate:.1f}%\n"
-            if recent:
-                recent_str = ', '.join([str(int(r)) if not pd.isna(r) else '?' for r in recent])
-                msg += f"近3場名次：{recent_str}"
-            else:
-                msg += "近3場名次：無紀錄"
-        else:
+            msg += "（數據庫無名次欄位）"
+            send_message(chat_id, msg)
+            return
+        sorted_data = horse_data.sort_values('race_date', ascending=False)
+        all_ranks = sorted_data[finish_col].dropna().tolist()
+        if not all_ranks:
             msg += "（無名次紀錄）"
-        send_message(chat_id, msg)
+            send_message(chat_id, msg)
+            return
+        wins = sum(1 for r in all_ranks if r == 1)
+        win_rate = wins / total * 100
+        msg += f"頭馬：{wins}\n"
+        msg += f"勝率：{win_rate:.1f}%\n"
+        msg += f"所有名次（由新到舊）：\n"
+        rank_strs = []
+        for idx, r in enumerate(all_ranks, 1):
+            rank_strs.append(str(int(r)) if not pd.isna(r) else '?')
+            if idx % 20 == 0:
+                rank_strs.append('\n')
+        rank_text = ' '.join(rank_strs)
+        base_msg = msg + rank_text
+        if len(base_msg) <= 4000:
+            send_message(chat_id, base_msg)
+        else:
+            send_message(chat_id, msg + "（名次太多，請看第二條訊息）")
+            chunk_size = 3000
+            for i in range(0, len(rank_text), chunk_size):
+                send_message(chat_id, rank_text[i:i+chunk_size])
     except Exception as e:
         logger.error(f"查詢馬匹失敗：{e}")
         send_message(chat_id, f"❌ 查詢失敗：{str(e)}")
 
 def cmd_jockey(chat_id, jockey_name):
-    """查詢騎師（強效版 + 診斷）"""
     send_message(chat_id, f"🔍 正在查詢騎師 {jockey_name}...")
     try:
         df = pd.read_csv('ALL_DATA_MERGED.csv')
-        
-        # 找出騎師欄位
         jockey_cols = ['jockey', '騎師']
         found_col = None
         for col in jockey_cols:
             if col in df.columns:
                 found_col = col
                 break
-        
         if found_col is None:
-            send_message(chat_id, "❌ 數據庫中無騎師欄位，請檢查")
+            send_message(chat_id, "❌ 數據庫中無騎師欄位")
             return
-        
-        # 嘗試完全匹配
         jockey_data = df[df[found_col] == jockey_name]
         if jockey_data.empty:
-            # 大小寫不敏感
             jockey_data = df[df[found_col].str.lower() == jockey_name.lower()]
         if jockey_data.empty:
-            # 包含匹配
             jockey_data = df[df[found_col].astype(str).str.contains(jockey_name, na=False, case=False)]
         if jockey_data.empty and found_col == 'jockey' and '騎師' in df.columns:
             jockey_data = df[df['騎師'] == jockey_name]
             if jockey_data.empty:
                 jockey_data = df[df['騎師'].astype(str).str.contains(jockey_name, na=False, case=False)]
-        
         if jockey_data.empty:
-            # 診斷：如果係管理員，Send 實際騎師名清單
             if is_admin(chat_id):
                 all_jockeys = df[found_col].dropna().unique()
-                sample = list(all_jockeys)[:30]  # 最多顯示30個
+                sample = list(all_jockeys)[:30]
                 debug_msg = "🔍 騎師欄位名稱：" + found_col + "\n"
                 debug_msg += "🔍 騎師名樣本（頭30個）：\n" + "\n".join(sample)
                 send_message(chat_id, debug_msg)
             else:
                 send_message(chat_id, f"❌ 找不到騎師 {jockey_name}")
             return
-        
         total = len(jockey_data)
         finish_col = get_finish_column(jockey_data)
         if finish_col is not None:
