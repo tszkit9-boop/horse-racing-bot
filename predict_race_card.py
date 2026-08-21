@@ -1,14 +1,16 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-predict_race_card.py - 最穩定版 (只支援 YYYY-MM-DD 日期，自動用 4.0 賠率)
+predict_race_card.py - 最终稳定版（自动适配列名 + 类型统一）
 """
 
 import sys
 import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
+import argparse
 import pandas as pd
+import numpy as np
 import pickle
 import os
 import warnings
@@ -16,7 +18,24 @@ warnings.filterwarnings('ignore')
 from catboost import CatBoostClassifier
 
 # ============================================================
-# 1. 36 個特徵 (英文名)
+# 参数
+# ============================================================
+parser = argparse.ArgumentParser()
+parser.add_argument('--date', type=str, help='日期 YYYY-MM-DD')
+parser.add_argument('--race', type=int, default=9, help='场次，预设 9')
+args = parser.parse_args()
+
+target_date = args.date
+target_race_no = args.race
+
+if target_date:
+    print(f"[INFO] 指定日期：{target_date}")
+else:
+    print("[INFO] 自动选取最新日期")
+print(f"[INFO] 指定场次：第 {target_race_no} 场")
+
+# ============================================================
+# 特征定义
 # ============================================================
 FEATURES_EN = [
     'draw', 'act_wt', 'distance', 'rtg', 'avg_rank_last3',
@@ -83,22 +102,25 @@ NAME_MAPPING = {
     'injury_severity': '傷患嚴重程度'
 }
 
-def standardize_columns(df):
+# ============================================================
+# 辅助函数
+# ============================================================
+def standardize_columns_light(df, is_history=False):
+    """重命名常见列名，但保留日期列不变"""
     rename_map = {
         '騎師': 'jockey', '練馬師': 'trainer', '路程': 'distance',
-        '場地': 'going', '檔位': 'draw', '評分': 'rtg',
-        '馬匹編號': 'horse_id', '比賽日期': 'race_date', '場次': 'race_no',
+        '檔位': 'draw', '評分': 'rtg',
+        '馬匹編號': 'horse_id', '馬匹ID': 'horse_id', '馬號': 'horse_id',
+        '馬匹id': 'horse_id', 'horse': 'horse_id', 'Horse': 'horse_id',
+        '場次': 'race_no',
         '馬場': 'race_course', '實際負磅': 'act_wt',
-        '名次': 'finish_position', '最終名次': 'finish_position',
-        '排名': 'finish_position',
-        '馬名': 'horse_name', '馬匹名稱': 'horse_name',
+        '名次': 'finish_position',
+        '馬名': 'horse_name',
         '賠率': 'win_odds', '獨贏賠率': 'win_odds',
-        'Horse': 'horse_id', 'Horse ID': 'horse_id',
-        'Draw': 'draw', 'Jockey': 'jockey', 'Trainer': 'trainer',
-        'Weight': 'act_wt', 'Odds': 'win_odds',
-        'Race No': 'race_no', 'Race Date': 'race_date',
     }
     df.rename(columns=rename_map, inplace=True, errors='ignore')
+    if '比賽日期' in df.columns and 'race_date' not in df.columns:
+        df['race_date'] = df['比賽日期']
     return df
 
 def ensure_series(df):
@@ -108,9 +130,50 @@ def ensure_series(df):
     return df
 
 def get_latest_features(race_df, history_df):
+    """
+    从历史数据提取每匹马最近一场的特征
+    """
+    # 确保历史数据有必要的列
+    if 'horse_id' not in history_df.columns:
+        for col in history_df.columns:
+            col_low = col.lower()
+            if 'horse' in col_low or '馬匹' in col or '馬號' in col or 'id' in col_low:
+                history_df.rename(columns={col: 'horse_id'}, inplace=True)
+                print(f"[DEBUG] 历史数据列 '{col}' 重命名为 'horse_id'")
+                break
+    if 'horse_id' not in history_df.columns:
+        raise KeyError("历史数据缺少 horse_id 列，请检查列名")
+
+    if 'race_date' not in history_df.columns:
+        for col in history_df.columns:
+            if 'date' in col.lower() or '日期' in col:
+                history_df.rename(columns={col: 'race_date'}, inplace=True)
+                print(f"[DEBUG] 历史数据列 '{col}' 重命名为 'race_date'")
+                break
+    if 'race_date' not in history_df.columns:
+        raise KeyError("历史数据缺少 race_date 列，请检查列名")
+
+    if 'finish_position' not in history_df.columns:
+        for col in history_df.columns:
+            if '名次' in col or 'position' in col.lower() or 'rank' in col.lower():
+                history_df.rename(columns={col: 'finish_position'}, inplace=True)
+                print(f"[DEBUG] 历史数据列 '{col}' 重命名为 'finish_position'")
+                break
+
+    # 日期转换
     history_df['race_date'] = pd.to_datetime(history_df['race_date'], errors='coerce')
+    history_df = history_df.dropna(subset=['race_date'])
+
+    # 按马匹分组取最近一场
     latest = history_df.sort_values('race_date').groupby('horse_id').last().reset_index()
+
+    # ========== 关键修复：统一 horse_id 类型为字符串 ==========
+    race_df['horse_id'] = race_df['horse_id'].astype(str)
+    latest['horse_id'] = latest['horse_id'].astype(str)
+
+    # 合并
     merged = race_df.merge(latest, on='horse_id', how='left', suffixes=('', '_hist'))
+
     for col in FEATURES_EN:
         if col in merged.columns and col not in race_df.columns:
             hist_col = col + '_hist'
@@ -127,103 +190,139 @@ def get_latest_features(race_df, history_df):
     return merged
 
 def compute_stats(race_df, history_df, race_date):
-    history_df = ensure_series(history_df)
-    if history_df.columns.duplicated().any():
-        history_df = history_df.loc[:, ~history_df.columns.duplicated(keep='first')]
-    for col in ['jockey', 'trainer', 'horse_id']:
-        if col not in race_df.columns:
-            race_df[col] = 0
-    hist = history_df[history_df['race_date'] < race_date].copy()
-    if hist.empty:
-        for col in ['jockey_win_rate_50', 'trainer_win_rate_50', 'avg_rank_last3',
-                    'distance_win_rate', 'jockey_horse_win_rate', 'going_win_rate',
-                    'draw_win_rate', 'jockey_win_rate_5', 'jockey_win_rate_10']:
+    """计算历史统计特征（骑师胜率、近绩等）"""
+    if 'finish_position' not in history_df.columns:
+        for col in history_df.columns:
+            if '名次' in col or 'position' in col.lower() or 'rank' in col.lower():
+                history_df.rename(columns={col: 'finish_position'}, inplace=True)
+                break
+    if 'finish_position' not in history_df.columns:
+        print("[WARN] 历史数据无名次栏位，用0填充")
+        for col in ['jockey_win_rate_50', 'trainer_win_rate_50', 'avg_rank_last3']:
             race_df[col] = 0.0
         return race_df
-    if 'finish_position' not in hist.columns:
-        raise KeyError("歷史數據缺少 finish_position")
+
+    history_df['race_date'] = pd.to_datetime(history_df['race_date'], errors='coerce')
+    hist = history_df[history_df['race_date'] < race_date].copy()
+    if hist.empty:
+        for col in ['jockey_win_rate_50', 'trainer_win_rate_50', 'avg_rank_last3']:
+            race_df[col] = 0.0
+        return race_df
+
     hist['finish_position'] = pd.to_numeric(hist['finish_position'], errors='coerce')
-    # 騎師勝率
+
     try:
-        jockey_stats = hist.groupby('jockey').apply(lambda g: (g['finish_position']==1).sum()/max(len(g),1)).reset_index(name='jockey_win_rate_50')
+        jockey_stats = hist.groupby('jockey').apply(
+            lambda g: (g['finish_position'] == 1).sum() / max(len(g), 1)
+        ).reset_index(name='jockey_win_rate_50')
         race_df = race_df.merge(jockey_stats, on='jockey', how='left')
         race_df['jockey_win_rate_50'] = race_df['jockey_win_rate_50'].fillna(0)
     except:
         race_df['jockey_win_rate_50'] = 0.0
+
     try:
-        trainer_stats = hist.groupby('trainer').apply(lambda g: (g['finish_position']==1).sum()/max(len(g),1)).reset_index(name='trainer_win_rate_50')
+        trainer_stats = hist.groupby('trainer').apply(
+            lambda g: (g['finish_position'] == 1).sum() / max(len(g), 1)
+        ).reset_index(name='trainer_win_rate_50')
         race_df = race_df.merge(trainer_stats, on='trainer', how='left')
         race_df['trainer_win_rate_50'] = race_df['trainer_win_rate_50'].fillna(0)
     except:
         race_df['trainer_win_rate_50'] = 0.0
+
     try:
-        last3 = hist.groupby('horse_id').apply(lambda g: g.sort_values('race_date').tail(3)['finish_position'].mean()).reset_index(name='avg_rank_last3')
+        last3 = hist.groupby('horse_id').apply(
+            lambda g: g.sort_values('race_date').tail(3)['finish_position'].mean()
+        ).reset_index(name='avg_rank_last3')
         race_df = race_df.merge(last3, on='horse_id', how='left')
         race_df['avg_rank_last3'] = race_df['avg_rank_last3'].fillna(99)
     except:
         race_df['avg_rank_last3'] = 99.0
-    try:
-        def dist_win(g, dist):
-            sub = g[g['distance']==dist]
-            return 0.0 if len(sub)==0 else (sub['finish_position']==1).sum()/len(sub)
-        race_df['distance_win_rate'] = race_df.apply(lambda r: dist_win(hist[hist['horse_id']==r['horse_id']], r['distance']), axis=1)
-    except:
-        race_df['distance_win_rate'] = 0.0
-    try:
-        def jh_win(g, j, h):
-            sub = g[(g['jockey']==j) & (g['horse_id']==h)]
-            return 0.0 if len(sub)==0 else (sub['finish_position']==1).sum()/len(sub)
-        race_df['jockey_horse_win_rate'] = race_df.apply(lambda r: jh_win(hist, r['jockey'], r['horse_id']), axis=1)
-    except:
-        race_df['jockey_horse_win_rate'] = 0.0
-    try:
-        def going_win(g, go):
-            sub = g[g['going']==go]
-            return 0.0 if len(sub)==0 else (sub['finish_position']==1).sum()/len(sub)
-        race_df['going_win_rate'] = race_df.apply(lambda r: going_win(hist[hist['horse_id']==r['horse_id']], r['going']), axis=1)
-    except:
-        race_df['going_win_rate'] = 0.0
-    try:
-        def draw_win(g, dr):
-            sub = g[g['draw']==dr]
-            return 0.0 if len(sub)==0 else (sub['finish_position']==1).sum()/len(sub)
-        race_df['draw_win_rate'] = race_df.apply(lambda r: draw_win(hist[hist['horse_id']==r['horse_id']], r['draw']), axis=1)
-    except:
-        race_df['draw_win_rate'] = 0.0
-    try:
-        last_run = hist.groupby('horse_id')['race_date'].max().reset_index(name='last_date')
-        race_df = race_df.merge(last_run, on='horse_id', how='left')
-        race_df['days_since_last_run'] = (race_date - race_df['last_date']).dt.days.fillna(999)
-    except:
-        race_df['days_since_last_run'] = 999
-    try:
-        last_rtg = hist.groupby('horse_id').last()['rtg'].reset_index(name='last_rtg')
-        race_df = race_df.merge(last_rtg, on='horse_id', how='left')
-        race_df['rtg_change'] = (race_df['rtg'] - race_df['last_rtg']).fillna(0)
-    except:
-        race_df['rtg_change'] = 0
-    try:
-        race_df['races_last14days'] = race_df.apply(lambda r: len(hist[(hist['horse_id']==r['horse_id']) & (hist['race_date']>=race_date-pd.Timedelta(days=14))]), axis=1)
-    except:
-        race_df['races_last14days'] = 0
+
+    for col in ['distance_win_rate', 'jockey_horse_win_rate', 'going_win_rate', 'draw_win_rate']:
+        race_df[col] = 0.0
     for col in ['course_win_rate', 'course_avg_rank', 'weight_change', 'jockey_trainer_win_rate',
                 'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
                 'early_pace', 'finish_speed', 'last_trial_rank', 'last_trial_time',
                 'jockey_win_rate_5', 'jockey_win_rate_10',
                 'days_since_injury', 'injury_30d', 'injury_60d', 'injury_90d',
                 'total_injuries', 'injury_severity']:
-        if col not in race_df.columns:
-            race_df[col] = 0
-        else:
-            race_df[col] = race_df[col].fillna(0)
+        race_df[col] = 0
     return race_df
 
+def build_horse_name_map():
+    name_map = {}
+    try:
+        df_map = pd.read_csv('horse_name_mapping.csv', encoding='utf-8-sig')
+        if 'horse_id' in df_map.columns and '馬名' in df_map.columns:
+            name_map = dict(zip(df_map['horse_id'], df_map['馬名']))
+            print(f"[INFO] 载入 {len(name_map)} 个中文马名")
+    except:
+        print("[WARN] 无中文名对照")
+    return name_map
+
+def generate_pool_recommendations(df, top_n=6):
+    top_horses = df.head(top_n)
+    horse_names = top_horses['馬匹名稱'].tolist()
+    probs = top_horses['預測勝率'].tolist()
+    def combo_score(indices):
+        score = 1.0
+        for i in indices:
+            score *= probs[i]
+        return score / len(indices)
+    rec = "【獨贏】\n"
+    for i, row in top_horses.head(3).iterrows():
+        rec += f"  {row['馬匹名稱']} (勝率 {row['預測勝率']:.2%})\n"
+    rec += "\n【位置】\n"
+    for i, row in top_horses.head(4).iterrows():
+        rec += f"  {row['馬匹名稱']} (勝率 {row['預測勝率']:.2%})\n"
+    rec += "\n【連贏】\n"
+    pairs = []
+    for i in range(min(len(horse_names), 5)):
+        for j in range(i+1, min(len(horse_names), 6)):
+            pairs.append((combo_score([i, j]), i, j))
+    pairs.sort(reverse=True)
+    for _, i, j in pairs[:5]:
+        rec += f"  {horse_names[i]} + {horse_names[j]}\n"
+    rec += "\n【位置Q】\n"
+    q_pairs = []
+    for i in range(min(len(horse_names), 6)):
+        for j in range(i+1, min(len(horse_names), 8)):
+            if j < len(horse_names):
+                q_pairs.append((combo_score([i, j]), i, j))
+    q_pairs.sort(reverse=True)
+    for _, i, j in q_pairs[:6]:
+        rec += f"  {horse_names[i]} + {horse_names[j]}\n"
+    rec += "\n【三重彩】\n"
+    tierce = []
+    for i in range(min(len(horse_names), 4)):
+        for j in range(min(len(horse_names), 5)):
+            for k in range(min(len(horse_names), 6)):
+                if i != j and i != k and j != k:
+                    tierce.append((combo_score([i, j, k]), i, j, k))
+    tierce.sort(reverse=True)
+    for _, i, j, k in tierce[:5]:
+        rec += f"  {horse_names[i]} > {horse_names[j]} > {horse_names[k]}\n"
+    rec += "\n【四重彩】\n"
+    quartet = []
+    for i in range(min(len(horse_names), 4)):
+        for j in range(min(len(horse_names), 5)):
+            for k in range(min(len(horse_names), 6)):
+                for l in range(min(len(horse_names), 7)):
+                    if len(set([i, j, k, l])) == 4:
+                        quartet.append((combo_score([i, j, k, l]), i, j, k, l))
+    quartet.sort(reverse=True)
+    for _, i, j, k, l in quartet[:3]:
+        rec += f"  {horse_names[i]} > {horse_names[j]} > {horse_names[k]} > {horse_names[l]}\n"
+    return rec
+
+# ============================================================
+# 主程序
+# ============================================================
 def main():
-    # 設定工作目錄
     script_dir = os.path.dirname(os.path.abspath(__file__))
     os.chdir(script_dir)
-    
-    print("[INFO] 載入模型中...")
+
+    print("[INFO] 载入模型中...")
     try:
         with open('hk_racing_model.pkl', 'rb') as f:
             xgb_obj = pickle.load(f)
@@ -233,110 +332,112 @@ def main():
         with open('hk_ranking_model.pkl', 'rb') as f:
             rank_obj = pickle.load(f)
             rank_model = rank_obj[0] if isinstance(rank_obj, tuple) else rank_obj
-        print("[OK] 所有模型載入成功")
+        print("[OK] 所有模型载入成功")
     except Exception as e:
-        print(f"[ERROR] 模型載入失敗: {e}")
+        print(f"[ERROR] 模型载入失败: {e}")
         sys.exit(1)
 
-    print("[INFO] 讀取排位表...")
+    print("[INFO] 读取排位表...")
     try:
         df = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
-        print(f"[DATA] 排位表共 {len(df)} 筆記錄")
+        print(f"[DATA] 共 {len(df)} 笔记录")
     except Exception as e:
-        print(f"[ERROR] 讀取排位表失敗: {e}")
+        print(f"[ERROR] 读取失败: {e}")
         sys.exit(1)
 
-    # 標準化欄位
-    df = standardize_columns(df)
+    df = standardize_columns_light(df, is_history=False)
+    df = df.loc[:, ~df.columns.duplicated(keep='first')]
     df = ensure_series(df)
 
-    # 處理日期：統一轉為 datetime
-    df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce')
-    df = df.dropna(subset=['race_date'])
+    required = ['horse_id', 'race_no', 'draw', 'act_wt']
+    for col in required:
+        if col not in df.columns:
+            print(f"[ERROR] 缺少栏位：{col}")
+            print(f"[DEBUG] 现有栏位：{df.columns.tolist()}")
+            sys.exit(1)
 
-    if df.empty:
-        print("[ERROR] 無有效日期")
+    if 'race_date' in df.columns:
+        date_col = 'race_date'
+    elif '比賽日期' in df.columns:
+        date_col = '比賽日期'
+    else:
+        print("[ERROR] 找不到日期栏位")
         sys.exit(1)
+    print(f"[INFO] 使用日期栏位：'{date_col}'")
 
-    # 處理場次
+    print("[INFO] 处理日期...")
+    df[date_col] = df[date_col].astype(str).str.strip()
+    if date_col == '比賽日期':
+        df[date_col] = df[date_col].str.extract(r'(\d{8})')[0]
+        df[date_col] = pd.to_datetime(df[date_col], format='%Y%m%d', errors='coerce')
+    else:
+        df[date_col] = df[date_col].str.replace('/', '-')
+        df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
+
+    valid_dates = df[date_col].notna().sum()
+    if valid_dates == 0:
+        print("[ERROR] 无法解析任何日期")
+        sys.exit(1)
+    df = df.dropna(subset=[date_col])
+    print(f"[OK] {valid_dates} 个有效日期")
+
+    print("[INFO] 处理场次...")
+    df['race_no'] = df['race_no'].astype(str).str.extract(r'(\d+)')[0]
     df['race_no'] = pd.to_numeric(df['race_no'], errors='coerce')
     df = df.dropna(subset=['race_no'])
 
-    # 獲取最新日期
-    latest_date = df['race_date'].max()
-    # 預設場次為 9
-    target_race = 9
-    # 如果有命令列參數，簡單解析日期和場次
-    if len(sys.argv) > 1:
-        # 簡單解析，只支援 --date YYYY-MM-DD --race N
-        import argparse
-        parser = argparse.ArgumentParser()
-        parser.add_argument('--date', type=str)
-        parser.add_argument('--race', type=int, default=9)
-        args, unknown = parser.parse_known_args()
-        if args.date:
-            target_date = pd.to_datetime(args.date)
-            if target_date in df['race_date'].values:
-                latest_date = target_date
-            else:
-                print(f"[WARN] 日期 {args.date} 無數據，使用最新日期 {latest_date.strftime('%Y-%m-%d')}")
-        if args.race:
-            target_race = args.race
-
-    # 選取指定場次
-    race_sel = df[(df['race_date'] == latest_date) & (df['race_no'] == target_race)]
-    if race_sel.empty:
-        # 如果指定場次無數據，使用最後一場
-        max_race = df[df['race_date'] == latest_date]['race_no'].max()
-        race_sel = df[(df['race_date'] == latest_date) & (df['race_no'] == max_race)]
-
-    if race_sel.empty:
-        print("[ERROR] 無法選取場次")
+    if target_date:
+        selected = pd.to_datetime(target_date)
+        if selected not in df[date_col].values:
+            print(f"[ERROR] 日期 {target_date} 无数据")
+            print("[DEBUG] 可用日期：", sorted(df[date_col].unique()))
+            sys.exit(1)
+        latest_date = selected
+    else:
+        latest_date = df[date_col].max()
+    if pd.isna(latest_date):
+        print("[ERROR] 无有效日期")
         sys.exit(1)
 
-    display_race_no = int(race_sel['race_no'].iloc[0])
-    display_date = latest_date.strftime('%Y-%m-%d')
-    print(f"[OK] 選取 {display_date} 第 {display_race_no} 場，共 {len(race_sel)} 匹")
+    race_sel = df[(df[date_col] == latest_date) & (df['race_no'] == target_race_no)]
+    if race_sel.empty:
+        print(f"[ERROR] 日期 {latest_date.strftime('%Y-%m-%d')} 第 {target_race_no} 场无数据")
+        print("[DEBUG] 该日可用场次：", sorted(df[df[date_col] == latest_date]['race_no'].unique()))
+        sys.exit(1)
 
-    # 載入歷史數據
-    print("[INFO] 載入歷史數據...")
+    display_date = latest_date.strftime('%Y-%m-%d')
+    display_race = int(race_sel['race_no'].iloc[0])
+    print(f"[OK] 选取 {display_date} 第 {display_race} 场，共 {len(race_sel)} 匹")
+
+    print("[INFO] 载入历史数据...")
     try:
         history = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
-        print(f"[DATA] 歷史數據 {len(history)} 筆")
+        print(f"[DATA] 历史数据 {len(history)} 笔")
     except Exception as e:
-        print(f"[ERROR] 載入歷史數據失敗: {e}")
+        print(f"[ERROR] 载入历史数据失败: {e}")
         sys.exit(1)
 
-    history = standardize_columns(history)
-    history['race_date'] = pd.to_datetime(history['race_date'], errors='coerce')
-    history = history.dropna(subset=['race_date'])
+    history = standardize_columns_light(history, is_history=True)
+    history = history.loc[:, ~history.columns.duplicated(keep='first')]
+    history = ensure_series(history)
+    if '比賽日期' in history.columns and 'race_date' not in history.columns:
+        history['race_date'] = history['比賽日期']
 
-    # 生成特徵
-    print("[INFO] 生成特徵...")
+    horse_name_map = build_horse_name_map()
+
+    print("[INFO] 生成特征...")
     race_sel = get_latest_features(race_sel, history)
     race_sel = compute_stats(race_sel, history, latest_date)
-
-    # 中文名對應
-    horse_name_map = {}
-    try:
-        name_df = pd.read_csv('horse_name_mapping.csv', encoding='utf-8-sig')
-        if 'horse_id' in name_df.columns and '馬名' in name_df.columns:
-            horse_name_map = dict(zip(name_df['horse_id'], name_df['馬名']))
-            print(f"[INFO] 載入 {len(horse_name_map)} 個中文名")
-    except:
-        print("[WARN] 沒有中文名對照表")
-
     race_sel['中文名'] = race_sel['horse_id'].map(horse_name_map).fillna(race_sel['horse_id'])
 
-    # 賠率處理
     if 'win_odds' not in race_sel.columns:
+        print("[WARN] 无赔率，使用预设 4.0")
         race_sel['win_odds'] = 4.0
     else:
         race_sel['win_odds'] = race_sel['win_odds'].replace(0, 4.0).fillna(4.0)
     race_sel['win_odds'] = pd.to_numeric(race_sel['win_odds'], errors='coerce').fillna(4.0)
     race_sel['odds_rank_in_race'] = race_sel['win_odds'].rank(ascending=True)
 
-    # 填補特徵
     for f in FEATURES_EN:
         if f not in race_sel.columns:
             race_sel[f] = 0
@@ -353,31 +454,41 @@ def main():
             X[col] = 0
     X = X[EXPECTED_FEATURES]
 
-    # 預測
+    print("[INFO] 执行预测...")
     prob_xgb = xgb_model.predict_proba(X)[:, 1]
     prob_cat = cat_model.predict_proba(X)[:, 1]
     prob_final = (prob_xgb * 25 + prob_cat) / 26
     rank_score = rank_model.predict(X)
 
-    # 輸出結果
     result = race_sel[['中文名', 'draw', 'win_odds']].copy()
     result.rename(columns={'中文名': '馬匹名稱', 'draw': '檔位', 'win_odds': '賠率'}, inplace=True)
     result['比賽日期'] = display_date
-    result['場次'] = display_race_no
+    result['場次'] = display_race
     result['預測勝率'] = prob_final
     result['排名分數'] = rank_score
     result['值博指數'] = result['預測勝率'] / result['賠率']
     result = result.sort_values('值博指數', ascending=False)
 
     result.to_csv('prediction_result.csv', index=False)
-    print("[OK] 預測完成")
+    print("[OK] 预测完成，结果已保存至 prediction_result.csv")
 
     print("\n" + "="*50)
-    print(f"🏇 {display_date} 第 {display_race_no} 場 預測 TOP 5")
+    print(f"🏇 {display_date} 第 {display_race} 場 預測 TOP 5")
     print("="*50)
     for _, row in result.head(5).iterrows():
         print(f"{row['馬匹名稱']} (檔位 {row['檔位']})  勝率 {row['預測勝率']:.2%}  值博指數 {row['值博指數']:.3f}")
     print("="*50)
+
+    print("\n" + "="*50)
+    print("🎯 彩池推薦")
+    print("="*50)
+    print(generate_pool_recommendations(result))
+    print("="*50)
+
+    with open('pool_recommendations.txt', 'w', encoding='utf-8') as f:
+        f.write(f"🏇 {display_date} 第 {display_race} 場\n")
+        f.write(generate_pool_recommendations(result))
+    print("[OK] 彩池推薦已儲存至 pool_recommendations.txt")
 
 if __name__ == '__main__':
     main()
