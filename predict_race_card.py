@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-predict_race_card.py - 完整版（含彩池預測：獨贏/位置/連贏/位置Q/三重彩/四重彩）
+predict_race_card.py - 完整版（兼容中英文欄位名，支援日期/場次參數，彩池推薦）
 """
 
 import sys
@@ -104,18 +104,48 @@ NAME_MAPPING = {
 }
 
 # ============================================================
-# 3. 輔助函數
+# 3. 擴充欄位標準化函數（支援中英文）
 # ============================================================
 def standardize_columns(df):
     rename_map = {
+        # 原有中文
         '騎師': 'jockey', '練馬師': 'trainer', '路程': 'distance',
         '場地': 'going', '檔位': 'draw', '評分': 'rtg',
         '馬匹編號': 'horse_id', '比賽日期': 'race_date', '場次': 'race_no',
         '馬場': 'race_course', '實際負磅': 'act_wt',
         '名次': 'finish_position', '最終名次': 'finish_position',
-        'Position': 'finish_position', 'Rank': 'finish_position',
-        'pos': 'finish_position', '排名': 'finish_position',
-        '馬名': 'horse_name'
+        '排名': 'finish_position',
+        '馬名': 'horse_name',
+        '馬匹名稱': 'horse_name',
+        '賠率': 'win_odds',
+        '獨贏賠率': 'win_odds',
+        # 英文常見變體
+        'Horse': 'horse_id',
+        'Horse ID': 'horse_id',
+        'HorseId': 'horse_id',
+        'Draw': 'draw',
+        'Jockey': 'jockey',
+        'Trainer': 'trainer',
+        'Weight': 'act_wt',
+        'Actual Weight': 'act_wt',
+        'Odds': 'win_odds',
+        'Win Odds': 'win_odds',
+        'WinOdds': 'win_odds',
+        'Race No': 'race_no',
+        'RaceNo': 'race_no',
+        'Race Date': 'race_date',
+        'RaceDate': 'race_date',
+        'Horse Name': 'horse_name',
+        'HorseName': 'horse_name',
+        'Name': 'horse_name',
+        'Position': 'finish_position',
+        'Rank': 'finish_position',
+        'Distance': 'distance',
+        'Going': 'going',
+        'Rtg': 'rtg',
+        'Rating': 'rtg',
+        'Course': 'race_course',
+        'RaceCourse': 'race_course'
     }
     df.rename(columns=rename_map, inplace=True, errors='ignore')
     return df
@@ -267,17 +297,10 @@ def build_horse_name_map():
 # 4. 彩池推薦函數
 # ============================================================
 def generate_pool_recommendations(df, top_n=6):
-    """
-    根據預測勝率生成彩池推薦
-    df: 已排序嘅預測結果 DataFrame
-    top_n: 用於組合嘅馬匹數量（預設 6 匹）
-    """
-    # 取前 N 匹馬
     top_horses = df.head(top_n)
     horse_names = top_horses['馬匹名稱'].tolist()
     probs = top_horses['預測勝率'].tolist()
     
-    # 計算「組合得分」：勝率乘積 / 組合數量
     def combo_score(indices):
         score = 1.0
         for i in indices:
@@ -286,19 +309,16 @@ def generate_pool_recommendations(df, top_n=6):
     
     recommendations = []
     
-    # 1. 獨贏推薦（直接用預測結果）
     rec = "【獨贏】\n"
     for i, row in top_horses.head(3).iterrows():
         rec += f"  {row['馬匹名稱']} (勝率 {row['預測勝率']:.2%})\n"
     recommendations.append(rec)
     
-    # 2. 位置推薦（頭 4 匹）
     rec = "【位置】\n"
     for i, row in top_horses.head(4).iterrows():
         rec += f"  {row['馬匹名稱']} (勝率 {row['預測勝率']:.2%})\n"
     recommendations.append(rec)
     
-    # 3. 連贏推薦（組合勝率最高嘅 2 匹組合）
     rec = "【連贏】\n"
     pairs = []
     for i in range(min(len(horse_names), 5)):
@@ -310,7 +330,6 @@ def generate_pool_recommendations(df, top_n=6):
         rec += f"  {horse_names[i]} + {horse_names[j]}\n"
     recommendations.append(rec)
     
-    # 4. 位置Q推薦（連贏嘅擴展版，揀多啲組合）
     rec = "【位置Q】\n"
     q_pairs = []
     for i in range(min(len(horse_names), 6)):
@@ -323,7 +342,6 @@ def generate_pool_recommendations(df, top_n=6):
         rec += f"  {horse_names[i]} + {horse_names[j]}\n"
     recommendations.append(rec)
     
-    # 5. 三重彩推薦（前 3 名順序組合）
     rec = "【三重彩】\n"
     tierce_list = []
     for i in range(min(len(horse_names), 4)):
@@ -337,7 +355,6 @@ def generate_pool_recommendations(df, top_n=6):
         rec += f"  {horse_names[i]} > {horse_names[j]} > {horse_names[k]}\n"
     recommendations.append(rec)
     
-    # 6. 四重彩推薦（前 4 名順序組合）
     rec = "【四重彩】\n"
     quartet_list = []
     for i in range(min(len(horse_names), 4)):
@@ -380,42 +397,41 @@ def main():
 
     print("[INFO] 讀取排位表...")
     try:
-        df = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv')
+        df = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
         print(f"[DATA] 排位表共 {len(df)} 筆記錄")
     except Exception as e:
         print(f"[ERROR] 讀取排位表失敗: {e}")
         sys.exit(1)
 
-    if df.columns.duplicated().any():
-        df = df.loc[:, ~df.columns.duplicated(keep='first')]
+    # 標準化欄位名（支援中英文）
     df = standardize_columns(df)
     if df.columns.duplicated().any():
         df = df.loc[:, ~df.columns.duplicated(keep='first')]
     df = ensure_series(df)
 
-    print("[INFO] 處理日期...")
-    if 'race_date' not in df.columns:
-        print("[ERROR] 找不到日期欄位")
+    # 檢查必要欄位是否存在
+    required_cols = ['horse_id', 'race_date', 'race_no', 'draw', 'act_wt', 'win_odds']
+    missing = [c for c in required_cols if c not in df.columns]
+    if missing:
+        print(f"[ERROR] 缺少必要欄位：{missing}")
+        print(f"[INFO] 現有欄位：{df.columns.tolist()}")
         sys.exit(1)
-    df['race_date'] = df['race_date'].astype(str).str.extract(r'(\d{8})')[0]
-    df['race_date'] = pd.to_datetime(df['race_date'], format='%Y%m%d', errors='coerce')
+
+    print("[INFO] 處理日期...")
+    df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce')
     df = df.dropna(subset=['race_date'])
     if df.empty:
         print("[ERROR] 無有效日期")
         sys.exit(1)
 
     print("[INFO] 處理場次...")
-    if 'race_no' not in df.columns:
-        print("[ERROR] 缺少 'race_no' 欄位")
-        sys.exit(1)
-    df['race_no'] = df['race_no'].astype(str).str.extract(r'(\d+)')[0]
     df['race_no'] = pd.to_numeric(df['race_no'], errors='coerce')
     df = df.dropna(subset=['race_no'])
     if df.empty:
         print("[ERROR] 無有效場次")
         sys.exit(1)
 
-    # ===== 選擇日期（無數據時報錯） =====
+    # 選擇日期
     if target_date:
         selected_date = pd.to_datetime(target_date)
         if selected_date not in df['race_date'].values:
@@ -429,7 +445,7 @@ def main():
         print("[ERROR] 無法找到有效日期")
         sys.exit(1)
 
-    # ===== 選擇場次 =====
+    # 選擇場次
     race_sel = df[(df['race_date'] == latest_date) & (df['race_no'] == target_race_no)]
     if race_sel.empty:
         print(f"[ERROR] 日期 {latest_date.strftime('%Y-%m-%d')} 第 {target_race_no} 場無數據")
@@ -441,7 +457,7 @@ def main():
 
     print("[INFO] 載入歷史數據...")
     try:
-        history = pd.read_csv('ALL_DATA_MERGED.csv')
+        history = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
         print(f"[DATA] 歷史數據 {len(history)} 筆")
     except Exception as e:
         print(f"[ERROR] 載入歷史數據失敗: {e}")
@@ -527,7 +543,6 @@ def main():
     print(pool_rec)
     print("="*50 + "\n")
 
-    # 儲存彩池推薦到檔案
     with open('pool_recommendations.txt', 'w', encoding='utf-8') as f:
         f.write(f"🏇 {display_date} 第 {display_race_no} 場 彩池推薦\n")
         f.write("="*50 + "\n")
