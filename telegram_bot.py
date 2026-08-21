@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Telegram Bot - 賽馬預測完整版（顯示日期 + 指定場次）
+Telegram Bot - 賽馬預測完整版（支援日期 + 場次）
 """
 
 import sys
@@ -16,6 +16,7 @@ import subprocess
 import pandas as pd
 import time
 import json
+import re
 from datetime import datetime
 
 # ============================================================
@@ -120,7 +121,7 @@ def run_script(script_name, args=None):
     
     cmd = ['python', script_name]
     if args:
-        cmd.extend([str(a) for a in args])
+        cmd.extend(args)
     
     result = subprocess.run(
         cmd,
@@ -152,16 +153,48 @@ def get_name_columns(df):
 # 🏇 一般用戶指令
 # ============================================================
 
-def cmd_predict(chat_id, race_no=None):
-    """執行預測（可選指定場次）"""
+def cmd_predict(chat_id, args_text=None):
+    """
+    解析用戶輸入，構造參數執行預測
+    args_text 係用戶打完 /預測 之後嘅文字
+    例如: "5" 或 "2026-07-15 5"
+    """
+    # 預設值
+    date_str = None
+    race_no = None
+    
+    if args_text:
+        # 用正則搵日期 (YYYY-MM-DD)
+        date_match = re.search(r'(\d{4}-\d{2}-\d{2})', args_text)
+        if date_match:
+            date_str = date_match.group(1)
+            # 移除日期部分，剩低數字
+            remaining = re.sub(r'\d{4}-\d{2}-\d{2}', '', args_text).strip()
+        else:
+            remaining = args_text.strip()
+        
+        # 搵數字（場次）
+        if remaining:
+            num_match = re.search(r'(\d+)', remaining)
+            if num_match:
+                race_no = int(num_match.group(1))
+    
+    # 構造命令行參數
+    cmd_args = []
+    if date_str:
+        cmd_args.extend(['--date', date_str])
     if race_no:
-        logger.info(f"用戶 {chat_id} 觸發預測第 {race_no} 場")
-        send_message(chat_id, f"🏇 開始執行預測第 {race_no} 場...")
-        result = run_script('predict_race_card.py', [race_no])
+        cmd_args.extend(['--race', str(race_no)])
+    # 如果冇指定日期同場次，就唔加任何參數（自動最新第9場）
+    
+    if cmd_args:
+        logger.info(f"用戶 {chat_id} 觸發預測：{cmd_args}")
+        send_message(chat_id, f"🏇 開始執行預測 {' '.join(cmd_args)}...")
     else:
-        logger.info(f"用戶 {chat_id} 觸發預測（自動場次）")
+        logger.info(f"用戶 {chat_id} 觸發預測（自動）")
         send_message(chat_id, "🏇 開始執行預測...")
-        result = run_script('predict_race_card.py')
+    
+    result = run_script('predict_race_card.py', cmd_args)
     
     if result.returncode != 0:
         send_message(chat_id, f"❌ 預測失敗：\n{result.stderr[:500]}")
@@ -179,8 +212,6 @@ def cmd_predict(chat_id, race_no=None):
         value_col = '值博指數' if '值博指數' in df.columns else 'value'
         
         top5 = df.head(5)
-        
-        # ✅ 標題加入日期
         msg = f"🏇 {race_date} 第 {race_no_display} 場 預測 TOP 5\n\n"
         for i, row in top5.iterrows():
             horse = row.get(name_col, '未知')
@@ -510,18 +541,10 @@ def handle_message(chat_id, text):
     
     # 一般用戶指令
     if cmd.startswith('/predict') or cmd.startswith('/預測'):
-        parts = text.split()
-        if len(parts) > 1:
-            try:
-                race_no = int(parts[1])
-                if 1 <= race_no <= 99:
-                    cmd_predict(chat_id, race_no)
-                else:
-                    send_message(chat_id, "請輸入有效場次號碼（1-99），例如：/預測 5")
-            except ValueError:
-                send_message(chat_id, "請輸入有效場次號碼，例如：/預測 5")
-        else:
-            cmd_predict(chat_id)
+        # 提取參數部分（指令名稱之後嘅文字）
+        parts = text.split(maxsplit=1)
+        args = parts[1] if len(parts) > 1 else ''
+        cmd_predict(chat_id, args)
     elif cmd in ['/schedule', '/賽程']:
         cmd_schedule(chat_id)
     elif cmd.startswith('/horse') or cmd.startswith('/馬匹'):
@@ -547,6 +570,8 @@ def handle_message(chat_id, text):
 🏇 預測類：
 /預測 - 自動預測最新賽日第9場
 /預測 5 - 預測最新賽日第5場
+/預測 2026-07-15 - 預測指定日期第9場
+/預測 2026-07-15 5 - 預測指定日期第5場
 
 📊 查詢類：
 /賽程 - 顯示今日賽程
