@@ -1,16 +1,18 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-predict_race_card.py - 完整版（支援指定場次，輸出日期）
+predict_race_card.py - 完整版（支援指定日期 + 場次）
 用法：
-  python predict_race_card.py        # 自動揀第9場
-  python predict_race_card.py 5      # 預測第5場
+  python predict_race_card.py                              # 自動：最新日期，第9場
+  python predict_race_card.py --date 2026-07-15           # 指定日期，第9場
+  python predict_race_card.py --date 2026-07-15 --race 5  # 指定日期 + 指定場次
 """
 
 import sys
 import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
+import argparse
 import pandas as pd
 import numpy as np
 import pickle
@@ -20,15 +22,22 @@ warnings.filterwarnings('ignore')
 from catboost import CatBoostClassifier
 
 # ============================================================
-# 1. 檢查有冇指定場次參數
+# 1. 解析 Command Line 參數
 # ============================================================
-target_race_no = None
-if len(sys.argv) > 1:
-    try:
-        target_race_no = int(sys.argv[1])
-        print(f"[INFO] 指定預測第 {target_race_no} 場")
-    except ValueError:
-        print("[WARN] 參數無效，將自動選擇場次")
+parser = argparse.ArgumentParser(description='賽馬預測系統')
+parser.add_argument('--date', type=str, help='指定日期，格式 YYYY-MM-DD')
+parser.add_argument('--race', type=int, default=9, help='指定場次號碼，預設 9')
+args = parser.parse_args()
+
+target_date = args.date
+target_race_no = args.race
+
+if target_date:
+    print(f"[INFO] 指定日期：{target_date}")
+else:
+    print("[INFO] 自動選取最新日期")
+
+print(f"[INFO] 指定場次：第 {target_race_no} 場")
 
 # ============================================================
 # 2. 36 個特徵（英文名）
@@ -50,9 +59,6 @@ FEATURES_EN = [
     'total_injuries', 'injury_severity'
 ]
 
-# ============================================================
-# 3. 模型期望嘅特徵名稱（中文）及順序
-# ============================================================
 EXPECTED_FEATURES = [
     'draw', 'weight', 'distance', 'Rtg.', '近3場平均名次',
     '騎師近50場勝率', '練馬師近50場勝率', '同路程歷史勝率',
@@ -66,12 +72,8 @@ EXPECTED_FEATURES = [
     '傷患總次數', '傷患嚴重程度'
 ]
 
-# ============================================================
-# 4. 名稱映射（英文 → 模型期望嘅中文）
-# ============================================================
 NAME_MAPPING = {
-    'act_wt': 'weight',
-    'rtg': 'Rtg.',
+    'act_wt': 'weight', 'rtg': 'Rtg.',
     'avg_rank_last3': '近3場平均名次',
     'jockey_win_rate_50': '騎師近50場勝率',
     'trainer_win_rate_50': '練馬師近50場勝率',
@@ -104,11 +106,7 @@ NAME_MAPPING = {
     'total_injuries': '傷患總次數',
     'injury_severity': '傷患嚴重程度'
 }
-# draw, distance, win_odds 保持不變
 
-# ============================================================
-# 5. 輔助函數
-# ============================================================
 def standardize_columns(df):
     rename_map = {
         '騎師': 'jockey', '練馬師': 'trainer', '路程': 'distance',
@@ -267,10 +265,10 @@ def build_horse_name_map():
     return name_map
 
 # ============================================================
-# 6. 主程式
+# 3. 主程式
 # ============================================================
 def main():
-    global target_race_no
+    global target_date, target_race_no
     
     script_dir = os.path.dirname(os.path.abspath(__file__))
     os.chdir(script_dir)
@@ -327,19 +325,28 @@ def main():
         print("[ERROR] 無有效場次")
         sys.exit(1)
 
-    latest_date = df['race_date'].max()
+    # ===== 選擇日期 =====
+    if target_date:
+        selected_date = pd.to_datetime(target_date)
+        # 檢查該日期是否存在
+        if selected_date not in df['race_date'].values:
+            print(f"[WARN] 日期 {target_date} 無數據，改為自動選取最新日期")
+            target_date = None
+    
+    if target_date is None:
+        latest_date = df['race_date'].max()
+    else:
+        latest_date = selected_date
+    
     if pd.isna(latest_date):
         print("[ERROR] 無法找到有效日期")
         sys.exit(1)
 
-    # ----- 選擇場次（支援參數）-----
-    if target_race_no is not None:
-        race_sel = df[(df['race_date'] == latest_date) & (df['race_no'] == target_race_no)]
-        if race_sel.empty:
-            print(f"[WARN] 第 {target_race_no} 場無數據，改為自動選擇")
-            target_race_no = None
-
-    if target_race_no is None:
+    # ===== 選擇場次 =====
+    race_sel = df[(df['race_date'] == latest_date) & (df['race_no'] == target_race_no)]
+    if race_sel.empty:
+        print(f"[WARN] 第 {target_race_no} 場無數據，改為自動選擇")
+        # 自動選擇第9場或最後一場
         race_sel = df[(df['race_date'] == latest_date) & (df['race_no'] == 9)]
         if race_sel.empty:
             max_race = df[df['race_date'] == latest_date]['race_no'].max()
@@ -415,8 +422,8 @@ def main():
     # ---- 輸出結果（含日期） ----
     result = race_sel[['中文名', 'draw', 'win_odds']].copy()
     result.rename(columns={'中文名': '馬匹名稱', 'draw': '檔位', 'win_odds': '賠率'}, inplace=True)
-    result['比賽日期'] = display_date          # ✅ 新增日期欄位
-    result['場次'] = display_race_no           # ✅ 新增場次欄位
+    result['比賽日期'] = display_date
+    result['場次'] = display_race_no
     result['預測勝率'] = prob_final
     result['排名分數'] = rank_score
     result['值博指數'] = result['預測勝率'] / result['賠率']
