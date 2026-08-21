@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Telegram Bot - 賽馬預測完整版（所有指令齊全）
-支援：預測、賽程、馬匹查詢、騎師查詢、訂閱、管理員功能
+Telegram Bot - 賽馬預測完整版（連封鎖/解鎖功能）
+所有指令即時回覆，無需加入任何頻道
 """
 
 import sys
@@ -54,10 +54,11 @@ logger.addHandler(console_handler)
 # 🔐 設定（請填你嘅資料）
 # ============================================================
 TOKEN = '8848079617:AAGaWmM9IJa7raA2qBoErlRYPuddGlYHaJA'          # 去 @BotFather 換新 Token
-ADMIN_ID = '7988559873'          # 你嘅 Telegram ID
+ADMIN_ID = '7988559873'          # 你嘅 Telegram ID（管理員）
 
-# 訂閱用戶檔案
+# 檔案
 SUBSCRIBE_FILE = 'subscribers.json'
+BLOCK_FILE = 'blocked_users.json'
 
 # ============================================================
 # 📁 訂閱管理
@@ -71,6 +72,22 @@ def load_subscribers():
 def save_subscribers(subscribers):
     with open(SUBSCRIBE_FILE, 'w', encoding='utf-8') as f:
         json.dump(subscribers, f, ensure_ascii=False, indent=2)
+
+# ============================================================
+# 🚫 封鎖管理
+# ============================================================
+def load_blocked():
+    if os.path.exists(BLOCK_FILE):
+        with open(BLOCK_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return []
+
+def save_blocked(blocked):
+    with open(BLOCK_FILE, 'w', encoding='utf-8') as f:
+        json.dump(blocked, f, ensure_ascii=False, indent=2)
+
+def is_blocked(chat_id):
+    return str(chat_id) in load_blocked()
 
 def is_admin(chat_id):
     return str(chat_id) == str(ADMIN_ID)
@@ -120,15 +137,15 @@ def run_script(script_name):
 # 1. 預測
 def cmd_predict(chat_id):
     logger.info(f"用戶 {chat_id} 觸發預測")
-    send_message(chat_id, "開始執行預測...")
+    send_message(chat_id, "🏇 開始執行預測...")
     result = run_script('predict_race_card.py')
     if result.returncode != 0:
-        send_message(chat_id, f"預測失敗：\n{result.stderr[:500]}")
+        send_message(chat_id, f"❌ 預測失敗：\n{result.stderr[:500]}")
         return
     try:
         df = pd.read_csv('prediction_result.csv')
         top5 = df.head(5)
-        msg = "預測結果 TOP 5\n\n"
+        msg = "🏇 預測結果 TOP 5\n\n"
         for i, row in top5.iterrows():
             horse = row.get('馬匹編號', '未知')
             draw = row.get('draw', '?')
@@ -136,72 +153,72 @@ def cmd_predict(chat_id):
             value = row.get('值博指數', 0)
             msg += f"{horse} (檔位 {draw})  勝率 {win_rate:.2%}  值博指數 {value:.3f}\n"
         send_message(chat_id, msg)
-        send_message(chat_id, "預測完成！")
+        send_message(chat_id, "✅ 預測完成！")
         logger.info(f"預測完成，已發送結果給 {chat_id}")
     except Exception as e:
         logger.error(f"讀取結果失敗：{e}")
-        send_message(chat_id, f"讀取結果失敗：{str(e)}")
+        send_message(chat_id, f"❌ 讀取結果失敗：{str(e)}")
 
 # 2. 今日賽程
 def cmd_schedule(chat_id):
     logger.info(f"用戶 {chat_id} 查詢賽程")
-    send_message(chat_id, "正在查詢今日賽程...")
+    send_message(chat_id, "📅 正在查詢今日賽程...")
     try:
         df = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv')
         df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce')
         today = datetime.now().date()
         today_races = df[df['race_date'].dt.date == today]
         if today_races.empty:
-            send_message(chat_id, "今日沒有賽事")
+            send_message(chat_id, "📅 今日沒有賽事")
         else:
             courses = today_races['race_course'].unique()
-            msg = f"今日賽程 ({today})\n\n"
+            msg = f"📅 今日賽程 ({today})\n\n"
             for course in courses:
                 races = today_races[today_races['race_course'] == course]['race_no'].unique()
-                msg += f"{course}: 第 {', '.join(map(str, sorted(races)))} 場\n"
+                msg += f"🏟️ {course}: 第 {', '.join(map(str, sorted(races)))} 場\n"
             send_message(chat_id, msg)
     except Exception as e:
         logger.error(f"查詢賽程失敗：{e}")
-        send_message(chat_id, f"查詢失敗：{str(e)}")
+        send_message(chat_id, f"❌ 查詢失敗：{str(e)}")
 
 # 3. 馬匹查詢
 def cmd_horse(chat_id, horse_id):
     logger.info(f"用戶 {chat_id} 查詢馬匹 {horse_id}")
-    send_message(chat_id, f"正在查詢馬匹 {horse_id}...")
+    send_message(chat_id, f"🔍 正在查詢馬匹 {horse_id}...")
     try:
         df = pd.read_csv('ALL_DATA_MERGED.csv')
         horse_data = df[df['horse_id'] == horse_id]
         if horse_data.empty:
-            send_message(chat_id, f"找不到馬匹 {horse_id}")
+            send_message(chat_id, f"❌ 找不到馬匹 {horse_id}")
             return
         total = len(horse_data)
         wins = (horse_data['finish_position'] == 1).sum() if 'finish_position' in horse_data.columns else 0
         win_rate = wins / total * 100 if total > 0 else 0
         recent = horse_data.sort_values('race_date').tail(3)['finish_position'].tolist()
-        msg = f"馬匹 {horse_id}\n\n總出賽：{total}\n頭馬：{wins}\n勝率：{win_rate:.1f}%\n近3場名次：{', '.join(map(str, recent))}"
+        msg = f"🐴 馬匹 {horse_id}\n\n總出賽：{total}\n頭馬：{wins}\n勝率：{win_rate:.1f}%\n近3場名次：{', '.join(map(str, recent))}"
         send_message(chat_id, msg)
     except Exception as e:
         logger.error(f"查詢馬匹失敗：{e}")
-        send_message(chat_id, f"查詢失敗：{str(e)}")
+        send_message(chat_id, f"❌ 查詢失敗：{str(e)}")
 
 # 4. 騎師查詢
 def cmd_jockey(chat_id, jockey_name):
     logger.info(f"用戶 {chat_id} 查詢騎師 {jockey_name}")
-    send_message(chat_id, f"正在查詢騎師 {jockey_name}...")
+    send_message(chat_id, f"🔍 正在查詢騎師 {jockey_name}...")
     try:
         df = pd.read_csv('ALL_DATA_MERGED.csv')
         jockey_data = df[df['jockey'] == jockey_name]
         if jockey_data.empty:
-            send_message(chat_id, f"找不到騎師 {jockey_name}")
+            send_message(chat_id, f"❌ 找不到騎師 {jockey_name}")
             return
         total = len(jockey_data)
         wins = (jockey_data['finish_position'] == 1).sum() if 'finish_position' in jockey_data.columns else 0
         win_rate = wins / total * 100 if total > 0 else 0
-        msg = f"騎師 {jockey_name}\n\n總出賽：{total}\n頭馬：{wins}\n勝率：{win_rate:.1f}%"
+        msg = f"🏇 騎師 {jockey_name}\n\n總出賽：{total}\n頭馬：{wins}\n勝率：{win_rate:.1f}%"
         send_message(chat_id, msg)
     except Exception as e:
         logger.error(f"查詢騎師失敗：{e}")
-        send_message(chat_id, f"查詢失敗：{str(e)}")
+        send_message(chat_id, f"❌ 查詢失敗：{str(e)}")
 
 # 5. 訂閱
 def cmd_subscribe(chat_id):
@@ -209,10 +226,10 @@ def cmd_subscribe(chat_id):
     if str(chat_id) not in subscribers:
         subscribers.append(str(chat_id))
         save_subscribers(subscribers)
-        send_message(chat_id, "訂閱成功！每日會自動收到預測報告。")
+        send_message(chat_id, "✅ 訂閱成功！每日會自動收到預測報告。")
         logger.info(f"用戶 {chat_id} 已訂閱")
     else:
-        send_message(chat_id, "你已經訂閱咗。")
+        send_message(chat_id, "⚠️ 你已經訂閱咗。")
 
 # 6. 取消訂閱
 def cmd_unsubscribe(chat_id):
@@ -220,10 +237,10 @@ def cmd_unsubscribe(chat_id):
     if str(chat_id) in subscribers:
         subscribers.remove(str(chat_id))
         save_subscribers(subscribers)
-        send_message(chat_id, "已取消訂閱。")
+        send_message(chat_id, "✅ 已取消訂閱。")
         logger.info(f"用戶 {chat_id} 已取消訂閱")
     else:
-        send_message(chat_id, "你並未訂閱。")
+        send_message(chat_id, "⚠️ 你並未訂閱。")
 
 # ============================================================
 # 🔐 管理員指令（只限你）
@@ -231,27 +248,28 @@ def cmd_unsubscribe(chat_id):
 
 # 7. 系統狀態
 def cmd_status(chat_id):
-    status = "系統狀態報告\n"
+    status = "📊 系統狀態報告\n"
     status += "─" * 30 + "\n"
-    status += f"時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-    status += f"訂閱用戶：{len(load_subscribers())} 人\n"
+    status += f"🕐 時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+    status += f"👥 訂閱用戶：{len(load_subscribers())} 人\n"
+    status += f"🚫 被封鎖用戶：{len(load_blocked())} 人\n"
     files = ['ALL_DATA_MERGED.csv', 'HKCJ_FULL_YEAR_DATA.csv', 'hk_racing_model.pkl']
     for f in files:
         exists = os.path.exists(f)
         size = os.path.getsize(f) if exists else 0
-        status += f"{'[OK]' if exists else '[ERROR]'} {f}: {size/1024/1024:.1f}MB\n"
+        status += f"{'✅' if exists else '❌'} {f}: {size/1024/1024:.1f}MB\n"
     send_message(chat_id, status)
     logger.info(f"管理員 {chat_id} 查詢系統狀態")
 
 # 8. 更新排位表
 def cmd_update(chat_id):
     logger.info(f"管理員 {chat_id} 觸發更新")
-    send_message(chat_id, "正在更新排位表...")
+    send_message(chat_id, "🔄 正在更新排位表...")
     result = run_script('scrape_racecard_with_odds.py')
     if result.returncode != 0:
-        send_message(chat_id, f"更新失敗：\n{result.stderr[:500]}")
+        send_message(chat_id, f"❌ 更新失敗：\n{result.stderr[:500]}")
         return
-    send_message(chat_id, "排位表已更新！")
+    send_message(chat_id, "✅ 排位表已更新！")
     cmd_predict(chat_id)
 
 # 9. 查看日誌
@@ -262,37 +280,76 @@ def cmd_logs(chat_id):
             with open(LOG_FILE, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
                 last_lines = lines[-30:] if len(lines) > 30 else lines
-                msg = "最近日誌：\n" + "".join(last_lines)
+                msg = "📋 最近日誌：\n" + "".join(last_lines)
                 if len(msg) > 4000:
                     for i in range(0, len(msg), 4000):
                         send_message(chat_id, msg[i:i+4000])
                 else:
                     send_message(chat_id, msg)
         else:
-            send_message(chat_id, "未有日誌檔案")
+            send_message(chat_id, "⚠️ 未有日誌檔案")
     except Exception as e:
         logger.error(f"讀取日誌失敗：{e}")
-        send_message(chat_id, f"讀取日誌失敗：{str(e)}")
+        send_message(chat_id, f"❌ 讀取日誌失敗：{str(e)}")
 
 # 10. 廣播
 def cmd_broadcast(chat_id, message):
     subscribers = load_subscribers()
     if not subscribers:
-        send_message(chat_id, "未有訂閱用戶")
+        send_message(chat_id, "⚠️ 未有訂閱用戶")
         return
     logger.info(f"管理員 {chat_id} 廣播訊息給 {len(subscribers)} 位用戶")
-    send_message(chat_id, f"開始廣播俾 {len(subscribers)} 位用戶...")
+    send_message(chat_id, f"📢 開始廣播俾 {len(subscribers)} 位用戶...")
     for sub in subscribers:
-        send_message(sub, f"廣播：{message}")
+        send_message(sub, f"📢 廣播：{message}")
         time.sleep(0.5)
-    send_message(chat_id, "廣播完成！")
+    send_message(chat_id, "✅ 廣播完成！")
 
 # 11. 重新啟動
 def cmd_restart(chat_id):
     logger.info(f"管理員 {chat_id} 觸發重啟")
-    send_message(chat_id, "正在重新啟動 Bot...")
+    send_message(chat_id, "🔄 正在重新啟動 Bot...")
     subprocess.Popen(['python', 'telegram_bot.py'])
     sys.exit(0)
+
+# 12. 封鎖用戶
+def cmd_block(chat_id, target_id):
+    blocked = load_blocked()
+    if str(target_id) not in blocked:
+        blocked.append(str(target_id))
+        save_blocked(blocked)
+        send_message(chat_id, f"✅ 已封鎖用戶 {target_id}")
+        logger.info(f"管理員 {chat_id} 封鎖用戶 {target_id}")
+    else:
+        send_message(chat_id, f"⚠️ 用戶 {target_id} 已經被封鎖")
+
+# 13. 解鎖用戶
+def cmd_unblock(chat_id, target_id):
+    blocked = load_blocked()
+    if str(target_id) in blocked:
+        blocked.remove(str(target_id))
+        save_blocked(blocked)
+        send_message(chat_id, f"✅ 已解鎖用戶 {target_id}")
+        logger.info(f"管理員 {chat_id} 解鎖用戶 {target_id}")
+    else:
+        send_message(chat_id, f"⚠️ 用戶 {target_id} 未被封鎖")
+
+# 14. 封鎖列表
+def cmd_blocklist(chat_id):
+    blocked = load_blocked()
+    if blocked:
+        msg = "🚫 被封鎖用戶列表：\n" + "\n".join(blocked)
+        send_message(chat_id, msg)
+    else:
+        send_message(chat_id, "✅ 目前沒有被封鎖嘅用戶")
+
+# 15. 檢查用戶狀態
+def cmd_check(chat_id, target_id):
+    blocked = load_blocked()
+    if str(target_id) in blocked:
+        send_message(chat_id, f"🔴 用戶 {target_id} 已被封鎖")
+    else:
+        send_message(chat_id, f"🟢 用戶 {target_id} 未被封鎖")
 
 # ============================================================
 # 📨 訊息處理
@@ -300,74 +357,111 @@ def cmd_restart(chat_id):
 def handle_message(chat_id, text):
     logger.info(f"收到訊息：{text} 來自 {chat_id}")
     
-    # 檢查是否管理員
+    # 檢查用戶是否被封鎖（管理員除外）
+    if not is_admin(chat_id) and is_blocked(chat_id):
+        send_message(chat_id, "🚫 你已被封鎖，無法使用此 Bot")
+        logger.info(f"被封鎖用戶 {chat_id} 嘗試使用 Bot")
+        return
+    
+    # 將指令轉為小寫做比對
+    cmd = text.lower().strip()
     admin_user = is_admin(chat_id)
     
-    # ---------- 管理員指令（只限你） ----------
+    # ---------- 管理員指令 ----------
     if admin_user:
-        if text in ['/status', '/狀態']:
+        if cmd in ['/status', '/狀態']:
             cmd_status(chat_id)
             return
-        elif text in ['/update', '/更新']:
+        elif cmd in ['/update', '/更新']:
             cmd_update(chat_id)
             return
-        elif text in ['/logs', '/日誌']:
+        elif cmd in ['/logs', '/日誌']:
             cmd_logs(chat_id)
             return
-        elif text.startswith('/broadcast') or text.startswith('/廣播'):
+        elif cmd.startswith('/broadcast') or cmd.startswith('/廣播'):
             parts = text.split(' ', 1)
             if len(parts) > 1:
                 cmd_broadcast(chat_id, parts[1])
             else:
                 send_message(chat_id, "請輸入要廣播嘅訊息，例如：/broadcast 今日有賽事！")
             return
-        elif text in ['/restart', '/重啟']:
+        elif cmd in ['/restart', '/重啟']:
             cmd_restart(chat_id)
+            return
+        elif cmd.startswith('/block') and not cmd.startswith('/blocklist'):
+            parts = text.split()
+            if len(parts) > 1:
+                cmd_block(chat_id, parts[1])
+            else:
+                send_message(chat_id, "請輸入要封鎖嘅用戶 ID，例如：/block 123456789")
+            return
+        elif cmd.startswith('/unblock'):
+            parts = text.split()
+            if len(parts) > 1:
+                cmd_unblock(chat_id, parts[1])
+            else:
+                send_message(chat_id, "請輸入要解鎖嘅用戶 ID，例如：/unblock 123456789")
+            return
+        elif cmd in ['/blocklist', '/封鎖列表']:
+            cmd_blocklist(chat_id)
+            return
+        elif cmd.startswith('/check'):
+            parts = text.split()
+            if len(parts) > 1:
+                cmd_check(chat_id, parts[1])
+            else:
+                send_message(chat_id, "請輸入要檢查嘅用戶 ID，例如：/check 123456789")
             return
     
     # ---------- 一般用戶指令 ----------
-    if text in ['/predict', '/預測']:
+    if cmd in ['/predict', '/預測']:
         cmd_predict(chat_id)
-    elif text in ['/schedule', '/賽程']:
+    elif cmd in ['/schedule', '/賽程']:
         cmd_schedule(chat_id)
-    elif text.startswith('/horse') or text.startswith('/馬匹'):
+    elif cmd.startswith('/horse') or cmd.startswith('/馬匹'):
         parts = text.split()
         if len(parts) > 1:
             cmd_horse(chat_id, parts[1])
         else:
             send_message(chat_id, "請輸入馬匹編號，例如：/馬匹 G123")
-    elif text.startswith('/jockey') or text.startswith('/騎師'):
+    elif cmd.startswith('/jockey') or cmd.startswith('/騎師'):
         parts = text.split()
         if len(parts) > 1:
             cmd_jockey(chat_id, ' '.join(parts[1:]))
         else:
             send_message(chat_id, "請輸入騎師名，例如：/騎師 潘頓")
-    elif text in ['/subscribe', '/訂閱']:
+    elif cmd in ['/subscribe', '/訂閱']:
         cmd_subscribe(chat_id)
-    elif text in ['/unsubscribe', '/取消訂閱']:
+    elif cmd in ['/unsubscribe', '/取消訂閱']:
         cmd_unsubscribe(chat_id)
-    elif text.lower() in ['/help', '/幫助']:
+    elif cmd in ['/help', '/幫助']:
         help_text = """
-賽馬預測 Bot 指令列表
+🤖 賽馬預測 Bot 指令列表
 
-預測類：
+🏇 預測類：
 /預測 - 預測最新賽日第9場
 
-查詢類：
+📊 查詢類：
 /賽程 - 顯示今日賽程
 /馬匹 G123 - 查詢馬匹歷史戰績
 /騎師 潘頓 - 查詢騎師近績
 
-訂閱類：
+📋 訂閱類：
 /訂閱 - 訂閱每日自動預測報告
 /取消訂閱 - 取消訂閱
 
-管理員指令（只限你）：
+🔐 管理員指令（只限你）：
 /status - 查看系統狀態
 /更新 - 更新排位表 + 自動預測
 /logs - 顯示最近日誌
 /broadcast 訊息 - 向所有訂閱用戶廣播
 /restart - 重新啟動 Bot
+
+🚫 管理員封鎖指令（只限你）：
+/block 用戶ID - 封鎖用戶
+/unblock 用戶ID - 解鎖用戶
+/blocklist - 顯示被封鎖列表
+/check 用戶ID - 檢查用戶狀態
         """
         send_message(chat_id, help_text)
     else:
@@ -382,7 +476,7 @@ def main():
     logger.info(f"時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info("=" * 50)
     
-    send_message(ADMIN_ID, "Bot 已啟動！傳送 /help 查看所有指令")
+    send_message(ADMIN_ID, "✅ Bot 已啟動！傳送 /help 查看所有指令")
     
     last_update_id = 0
     while True:
