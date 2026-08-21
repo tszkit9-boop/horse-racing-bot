@@ -248,7 +248,6 @@ def build_horse_name_map(history_df):
     """從歷史數據提取 horse_id → 中文名 對照"""
     name_map = {}
     if 'horse_id' in history_df.columns and 'horse_name' in history_df.columns:
-        # 取每個 horse_id 嘅第一個出現嘅中文名（通常都一樣）
         temp = history_df[['horse_id', 'horse_name']].drop_duplicates(subset=['horse_id'])
         name_map = dict(zip(temp['horse_id'], temp['horse_name']))
         print(f"[INFO] 成功載入 {len(name_map)} 個中文馬名")
