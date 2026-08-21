@@ -2,10 +2,9 @@
 # -*- coding: utf-8 -*-
 """
 Telegram Bot - 賽馬預測完整版
+- 支援自行揀場次：/預測 5
 - 馬匹查詢顯示所有名次
-- 過濾 NaN
 - 騎師查詢支援中文/英文名
-- 所有功能齊全
 """
 
 import sys
@@ -56,8 +55,8 @@ logger.addHandler(console_handler)
 # ============================================================
 # 🔐 設定（請填你嘅資料）
 # ============================================================
-TOKEN = '8848079617:AAGa3u5IZbPtMtbFleEGxIHqV9BuNK5nv3g'          # 去 @BotFather 換新 Token
-ADMIN_ID = '7988559873'          # 你嘅 Telegram ID
+TOKEN = '8848079617:AAGa3u5IZbPtMtbFleEGxIHqV9BuNK5nv3g'
+ADMIN_ID = '7988559873'
 
 SUBSCRIBE_FILE = 'subscribers.json'
 BLOCK_FILE = 'blocked_users.json'
@@ -113,17 +112,21 @@ def send_message_to_all(text):
         time.sleep(0.5)
 
 # ============================================================
-# 🔧 執行指令
+# 🔧 執行指令（支援參數）
 # ============================================================
-def run_script(script_name):
+def run_script(script_name, args=None):
     script_dir = os.path.dirname(os.path.abspath(__file__))
     os.chdir(script_dir)
     my_env = os.environ.copy()
     my_env['PYTHONIOENCODING'] = 'utf-8'
     my_env['PYTHONUTF8'] = '1'
     
+    cmd = ['python', script_name]
+    if args:
+        cmd.extend([str(a) for a in args])
+    
     result = subprocess.run(
-        ['python', script_name],
+        cmd,
         capture_output=True,
         text=True,
         timeout=300,
@@ -152,10 +155,17 @@ def get_name_columns(df):
 # 🏇 一般用戶指令
 # ============================================================
 
-def cmd_predict(chat_id):
-    logger.info(f"用戶 {chat_id} 觸發預測")
-    send_message(chat_id, "🏇 開始執行預測...")
-    result = run_script('predict_race_card.py')
+def cmd_predict(chat_id, race_no=None):
+    """執行預測（可選指定場次）"""
+    if race_no:
+        logger.info(f"用戶 {chat_id} 觸發預測第 {race_no} 場")
+        send_message(chat_id, f"🏇 開始執行預測第 {race_no} 場...")
+        result = run_script('predict_race_card.py', [race_no])
+    else:
+        logger.info(f"用戶 {chat_id} 觸發預測（自動場次）")
+        send_message(chat_id, "🏇 開始執行預測...")
+        result = run_script('predict_race_card.py')
+    
     if result.returncode != 0:
         send_message(chat_id, f"❌ 預測失敗：\n{result.stderr[:500]}")
         return
@@ -201,21 +211,15 @@ def cmd_schedule(chat_id):
         send_message(chat_id, f"❌ 查詢失敗：{str(e)}")
 
 def cmd_horse(chat_id, horse_name_or_id):
-    """查詢馬匹（顯示所有名次）"""
     send_message(chat_id, f"🔍 正在查詢馬匹 {horse_name_or_id}...")
     try:
         df = pd.read_csv('ALL_DATA_MERGED.csv')
         
-        # 嘗試查 horse_id
         horse_data = df[df['horse_id'] == horse_name_or_id]
-        
-        # 嘗試查中文名
         if horse_data.empty:
             name_col = get_name_columns(df)
             if name_col:
                 horse_data = df[df[name_col] == horse_name_or_id]
-        
-        # 對照表
         if horse_data.empty and os.path.exists(NAME_MAP_FILE):
             try:
                 name_map = pd.read_csv(NAME_MAP_FILE)
@@ -230,7 +234,6 @@ def cmd_horse(chat_id, horse_name_or_id):
             send_message(chat_id, f"❌ 找不到馬匹 {horse_name_or_id}")
             return
 
-        # 基本資料
         total = len(horse_data)
         name_col = get_name_columns(horse_data)
         horse_name = horse_data[name_col].iloc[0] if name_col and not horse_data[name_col].iloc[0] is None else horse_data.iloc[0]['horse_id']
@@ -238,14 +241,12 @@ def cmd_horse(chat_id, horse_name_or_id):
         msg = f"🐴 馬匹：{horse_name}\n"
         msg += f"馬匹編號：{horse_data.iloc[0]['horse_id']}\n"
 
-        # 名次處理
         finish_col = get_finish_column(horse_data)
         if finish_col is None:
             msg += "（數據庫無名次欄位）"
             send_message(chat_id, msg)
             return
 
-        # 去掉 NaN 名次，只保留有效名次
         valid_rank_data = horse_data[horse_data[finish_col].notna()]
         valid_ranks = valid_rank_data[finish_col].tolist()
         total_valid = len(valid_ranks)
@@ -255,7 +256,6 @@ def cmd_horse(chat_id, horse_name_or_id):
             send_message(chat_id, msg)
             return
 
-        # 頭馬數（名次等於1）
         wins = sum(1 for r in valid_ranks if r == 1)
         win_rate = wins / total_valid * 100
 
@@ -263,7 +263,6 @@ def cmd_horse(chat_id, horse_name_or_id):
         msg += f"頭馬：{wins}\n"
         msg += f"勝率：{win_rate:.1f}%\n"
 
-        # 近3場名次（由新到舊）
         sorted_valid = valid_rank_data.sort_values('race_date', ascending=False)
         recent_ranks = sorted_valid[finish_col].head(3).tolist()
         if recent_ranks:
@@ -272,7 +271,6 @@ def cmd_horse(chat_id, horse_name_or_id):
         else:
             msg += "近3場名次：無紀錄\n"
 
-        # 所有名次（由新到舊），最多顯示 30 個以免太長
         all_ranks = sorted_valid[finish_col].tolist()
         if len(all_ranks) > 30:
             rank_display = ', '.join([str(int(r)) for r in all_ranks[:30]]) + f"... (共{len(all_ranks)}場)"
@@ -287,12 +285,10 @@ def cmd_horse(chat_id, horse_name_or_id):
         send_message(chat_id, f"❌ 查詢失敗：{str(e)}")
 
 def cmd_jockey(chat_id, jockey_name):
-    """查詢騎師（支援中文/英文名）"""
     send_message(chat_id, f"🔍 正在查詢騎師 {jockey_name}...")
     try:
         df = pd.read_csv('ALL_DATA_MERGED.csv')
         
-        # 找出騎師欄位
         jockey_cols = ['jockey', '騎師']
         found_col = None
         for col in jockey_cols:
@@ -301,16 +297,13 @@ def cmd_jockey(chat_id, jockey_name):
                 break
         
         if found_col is None:
-            send_message(chat_id, "❌ 數據庫中無騎師欄位，請檢查")
+            send_message(chat_id, "❌ 數據庫中無騎師欄位")
             return
         
-        # 嘗試完全匹配
         jockey_data = df[df[found_col] == jockey_name]
         if jockey_data.empty:
-            # 大小寫不敏感
             jockey_data = df[df[found_col].str.lower() == jockey_name.lower()]
         if jockey_data.empty:
-            # 包含匹配
             jockey_data = df[df[found_col].astype(str).str.contains(jockey_name, na=False, case=False)]
         if jockey_data.empty and found_col == 'jockey' and '騎師' in df.columns:
             jockey_data = df[df['騎師'] == jockey_name]
@@ -318,7 +311,6 @@ def cmd_jockey(chat_id, jockey_name):
                 jockey_data = df[df['騎師'].astype(str).str.contains(jockey_name, na=False, case=False)]
         
         if jockey_data.empty:
-            # 診斷：如果係管理員，Send 實際騎師名清單
             if is_admin(chat_id):
                 all_jockeys = df[found_col].dropna().unique()
                 sample = list(all_jockeys)[:30]
@@ -353,7 +345,7 @@ def cmd_subscribe(chat_id):
     if str(chat_id) not in subscribers:
         subscribers.append(str(chat_id))
         save_subscribers(subscribers)
-        send_message(chat_id, "✅ 訂閱成功！每日會自動收到預測報告。")
+        send_message(chat_id, "✅ 訂閱成功！")
     else:
         send_message(chat_id, "⚠️ 你已經訂閱咗。")
 
@@ -367,7 +359,7 @@ def cmd_unsubscribe(chat_id):
         send_message(chat_id, "⚠️ 你並未訂閱。")
 
 # ============================================================
-# 🔐 管理員指令（只限你）
+# 🔐 管理員指令
 # ============================================================
 
 def cmd_status(chat_id):
@@ -513,8 +505,19 @@ def handle_message(chat_id, text):
             return
     
     # 一般用戶指令
-    if cmd in ['/predict', '/預測']:
-        cmd_predict(chat_id)
+    if cmd.startswith('/predict') or cmd.startswith('/預測'):
+        parts = text.split()
+        if len(parts) > 1:
+            try:
+                race_no = int(parts[1])
+                if 1 <= race_no <= 99:
+                    cmd_predict(chat_id, race_no)
+                else:
+                    send_message(chat_id, "請輸入有效場次號碼（1-99），例如：/預測 5")
+            except ValueError:
+                send_message(chat_id, "請輸入有效場次號碼，例如：/預測 5")
+        else:
+            cmd_predict(chat_id)
     elif cmd in ['/schedule', '/賽程']:
         cmd_schedule(chat_id)
     elif cmd.startswith('/horse') or cmd.startswith('/馬匹'):
@@ -538,12 +541,13 @@ def handle_message(chat_id, text):
 🤖 賽馬預測 Bot 指令列表
 
 🏇 預測類：
-/預測 - 預測最新賽日第9場
+/預測 - 自動預測最新賽日第9場
+/預測 5 - 預測最新賽日第5場
 
 📊 查詢類：
 /賽程 - 顯示今日賽程
-/馬匹 G209 或 馬名 - 查詢馬匹歷史戰績（支援中文名）
-/騎師 潘頓 - 查詢騎師近績（支援中文/英文名）
+/馬匹 G209 或 馬名 - 查詢馬匹歷史戰績
+/騎師 潘頓 - 查詢騎師近績
 
 📋 訂閱類：
 /訂閱 - 訂閱每日自動預測報告

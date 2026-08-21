@@ -1,7 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-predict_race_card.py - 完整版（強制使用 horse_name_mapping.csv）
+predict_race_card.py - 完整版（支援指定場次參數）
+用法：
+  python predict_race_card.py        # 自動揀第9場
+  python predict_race_card.py 5      # 預測第5場
 """
 
 import sys
@@ -16,7 +19,20 @@ import warnings
 warnings.filterwarnings('ignore')
 from catboost import CatBoostClassifier
 
-# === 36 個特徵（英文名） ===
+# ============================================================
+# 1. 檢查有冇指定場次參數
+# ============================================================
+target_race_no = None
+if len(sys.argv) > 1:
+    try:
+        target_race_no = int(sys.argv[1])
+        print(f"[INFO] 指定預測第 {target_race_no} 場")
+    except ValueError:
+        print("[WARN] 參數無效，將自動選擇場次")
+
+# ============================================================
+# 2. 36 個特徵（英文名）
+# ============================================================
 FEATURES_EN = [
     'draw', 'act_wt', 'distance', 'rtg', 'avg_rank_last3',
     'jockey_win_rate_50', 'trainer_win_rate_50',
@@ -34,6 +50,9 @@ FEATURES_EN = [
     'total_injuries', 'injury_severity'
 ]
 
+# ============================================================
+# 3. 模型期望嘅特徵名稱（中文）及順序
+# ============================================================
 EXPECTED_FEATURES = [
     'draw', 'weight', 'distance', 'Rtg.', '近3場平均名次',
     '騎師近50場勝率', '練馬師近50場勝率', '同路程歷史勝率',
@@ -47,8 +66,12 @@ EXPECTED_FEATURES = [
     '傷患總次數', '傷患嚴重程度'
 ]
 
+# ============================================================
+# 4. 名稱映射（英文 → 模型期望嘅中文）
+# ============================================================
 NAME_MAPPING = {
-    'act_wt': 'weight', 'rtg': 'Rtg.',
+    'act_wt': 'weight',
+    'rtg': 'Rtg.',
     'avg_rank_last3': '近3場平均名次',
     'jockey_win_rate_50': '騎師近50場勝率',
     'trainer_win_rate_50': '練馬師近50場勝率',
@@ -81,7 +104,11 @@ NAME_MAPPING = {
     'total_injuries': '傷患總次數',
     'injury_severity': '傷患嚴重程度'
 }
+# draw, distance, win_odds 保持不變
 
+# ============================================================
+# 5. 輔助函數
+# ============================================================
 def standardize_columns(df):
     rename_map = {
         '騎師': 'jockey', '練馬師': 'trainer', '路程': 'distance',
@@ -235,12 +262,17 @@ def build_horse_name_map():
             name_map = dict(zip(df_map['horse_id'], df_map['馬名']))
             print(f"[INFO] 從 horse_name_mapping.csv 載入 {len(name_map)} 個中文馬名")
         else:
-            print("[WARN] horse_name_mapping.csv 欄位不正確，請檢查")
+            print("[WARN] horse_name_mapping.csv 欄位不正確")
     except FileNotFoundError:
         print("[WARN] 找不到 horse_name_mapping.csv，將使用 horse_id")
     return name_map
 
+# ============================================================
+# 6. 主程式
+# ============================================================
 def main():
+    global target_race_no
+    
     script_dir = os.path.dirname(os.path.abspath(__file__))
     os.chdir(script_dir)
     
@@ -300,14 +332,26 @@ def main():
     if pd.isna(latest_date):
         print("[ERROR] 無法找到有效日期")
         sys.exit(1)
-    race_sel = df[(df['race_date'] == latest_date) & (df['race_no'] == 9)]
-    if race_sel.empty:
-        max_race = df[df['race_date'] == latest_date]['race_no'].max()
-        race_sel = df[(df['race_date'] == latest_date) & (df['race_no'] == max_race)]
+
+    # ----- 選擇場次（支援參數）-----
+    if target_race_no is not None:
+        race_sel = df[(df['race_date'] == latest_date) & (df['race_no'] == target_race_no)]
+        if race_sel.empty:
+            print(f"[WARN] 第 {target_race_no} 場無數據，改為自動選擇")
+            target_race_no = None
+
+    if target_race_no is None:
+        race_sel = df[(df['race_date'] == latest_date) & (df['race_no'] == 9)]
+        if race_sel.empty:
+            max_race = df[df['race_date'] == latest_date]['race_no'].max()
+            race_sel = df[(df['race_date'] == latest_date) & (df['race_no'] == max_race)]
+
     if race_sel.empty:
         print("[ERROR] 無法選取場次")
         sys.exit(1)
-    print(f"[OK] 選取 {latest_date.strftime('%Y-%m-%d')} 第 {race_sel['race_no'].iloc[0]} 場，共 {len(race_sel)} 匹")
+
+    display_race_no = int(race_sel['race_no'].iloc[0])
+    print(f"[OK] 選取 {latest_date.strftime('%Y-%m-%d')} 第 {display_race_no} 場，共 {len(race_sel)} 匹")
 
     print("[INFO] 載入歷史數據...")
     try:
@@ -326,14 +370,12 @@ def main():
     history['race_date'] = pd.to_datetime(history['race_date'], errors='coerce')
     history = history.dropna(subset=['race_date'])
 
-    # ---- 建立中文名對照表（讀取 mapping file） ----
     horse_name_map = build_horse_name_map()
 
     print("[INFO] 生成特徵...")
     race_sel = get_latest_features(race_sel, history)
     race_sel = compute_stats(race_sel, history, latest_date)
 
-    # ---- 加入中文名欄位 ----
     race_sel['中文名'] = race_sel['horse_id'].map(horse_name_map).fillna(race_sel['horse_id'])
 
     if 'win_odds' not in race_sel.columns:
@@ -370,7 +412,6 @@ def main():
     prob_final = (prob_xgb * ensemble_weight + prob_cat) / (ensemble_weight + 1)
     rank_score = rank_model.predict(X)
 
-    # ---- 輸出結果（含中文名） ----
     result = race_sel[['中文名', 'draw', 'win_odds']].copy()
     result.rename(columns={'中文名': '馬匹名稱', 'draw': '檔位', 'win_odds': '賠率'}, inplace=True)
     result['預測勝率'] = prob_final
@@ -381,9 +422,8 @@ def main():
     result.to_csv('prediction_result.csv', index=False)
     print("[OK] 預測完成，結果已儲存至 prediction_result.csv")
 
-    # ---- 同時顯示喺 Console ----
     print("\n" + "="*50)
-    print(f"🏇 {latest_date.strftime('%Y-%m-%d')} 第 {race_sel['race_no'].iloc[0]} 場 預測 TOP 5")
+    print(f"🏇 {latest_date.strftime('%Y-%m-%d')} 第 {display_race_no} 場 預測 TOP 5")
     print("="*50)
     for idx, row in result.head(5).iterrows():
         print(f"{row['馬匹名稱']} (檔位 {row['檔位']})  勝率 {row['預測勝率']:.2%}  值博指數 {row['值博指數']:.3f}")
