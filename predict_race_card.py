@@ -1,11 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-predict_race_card.py - 完整版（支援指定日期 + 場次）
-用法：
-  python predict_race_card.py                              # 自動：最新日期，第9場
-  python predict_race_card.py --date 2026-07-15           # 指定日期，第9場
-  python predict_race_card.py --date 2026-07-15 --race 5  # 指定日期 + 指定場次
+predict_race_card.py - 完整版（支援指定日期 + 場次，無數據時報錯）
 """
 
 import sys
@@ -325,13 +321,15 @@ def main():
         print("[ERROR] 無有效場次")
         sys.exit(1)
 
-    # ===== 選擇日期 =====
+    # ===== 選擇日期（修改：無數據時直接報錯） =====
     if target_date:
         selected_date = pd.to_datetime(target_date)
-        # 檢查該日期是否存在
         if selected_date not in df['race_date'].values:
-            print(f"[WARN] 日期 {target_date} 無數據，改為自動選取最新日期")
-            target_date = None
+            print(f"[ERROR] 日期 {target_date} 無數據，請更新排位表 (HKCJ_FULL_YEAR_DATA.csv)")
+            sys.exit(1)
+    else:
+        # 自動選取最新日期
+        latest_date = df['race_date'].max()
     
     if target_date is None:
         latest_date = df['race_date'].max()
@@ -345,15 +343,7 @@ def main():
     # ===== 選擇場次 =====
     race_sel = df[(df['race_date'] == latest_date) & (df['race_no'] == target_race_no)]
     if race_sel.empty:
-        print(f"[WARN] 第 {target_race_no} 場無數據，改為自動選擇")
-        # 自動選擇第9場或最後一場
-        race_sel = df[(df['race_date'] == latest_date) & (df['race_no'] == 9)]
-        if race_sel.empty:
-            max_race = df[df['race_date'] == latest_date]['race_no'].max()
-            race_sel = df[(df['race_date'] == latest_date) & (df['race_no'] == max_race)]
-
-    if race_sel.empty:
-        print("[ERROR] 無法選取場次")
+        print(f"[ERROR] 日期 {latest_date.strftime('%Y-%m-%d')} 第 {target_race_no} 場無數據")
         sys.exit(1)
 
     display_race_no = int(race_sel['race_no'].iloc[0])
@@ -437,7 +427,7 @@ def main():
     print(f"🏇 {display_date} 第 {display_race_no} 場 預測 TOP 5")
     print("="*50)
     for idx, row in result.head(5).iterrows():
-        print(f"{row['馬匹名稱']} (檔位 {row['檔位']})  勝率 {row['預測勝率']:.2%}  值博指數 {row['值博指數']:.3f}")
+        print(f"{row['馬匹名稱']} (檔位 {row['檔位']})  勝率 {row['預測勝率']:.2f}%  值博指數 {row['值博指數']:.3f}")
     print("="*50 + "\n")
 
 if __name__ == '__main__':
