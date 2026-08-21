@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Telegram Bot - 賽馬預測完整版（冇頻道限制）
+Telegram Bot - 賽馬預測完整版（冇頻道限制，顯示中文馬名）
 """
 
 import sys
@@ -19,7 +19,7 @@ import json
 from datetime import datetime
 
 # ============================================================
-# 🔐 設定
+# 🔐 設定 Logging
 # ============================================================
 LOG_FILE = 'bot.log'
 LOG_MAX_SIZE = 5 * 1024 * 1024
@@ -50,9 +50,9 @@ logger.addHandler(file_handler)
 logger.addHandler(console_handler)
 
 # ============================================================
-# 🔐 設定（請填你嘅資料）
+# 🔐 設定（請改為你嘅資料）
 # ============================================================
-TOKEN = '8848079617:AAGaWmM9IJa7raA2qBoErlRYPuddGlYHaJA'          # 去 @BotFather 換新 Token
+TOKEN = '8848079617:AAGa3u5IZbPtMtbFleEGxIHqV9BuNK5nv3g'          # 去 @BotFather 換新 Token
 ADMIN_ID = '7988559873'          # 你嘅 Telegram ID
 
 SUBSCRIBE_FILE = 'subscribers.json'
@@ -139,6 +139,7 @@ def cmd_predict(chat_id):
         return
     try:
         df = pd.read_csv('prediction_result.csv')
+        # 自動偵測欄位名
         name_col = '馬匹名稱' if '馬匹名稱' in df.columns else 'horse_id'
         draw_col = '檔位' if '檔位' in df.columns else 'draw'
         win_col = '預測勝率' if '預測勝率' in df.columns else 'prob'
@@ -230,7 +231,7 @@ def cmd_unsubscribe(chat_id):
         send_message(chat_id, "⚠️ 你並未訂閱。")
 
 # ============================================================
-# 🔐 管理員指令
+# 🔐 管理員指令（只限你）
 # ============================================================
 
 def cmd_status(chat_id):
@@ -322,7 +323,7 @@ def cmd_check(chat_id, target_id):
 def handle_message(chat_id, text):
     logger.info(f"收到訊息：{text} 來自 {chat_id}")
     
-    # 檢查封鎖
+    # 檢查封鎖（管理員除外）
     if not is_admin(chat_id) and is_blocked(chat_id):
         send_message(chat_id, "🚫 你已被封鎖，無法使用此 Bot")
         return
