@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Telegram Bot - 賽馬預測完整版（支援日期 + 場次）
+Telegram Bot - 賽馬預測完整版（含彩池推薦）
+支援：/預測 [日期] [場次]
+日期格式：YYYY-MM-DD，場次為數字
 """
 
 import sys
@@ -53,8 +55,8 @@ logger.addHandler(console_handler)
 # ============================================================
 # 🔐 設定（請填你嘅資料）
 # ============================================================
-TOKEN = '8848079617:AAGa3u5IZbPtMtbFleEGxIHqV9BuNK5nv3g'
-ADMIN_ID = '7988559873'
+TOKEN = '8848079617:AAGa3u5IZbPtMtbFleEGxIHqV9BuNK5nv3g'          # 去 @BotFather 換新 Token
+ADMIN_ID = '7988559873'          # 你嘅 Telegram ID
 
 SUBSCRIBE_FILE = 'subscribers.json'
 BLOCK_FILE = 'blocked_users.json'
@@ -150,42 +152,35 @@ def get_name_columns(df):
     return None
 
 # ============================================================
-# 🏇 一般用戶指令
+# 🏇 預測指令（含彩池推薦）
 # ============================================================
-
 def cmd_predict(chat_id, args_text=None):
     """
-    解析用戶輸入，構造參數執行預測
-    args_text 係用戶打完 /預測 之後嘅文字
-    例如: "5" 或 "2026-07-15 5"
+    執行預測，顯示 TOP 5 及彩池推薦
     """
-    # 預設值
+    # 解析日期和場次
     date_str = None
     race_no = None
     
     if args_text:
-        # 用正則搵日期 (YYYY-MM-DD)
         date_match = re.search(r'(\d{4}-\d{2}-\d{2})', args_text)
         if date_match:
             date_str = date_match.group(1)
-            # 移除日期部分，剩低數字
             remaining = re.sub(r'\d{4}-\d{2}-\d{2}', '', args_text).strip()
         else:
             remaining = args_text.strip()
         
-        # 搵數字（場次）
         if remaining:
             num_match = re.search(r'(\d+)', remaining)
             if num_match:
                 race_no = int(num_match.group(1))
     
-    # 構造命令行參數
+    # 構造參數
     cmd_args = []
     if date_str:
         cmd_args.extend(['--date', date_str])
     if race_no:
         cmd_args.extend(['--race', str(race_no)])
-    # 如果冇指定日期同場次，就唔加任何參數（自動最新第9場）
     
     if cmd_args:
         logger.info(f"用戶 {chat_id} 觸發預測：{cmd_args}")
@@ -194,15 +189,15 @@ def cmd_predict(chat_id, args_text=None):
         logger.info(f"用戶 {chat_id} 觸發預測（自動）")
         send_message(chat_id, "🏇 開始執行預測...")
     
+    # 執行預測腳本
     result = run_script('predict_race_card.py', cmd_args)
-    
     if result.returncode != 0:
         send_message(chat_id, f"❌ 預測失敗：\n{result.stderr[:500]}")
         return
+    
+    # 讀取結果
     try:
         df = pd.read_csv('prediction_result.csv')
-        
-        # 讀取日期同場次（如果有）
         race_date = df['比賽日期'].iloc[0] if '比賽日期' in df.columns else '未知日期'
         race_no_display = df['場次'].iloc[0] if '場次' in df.columns else '?'
         
@@ -220,12 +215,30 @@ def cmd_predict(chat_id, args_text=None):
             value = row.get(value_col, 0)
             msg += f"{horse} (檔位 {draw})  勝率 {win_rate:.2%}  值博指數 {value:.3f}\n"
         send_message(chat_id, msg)
+        
+        # 讀取彩池推薦
+        pool_file = 'pool_recommendations.txt'
+        if os.path.exists(pool_file):
+            with open(pool_file, 'r', encoding='utf-8') as f:
+                pool_text = f.read()
+            # 分割訊息，避免 Telegram 長度限制
+            if len(pool_text) > 4000:
+                for i in range(0, len(pool_text), 4000):
+                    send_message(chat_id, pool_text[i:i+4000])
+            else:
+                send_message(chat_id, pool_text)
+        else:
+            send_message(chat_id, "⚠️ 彩池推薦檔案未生成，請檢查預測腳本")
+        
         send_message(chat_id, "✅ 預測完成！")
         logger.info(f"預測完成，已發送結果給 {chat_id}")
     except Exception as e:
         logger.error(f"讀取結果失敗：{e}")
         send_message(chat_id, f"❌ 讀取結果失敗：{str(e)}")
 
+# ============================================================
+# 📅 賽程查詢
+# ============================================================
 def cmd_schedule(chat_id):
     send_message(chat_id, "📅 正在查詢今日賽程...")
     try:
@@ -245,6 +258,9 @@ def cmd_schedule(chat_id):
     except Exception as e:
         send_message(chat_id, f"❌ 查詢失敗：{str(e)}")
 
+# ============================================================
+# 🐴 馬匹查詢
+# ============================================================
 def cmd_horse(chat_id, horse_name_or_id):
     send_message(chat_id, f"🔍 正在查詢馬匹 {horse_name_or_id}...")
     try:
@@ -319,6 +335,9 @@ def cmd_horse(chat_id, horse_name_or_id):
         logger.error(f"查詢馬匹失敗：{e}")
         send_message(chat_id, f"❌ 查詢失敗：{str(e)}")
 
+# ============================================================
+# 🏇 騎師查詢
+# ============================================================
 def cmd_jockey(chat_id, jockey_name):
     send_message(chat_id, f"🔍 正在查詢騎師 {jockey_name}...")
     try:
@@ -375,12 +394,15 @@ def cmd_jockey(chat_id, jockey_name):
         logger.error(f"查詢騎師失敗：{e}")
         send_message(chat_id, f"❌ 查詢失敗：{str(e)}")
 
+# ============================================================
+# 📋 訂閱功能
+# ============================================================
 def cmd_subscribe(chat_id):
     subscribers = load_subscribers()
     if str(chat_id) not in subscribers:
         subscribers.append(str(chat_id))
         save_subscribers(subscribers)
-        send_message(chat_id, "✅ 訂閱成功！")
+        send_message(chat_id, "✅ 訂閱成功！每日會自動收到預測報告。")
     else:
         send_message(chat_id, "⚠️ 你已經訂閱咗。")
 
@@ -396,7 +418,6 @@ def cmd_unsubscribe(chat_id):
 # ============================================================
 # 🔐 管理員指令
 # ============================================================
-
 def cmd_status(chat_id):
     status = "📊 系統狀態報告\n"
     status += "─" * 30 + "\n"
@@ -541,7 +562,6 @@ def handle_message(chat_id, text):
     
     # 一般用戶指令
     if cmd.startswith('/predict') or cmd.startswith('/預測'):
-        # 提取參數部分（指令名稱之後嘅文字）
         parts = text.split(maxsplit=1)
         args = parts[1] if len(parts) > 1 else ''
         cmd_predict(chat_id, args)
