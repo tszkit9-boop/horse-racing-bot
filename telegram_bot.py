@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Telegram Bot - 賽馬預測完整版（連封鎖/解鎖功能）
-所有指令即時回覆，無需加入任何頻道
+Telegram Bot - 賽馬預測完整版
+- 冇頻道限制
+- 自動顯示中文馬名
+- 所有功能齊全
 """
 
 import sys
@@ -54,7 +56,7 @@ logger.addHandler(console_handler)
 # 🔐 設定（請填你嘅資料）
 # ============================================================
 TOKEN = '8848079617:AAGaWmM9IJa7raA2qBoErlRYPuddGlYHaJA'          # 去 @BotFather 換新 Token
-ADMIN_ID = '7988559873'          # 你嘅 Telegram ID（管理員）
+ADMIN_ID = '7988559873'          # 你嘅 Telegram ID
 
 # 檔案
 SUBSCRIBE_FILE = 'subscribers.json'
@@ -116,7 +118,8 @@ def send_message_to_all(text):
 # 🔧 執行指令
 # ============================================================
 def run_script(script_name):
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(script_dir)
     my_env = os.environ.copy()
     my_env['PYTHONIOENCODING'] = 'utf-8'
     my_env['PYTHONUTF8'] = '1'
@@ -134,7 +137,7 @@ def run_script(script_name):
 # 🏇 一般用戶指令
 # ============================================================
 
-# 1. 預測
+# 1. 預測（自動偵測欄位名，顯示中文馬名）
 def cmd_predict(chat_id):
     logger.info(f"用戶 {chat_id} 觸發預測")
     send_message(chat_id, "🏇 開始執行預測...")
@@ -144,13 +147,27 @@ def cmd_predict(chat_id):
         return
     try:
         df = pd.read_csv('prediction_result.csv')
+        
+        # 自動偵測欄位名（相容不同版本）
+        name_col = None
+        for col in ['馬匹名稱', '中文名', 'horse_name', '馬名', 'horse_id']:
+            if col in df.columns:
+                name_col = col
+                break
+        if name_col is None:
+            name_col = df.columns[0]  # 用第一欄
+        
+        draw_col = '檔位' if '檔位' in df.columns else 'draw'
+        win_col = '預測勝率' if '預測勝率' in df.columns else 'prob'
+        value_col = '值博指數' if '值博指數' in df.columns else 'value'
+        
         top5 = df.head(5)
         msg = "🏇 預測結果 TOP 5\n\n"
         for i, row in top5.iterrows():
-            horse = row.get('馬匹編號', '未知')
-            draw = row.get('draw', '?')
-            win_rate = row.get('預測勝率', 0)
-            value = row.get('值博指數', 0)
+            horse = row.get(name_col, '未知')
+            draw = row.get(draw_col, '?')
+            win_rate = row.get(win_col, 0)
+            value = row.get(value_col, 0)
             msg += f"{horse} (檔位 {draw})  勝率 {win_rate:.2%}  值博指數 {value:.3f}\n"
         send_message(chat_id, msg)
         send_message(chat_id, "✅ 預測完成！")
