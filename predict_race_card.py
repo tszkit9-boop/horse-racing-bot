@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-predict_race_card.py - 完整版（支援指定場次參數）
+predict_race_card.py - 完整版（支援指定場次，輸出日期）
 用法：
   python predict_race_card.py        # 自動揀第9場
   python predict_race_card.py 5      # 預測第5場
@@ -254,7 +254,6 @@ def compute_stats(race_df, history_df, race_date):
     return race_df
 
 def build_horse_name_map():
-    """從 horse_name_mapping.csv 讀取 ID -> 中文名 映射"""
     name_map = {}
     try:
         df_map = pd.read_csv('horse_name_mapping.csv')
@@ -351,7 +350,8 @@ def main():
         sys.exit(1)
 
     display_race_no = int(race_sel['race_no'].iloc[0])
-    print(f"[OK] 選取 {latest_date.strftime('%Y-%m-%d')} 第 {display_race_no} 場，共 {len(race_sel)} 匹")
+    display_date = latest_date.strftime('%Y-%m-%d')
+    print(f"[OK] 選取 {display_date} 第 {display_race_no} 場，共 {len(race_sel)} 匹")
 
     print("[INFO] 載入歷史數據...")
     try:
@@ -412,8 +412,11 @@ def main():
     prob_final = (prob_xgb * ensemble_weight + prob_cat) / (ensemble_weight + 1)
     rank_score = rank_model.predict(X)
 
+    # ---- 輸出結果（含日期） ----
     result = race_sel[['中文名', 'draw', 'win_odds']].copy()
     result.rename(columns={'中文名': '馬匹名稱', 'draw': '檔位', 'win_odds': '賠率'}, inplace=True)
+    result['比賽日期'] = display_date          # ✅ 新增日期欄位
+    result['場次'] = display_race_no           # ✅ 新增場次欄位
     result['預測勝率'] = prob_final
     result['排名分數'] = rank_score
     result['值博指數'] = result['預測勝率'] / result['賠率']
@@ -422,8 +425,9 @@ def main():
     result.to_csv('prediction_result.csv', index=False)
     print("[OK] 預測完成，結果已儲存至 prediction_result.csv")
 
+    # ---- Console 顯示 ----
     print("\n" + "="*50)
-    print(f"🏇 {latest_date.strftime('%Y-%m-%d')} 第 {display_race_no} 場 預測 TOP 5")
+    print(f"🏇 {display_date} 第 {display_race_no} 場 預測 TOP 5")
     print("="*50)
     for idx, row in result.head(5).iterrows():
         print(f"{row['馬匹名稱']} (檔位 {row['檔位']})  勝率 {row['預測勝率']:.2%}  值博指數 {row['值博指數']:.3f}")

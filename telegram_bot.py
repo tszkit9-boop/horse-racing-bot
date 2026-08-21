@@ -1,10 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Telegram Bot - 賽馬預測完整版
-- 支援自行揀場次：/預測 5
-- 馬匹查詢顯示所有名次
-- 騎師查詢支援中文/英文名
+Telegram Bot - 賽馬預測完整版（顯示日期 + 指定場次）
 """
 
 import sys
@@ -171,13 +168,20 @@ def cmd_predict(chat_id, race_no=None):
         return
     try:
         df = pd.read_csv('prediction_result.csv')
+        
+        # 讀取日期同場次（如果有）
+        race_date = df['比賽日期'].iloc[0] if '比賽日期' in df.columns else '未知日期'
+        race_no_display = df['場次'].iloc[0] if '場次' in df.columns else '?'
+        
         name_col = '馬匹名稱' if '馬匹名稱' in df.columns else 'horse_id'
         draw_col = '檔位' if '檔位' in df.columns else 'draw'
         win_col = '預測勝率' if '預測勝率' in df.columns else 'prob'
         value_col = '值博指數' if '值博指數' in df.columns else 'value'
         
         top5 = df.head(5)
-        msg = "🏇 預測結果 TOP 5\n\n"
+        
+        # ✅ 標題加入日期
+        msg = f"🏇 {race_date} 第 {race_no_display} 場 預測 TOP 5\n\n"
         for i, row in top5.iterrows():
             horse = row.get(name_col, '未知')
             draw = row.get(draw_col, '?')
