@@ -323,25 +323,76 @@ def cmd_horse(chat_id, horse_name_or_id):
         send_message(chat_id, f"❌ 查詢失敗：{str(e)}")
 
 # ============================================================
-# 🆕 3. /騎師 指令（修正版：支援中英文模糊匹配）
+# 🆕 3. /騎師 指令（支援中文名查詢，內建中英文對照）
 # ============================================================
 def cmd_jockey(chat_id, jockey_name):
     send_message(chat_id, f"🔍 正在查詢騎師 {jockey_name}...")
     try:
         df = pd.read_csv('ALL_DATA_MERGED.csv')
         
-        # 先試 '騎師' 欄位（中文）
+        # ---- 中英文騎師對照表（根據你數據庫中的英文名建立） ----
+        jockey_mapping = {
+            '潘頓': ['Z Purton', 'Purton'],
+            '莫雷拉': ['J Moreira', 'Moreira'],
+            '田泰安': ['K Teetan', 'Teetan'],
+            '梁家俊': ['K C Leung', 'Leung'],
+            '周俊樂': ['C L Chau', 'Chau'],
+            '布文': ['H Bowman', 'Bowman'],
+            '蔡明紹': ['M Chadwick', 'Chadwick'],
+            '潘明輝': ['M F Poon', 'Poon'],
+            '鍾易禮': ['Y L Chung', 'Chung'],
+            '湯森': ['B Thompson', 'Thompson'],
+            '奧文': ['J Orman', 'Orman'],
+            '賀銘年': ['A Hamelin', 'Hamelin'],
+            '班德禮': ['H Bentley', 'Bentley'],
+            '狄莫羅': ['K De Melo', 'De Melo'],
+            '艾兆禮': ['A Atzeni', 'Atzeni'],
+            '陳嘉熙': ['K H Chan', 'Chan'],
+            '巫顯東': ['H T Mo', 'Mo'],
+            '李富': ['L Ferraris', 'Ferraris'],
+            '黃智弘': ['E C W Wong', 'Wong'],
+            '希威森': ['L Currie', 'Currie'],
+            '霍宏聲': ['L Hewitson', 'Hewitson'],
+            '嘉里': ['J Kah', 'Kah'],
+            '馬雅': ['R Maia', 'Maia'],
+            '楊明綸': ['M L Yeung', 'Yeung'],
+            '何澤堯': ['C Y Ho', 'Ho'],
+            '巴度': ['A Badel', 'Badel'],
+            '蘇兆輝': ['S de Sousa', 'de Sousa'],
+            '韋達': ['D Whyte', 'Whyte'],
+            '薛恩': ['B Shinn', 'Shinn'],
+        }
+        
+        # 先查 '騎師'（中文）欄位，如果冇就查 'jockey'（英文）
         jockey_data = pd.DataFrame()
+        
+        # 直接查輸入嘅字串（無論中英文）
         if '騎師' in df.columns:
             jockey_data = df[df['騎師'].astype(str).str.contains(jockey_name, na=False, case=False)]
-        # 如果搵唔到，試 'jockey' 欄位（英文）
         if jockey_data.empty and 'jockey' in df.columns:
             jockey_data = df[df['jockey'].astype(str).str.contains(jockey_name, na=False, case=False)]
-        # 如果都搵唔到，試完全匹配
-        if jockey_data.empty and '騎師' in df.columns:
-            jockey_data = df[df['騎師'] == jockey_name]
-        if jockey_data.empty and 'jockey' in df.columns:
-            jockey_data = df[df['jockey'] == jockey_name]
+        
+        # 如果直接查搵唔到，嘗試用對照表將中文轉英文再查
+        if jockey_data.empty and jockey_name in jockey_mapping:
+            for eng_name in jockey_mapping[jockey_name]:
+                if '騎師' in df.columns:
+                    temp = df[df['騎師'].astype(str).str.contains(eng_name, na=False, case=False)]
+                    if not temp.empty:
+                        jockey_data = temp
+                        break
+                if 'jockey' in df.columns:
+                    temp = df[df['jockey'].astype(str).str.contains(eng_name, na=False, case=False)]
+                    if not temp.empty:
+                        jockey_data = temp
+                        break
+        
+        # 如果仲係搵唔到，嘗試直接匹配 jockey 欄位（完全匹配英文名）
+        if jockey_data.empty:
+            # 如果輸入係英文全名或部分，直接用 jockey 欄位查
+            if 'jockey' in df.columns:
+                jockey_data = df[df['jockey'].astype(str).str.contains(jockey_name, na=False, case=False)]
+            if jockey_data.empty and '騎師' in df.columns:
+                jockey_data = df[df['騎師'].astype(str).str.contains(jockey_name, na=False, case=False)]
         
         if jockey_data.empty:
             # 顯示近似騎師名（除錯用）
@@ -587,7 +638,7 @@ def handle_message(chat_id, text):
 /賽程 - 顯示今日賽程
 /賽程 2026-07-15 - 顯示指定日期賽程
 /馬匹 金發盛世 - 查詢馬匹歷史戰績（支援中文名或編號）
-/騎師 潘頓 - 查詢騎師近績
+/騎師 潘頓 - 查詢騎師近績（支援中英文名）
 
 📋 訂閱類：
 /訂閱 - 訂閱每日自動預測報告
