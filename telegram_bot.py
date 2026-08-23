@@ -1,7 +1,13 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Telegram Bot - 賽馬預測完整版（已修正馬匹/騎師查詢）
+Telegram Bot - 賽馬預測最終完整版
+- 所有功能齊全
+- 動態 help（管理員／普通用戶分開）
+- 騎師中英文對照
+- 馬匹中文名顯示
+- 賽果對比（全部場次 / 單一場次）
+- 全日預測（全部場次）
 """
 
 import sys
@@ -17,7 +23,7 @@ import pandas as pd
 import time
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # ============================================================
 # 🔐 設定 Logging
@@ -127,7 +133,7 @@ def run_script(script_name, args=None):
         cmd,
         capture_output=True,
         text=True,
-        timeout=300,
+        timeout=600,  # 延長 timeout，因為全部場次可能需要較長時間
         env=my_env
     )
     return result
@@ -215,7 +221,7 @@ def cmd_predict(chat_id, args_text=None):
         send_message(chat_id, f"❌ 讀取結果失敗：{str(e)}")
 
 # ============================================================
-# 🆕 1. /賽程 指令
+# 1. /賽程 指令
 # ============================================================
 def cmd_schedule(chat_id, target_date=None):
     """顯示指定日期或今日嘅賽程"""
@@ -252,13 +258,12 @@ def cmd_schedule(chat_id, target_date=None):
         send_message(chat_id, f"❌ 查詢失敗：{str(e)}")
 
 # ============================================================
-# 🆕 2. /馬匹 指令（修正版：正確顯示中文馬名）
+# 2. /馬匹 指令
 # ============================================================
 def cmd_horse(chat_id, horse_name_or_id):
     send_message(chat_id, f"🔍 正在查詢馬匹 {horse_name_or_id}...")
     try:
         df = pd.read_csv('ALL_DATA_MERGED.csv')
-        
         # 先直接查 horse_id
         horse_data = df[df['horse_id'] == horse_name_or_id]
         # 如果冇，嘗試用中文名
@@ -291,7 +296,6 @@ def cmd_horse(chat_id, horse_name_or_id):
             else:
                 horse_name = horse_name_val
         else:
-            # 如果冇 '馬名'，用 horse_id
             horse_name = horse_data['horse_id'].iloc[0]
         
         # ---- 名次統計 ----
@@ -323,14 +327,14 @@ def cmd_horse(chat_id, horse_name_or_id):
         send_message(chat_id, f"❌ 查詢失敗：{str(e)}")
 
 # ============================================================
-# 🆕 3. /騎師 指令（支援中文名查詢，內建中英文對照）
+# 3. /騎師 指令（中英文對照）
 # ============================================================
 def cmd_jockey(chat_id, jockey_name):
     send_message(chat_id, f"🔍 正在查詢騎師 {jockey_name}...")
     try:
         df = pd.read_csv('ALL_DATA_MERGED.csv')
         
-        # ---- 中英文騎師對照表（根據你數據庫中的英文名建立） ----
+        # ---- 中英文騎師對照表 ----
         jockey_mapping = {
             '潘頓': ['Z Purton', 'Purton'],
             '莫雷拉': ['J Moreira', 'Moreira'],
@@ -363,16 +367,14 @@ def cmd_jockey(chat_id, jockey_name):
             '薛恩': ['B Shinn', 'Shinn'],
         }
         
-        # 先查 '騎師'（中文）欄位，如果冇就查 'jockey'（英文）
+        # 直接查
         jockey_data = pd.DataFrame()
-        
-        # 直接查輸入嘅字串（無論中英文）
         if '騎師' in df.columns:
             jockey_data = df[df['騎師'].astype(str).str.contains(jockey_name, na=False, case=False)]
         if jockey_data.empty and 'jockey' in df.columns:
             jockey_data = df[df['jockey'].astype(str).str.contains(jockey_name, na=False, case=False)]
         
-        # 如果直接查搵唔到，嘗試用對照表將中文轉英文再查
+        # 對照表轉換
         if jockey_data.empty and jockey_name in jockey_mapping:
             for eng_name in jockey_mapping[jockey_name]:
                 if '騎師' in df.columns:
@@ -386,28 +388,8 @@ def cmd_jockey(chat_id, jockey_name):
                         jockey_data = temp
                         break
         
-        # 如果仲係搵唔到，嘗試直接匹配 jockey 欄位（完全匹配英文名）
         if jockey_data.empty:
-            # 如果輸入係英文全名或部分，直接用 jockey 欄位查
-            if 'jockey' in df.columns:
-                jockey_data = df[df['jockey'].astype(str).str.contains(jockey_name, na=False, case=False)]
-            if jockey_data.empty and '騎師' in df.columns:
-                jockey_data = df[df['騎師'].astype(str).str.contains(jockey_name, na=False, case=False)]
-        
-        if jockey_data.empty:
-            # 顯示近似騎師名（除錯用）
-            all_jockeys = []
-            if '騎師' in df.columns:
-                all_jockeys.extend(df['騎師'].dropna().unique())
-            if 'jockey' in df.columns:
-                all_jockeys.extend(df['jockey'].dropna().unique())
-            all_jockeys = list(set(all_jockeys))
-            similar = [j for j in all_jockeys if jockey_name.lower() in str(j).lower()]
-            if similar:
-                hint = "附近嘅騎師：" + ", ".join(similar[:5])
-                send_message(chat_id, f"❌ 找不到騎師 {jockey_name}\n{hint}")
-            else:
-                send_message(chat_id, f"❌ 找不到騎師 {jockey_name}")
+            send_message(chat_id, f"❌ 找不到騎師 {jockey_name}")
             return
         
         total = len(jockey_data)
@@ -430,7 +412,98 @@ def cmd_jockey(chat_id, jockey_name):
         send_message(chat_id, f"❌ 查詢失敗：{str(e)}")
 
 # ============================================================
-# 🔐 管理員指令（原有）
+# 🆕 4. /對比 賽果對比指令（全部場次 / 單一場次）
+# ============================================================
+def cmd_compare(chat_id, args_text=None):
+    """賽果對比：預測 vs 實際（全部場次或單一場次）"""
+    date_str = None
+    race_no = None
+    
+    if args_text:
+        date_match = re.search(r'(\d{4}-\d{2}-\d{2})', args_text)
+        if date_match:
+            date_str = date_match.group(1)
+            remaining = re.sub(r'\d{4}-\d{2}-\d{2}', '', args_text).strip()
+        else:
+            remaining = args_text.strip()
+        if remaining:
+            num_match = re.search(r'(\d+)', remaining)
+            if num_match:
+                race_no = int(num_match.group(1))
+    
+    if not date_str:
+        # 預設尋日
+        date_str = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        send_message(chat_id, f"📅 未指定日期，自動使用 {date_str}")
+    
+    send_message(chat_id, f"📊 正在對比 {date_str}" + (f" 第{race_no}場" if race_no else " 全部場次") + "...")
+    
+    # 執行對比腳本
+    cmd_args = ['--date', date_str]
+    if race_no:
+        cmd_args.extend(['--race', str(race_no)])
+    
+    result = run_script('compare_results.py', cmd_args)
+    
+    if result.returncode != 0:
+        send_message(chat_id, f"❌ 對比失敗：\n{result.stderr[:500]}")
+        return
+    
+    # 讀取報告
+    try:
+        with open('compare_report.txt', 'r', encoding='utf-8') as f:
+            report = f.read()
+        # 如果報告太長，分段發送
+        if len(report) > 4000:
+            for i in range(0, len(report), 4000):
+                send_message(chat_id, report[i:i+4000])
+        else:
+            send_message(chat_id, report)
+    except Exception as e:
+        send_message(chat_id, f"❌ 讀取報告失敗：{str(e)}")
+
+# ============================================================
+# 🆕 5. /預測全部 全日所有場次
+# ============================================================
+def cmd_predict_all(chat_id, date_str=None):
+    """預測全日所有場次"""
+    if not date_str:
+        date_str = datetime.now().strftime('%Y-%m-%d')
+    
+    send_message(chat_id, f"📊 開始預測 {date_str} 全日所有場次...")
+    
+    result = run_script('predict_all_races.py', ['--date', date_str])
+    
+    if result.returncode != 0:
+        send_message(chat_id, f"❌ 預測失敗：\n{result.stderr[:500]}")
+        return
+    
+    # 讀取結果
+    output_file = f'prediction_all_{date_str}.csv'
+    try:
+        df = pd.read_csv(output_file)
+        if df.empty:
+            send_message(chat_id, f"❌ 無預測結果")
+            return
+        
+        # 按場次分組顯示
+        race_nos = sorted(df['場次'].unique())
+        msg = f"🏇 {date_str} 全日預測結果\n\n"
+        for race_no in race_nos:
+            race_data = df[df['場次'] == race_no]
+            if not race_data.empty:
+                winner = race_data.iloc[0]['馬匹名稱']
+                win_rate = race_data.iloc[0]['預測勝率']
+                msg += f"第{race_no}場：{winner}（勝率 {win_rate:.2%}）\n"
+        msg += f"\n📁 詳細資料已儲存至 {output_file}"
+        send_message(chat_id, msg)
+    except FileNotFoundError:
+        send_message(chat_id, f"❌ 找不到結果檔案 {output_file}")
+    except Exception as e:
+        send_message(chat_id, f"❌ 讀取結果失敗：{str(e)}")
+
+# ============================================================
+# 🔐 管理員指令
 # ============================================================
 def cmd_status(chat_id):
     status = "📊 系統狀態報告\n"
@@ -534,6 +607,78 @@ def cmd_unsubscribe(chat_id):
         send_message(chat_id, "⚠️ 你並未訂閱。")
 
 # ============================================================
+# 🆕 動態 help（根據權限顯示）
+# ============================================================
+def cmd_help(chat_id):
+    admin_user = is_admin(chat_id)
+    
+    if admin_user:
+        help_text = """
+🤖 賽馬預測 Bot 指令列表（管理員完整版）
+
+🏇 預測類：
+/預測 - 自動預測最新賽日第9場
+/預測 5 - 預測最新賽日第5場
+/預測 2026-07-15 - 預測指定日期第9場
+/預測 2026-07-15 5 - 預測指定日期第5場
+/預測全部 2026-07-15 - 預測全日所有場次
+
+📊 查詢類：
+/賽程 - 顯示今日賽程
+/賽程 2026-07-15 - 顯示指定日期賽程
+/馬匹 金發盛世 - 查詢馬匹歷史戰績（支援中文名或編號）
+/騎師 潘頓 - 查詢騎師近績
+
+📊 對比類：
+/對比 2026-07-15 - 對比全日預測 vs 賽果
+/對比 2026-07-15 5 - 只對比第5場
+/對比 - 自動對比尋日
+
+📋 訂閱類：
+/訂閱 - 訂閱每日自動預測報告
+/取消訂閱 - 取消訂閱
+
+🔐 管理員指令：
+/status - 查看系統狀態
+/更新 - 更新排位表 + 自動預測
+/logs - 顯示最近日誌
+/broadcast 訊息 - 向所有訂閱用戶廣播
+/restart - 重新啟動 Bot
+/block 用戶ID - 封鎖用戶
+/unblock 用戶ID - 解鎖用戶
+/blocklist - 顯示被封鎖列表
+/check 用戶ID - 檢查用戶狀態
+        """
+    else:
+        help_text = """
+🤖 賽馬預測 Bot 指令列表
+
+🏇 預測類：
+/預測 - 自動預測最新賽日第9場
+/預測 5 - 預測最新賽日第5場
+/預測 2026-07-15 - 預測指定日期第9場
+/預測 2026-07-15 5 - 預測指定日期第5場
+/預測全部 2026-07-15 - 預測全日所有場次
+
+📊 查詢類：
+/賽程 - 顯示今日賽程
+/賽程 2026-07-15 - 顯示指定日期賽程
+/馬匹 金發盛世 - 查詢馬匹歷史戰績（支援中文名或編號）
+/騎師 潘頓 - 查詢騎師近績
+
+📊 對比類：
+/對比 2026-07-15 - 對比全日預測 vs 賽果
+/對比 2026-07-15 5 - 只對比第5場
+/對比 - 自動對比尋日
+
+📋 訂閱類：
+/訂閱 - 訂閱每日自動預測報告
+/取消訂閱 - 取消訂閱
+        """
+    
+    send_message(chat_id, help_text)
+
+# ============================================================
 # 📨 訊息處理（路由）
 # ============================================================
 def handle_message(chat_id, text):
@@ -598,13 +743,11 @@ def handle_message(chat_id, text):
         args = parts[1] if len(parts) > 1 else ''
         cmd_predict(chat_id, args)
     
-    # 🆕 賽程查詢
     elif cmd.startswith('/schedule') or cmd.startswith('/賽程'):
         parts = text.split(maxsplit=1)
         date_arg = parts[1] if len(parts) > 1 else None
         cmd_schedule(chat_id, date_arg)
     
-    # 🆕 馬匹查詢
     elif cmd.startswith('/horse') or cmd.startswith('/馬匹'):
         parts = text.split(maxsplit=1)
         if len(parts) > 1:
@@ -612,7 +755,6 @@ def handle_message(chat_id, text):
         else:
             send_message(chat_id, "請輸入馬匹名稱或編號，例如：/馬匹 金發盛世 或 /馬匹 G209")
     
-    # 🆕 騎師查詢
     elif cmd.startswith('/jockey') or cmd.startswith('/騎師'):
         parts = text.split(maxsplit=1)
         if len(parts) > 1:
@@ -620,44 +762,22 @@ def handle_message(chat_id, text):
         else:
             send_message(chat_id, "請輸入騎師名，例如：/騎師 潘頓")
     
+    elif cmd.startswith('/compare') or cmd.startswith('/對比'):
+        parts = text.split(maxsplit=1)
+        args = parts[1] if len(parts) > 1 else ''
+        cmd_compare(chat_id, args)
+    
+    elif cmd.startswith('/predictall') or cmd.startswith('/預測全部'):
+        parts = text.split(maxsplit=1)
+        date_arg = parts[1] if len(parts) > 1 else None
+        cmd_predict_all(chat_id, date_arg)
+    
     elif cmd in ['/subscribe', '/訂閱']:
         cmd_subscribe(chat_id)
     elif cmd in ['/unsubscribe', '/取消訂閱']:
         cmd_unsubscribe(chat_id)
     elif cmd in ['/help', '/幫助']:
-        help_text = """
-🤖 賽馬預測 Bot 指令列表
-
-🏇 預測類：
-/預測 - 自動預測最新賽日第9場
-/預測 5 - 預測最新賽日第5場
-/預測 2026-07-15 - 預測指定日期第9場
-/預測 2026-07-15 5 - 預測指定日期第5場
-
-📊 查詢類（全新！）：
-/賽程 - 顯示今日賽程
-/賽程 2026-07-15 - 顯示指定日期賽程
-/馬匹 金發盛世 - 查詢馬匹歷史戰績（支援中文名或編號）
-/騎師 潘頓 - 查詢騎師近績（支援中英文名）
-
-📋 訂閱類：
-/訂閱 - 訂閱每日自動預測報告
-/取消訂閱 - 取消訂閱
-
-🔐 管理員指令（只限你）：
-/status - 查看系統狀態
-/更新 - 更新排位表 + 自動預測
-/logs - 顯示最近日誌
-/broadcast 訊息 - 向所有訂閱用戶廣播
-/restart - 重新啟動 Bot
-
-🚫 封鎖指令（只限你）：
-/block 用戶ID - 封鎖用戶
-/unblock 用戶ID - 解鎖用戶
-/blocklist - 顯示被封鎖列表
-/check 用戶ID - 檢查用戶狀態
-        """
-        send_message(chat_id, help_text)
+        cmd_help(chat_id)
     else:
         send_message(chat_id, "請使用 /help 查看所有可用指令")
 
