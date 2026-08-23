@@ -1,13 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Telegram Bot - 賽馬預測最終完整版
-- 所有功能齊全
-- 動態 help（管理員／普通用戶分開）
-- 騎師中英文對照
-- 馬匹中文名顯示
-- 賽果對比（全部場次 / 單一場次）
-- 全日預測（全部場次）
+Telegram Bot - 賽馬預測最終完整版（已加入 /trend 趨勢報告）
 """
 
 import sys
@@ -133,16 +127,15 @@ def run_script(script_name, args=None):
         cmd,
         capture_output=True,
         text=True,
-        timeout=600,  # 延長 timeout，因為全部場次可能需要較長時間
+        timeout=600,
         env=my_env
     )
     return result
 
 # ============================================================
-# 🔍 輔助函數（自動偵測欄位）
+# 🔍 輔助函數
 # ============================================================
 def get_finish_column(df):
-    """偵測名次欄位"""
     candidates = ['finish_position', '名次', 'Position', 'pos', 'Rank', 'rank', '最終名次']
     for col in candidates:
         if col in df.columns:
@@ -150,7 +143,6 @@ def get_finish_column(df):
     return None
 
 def get_name_columns(df):
-    """偵測馬名欄位"""
     candidates = ['馬名', 'horse_name', '中文名', 'Name', 'name']
     for col in candidates:
         if col in df.columns:
@@ -162,7 +154,6 @@ def get_name_columns(df):
 # ============================================================
 
 def cmd_predict(chat_id, args_text=None):
-    """執行預測（支援日期 + 場次）"""
     date_str = None
     race_no = None
     
@@ -220,11 +211,7 @@ def cmd_predict(chat_id, args_text=None):
         logger.error(f"讀取結果失敗：{e}")
         send_message(chat_id, f"❌ 讀取結果失敗：{str(e)}")
 
-# ============================================================
-# 1. /賽程 指令
-# ============================================================
 def cmd_schedule(chat_id, target_date=None):
-    """顯示指定日期或今日嘅賽程"""
     if target_date:
         try:
             date_obj = pd.to_datetime(target_date)
@@ -240,7 +227,6 @@ def cmd_schedule(chat_id, target_date=None):
     try:
         df = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv')
         df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce')
-        # 過濾指定日期
         day_races = df[df['race_date'].dt.date == date_obj.date()]
         if day_races.empty:
             send_message(chat_id, f"📅 {display_date} 沒有賽事")
@@ -257,21 +243,15 @@ def cmd_schedule(chat_id, target_date=None):
         logger.error(f"查詢賽程失敗：{e}")
         send_message(chat_id, f"❌ 查詢失敗：{str(e)}")
 
-# ============================================================
-# 2. /馬匹 指令
-# ============================================================
 def cmd_horse(chat_id, horse_name_or_id):
     send_message(chat_id, f"🔍 正在查詢馬匹 {horse_name_or_id}...")
     try:
         df = pd.read_csv('ALL_DATA_MERGED.csv')
-        # 先直接查 horse_id
         horse_data = df[df['horse_id'] == horse_name_or_id]
-        # 如果冇，嘗試用中文名
         if horse_data.empty:
             name_col = get_name_columns(df)
             if name_col:
                 horse_data = df[df[name_col] == horse_name_or_id]
-        # 再試對照表
         if horse_data.empty and os.path.exists(NAME_MAP_FILE):
             try:
                 name_map = pd.read_csv(NAME_MAP_FILE)
@@ -287,8 +267,6 @@ def cmd_horse(chat_id, horse_name_or_id):
             return
         
         total = len(horse_data)
-        
-        # ---- 讀取馬名（處理 NaN） ----
         if '馬名' in horse_data.columns:
             horse_name_val = horse_data['馬名'].iloc[0]
             if pd.isna(horse_name_val) or horse_name_val == '':
@@ -298,7 +276,6 @@ def cmd_horse(chat_id, horse_name_or_id):
         else:
             horse_name = horse_data['horse_id'].iloc[0]
         
-        # ---- 名次統計 ----
         finish_col = get_finish_column(horse_data)
         if finish_col:
             valid_rank = horse_data[finish_col].dropna()
@@ -326,15 +303,11 @@ def cmd_horse(chat_id, horse_name_or_id):
         logger.error(f"查詢馬匹失敗：{e}")
         send_message(chat_id, f"❌ 查詢失敗：{str(e)}")
 
-# ============================================================
-# 3. /騎師 指令（中英文對照）
-# ============================================================
 def cmd_jockey(chat_id, jockey_name):
     send_message(chat_id, f"🔍 正在查詢騎師 {jockey_name}...")
     try:
         df = pd.read_csv('ALL_DATA_MERGED.csv')
         
-        # ---- 中英文騎師對照表 ----
         jockey_mapping = {
             '潘頓': ['Z Purton', 'Purton'],
             '莫雷拉': ['J Moreira', 'Moreira'],
@@ -367,14 +340,12 @@ def cmd_jockey(chat_id, jockey_name):
             '薛恩': ['B Shinn', 'Shinn'],
         }
         
-        # 直接查
         jockey_data = pd.DataFrame()
         if '騎師' in df.columns:
             jockey_data = df[df['騎師'].astype(str).str.contains(jockey_name, na=False, case=False)]
         if jockey_data.empty and 'jockey' in df.columns:
             jockey_data = df[df['jockey'].astype(str).str.contains(jockey_name, na=False, case=False)]
         
-        # 對照表轉換
         if jockey_data.empty and jockey_name in jockey_mapping:
             for eng_name in jockey_mapping[jockey_name]:
                 if '騎師' in df.columns:
@@ -411,11 +382,7 @@ def cmd_jockey(chat_id, jockey_name):
         logger.error(f"查詢騎師失敗：{e}")
         send_message(chat_id, f"❌ 查詢失敗：{str(e)}")
 
-# ============================================================
-# 🆕 4. /對比 賽果對比指令（全部場次 / 單一場次）
-# ============================================================
 def cmd_compare(chat_id, args_text=None):
-    """賽果對比：預測 vs 實際（全部場次或單一場次）"""
     date_str = None
     race_no = None
     
@@ -432,13 +399,11 @@ def cmd_compare(chat_id, args_text=None):
                 race_no = int(num_match.group(1))
     
     if not date_str:
-        # 預設尋日
         date_str = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
         send_message(chat_id, f"📅 未指定日期，自動使用 {date_str}")
     
     send_message(chat_id, f"📊 正在對比 {date_str}" + (f" 第{race_no}場" if race_no else " 全部場次") + "...")
     
-    # 執行對比腳本
     cmd_args = ['--date', date_str]
     if race_no:
         cmd_args.extend(['--race', str(race_no)])
@@ -449,11 +414,9 @@ def cmd_compare(chat_id, args_text=None):
         send_message(chat_id, f"❌ 對比失敗：\n{result.stderr[:500]}")
         return
     
-    # 讀取報告
     try:
         with open('compare_report.txt', 'r', encoding='utf-8') as f:
             report = f.read()
-        # 如果報告太長，分段發送
         if len(report) > 4000:
             for i in range(0, len(report), 4000):
                 send_message(chat_id, report[i:i+4000])
@@ -462,11 +425,7 @@ def cmd_compare(chat_id, args_text=None):
     except Exception as e:
         send_message(chat_id, f"❌ 讀取報告失敗：{str(e)}")
 
-# ============================================================
-# 🆕 5. /預測全部 全日所有場次
-# ============================================================
 def cmd_predict_all(chat_id, date_str=None):
-    """預測全日所有場次"""
     if not date_str:
         date_str = datetime.now().strftime('%Y-%m-%d')
     
@@ -478,7 +437,6 @@ def cmd_predict_all(chat_id, date_str=None):
         send_message(chat_id, f"❌ 預測失敗：\n{result.stderr[:500]}")
         return
     
-    # 讀取結果
     output_file = f'prediction_all_{date_str}.csv'
     try:
         df = pd.read_csv(output_file)
@@ -486,7 +444,6 @@ def cmd_predict_all(chat_id, date_str=None):
             send_message(chat_id, f"❌ 無預測結果")
             return
         
-        # 按場次分組顯示
         race_nos = sorted(df['場次'].unique())
         msg = f"🏇 {date_str} 全日預測結果\n\n"
         for race_no in race_nos:
@@ -501,6 +458,53 @@ def cmd_predict_all(chat_id, date_str=None):
         send_message(chat_id, f"❌ 找不到結果檔案 {output_file}")
     except Exception as e:
         send_message(chat_id, f"❌ 讀取結果失敗：{str(e)}")
+
+# ============================================================
+# 🆕 /trend 預測準確度趨勢報告
+# ============================================================
+def cmd_trend(chat_id, args_text=None):
+    """顯示預測準確度趨勢報告"""
+    days = 30
+    if args_text:
+        try:
+            days = int(args_text)
+            if days < 7:
+                days = 7
+            elif days > 90:
+                days = 90
+        except:
+            pass
+    
+    send_message(chat_id, f"📊 正在生成最近 {days} 日嘅趨勢報告...")
+    
+    result = run_script('trend_report.py', ['--days', str(days)])
+    
+    if result.returncode != 0:
+        send_message(chat_id, f"❌ 生成報告失敗：\n{result.stderr[:500]}")
+        return
+    
+    # 發送文字報告
+    try:
+        with open('trend_report.txt', 'r', encoding='utf-8') as f:
+            report = f.read()
+        if len(report) > 4000:
+            for i in range(0, len(report), 4000):
+                send_message(chat_id, report[i:i+4000])
+        else:
+            send_message(chat_id, report)
+    except:
+        send_message(chat_id, "❌ 讀取報告失敗")
+    
+    # 發送圖表
+    try:
+        if os.path.exists('trend_chart.png'):
+            url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
+            with open('trend_chart.png', 'rb') as f:
+                files = {'photo': f}
+                data = {'chat_id': chat_id, 'caption': '📈 命中率走勢圖'}
+                requests.post(url, files=files, data=data, timeout=30)
+    except Exception as e:
+        logger.error(f"發送圖表失敗：{e}")
 
 # ============================================================
 # 🔐 管理員指令
@@ -634,6 +638,10 @@ def cmd_help(chat_id):
 /對比 2026-07-15 5 - 只對比第5場
 /對比 - 自動對比尋日
 
+📈 趨勢類：
+/trend - 顯示最近30日預測準確度趨勢
+/trend 60 - 顯示最近60日趨勢
+
 📋 訂閱類：
 /訂閱 - 訂閱每日自動預測報告
 /取消訂閱 - 取消訂閱
@@ -671,6 +679,9 @@ def cmd_help(chat_id):
 /對比 2026-07-15 5 - 只對比第5場
 /對比 - 自動對比尋日
 
+📈 趨勢類：
+/trend - 顯示最近30日預測準確度趨勢
+
 📋 訂閱類：
 /訂閱 - 訂閱每日自動預測報告
 /取消訂閱 - 取消訂閱
@@ -679,7 +690,7 @@ def cmd_help(chat_id):
     send_message(chat_id, help_text)
 
 # ============================================================
-# 📨 訊息處理（路由）
+# 📨 訊息處理
 # ============================================================
 def handle_message(chat_id, text):
     logger.info(f"收到訊息：{text} 來自 {chat_id}")
@@ -771,6 +782,11 @@ def handle_message(chat_id, text):
         parts = text.split(maxsplit=1)
         date_arg = parts[1] if len(parts) > 1 else None
         cmd_predict_all(chat_id, date_arg)
+    
+    elif cmd.startswith('/trend') or cmd.startswith('/趨勢'):
+        parts = text.split(maxsplit=1)
+        args = parts[1] if len(parts) > 1 else ''
+        cmd_trend(chat_id, args)
     
     elif cmd in ['/subscribe', '/訂閱']:
         cmd_subscribe(chat_id)

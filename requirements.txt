@@ -1,8 +1,9 @@
-numpy==1.24.3
 pandas
+numpy
 requests
+matplotlib
 xgboost
-catboost==1.2.5
+catboost
 scikit-learn
 scipy
 lightgbm
