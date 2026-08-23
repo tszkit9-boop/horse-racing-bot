@@ -1,0 +1,38 @@
+name: 自動更新排位表
+
+on:
+  schedule:
+    # 香港時間 06:00，逢星期二、五、六
+    - cron: '0 22 * * 2,5,6'
+  workflow_dispatch:
+
+jobs:
+  update-racecard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 檢出程式碼
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 設定 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安裝依賴
+        run: |
+          pip install --upgrade pip
+          pip install requests pandas beautifulsoup4
+
+      - name: 執行爬蟲（星期二、五、六）
+        run: |
+          python scrape_racecard_with_odds.py --auto --weekdays 2,5,6
+
+      - name: 提交變更
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add HKCJ_FULL_YEAR_DATA.csv
+          git commit -m "自動更新排位表 $(date +'%Y-%m-%d')" || echo "冇變更"
+          git push
