@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Telegram Bot - 賽馬預測完整版（已加入 /賽程、/馬匹、/騎師）
+Telegram Bot - 賽馬預測完整版（已修正馬匹/騎師查詢）
 """
 
 import sys
@@ -252,12 +252,13 @@ def cmd_schedule(chat_id, target_date=None):
         send_message(chat_id, f"❌ 查詢失敗：{str(e)}")
 
 # ============================================================
-# 🆕 2. /馬匹 指令（支援中文名或 horse_id）
+# 🆕 2. /馬匹 指令（修正版：正確顯示中文馬名）
 # ============================================================
 def cmd_horse(chat_id, horse_name_or_id):
     send_message(chat_id, f"🔍 正在查詢馬匹 {horse_name_or_id}...")
     try:
         df = pd.read_csv('ALL_DATA_MERGED.csv')
+        
         # 先直接查 horse_id
         horse_data = df[df['horse_id'] == horse_name_or_id]
         # 如果冇，嘗試用中文名
@@ -281,14 +282,19 @@ def cmd_horse(chat_id, horse_name_or_id):
             return
         
         total = len(horse_data)
-        # 取得中文名
-        name_col = get_name_columns(horse_data)
-        if name_col and not horse_data[name_col].iloc[0] is None:
-            horse_name = horse_data[name_col].iloc[0]
-        else:
-            horse_name = horse_data.iloc[0]['horse_id']
         
-        # 名次統計
+        # ---- 讀取馬名（處理 NaN） ----
+        if '馬名' in horse_data.columns:
+            horse_name_val = horse_data['馬名'].iloc[0]
+            if pd.isna(horse_name_val) or horse_name_val == '':
+                horse_name = horse_data['horse_id'].iloc[0]
+            else:
+                horse_name = horse_name_val
+        else:
+            # 如果冇 '馬名'，用 horse_id
+            horse_name = horse_data['horse_id'].iloc[0]
+        
+        # ---- 名次統計 ----
         finish_col = get_finish_column(horse_data)
         if finish_col:
             valid_rank = horse_data[finish_col].dropna()
@@ -317,27 +323,40 @@ def cmd_horse(chat_id, horse_name_or_id):
         send_message(chat_id, f"❌ 查詢失敗：{str(e)}")
 
 # ============================================================
-# 🆕 3. /騎師 指令（支援中文名）
+# 🆕 3. /騎師 指令（修正版：支援中英文模糊匹配）
 # ============================================================
 def cmd_jockey(chat_id, jockey_name):
     send_message(chat_id, f"🔍 正在查詢騎師 {jockey_name}...")
     try:
         df = pd.read_csv('ALL_DATA_MERGED.csv')
-        # 嘗試多個騎師欄位
-        jockey_cols = ['jockey', '騎師']
-        found_col = None
-        for col in jockey_cols:
-            if col in df.columns:
-                found_col = col
-                break
-        if found_col is None:
-            send_message(chat_id, "❌ 數據庫中無騎師資料")
-            return
         
-        # 模糊匹配（支援中英文部分）
-        jockey_data = df[df[found_col].astype(str).str.contains(jockey_name, na=False, case=False)]
+        # 先試 '騎師' 欄位（中文）
+        jockey_data = pd.DataFrame()
+        if '騎師' in df.columns:
+            jockey_data = df[df['騎師'].astype(str).str.contains(jockey_name, na=False, case=False)]
+        # 如果搵唔到，試 'jockey' 欄位（英文）
+        if jockey_data.empty and 'jockey' in df.columns:
+            jockey_data = df[df['jockey'].astype(str).str.contains(jockey_name, na=False, case=False)]
+        # 如果都搵唔到，試完全匹配
+        if jockey_data.empty and '騎師' in df.columns:
+            jockey_data = df[df['騎師'] == jockey_name]
+        if jockey_data.empty and 'jockey' in df.columns:
+            jockey_data = df[df['jockey'] == jockey_name]
+        
         if jockey_data.empty:
-            send_message(chat_id, f"❌ 找不到騎師 {jockey_name}")
+            # 顯示近似騎師名（除錯用）
+            all_jockeys = []
+            if '騎師' in df.columns:
+                all_jockeys.extend(df['騎師'].dropna().unique())
+            if 'jockey' in df.columns:
+                all_jockeys.extend(df['jockey'].dropna().unique())
+            all_jockeys = list(set(all_jockeys))
+            similar = [j for j in all_jockeys if jockey_name.lower() in str(j).lower()]
+            if similar:
+                hint = "附近嘅騎師：" + ", ".join(similar[:5])
+                send_message(chat_id, f"❌ 找不到騎師 {jockey_name}\n{hint}")
+            else:
+                send_message(chat_id, f"❌ 找不到騎師 {jockey_name}")
             return
         
         total = len(jockey_data)
