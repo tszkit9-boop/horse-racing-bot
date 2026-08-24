@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版（所有後台模組齊全，無任何遺漏）
+賽馬預測系統 - 完整版（所有功能齊全，全中文註解）
 """
 
 import streamlit as st
@@ -21,21 +21,24 @@ import plotly.graph_objects as go
 # 🔐 功能開關（全部中文說明）
 # ============================================================
 CONFIG = {
-    "enable_registration": False,
-    "enable_payment": False,
-    "enable_admin": True,
-    "currency": "HKD",
-    "free_limit": 2,
-    "subscription_price": 9.99,
-    "admin_password": "z54060437K",
-    "module_user_management": True,
-    "module_analytics": True,
-    "module_finance": True,
-    "module_monitoring": True,
-    "module_content": True,
-    "module_automation": True,
-    "module_security": True,
-    "module_promo": True,
+    # ----- 基本設定 -----
+    "enable_registration": False,      # 是否啟用「用戶註冊」功能（False = 任何人都用得，唔使註冊）
+    "enable_payment": False,           # 是否啟用「付費功能」（False = 全部免費，唔使俾錢）
+    "enable_admin": True,              # 是否顯示「後台管理」按鈕（True = 會顯示）
+    "currency": "HKD",                 # 貨幣單位（HKD = 港幣）
+    "free_limit": 2,                   # 免費用戶可以預測幾多場（2場 = 免費試玩2場）
+    "subscription_price": 9.99,        # 每月訂閱價格（港幣 $9.99）
+    "admin_password": "z54060437K",    # 後台管理員密碼（請改為你嘅密碼）
+    
+    # ----- 後台十大模組開關（全部可以獨立開關） -----
+    "module_user_management": True,    # 用戶管理（進階）：睇到所有用戶、開通/取消訂閱、加備註
+    "module_analytics": True,          # 數據分析與統計：睇到用戶增長、活躍度、功能使用分佈
+    "module_finance": True,            # 財務管理：記錄收入、睇到月收入/年收入
+    "module_monitoring": True,         # 系統監控：檢查檔案狀態、錯誤日誌、系統資訊
+    "module_content": True,            # 內容管理：公告、上傳排位表、FAQ
+    "module_automation": True,         # 自動化工具：到期提醒、自動開通設定
+    "module_security": True,           # 安全與權限：操作日誌、多管理員、IP限制
+    "module_promo": True,              # 優惠碼管理：建立、管理、應用優惠碼
 }
 
 # ============================================================
@@ -51,26 +54,49 @@ st.set_page_config(
 # ============================================================
 # 2. 數據讀寫函數（所有 JSON 檔案）
 # ============================================================
-USER_DATA_FILE = 'users.json'
-FINANCE_FILE = 'finance.json'
-LOG_FILE = 'admin_log.json'
-AUTOMATION_FILE = 'automation.json'
-CONTENT_FILE = 'content.json'
-PROMO_FILE = 'promo_codes.json'
-ACCURACY_FILE = 'accuracy.json'
+USER_DATA_FILE = 'users.json'          # 用戶資料
+FINANCE_FILE = 'finance.json'          # 財務記錄
+LOG_FILE = 'admin_log.json'            # 操作日誌
+AUTOMATION_FILE = 'automation.json'    # 自動化設定
+CONTENT_FILE = 'content.json'          # 內容（公告等）
+PROMO_FILE = 'promo_codes.json'        # 優惠碼
+ACCURACY_FILE = 'accuracy.json'        # 預測準確度記錄
 
 def load_json(file):
+    """讀取 JSON 檔案，若不存在則返回空字典"""
     if os.path.exists(file):
         with open(file, 'r', encoding='utf-8') as f:
             return json.load(f)
     return {}
 
 def save_json(file, data):
+    """儲存 JSON 檔案"""
     with open(file, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 def load_users():
-    return load_json(USER_DATA_FILE)
+    """載入用戶資料，若無 admin 則自動建立"""
+    users = load_json(USER_DATA_FILE)
+    if not users or "admin" not in users:
+        users = {
+            "admin": {
+                "password": CONFIG["admin_password"],
+                "is_paid": False,
+                "paid_date": None,
+                "expiry_date": None,
+                "free_usage": 0,
+                "total_usage": 0,
+                "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                "note": "系統管理員",
+                "group": "VIP",
+                "history": [
+                    {"date": "2025-04-09", "race": 9, "horse": "浪漫勇士", "timestamp": "2025-04-09 14:30:00", "predicted_prob": 0.35},
+                    {"date": "2025-04-09", "race": 10, "horse": "金鎗六十", "timestamp": "2025-04-09 15:00:00", "predicted_prob": 0.42}
+                ]
+            }
+        }
+        save_users(users)
+    return users
 
 def save_users(users):
     save_json(USER_DATA_FILE, users)
@@ -100,6 +126,7 @@ def save_accuracy(acc):
     save_json(ACCURACY_FILE, acc)
 
 def log_admin_action(admin, action):
+    """記錄管理員操作"""
     logs = load_logs()
     if 'logs' not in logs:
         logs['logs'] = []
@@ -111,12 +138,14 @@ def log_admin_action(admin, action):
     save_logs(logs)
 
 def authenticate(username, password):
+    """驗證用戶登入"""
     users = load_users()
     if username in users and users[username].get('password') == password:
         return True
     return False
 
 def generate_promo_code():
+    """產生隨機優惠碼"""
     import random, string
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
@@ -125,6 +154,7 @@ def generate_promo_code():
 # ============================================================
 @st.cache_resource
 def load_models():
+    """載入 XGBoost、CatBoost、Ranking 三個模型"""
     try:
         with open('hk_racing_model.pkl', 'rb') as f:
             xgb_obj = pickle.load(f)
@@ -208,6 +238,7 @@ NAME_MAPPING = {
 }
 
 def standardize_columns_safe(df):
+    """標準化欄位名稱（中英對照）"""
     rename_map = {
         '騎師': 'jockey', '練馬師': 'trainer', '路程': 'distance',
         '場地': 'going', '檔位': 'draw', '評分': 'rtg',
@@ -227,12 +258,14 @@ def standardize_columns_safe(df):
     return df
 
 def ensure_series(df):
+    """確保 DataFrame 內冇嵌套嘅 Series"""
     for col in df.columns:
         if isinstance(df[col], pd.DataFrame):
             df[col] = df[col].iloc[:, 0]
     return df
 
 def get_finish_column(df):
+    """搵出名次欄位名稱"""
     candidates = ['finish_position', '名次', 'Position', 'pos', 'Rank', 'rank', '最終名次']
     for col in candidates:
         if col in df.columns:
@@ -240,6 +273,7 @@ def get_finish_column(df):
     return None
 
 def safe_parse_dates(df):
+    """安全解析日期欄位"""
     date_col = None
     for col in ['race_date', '比賽日期']:
         if col in df.columns:
@@ -256,6 +290,7 @@ def safe_parse_dates(df):
     return df, date_col
 
 def get_latest_features(race_df, history_df):
+    """從歷史數據攞最新特徵"""
     history_df['race_date'] = pd.to_datetime(history_df['race_date'], errors='coerce')
     latest = history_df.sort_values('race_date').groupby('horse_id').last().reset_index()
     merged = race_df.merge(latest, on='horse_id', how='left', suffixes=('', '_hist'))
@@ -275,6 +310,7 @@ def get_latest_features(race_df, history_df):
     return merged
 
 def compute_stats(race_df, history_df, race_date):
+    """計算各種統計特徵（騎師勝率、練馬師勝率、近3場名次等）"""
     history_df = ensure_series(history_df)
     if history_df.columns.duplicated().any():
         history_df = history_df.loc[:, ~history_df.columns.duplicated(keep='first')]
@@ -291,6 +327,7 @@ def compute_stats(race_df, history_df, race_date):
     if 'finish_position' not in hist.columns:
         raise KeyError("歷史數據缺少 finish_position")
     hist['finish_position'] = pd.to_numeric(hist['finish_position'], errors='coerce')
+    # 以下為各個特徵計算，若失敗則補 0
     try:
         jockey_stats = hist.groupby('jockey').apply(lambda g: (g['finish_position']==1).sum()/max(len(g),1)).reset_index(name='jockey_win_rate_50')
         race_df = race_df.merge(jockey_stats, on='jockey', how='left')
@@ -353,6 +390,7 @@ def compute_stats(race_df, history_df, race_date):
         race_df['races_last14days'] = race_df.apply(lambda r: len(hist[(hist['horse_id']==r['horse_id']) & (hist['race_date']>=race_date-pd.Timedelta(days=14))]), axis=1)
     except:
         race_df['races_last14days'] = 0
+    # 補齊其他特徵
     for col in ['course_win_rate', 'course_avg_rank', 'weight_change', 'jockey_trainer_win_rate',
                 'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
                 'early_pace', 'finish_speed', 'last_trial_rank', 'last_trial_time',
@@ -367,6 +405,7 @@ def compute_stats(race_df, history_df, race_date):
 
 @st.cache_data
 def load_horse_name_map():
+    """載入馬匹 ID 對應中文名對照表"""
     try:
         df_map = pd.read_csv('horse_name_mapping.csv', encoding='utf-8-sig')
         if 'horse_id' in df_map.columns and '馬名' in df_map.columns:
@@ -376,6 +415,7 @@ def load_horse_name_map():
     return {}
 
 def generate_pool_recommendations(df, top_n=6):
+    """根據預測勝率生成六種彩池推薦"""
     top_horses = df.head(top_n)
     horse_names = top_horses['馬匹名稱'].tolist()
     probs = top_horses['預測勝率'].tolist()
@@ -431,6 +471,7 @@ def generate_pool_recommendations(df, top_n=6):
     return rec
 
 def run_prediction(date_str, race_no):
+    """執行預測核心函數，回傳結果 DataFrame 同彩池推薦文字"""
     xgb_model, cat_model, rank_model = load_models()
     if xgb_model is None:
         return None, None
@@ -525,7 +566,7 @@ def run_prediction(date_str, race_no):
 
     prob_xgb = xgb_model.predict_proba(X)[:, 1]
     prob_cat = cat_model.predict_proba(X)[:, 1]
-    prob_final = (prob_xgb * 25 + prob_cat) / 26
+    prob_final = (prob_xgb * 25 + prob_cat) / 26   # 集成權重
     rank_score = rank_model.predict(X)
 
     result = race_sel[['中文名', 'draw', 'win_odds']].copy()
@@ -541,6 +582,7 @@ def run_prediction(date_str, race_no):
 # 5. 用戶功能（儀表板、歷史、統計）
 # ============================================================
 def record_prediction(username, date_str, race_no, horse_name, predicted_prob=None):
+    """記錄用戶嘅預測歷史，同時寫入 accuracy.json 方便日後比對"""
     users = load_users()
     if username in users:
         if 'history' not in users[username]:
@@ -553,7 +595,7 @@ def record_prediction(username, date_str, race_no, horse_name, predicted_prob=No
             'predicted_prob': predicted_prob
         })
         save_users(users)
-        # 記錄到 accuracy.json
+        # 同時記錄到 accuracy.json
         acc = load_accuracy()
         if 'records' not in acc:
             acc['records'] = []
@@ -569,6 +611,7 @@ def record_prediction(username, date_str, race_no, horse_name, predicted_prob=No
         save_accuracy(acc)
 
 def get_user_stats(username):
+    """攞用戶統計數據"""
     users = load_users()
     if username not in users:
         return {'total_predictions': 0, 'free_used': 0, 'is_paid': False, 'group': 'free'}
@@ -584,6 +627,7 @@ def get_user_stats(username):
     }
 
 def show_user_dashboard(username):
+    """顯示用戶個人儀表板"""
     if not username:
         return
     stats = get_user_stats(username)
@@ -612,6 +656,7 @@ def show_user_dashboard(username):
     st.markdown("---")
 
 def show_prediction_history(username):
+    """顯示用戶嘅預測歷史（最近20條）"""
     if not username:
         st.info("請先登入以查看歷史記錄")
         return
@@ -630,6 +675,7 @@ def show_prediction_history(username):
 # 6. 登入/註冊
 # ============================================================
 def login_page():
+    """登入/註冊頁面"""
     st.title("🔐 登入 / 註冊")
     tab1, tab2 = st.tabs(["登入", "註冊"])
     with tab1:
@@ -676,6 +722,7 @@ def login_page():
 # 7. 付費牆
 # ============================================================
 def show_paywall():
+    """顯示付費升級頁面"""
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
     st.markdown(f"""
     ### 💳 升級至付費版（{CONFIG['currency']}）
@@ -703,6 +750,7 @@ def show_paywall():
 
 # ---------- 8.1 用戶管理 ----------
 def admin_user_management():
+    """後台：用戶管理（含查看用戶視角）"""
     st.subheader("👥 用戶管理")
     users = load_users()
     if not users:
@@ -711,8 +759,60 @@ def admin_user_management():
     df = pd.DataFrame.from_dict(users, orient='index')
     st.dataframe(df, use_container_width=True)
     
+    st.divider()
+    st.subheader("👁️ 查看用戶視角")
+    selected_user = st.selectbox("選擇要查看的用戶", list(users.keys()))
+    if selected_user:
+        user_data = users[selected_user]
+        st.markdown("---")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("👤 用戶", selected_user)
+        col2.metric("🏷️ 級別", user_data.get('group', 'free').upper())
+        col3.metric("📊 總預測次數", len(user_data.get('history', [])))
+        if user_data.get('is_paid', False) or user_data.get('group') == 'VIP':
+            col4.metric("📊 剩餘場次", "∞")
+        else:
+            used = user_data.get('free_usage', 0)
+            remain = max(0, CONFIG["free_limit"] - used)
+            col4.metric("📊 剩餘免費場次", remain)
+        st.markdown("---")
+        st.subheader(f"📋 {selected_user} 嘅預測記錄")
+        history = user_data.get('history', [])
+        if history:
+            df_hist = pd.DataFrame(history[-20:][::-1])
+            st.dataframe(df_hist, use_container_width=True)
+        else:
+            st.info("呢個用戶暫時冇任何預測記錄")
+        if history:
+            st.subheader(f"🎯 {selected_user} 嘅準確度統計")
+            acc = load_accuracy()
+            records = acc.get('records', [])
+            user_records = [r for r in records if r.get('username') == selected_user]
+            if user_records:
+                df_rec = pd.DataFrame(user_records)
+                total = len(df_rec)
+                hit = df_rec[df_rec['is_hit'] == True].shape[0] if 'is_hit' in df_rec else 0
+                hit_rate = hit/total if total>0 else 0
+                roi = (hit * 400 - total * 100) / (total * 100) if total>0 else 0
+                col1, col2, col3 = st.columns(3)
+                col1.metric("總預測", total)
+                col2.metric("命中", hit)
+                col3.metric("命中率", f"{hit_rate:.2%}")
+                st.metric("ROI (模擬)", f"{roi:.2%}")
+                if 'date' in df_rec:
+                    df_rec['date'] = pd.to_datetime(df_rec['date'])
+                    daily = df_rec.groupby(df_rec['date'].dt.date).agg(
+                        total=('is_hit', 'count'),
+                        hit=('is_hit', lambda x: (x==True).sum())
+                    ).reset_index()
+                    daily['hit_rate'] = daily['hit'] / daily['total']
+                    fig = px.line(daily, x='date', y='hit_rate', title=f'{selected_user} 嘅命中率趨勢')
+                    st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("呢個用戶未有準確度數據（未對比賽果）")
+    
     with st.expander("✏️ 編輯用戶"):
-        username = st.selectbox("選擇用戶", list(users.keys()))
+        username = st.selectbox("選擇要編輯的用戶", list(users.keys()), key="edit_user")
         if username:
             user = users[username]
             new_group = st.selectbox("群組", ['free', 'paid', 'VIP'], index=['free','paid','VIP'].index(user.get('group','free')))
@@ -729,6 +829,7 @@ def admin_user_management():
 
 # ---------- 8.2 數據分析（含用戶增長） ----------
 def admin_analytics():
+    """後台：數據分析與用戶增長"""
     st.subheader("📊 數據分析 & 用戶增長")
     users = load_users()
     total_users = len(users)
@@ -762,6 +863,7 @@ def admin_analytics():
 
 # ---------- 8.3 財務管理 ----------
 def admin_finance():
+    """後台：財務管理"""
     st.subheader("💰 財務管理")
     finance = load_finance()
     total_income = finance.get('total_income', 0)
@@ -786,6 +888,7 @@ def admin_finance():
 
 # ---------- 8.4 優惠碼管理 ----------
 def admin_promo_codes():
+    """後台：優惠碼管理"""
     st.subheader("🎟️ 優惠碼管理")
     promos = load_promos()
     col1, col2 = st.columns(2)
@@ -828,8 +931,9 @@ def admin_promo_codes():
                     st.success("✅ 已升級用戶")
                     st.rerun()
 
-# ---------- 8.5 預測監控（新增） ----------
+# ---------- 8.5 預測監控 ----------
 def admin_accuracy_monitor():
+    """後台：預測準確率監控（自動比對賽果）"""
     st.subheader("📈 預測準確率監控")
     acc = load_accuracy()
     records = acc.get('records', [])
@@ -837,7 +941,7 @@ def admin_accuracy_monitor():
         st.info("暫時未有預測記錄，未能進行監控。")
         return
 
-    # 自動比對賽果
+    # 嘗試自動比對賽果
     try:
         results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
         results_df = standardize_columns_safe(results_df)
@@ -891,8 +995,9 @@ def admin_accuracy_monitor():
     with st.expander("📋 查看所有記錄"):
         st.dataframe(df_records, use_container_width=True)
 
-# ---------- 8.6 訂閱管理（新增） ----------
+# ---------- 8.6 訂閱管理 ----------
 def admin_subscription():
+    """後台：訂閱管理與到期提醒"""
     st.subheader("⏰ 訂閱管理 & 到期提醒")
     users = load_users()
     paid_users = {u: data for u, data in users.items() if data.get('is_paid', False) or data.get('group') == 'VIP'}
@@ -932,6 +1037,7 @@ def admin_subscription():
 
 # ---------- 8.7 系統監控 ----------
 def admin_monitoring():
+    """後台：系統監控（檢查檔案狀態、日誌）"""
     st.subheader("📡 系統監控")
     files = ['ALL_DATA_MERGED.csv', 'HKCJ_FULL_YEAR_DATA.csv', 'horse_name_mapping.csv',
              'hk_racing_model.pkl', 'hk_catboost_model.cbm', 'hk_ranking_model.pkl']
@@ -946,16 +1052,91 @@ def admin_monitoring():
         df_log = pd.DataFrame(logs['logs'][-20:])
         st.dataframe(df_log, use_container_width=True)
 
-# ---------- 8.8 內容管理 ----------
+# ---------- 8.8 內容管理（含完整公告系統） ----------
 def admin_content():
+    """後台：內容管理（公告發佈、排位表上傳）"""
     st.subheader("📝 內容管理")
     content = load_json(CONTENT_FILE)
-    announcement = content.get('announcement', '歡迎使用系統')
-    new_ann = st.text_area("公告內容", value=announcement, height=100)
-    if st.button("更新公告"):
-        content['announcement'] = new_ann
-        save_json(CONTENT_FILE, content)
-        st.success("✅ 已更新")
+    
+    # 發佈新公告
+    with st.expander("📢 發佈新公告", expanded=False):
+        col1, col2 = st.columns(2)
+        with col1:
+            title = st.text_input("公告標題", placeholder="例如：今日沙田日馬")
+            content_text = st.text_area("公告內容", height=80, placeholder="輸入公告詳細內容...")
+        with col2:
+            ann_type = st.selectbox("公告類型", ["一般", "重要", "緊急"])
+            target_group = st.selectbox("顯示對象", ["全部用戶", "免費用戶", "付費用戶", "VIP"])
+            start_date = st.date_input("開始日期", value=datetime.now().date())
+            end_date = st.date_input("結束日期（留空 = 永久）", value=None)
+        if st.button("📤 發佈公告", type="primary"):
+            if not title or not content_text:
+                st.warning("請填寫標題同內容")
+            else:
+                if 'announcements' not in content:
+                    content['announcements'] = []
+                new_ann = {
+                    "id": len(content['announcements']) + 1,
+                    "title": title,
+                    "content": content_text,
+                    "type": ann_type,
+                    "target": target_group,
+                    "start_date": start_date.strftime('%Y-%m-%d'),
+                    "end_date": end_date.strftime('%Y-%m-%d') if end_date else None,
+                    "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    "status": "active"
+                }
+                content['announcements'].append(new_ann)
+                save_json(CONTENT_FILE, content)
+                log_admin_action(st.session_state.username, f"發佈公告：{title}")
+                st.success("✅ 公告已發佈！")
+                st.rerun()
+    
+    # 現有公告列表（自動過期）
+    st.subheader("📋 現有公告")
+    announcements = content.get('announcements', [])
+    today = datetime.now().date()
+    for ann in announcements:
+        if ann.get('status') == 'active' and ann.get('end_date'):
+            end = datetime.strptime(ann['end_date'], '%Y-%m-%d').date()
+            if end < today:
+                ann['status'] = 'expired'
+    save_json(CONTENT_FILE, content)
+    content = load_json(CONTENT_FILE)
+    active_anns = [a for a in content.get('announcements', []) if a.get('status') == 'active']
+    
+    if active_anns:
+        for ann in active_anns:
+            type_icon = {"一般": "💡", "重要": "⚠️", "緊急": "🚨"}.get(ann.get('type', '一般'), "💡")
+            target_label = ann.get('target', '全部用戶')
+            end_display = "永久" if ann.get('end_date') is None else ann.get('end_date')
+            col1, col2, col3 = st.columns([5, 3, 1])
+            with col1:
+                st.markdown(f"**{type_icon} {ann.get('title', '無標題')}**")
+                st.caption(ann.get('content', ''))
+            with col2:
+                st.write(f"🎯 {target_label}")
+                st.write(f"📅 {ann.get('start_date', '')} → {end_display}")
+            with col3:
+                if st.button("🗑️ 刪除", key=f"del_{ann.get('id')}"):
+                    ann['status'] = 'deleted'
+                    save_json(CONTENT_FILE, content)
+                    st.rerun()
+            st.divider()
+    else:
+        st.info("暫時冇生效中嘅公告")
+    
+    # 公告歷史
+    with st.expander("📋 公告歷史（已過期/已刪除）"):
+        inactive = [a for a in content.get('announcements', []) if a.get('status') in ['expired', 'deleted']]
+        if inactive:
+            df = pd.DataFrame(inactive)
+            st.dataframe(df[['id', 'title', 'type', 'target', 'start_date', 'end_date', 'status', 'created_at']], use_container_width=True)
+        else:
+            st.info("暫無歷史記錄")
+    
+    # 上傳排位表
+    st.write("---")
     st.write("上傳排位表")
     uploaded = st.file_uploader("選擇 CSV 排位表", type=['csv'])
     if uploaded:
@@ -965,6 +1146,7 @@ def admin_content():
 
 # ---------- 8.9 自動化工具 ----------
 def admin_automation():
+    """後台：自動化工具設定"""
     st.subheader("🤖 自動化工具")
     auto = load_json(AUTOMATION_FILE)
     days = st.number_input("提前幾天提醒", min_value=1, value=auto.get('remind_days', 3))
@@ -975,6 +1157,7 @@ def admin_automation():
 
 # ---------- 8.10 安全與權限 ----------
 def admin_security():
+    """後台：安全與權限（操作日誌、多管理員）"""
     st.subheader("🔐 安全與權限")
     st.write("操作日誌")
     logs = load_logs()
@@ -1001,6 +1184,7 @@ def admin_security():
 # 9. 後台頁面（密碼驗證 + 所有分頁）
 # ============================================================
 def admin_page():
+    """後台主頁面，含密碼驗證"""
     if 'admin_authenticated' not in st.session_state:
         st.session_state.admin_authenticated = False
     
@@ -1067,9 +1251,11 @@ def admin_page():
         admin_security() if CONFIG["module_security"] else st.info("模組已關閉")
 
 # ============================================================
-# 10. 主頁面
+# 10. 主頁面（含公告顯示）
 # ============================================================
 def main():
+    """主程式：控制頁面流程"""
+    # 初始化 session state
     if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
     if 'username' not in st.session_state:
@@ -1083,6 +1269,48 @@ def main():
     if 'admin_authenticated' not in st.session_state:
         st.session_state.admin_authenticated = False
 
+    # ----- 顯示公告（喺標題之前） -----
+    content = load_json(CONTENT_FILE)
+    announcements = content.get('announcements', [])
+    today = datetime.now().date()
+    active_anns = []
+    for ann in announcements:
+        if ann.get('status') != 'active':
+            continue
+        start = datetime.strptime(ann['start_date'], '%Y-%m-%d').date()
+        if start > today:
+            continue
+        end = ann.get('end_date')
+        if end:
+            end_date = datetime.strptime(end, '%Y-%m-%d').date()
+            if end_date < today:
+                continue
+        # 檢查顯示對象
+        target = ann.get('target', '全部用戶')
+        if target != '全部用戶':
+            if not st.session_state.get('logged_in', False):
+                continue
+            user = load_users().get(st.session_state.username, {})
+            group = user.get('group', 'free')
+            if target == '付費用戶' and group not in ['paid', 'VIP']:
+                continue
+            if target == 'VIP' and group != 'VIP':
+                continue
+            if target == '免費用戶' and group != 'free':
+                continue
+        active_anns.append(ann)
+
+    # 顯示公告（用顏色區分）
+    for ann in active_anns:
+        ann_type = ann.get('type', '一般')
+        if ann_type == '緊急':
+            st.error(f"🚨 {ann['title']}：{ann['content']}")
+        elif ann_type == '重要':
+            st.warning(f"⚠️ {ann['title']}：{ann['content']}")
+        else:
+            st.info(f"💡 {ann['title']}：{ann['content']}")
+
+    # ----- 登入/註冊檢查 -----
     if CONFIG["enable_registration"] and not st.session_state.logged_in:
         login_page()
         return
@@ -1091,6 +1319,7 @@ def main():
         admin_page()
         return
 
+    # ----- 主頁標題 -----
     col1, col2 = st.columns([6, 1])
     with col1:
         st.title("🏇 賽馬預測系統")
@@ -1103,11 +1332,13 @@ def main():
                 st.session_state.admin_authenticated = False
                 st.rerun()
 
+    # ----- 用戶儀表板 -----
     if CONFIG["enable_registration"] and st.session_state.logged_in:
         show_user_dashboard(st.session_state.username)
     elif not CONFIG["enable_registration"]:
         st.info("🔓 目前為公開模式，任何人皆可使用")
 
+    # ----- 側邊欄 -----
     with st.sidebar:
         st.header("🎯 控制面板")
         if CONFIG["enable_registration"] and st.session_state.logged_in:
@@ -1126,11 +1357,13 @@ def main():
         race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8)
         predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True)
 
+    # ----- 顯示歷史記錄 -----
     if CONFIG["enable_registration"] and st.session_state.logged_in and st.session_state.get('show_history', False):
         st.subheader("📋 我的預測記錄")
         show_prediction_history(st.session_state.username)
         st.divider()
 
+    # ----- 今日賽程 -----
     st.subheader("📅 今日賽程")
     try:
         df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
@@ -1151,6 +1384,7 @@ def main():
     except:
         st.info("今日沒有賽事")
 
+    # ----- 執行預測 -----
     if predict_btn:
         if CONFIG["enable_payment"]:
             users = load_users()
@@ -1185,6 +1419,7 @@ def main():
                     st.session_state.usage_count += 1
                     st.info("📝 預測已記錄到你的歷史")
 
+    # ----- 頁腳 -----
     st.divider()
     st.caption(f"🕐 最後更新：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     st.caption("🔐 數據來源：HKJC | 系統版本：v14.0-用戶體驗版")
