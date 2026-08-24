@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 最終穩定版（付款提交一定見反應）
+賽馬預測系統 - 完整版（付款提交保證顯示成功訊息）
 """
 
 import streamlit as st
@@ -18,6 +18,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import random
 from PIL import Image
+import base64
 
 # ============================================================
 # 🔐 功能開關
@@ -54,7 +55,7 @@ st.set_page_config(
 )
 
 # ============================================================
-# 2. 數據讀寫函數（加強版）
+# 2. 數據讀寫函數
 # ============================================================
 USER_DATA_FILE = 'users.json'
 FINANCE_FILE = 'finance.json'
@@ -164,7 +165,7 @@ def save_accuracy(acc):
     return save_json(ACCURACY_FILE, acc)
 
 def load_payment_proofs():
-    """載入付款記錄，若檔案不存在或結構不完整則初始化"""
+    """載入付款記錄，如果檔案唔存在或結構唔完整，就初始化"""
     proofs = load_json(PAYMENT_PROOFS_FILE)
     if not proofs:
         proofs = {"proof_records": []}
@@ -815,9 +816,21 @@ def login_page():
                             st.rerun()
 
 # ============================================================
-# 🔧 付款牆（使用表單，並確保提交後顯示結果）
+# 🔧 付款牆（保證顯示成功訊息）
 # ============================================================
 def show_paywall():
+    # 檢查是否已經提交成功（用 session state 記錄）
+    if st.session_state.get('payment_submitted', False):
+        st.success("✅ 付款申請已成功提交！管理員將盡快審核。")
+        st.info("📩 請同時 WhatsApp 通知管理員（可加快審核）")
+        if st.button("⬅️ 返回主頁"):
+            # 清除付款相關 session 狀態
+            for key in ['payment_submitted', 'selected_plan', 'plan_price']:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.rerun()
+        st.stop()  # 暫停執行，只顯示成功訊息
+    
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
     st.subheader("💳 選擇你嘅方案")
 
@@ -827,7 +840,6 @@ def show_paywall():
         "quarter": f"📅 季費  ${CONFIG['price_quarter']} (90天)"
     }
 
-    # 顯示表單
     with st.form(key="payment_form"):
         plan_choice = st.radio(
             "請選擇付費方案：",
@@ -856,12 +868,11 @@ def show_paywall():
 
         submitted = st.form_submit_button("📩 提交付款申請，等待管理員審核")
 
-        # ✅ 關鍵修改：處理提交結果，並確保訊息顯示
         if submitted:
             # 驗證
             if not plan_choice:
                 st.error("❌ 請先選擇一個付費方案")
-                st.stop()  # 停止執行，讓錯誤訊息顯示
+                st.stop()
             elif uploaded_file is None:
                 st.error("❌ 請先上傳過數證明（轉帳截圖）")
                 st.stop()
@@ -900,16 +911,18 @@ def show_paywall():
                             except:
                                 pass
 
-                # 儲存上傳記錄
-                proofs = load_payment_proofs()  # 確保初始化
+                # --- 儲存上傳記錄 ---
+                proofs = load_payment_proofs()
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                 file_extension = uploaded_file.type.split('/')[1] if '/' in uploaded_file.type else 'png'
                 filename = f"{st.session_state.username}_{timestamp}.{file_extension}"
                 filepath = os.path.join(PAYMENT_PROOFS_DIR, filename)
                 
+                # 儲存圖片
                 try:
                     with open(filepath, 'wb') as f:
                         f.write(uploaded_file.getbuffer())
+                    image_saved = True
                 except Exception as e:
                     st.error(f"❌ 圖片儲存失敗：{e}")
                     st.stop()
@@ -930,13 +943,14 @@ def show_paywall():
                 }
                 proofs['proof_records'].append(new_proof)
                 
+                # 寫入 JSON
                 if save_payment_proofs(proofs):
                     log_admin_action(st.session_state.username, f"提交付款申請 - 方案：{get_plan_name(plan_choice)}，金額：${final_price}")
-                    st.success("✅ 付款申請已成功提交！管理員將盡快審核。")
-                    st.info("📩 請同時 WhatsApp 通知管理員（可加快審核）")
-                    # 清除表單狀態，但保留成功訊息
+                    # 設定 session state 標記為已提交
                     st.session_state['payment_submitted'] = True
-                    st.rerun()
+                    st.session_state['selected_plan'] = plan_choice
+                    st.session_state['plan_price'] = final_price
+                    st.rerun()  # 重新整理頁面，顯示成功訊息
                 else:
                     st.error("❌ 提交失敗，請重新嘗試。如問題持續，請聯絡管理員。")
                     st.stop()
@@ -1757,13 +1771,12 @@ def main():
         st.info("今日沒有賽事")
 
     if predict_btn:
-        # ✅ super_admin 無限免費
+        # super_admin 無限免費
         users = load_users()
         user_data = users.get(st.session_state.username, {})
         user_role = user_data.get('group', 'free')
         
         if user_role != "super_admin":
-            # 普通用戶檢查
             used_free = user_data.get('free_usage', 0)
             is_paid = user_data.get('is_paid', False) or user_data.get('group') in ['VIP']
             if CONFIG["enable_payment"]:
