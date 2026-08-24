@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - Streamlit 網頁版（完整穩定版）
-包括：36 特徵、錯誤處理、彩池推薦、日期自動適應
+賽馬預測系統 - Streamlit 網頁版（完全整合版）
+所有邏輯直接內嵌，不依賴外部腳本
 """
 
 import streamlit as st
@@ -42,7 +42,7 @@ def load_models():
         return None, None, None
 
 # ============================================================
-# 3. 完整特徵工程
+# 3. 完整特徵工程（由 predict_race_card.py 移植）
 # ============================================================
 FEATURES_EN = [
     'draw', 'act_wt', 'distance', 'rtg', 'avg_rank_last3',
@@ -137,7 +137,6 @@ def get_finish_column(df):
     return None
 
 def safe_parse_dates(df, date_col):
-    """安全解析日期欄位，支援多種格式"""
     if date_col not in df.columns:
         return pd.Series([pd.NaT] * len(df))
     dates = df[date_col].astype(str).str.strip()
@@ -268,7 +267,7 @@ def load_horse_name_map():
     return {}
 
 # ============================================================
-# 5. 彩池推薦（與之前相同）
+# 5. 彩池推薦
 # ============================================================
 def generate_pool_recommendations(df, top_n=6):
     top_horses = df.head(top_n)
@@ -326,16 +325,15 @@ def generate_pool_recommendations(df, top_n=6):
     return rec
 
 # ============================================================
-# 6. 預測主函數（完整 36 特徵）
+# 6. 預測主函數（直接執行，不呼叫 subprocess）
 # ============================================================
 def run_prediction(date_str, race_no):
-    # 載入模型
     xgb_model, cat_model, rank_model = load_models()
     if xgb_model is None:
         st.error("模型載入失敗")
         return None, None
 
-    # ----- 讀取排位表 -----
+    # 讀取排位表
     try:
         df = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
     except Exception as e:
@@ -346,17 +344,17 @@ def run_prediction(date_str, race_no):
     df = df.loc[:, ~df.columns.duplicated(keep='first')]
     df = ensure_series(df)
 
-    # ----- 處理日期 -----
+    # 處理日期
     if 'race_date' not in df.columns:
         st.error("找不到日期欄位")
         return None, None
     df['race_date'] = safe_parse_dates(df, 'race_date')
     df = df.dropna(subset=['race_date'])
     if df.empty:
-        st.error("無效日期")
+        st.error("無有效日期")
         return None, None
 
-    # ----- 處理場次 -----
+    # 處理場次
     if 'race_no' not in df.columns:
         st.error("找不到場次欄位")
         return None, None
@@ -364,17 +362,16 @@ def run_prediction(date_str, race_no):
     df['race_no'] = pd.to_numeric(df['race_no'], errors='coerce')
     df = df.dropna(subset=['race_no'])
     if df.empty:
-        st.error("無效場次")
+        st.error("無有效場次")
         return None, None
 
-    # ----- 篩選 -----
     target = pd.to_datetime(date_str)
     race_sel = df[(df['race_date'].dt.date == target.date()) & (df['race_no'] == race_no)]
     if race_sel.empty:
         st.error(f"日期 {date_str} 第 {race_no} 場無數據")
         return None, None
 
-    # ----- 載入歷史數據 -----
+    # 載入歷史數據
     try:
         history = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
     except:
@@ -399,10 +396,9 @@ def run_prediction(date_str, race_no):
         return None, None
     history.rename(columns={finish_col: 'finish_position'}, inplace=True)
 
-    # 中文名對照
     name_map = load_horse_name_map()
 
-    # ----- 生成特徵 -----
+    # 生成特徵
     race_sel = get_latest_features(race_sel, history)
     race_sel = compute_stats(race_sel, history, target)
     race_sel['中文名'] = race_sel['horse_id'].map(name_map).fillna(race_sel['horse_id'])
@@ -431,13 +427,13 @@ def run_prediction(date_str, race_no):
             X[col] = 0
     X = X[EXPECTED_FEATURES]
 
-    # ----- 預測 -----
+    # 預測
     prob_xgb = xgb_model.predict_proba(X)[:, 1]
     prob_cat = cat_model.predict_proba(X)[:, 1]
     prob_final = (prob_xgb * 25 + prob_cat) / 26
     rank_score = rank_model.predict(X)
 
-    # ----- 結果 -----
+    # 結果
     result = race_sel[['中文名', 'draw', 'win_odds']].copy()
     result.rename(columns={'中文名': '馬匹名稱', 'draw': '檔位', 'win_odds': '賠率'}, inplace=True)
     result['預測勝率'] = prob_final
@@ -507,4 +503,4 @@ if predict_btn:
 # ============================================================
 st.divider()
 st.caption(f"🕐 最後更新：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-st.caption("🔐 數據來源：HKJC | 系統版本：v3.3")
+st.caption("🔐 數據來源：HKJC | 系統版本：v4.0-最終整合")
