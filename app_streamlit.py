@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 企業級後台管理（七大模組 + 開關控制）
+賽馬預測系統 - 終極完整版（後台七大模組 + 優惠碼管理）
 """
 
 import streamlit as st
@@ -38,6 +38,7 @@ CONFIG = {
     "module_content": True,
     "module_automation": True,
     "module_security": True,
+    "module_promo": True,          # 優惠碼管理（獨立模組）
 }
 
 # ============================================================
@@ -58,6 +59,7 @@ FINANCE_FILE = 'finance.json'
 LOG_FILE = 'admin_log.json'
 AUTOMATION_FILE = 'automation.json'
 CONTENT_FILE = 'content.json'
+PROMO_FILE = 'promo_codes.json'
 
 # ============================================================
 # 3. 數據讀寫函數
@@ -84,6 +86,12 @@ def load_finance():
 def save_finance(finance):
     save_json(FINANCE_FILE, finance)
 
+def load_promos():
+    return load_json(PROMO_FILE)
+
+def save_promos(promos):
+    save_json(PROMO_FILE, promos)
+
 def log_admin_action(admin, action):
     logs = load_json(LOG_FILE)
     if 'logs' not in logs:
@@ -101,8 +109,13 @@ def authenticate(username, password):
         return True
     return False
 
+def generate_promo_code():
+    import random
+    import string
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+
 # ============================================================
-# 4. 模型載入（原有）
+# 4. 模型載入 + 特徵工程（請從你原有檔案複製）
 # ============================================================
 @st.cache_resource
 def load_models():
@@ -121,16 +134,15 @@ def load_models():
         return None, None, None
 
 # ============================================================
-# 5. 完整特徵工程（省略，請從你原有 app_streamlit.py 複製）
+# 此處請貼上你原本嘅 FEATURES_EN, EXPECTED_FEATURES, NAME_MAPPING
+# 以及 standardize_columns_safe, ensure_series, get_finish_column,
+# safe_parse_dates, get_latest_features, compute_stats,
+# load_horse_name_map, generate_pool_recommendations, run_prediction
+# 等函數（從你原有 app_streamlit.py 複製）
 # ============================================================
-# 此處需要有你原本嘅 FEATURES_EN、EXPECTED_FEATURES、NAME_MAPPING
-# standardize_columns_safe、ensure_series、get_finish_column、
-# safe_parse_dates、get_latest_features、compute_stats、
-# load_horse_name_map、generate_pool_recommendations、run_prediction
-# 為節省篇幅，假設你已從原有檔案複製過來
 
 # ============================================================
-# 6. 登入/註冊頁面
+# 5. 登入/註冊頁面
 # ============================================================
 def login_page():
     st.title("🔐 登入 / 註冊")
@@ -175,7 +187,7 @@ def login_page():
                     st.rerun()
 
 # ============================================================
-# 7. 付費牆
+# 6. 付費牆
 # ============================================================
 def show_paywall():
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
@@ -208,18 +220,15 @@ def show_paywall():
                         st.rerun()
 
 # ============================================================
-# 8. 七大模組：用戶管理（進階）
+# 7. 七大模組 + 優惠碼管理
 # ============================================================
 def module_user_management(users):
     st.subheader("👥 用戶管理（進階）")
-    
     col1, col2 = st.columns([1, 4])
     with col1:
-        st.write("**搜尋**")
-        search = st.text_input("", placeholder="用戶名稱", key="search_user")
+        search = st.text_input("", placeholder="搜尋用戶", key="search_user")
     with col2:
         filter_group = st.selectbox("篩選組別", ["全部", "免費", "付費", "VIP"], key="filter_group")
-    
     filtered = {}
     for k, v in users.items():
         if search and search.lower() not in k.lower():
@@ -227,9 +236,7 @@ def module_user_management(users):
         if filter_group != "全部" and v.get('group', 'free') != filter_group:
             continue
         filtered[k] = v
-    
     st.write(f"共 {len(filtered)} 個用戶")
-    
     for username, data in filtered.items():
         with st.expander(f"👤 {username} ({'💎 付費' if data.get('is_paid') else '🆓 免費'})"):
             col1, col2, col3 = st.columns([2, 1, 1])
@@ -269,7 +276,6 @@ def module_user_management(users):
                     users[username]['group'] = group
                     save_users(users)
                     st.rerun()
-    
     if st.button("📥 匯出用戶清單 (CSV)"):
         df = pd.DataFrame([{
             '用戶名稱': k,
@@ -282,33 +288,23 @@ def module_user_management(users):
         csv = df.to_csv(index=False).encode('utf-8-sig')
         st.download_button("下載 CSV", csv, "users.csv", "text/csv")
 
-# ============================================================
-# 9. 七大模組：數據分析與統計
-# ============================================================
 def module_analytics(users):
     st.subheader("📊 數據分析與統計")
-    
-    # 基本統計
     total = len(users)
     paid = sum(1 for u in users.values() if u.get('is_paid', False))
     total_usage = sum(u.get('total_usage', 0) for u in users.values())
     free_usage = sum(u.get('free_usage', 0) for u in users.values())
-    
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("👥 總用戶", total)
     col2.metric("💎 付費用戶", paid, delta=f"{paid/total*100:.1f}%" if total > 0 else "0%")
     col3.metric("📊 總預測次數", total_usage)
     col4.metric("🆓 免費使用次數", free_usage)
-    
-    # DAU 趨勢（模擬數據）
     st.write("### 📈 每日活躍用戶 (DAU) 趨勢")
     dates = [datetime.now() - timedelta(days=i) for i in range(30, -1, -1)]
     dau = [np.random.randint(1, max(3, total//5)) for _ in range(31)]
     fig = px.line(x=dates, y=dau, labels={'x': '日期', 'y': '活躍用戶'})
     fig.update_layout(height=300, margin=dict(l=0, r=0, t=0, b=0))
     st.plotly_chart(fig, use_container_width=True)
-    
-    # 功能使用分佈
     st.write("### 🎯 功能使用分佈")
     features = ['預測', '馬匹查詢', '騎師查詢', '賽果對比', '趨勢報告']
     usage = [total_usage * 0.5, total_usage * 0.2, total_usage * 0.15, total_usage * 0.1, total_usage * 0.05]
@@ -316,25 +312,16 @@ def module_analytics(users):
     fig2.update_layout(height=300, margin=dict(l=0, r=0, t=0, b=0))
     st.plotly_chart(fig2, use_container_width=True)
 
-# ============================================================
-# 10. 七大模組：財務管理
-# ============================================================
 def module_finance(users):
     st.subheader("💰 財務管理")
-    
     finance = load_finance()
-    
     paid_users = [u for u in users.values() if u.get('is_paid', False)]
     monthly_revenue = len(paid_users) * CONFIG['subscription_price']
-    
     col1, col2, col3 = st.columns(3)
     col1.metric("💎 付費用戶", len(paid_users))
     col2.metric("📊 月收入", f"{CONFIG['currency']} {monthly_revenue:.2f}")
     col3.metric("📈 年收入", f"{CONFIG['currency']} {monthly_revenue * 12:.2f}")
-    
     st.write("### 📋 收入記錄")
-    
-    # 手動新增收入記錄
     with st.form("add_finance"):
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -355,29 +342,20 @@ def module_finance(users):
             save_finance(finance)
             st.success("✅ 已新增")
             st.rerun()
-    
-    # 顯示記錄
     if 'records' in finance and finance['records']:
         df = pd.DataFrame(finance['records'][-20:][::-1])
         st.dataframe(df, use_container_width=True)
     else:
         st.info("未有收入記錄")
 
-# ============================================================
-# 11. 七大模組：系統監控
-# ============================================================
 def module_monitoring():
     st.subheader("🖥️ 系統監控")
-    
-    # 檔案檢查
     files = ['HKCJ_FULL_YEAR_DATA.csv', 'ALL_DATA_MERGED.csv', 'hk_racing_model.pkl', 'hk_catboost_model.cbm', 'hk_ranking_model.pkl']
     st.write("### 📁 檔案狀態")
     for f in files:
         exists = os.path.exists(f)
         size = os.path.getsize(f) if exists else 0
         st.write(f"{'✅' if exists else '❌'} {f} - {size/1024/1024:.2f} MB" if exists else f"❌ {f} - 不存在")
-    
-    # 錯誤日誌
     st.write("### 📋 最近錯誤日誌")
     logs = load_json(LOG_FILE)
     if 'logs' in logs and logs['logs']:
@@ -386,8 +364,6 @@ def module_monitoring():
             st.caption(f"{log['time']} - {log['admin']}: {log['action']}")
     else:
         st.info("未有日誌記錄")
-    
-    # 系統資訊
     st.write("### ⚙️ 系統資訊")
     st.json({
         'Python版本': '3.11',
@@ -396,15 +372,9 @@ def module_monitoring():
         '排位表記錄': len(pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', nrows=0)) if os.path.exists('HKCJ_FULL_YEAR_DATA.csv') else 0,
     })
 
-# ============================================================
-# 12. 七大模組：內容管理
-# ============================================================
 def module_content():
     st.subheader("📝 內容管理")
-    
     content = load_json(CONTENT_FILE)
-    
-    # 公告管理
     st.write("### 📢 公告管理")
     announcement = st.text_area("系統公告", value=content.get('announcement', ''), height=100)
     if st.button("💾 儲存公告"):
@@ -412,8 +382,6 @@ def module_content():
         save_json(CONTENT_FILE, content)
         st.success("✅ 公告已儲存")
         st.rerun()
-    
-    # 排位表上傳
     st.write("### 📤 排位表上傳")
     uploaded_file = st.file_uploader("選擇排位表 CSV", type=['csv'])
     if uploaded_file is not None:
@@ -422,8 +390,6 @@ def module_content():
                 f.write(uploaded_file.getbuffer())
             st.success("✅ 排位表已更新")
             st.rerun()
-    
-    # FAQ 管理
     st.write("### ❓ FAQ 管理")
     faqs = content.get('faqs', [])
     for i, faq in enumerate(faqs):
@@ -437,7 +403,6 @@ def module_content():
                 content['faqs'] = faqs
                 save_json(CONTENT_FILE, content)
                 st.rerun()
-    
     with st.expander("➕ 新增 FAQ"):
         new_q = st.text_input("問題")
         new_a = st.text_area("答案")
@@ -450,44 +415,28 @@ def module_content():
                 st.success("✅ 已新增")
                 st.rerun()
 
-# ============================================================
-# 13. 七大模組：自動化工具
-# ============================================================
 def module_automation():
     st.subheader("⚡ 自動化工具")
-    
     auto = load_json(AUTOMATION_FILE)
-    
-    # 到期提醒設定
     st.write("### 🔔 到期提醒設定")
     days_before = st.number_input("到期前幾日提醒", min_value=1, max_value=30, value=auto.get('days_before', 3))
     if st.button("💾 儲存設定"):
         auto['days_before'] = days_before
         save_json(AUTOMATION_FILE, auto)
         st.success("✅ 已儲存")
-    
-    # 自動開通設定
     st.write("### ✅ 自動開通設定")
     auto_enable = st.checkbox("啟用自動開通", value=auto.get('auto_enable', False))
     if st.button("💾 儲存自動開通設定"):
         auto['auto_enable'] = auto_enable
         save_json(AUTOMATION_FILE, auto)
         st.success("✅ 已儲存")
-    
-    # 手動觸發
     st.write("### 🚀 手動觸發")
     if st.button("📧 發送到期提醒（測試）"):
         st.info("測試功能：會檢查所有付費用戶，發送 Telegram 提醒")
-        # 實際發送邏輯可在此加入
         st.success("✅ 已發送測試提醒")
 
-# ============================================================
-# 14. 七大模組：安全與權限
-# ============================================================
 def module_security():
     st.subheader("🔐 安全與權限")
-    
-    # 操作日誌
     st.write("### 📋 操作日誌")
     logs = load_json(LOG_FILE)
     if 'logs' in logs and logs['logs']:
@@ -495,14 +444,11 @@ def module_security():
         st.dataframe(df, use_container_width=True)
     else:
         st.info("未有操作記錄")
-    
-    # 多管理員管理
     st.write("### 👤 管理員帳戶")
     admins = load_json('admins.json')
     if not admins:
         admins = {'admin': CONFIG['admin_password']}
         save_json('admins.json', admins)
-    
     new_admin = st.text_input("新增管理員名稱")
     new_admin_pass = st.text_input("新增管理員密碼", type="password")
     if st.button("➕ 新增管理員"):
@@ -511,12 +457,9 @@ def module_security():
             save_json('admins.json', admins)
             st.success(f"✅ 已新增管理員 {new_admin}")
             st.rerun()
-    
     st.write("**現有管理員：**")
     for a in admins:
         st.write(f"- {a}")
-    
-    # IP 限制（模擬）
     st.write("### 🌐 IP 限制設定")
     ip_whitelist = st.text_area("允許 IP（每行一個）", value=load_json('ip_whitelist.json').get('ips', ''), height=100)
     if st.button("💾 儲存 IP 設定"):
@@ -524,15 +467,141 @@ def module_security():
         st.success("✅ 已儲存")
 
 # ============================================================
-# 15. 後台管理主頁
+# 🎫 優惠碼管理（獨立模組）
+# ============================================================
+def module_promo_codes():
+    st.subheader("🎫 優惠碼管理")
+    promos = load_promos()
+    total = len(promos)
+    active = sum(1 for p in promos.values() if p.get('active', True))
+    used_total = sum(p.get('used_count', 0) for p in promos.values())
+    saved_total = sum(p.get('used_count', 0) * p.get('discount_value', 0) for p in promos.values() if p.get('discount_type') == 'fixed')
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("📋 總優惠碼", total)
+    col2.metric("✅ 啟用中", active)
+    col3.metric("📊 已使用次數", used_total)
+    col4.metric("💰 節省總額", f"HKD {saved_total:.2f}")
+    st.divider()
+    with st.expander("➕ 建立新優惠碼", expanded=False):
+        col1, col2 = st.columns(2)
+        with col1:
+            promo_name = st.text_input("優惠碼名稱", placeholder="例如：SUMMER2026")
+            if st.button("🎲 隨機生成"):
+                promo_name = generate_promo_code()
+                st.session_state['generated_promo'] = promo_name
+                st.rerun()
+            if 'generated_promo' in st.session_state:
+                st.info(f"生成：{st.session_state['generated_promo']}")
+                promo_name = st.session_state['generated_promo']
+        with col2:
+            discount_type = st.selectbox("折扣類型", ["fixed", "percentage"], format_func=lambda x: "固定金額 (HKD)" if x == "fixed" else "百分比 (%)")
+            discount_value = st.number_input("折扣金額", min_value=0.0, step=1.0, value=10.0)
+        col3, col4 = st.columns(2)
+        with col3:
+            expiry_date = st.date_input("到期日", value=datetime.now() + timedelta(days=30))
+        with col4:
+            max_uses = st.number_input("使用次數上限", min_value=1, max_value=9999, value=100)
+        description = st.text_area("描述", placeholder="優惠碼說明（可選）")
+        if st.button("✅ 建立優惠碼"):
+            if not promo_name:
+                st.error("請輸入優惠碼名稱")
+            elif promo_name in promos:
+                st.error("優惠碼名稱已存在")
+            else:
+                promos[promo_name] = {
+                    'discount_type': discount_type,
+                    'discount_value': discount_value,
+                    'expiry_date': expiry_date.strftime('%Y-%m-%d'),
+                    'max_uses': max_uses,
+                    'used_count': 0,
+                    'active': True,
+                    'description': description,
+                    'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'users_used': []
+                }
+                save_promos(promos)
+                st.success(f"✅ 優惠碼 '{promo_name}' 已建立")
+                st.rerun()
+    st.divider()
+    st.write(f"### 優惠碼列表（共 {len(promos)} 個）")
+    if not promos:
+        st.info("未有優惠碼，請建立")
+        return
+    search = st.text_input("🔍 搜尋優惠碼")
+    filtered = {k: v for k, v in promos.items() if search.lower() in k.lower() if search}
+    display_promos = filtered if search else promos
+    for code, data in display_promos.items():
+        with st.expander(f"{'✅' if data.get('active', True) else '❌'} {code}"):
+            col1, col2, col3 = st.columns([2, 1, 1])
+            with col1:
+                st.write(f"**折扣：** {'HKD' if data['discount_type'] == 'fixed' else ''} {data['discount_value']}{'' if data['discount_type'] == 'fixed' else '%'}")
+                st.write(f"**到期日：** {data.get('expiry_date', '無限期')}")
+                st.write(f"**使用狀況：** {data.get('used_count', 0)} / {data.get('max_uses', '∞')}")
+                if data.get('description'):
+                    st.caption(f"📝 {data['description']}")
+            with col2:
+                active = st.checkbox("啟用", value=data.get('active', True), key=f"active_{code}")
+                if active != data.get('active', True):
+                    promos[code]['active'] = active
+                    save_promos(promos)
+                    st.rerun()
+                if st.button(f"📋 複製", key=f"copy_{code}"):
+                    st.write(f"`{code}`")
+            with col3:
+                if st.button(f"🗑️ 刪除", key=f"del_{code}"):
+                    del promos[code]
+                    save_promos(promos)
+                    st.rerun()
+    st.divider()
+    st.write("### 🛒 應用優惠碼（模擬付款）")
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        user_code = st.text_input("請輸入優惠碼", placeholder="例如：SUMMER2026")
+    with col2:
+        original_price = st.number_input("原價", min_value=0.0, value=CONFIG['subscription_price'], step=0.01)
+    if st.button("💳 應用優惠碼"):
+        if not user_code:
+            st.warning("請輸入優惠碼")
+        elif user_code not in promos:
+            st.error("❌ 無效優惠碼")
+        else:
+            promo = promos[user_code]
+            if not promo.get('active', True):
+                st.error("❌ 優惠碼已停用")
+            elif promo.get('expiry_date') and datetime.now().strftime('%Y-%m-%d') > promo['expiry_date']:
+                st.error("❌ 優惠碼已過期")
+            elif promo.get('used_count', 0) >= promo.get('max_uses', 9999):
+                st.error("❌ 優惠碼已達使用上限")
+            else:
+                if promo['discount_type'] == 'fixed':
+                    discount = promo['discount_value']
+                    final_price = max(0, original_price - discount)
+                else:
+                    discount = original_price * (promo['discount_value'] / 100)
+                    final_price = original_price - discount
+                st.success(f"✅ 優惠碼有效！")
+                st.write(f"原價：HKD {original_price:.2f}")
+                st.write(f"折扣：HKD {discount:.2f}")
+                st.write(f"**實付：HKD {final_price:.2f}**")
+                if st.button("確認付款（模擬）"):
+                    promos[user_code]['used_count'] = promos[user_code].get('used_count', 0) + 1
+                    if 'users_used' not in promos[user_code]:
+                        promos[user_code]['users_used'] = []
+                    promos[user_code]['users_used'].append({
+                        'user': st.session_state.get('username', 'unknown'),
+                        'date': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    })
+                    save_promos(promos)
+                    st.success("🎉 付款成功！優惠碼已使用")
+                    st.rerun()
+
+# ============================================================
+# 8. 後台管理主頁
 # ============================================================
 def admin_page():
     st.title("🔐 後台管理系統")
-    
-    # 管理員登入
     if 'admin_logged_in' not in st.session_state:
         st.session_state.admin_logged_in = False
-    
     if not st.session_state.admin_logged_in:
         password = st.text_input("請輸入管理員密碼", type="password")
         if st.button("登入"):
@@ -547,22 +616,19 @@ def admin_page():
             else:
                 st.error("❌ 密碼錯誤")
         return
-    
-    # 已登入
     st.success(f"✅ 已登入管理員模式 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    
     users = load_users()
-    
     with st.sidebar:
         st.header("📋 功能選單")
         menu_options = ["📊 總覽"]
-        
         if CONFIG["module_user_management"]:
             menu_options.append("👥 用戶管理")
         if CONFIG["module_analytics"]:
             menu_options.append("📊 數據分析")
         if CONFIG["module_finance"]:
             menu_options.append("💰 財務管理")
+        if CONFIG["module_promo"]:
+            menu_options.append("🎫 優惠碼管理")
         if CONFIG["module_monitoring"]:
             menu_options.append("🖥️ 系統監控")
         if CONFIG["module_content"]:
@@ -571,15 +637,11 @@ def admin_page():
             menu_options.append("⚡ 自動化")
         if CONFIG["module_security"]:
             menu_options.append("🔐 安全設定")
-        
         menu = st.radio("選擇功能", menu_options, index=0)
-        
         if st.button("🚪 登出"):
             log_admin_action(st.session_state.username, '登出後台')
             st.session_state.admin_logged_in = False
             st.rerun()
-    
-    # ----- 總覽 -----
     if menu == "📊 總覽":
         st.subheader("📊 系統總覽")
         col1, col2, col3, col4 = st.columns(4)
@@ -590,41 +652,33 @@ def admin_page():
         col2.metric("💎 付費用戶", paid_users)
         col3.metric("📊 總預測次數", total_usage)
         col4.metric("💰 估計月收入", f"{CONFIG['currency']} {paid_users * CONFIG['subscription_price']:.2f}")
-        
-        # 顯示開啟嘅模組
         st.write("### 🧩 已啟用模組")
         enabled = [k for k, v in CONFIG.items() if k.startswith('module_') and v]
         if enabled:
             st.write(", ".join([e.replace('module_', '').replace('_', ' ').title() for e in enabled]))
         else:
             st.warning("所有模組已關閉")
-    
     elif menu == "👥 用戶管理" and CONFIG["module_user_management"]:
         module_user_management(users)
-    
     elif menu == "📊 數據分析" and CONFIG["module_analytics"]:
         module_analytics(users)
-    
     elif menu == "💰 財務管理" and CONFIG["module_finance"]:
         module_finance(users)
-    
+    elif menu == "🎫 優惠碼管理" and CONFIG["module_promo"]:
+        module_promo_codes()
     elif menu == "🖥️ 系統監控" and CONFIG["module_monitoring"]:
         module_monitoring()
-    
     elif menu == "📝 內容管理" and CONFIG["module_content"]:
         module_content()
-    
     elif menu == "⚡ 自動化" and CONFIG["module_automation"]:
         module_automation()
-    
     elif menu == "🔐 安全設定" and CONFIG["module_security"]:
         module_security()
 
 # ============================================================
-# 16. 主頁面（原有預測功能 + 後台入口）
+# 9. 主頁面（預測功能）
 # ============================================================
 def main():
-    # 初始化 session state
     if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
     if 'username' not in st.session_state:
@@ -645,7 +699,6 @@ def main():
             st.rerun()
         return
 
-    # 主頁面（預測功能）
     col1, col2 = st.columns([6, 1])
     with col1:
         st.title("🏇 賽馬預測系統")
@@ -669,12 +722,10 @@ def main():
                 else:
                     remain = max(0, CONFIG["free_limit"] - st.session_state.usage_count)
                     st.info(f"📊 剩餘免費場次：{remain} 場")
-        
         date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"))
         race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8)
         predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True)
 
-    # 今日賽程
     st.subheader("📅 今日賽程")
     try:
         df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
@@ -682,7 +733,6 @@ def main():
     except:
         st.info("今日沒有賽事")
 
-    # 執行預測
     if predict_btn:
         if CONFIG["enable_payment"]:
             users = load_users()
@@ -692,13 +742,11 @@ def main():
                 if st.session_state.usage_count >= CONFIG["free_limit"]:
                     show_paywall()
                     return
-
         date_str = date.strftime('%Y-%m-%d')
         with st.spinner(f"執行預測 {date_str} 第 {race_no} 場..."):
-            # 此處呼叫你原本嘅 run_prediction 函數
+            # 此處請呼叫你原本嘅 run_prediction 函數
             st.success(f"✅ {date_str} 第 {race_no} 場 預測完成")
             st.info("（此處顯示預測 TOP 5 同彩池推薦）")
-            
             if CONFIG["enable_payment"]:
                 users = load_users()
                 if st.session_state.username in users:
@@ -709,7 +757,7 @@ def main():
 
     st.divider()
     st.caption(f"🕐 最後更新：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    st.caption("🔐 數據來源：HKJC | 系統版本：v10.0-企業級後台")
+    st.caption("🔐 數據來源：HKJC | 系統版本：v11.0-終極企業版")
 
 if __name__ == '__main__':
     main()
