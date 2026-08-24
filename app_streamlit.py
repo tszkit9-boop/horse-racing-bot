@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - Streamlit 網頁版（完整 36 特徵）
+賽馬預測系統 - Streamlit 網頁版（詳細除錯版）
 """
 
 import streamlit as st
@@ -317,102 +317,125 @@ def generate_pool_recommendations(df, top_n=6):
     return rec
 
 # ============================================================
-# 6. 預測主函數（完整 36 特徵）
+# 6. 預測主函數（加入詳細除錯）
 # ============================================================
 def run_prediction(date_str, race_no):
+    debug_info = st.empty()
+    debug_info.text("🔍 Step 1: 載入模型中...")
+    
     xgb_model, cat_model, rank_model = load_models()
     if xgb_model is None:
+        debug_info.error("❌ 模型載入失敗")
         return None, None
-    
+    debug_info.text("✅ 模型載入成功")
+
     # 讀取排位表
+    debug_info.text("🔍 Step 2: 讀取排位表...")
     try:
         df = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
     except Exception as e:
-        st.error(f"讀取排位表失敗：{e}")
+        debug_info.error(f"❌ 讀取排位表失敗：{e}")
         return None, None
-    
+    debug_info.text(f"✅ 排位表讀取成功，共 {len(df)} 筆")
+
     # 標準化欄位
+    debug_info.text("🔍 Step 3: 標準化欄位...")
     df = standardize_columns(df)
     df = df.loc[:, ~df.columns.duplicated(keep='first')]
     df = ensure_series(df)
-    
+    debug_info.text("✅ 欄位標準化完成")
+
     # 處理日期
+    debug_info.text("🔍 Step 4: 處理日期...")
     if 'race_date' not in df.columns:
         if '比賽日期' in df.columns:
             df.rename(columns={'比賽日期': 'race_date'}, inplace=True)
         else:
-            st.error("找不到日期欄位")
+            debug_info.error("❌ 找不到日期欄位")
             return None, None
     df['race_date'] = df['race_date'].astype(str).str.replace('/', '-')
     df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce')
     df = df.dropna(subset=['race_date'])
     if df.empty:
-        st.error("無有效日期")
+        debug_info.error("❌ 無有效日期")
         return None, None
-    
+    debug_info.text(f"✅ 日期處理完成，有效日期範圍：{df['race_date'].min()} 至 {df['race_date'].max()}")
+
     # 處理場次
+    debug_info.text("🔍 Step 5: 處理場次...")
     if 'race_no' not in df.columns:
         if '場次' in df.columns:
             df.rename(columns={'場次': 'race_no'}, inplace=True)
         else:
-            st.error("找不到場次欄位")
+            debug_info.error("❌ 找不到場次欄位")
             return None, None
     df['race_no'] = df['race_no'].astype(str).str.extract(r'(\d+)')[0]
     df['race_no'] = pd.to_numeric(df['race_no'], errors='coerce')
     df = df.dropna(subset=['race_no'])
     if df.empty:
-        st.error("無有效場次")
+        debug_info.error("❌ 無有效場次")
         return None, None
-    
+    debug_info.text("✅ 場次處理完成")
+
     # 選取日期及場次
+    debug_info.text(f"🔍 Step 6: 選取 {date_str} 第 {race_no} 場...")
     target = pd.to_datetime(date_str)
     race_sel = df[(df['race_date'].dt.date == target.date()) & (df['race_no'] == race_no)]
     if race_sel.empty:
-        st.error(f"❌ 日期 {date_str} 第 {race_no} 場無數據")
+        debug_info.error(f"❌ 日期 {date_str} 第 {race_no} 場無數據")
         return None, None
-    
-    # 載入歷史數據（需有 ALL_DATA_MERGED.csv）
+    debug_info.text(f"✅ 選取成功，共 {len(race_sel)} 匹馬")
+
+    # 載入歷史數據
+    debug_info.text("🔍 Step 7: 載入歷史數據...")
     try:
         history = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
     except:
-        st.error("缺少歷史數據檔案 ALL_DATA_MERGED.csv")
+        debug_info.error("❌ 缺少歷史數據檔案 ALL_DATA_MERGED.csv")
         return None, None
     history = standardize_columns(history)
     history = history.loc[:, ~history.columns.duplicated(keep='first')]
     history = ensure_series(history)
-    # 處理歷史日期
     if 'race_date' not in history.columns:
         if '比賽日期' in history.columns:
             history.rename(columns={'比賽日期': 'race_date'}, inplace=True)
         else:
-            st.error("歷史數據缺少日期欄位")
+            debug_info.error("❌ 歷史數據缺少日期欄位")
             return None, None
     history['race_date'] = pd.to_datetime(history['race_date'], errors='coerce')
     history = history.dropna(subset=['race_date'])
-    
+    debug_info.text(f"✅ 歷史數據載入成功，共 {len(history)} 筆")
+
     # 確保 finish_position 存在
     finish_col = get_finish_column(history)
     if finish_col is None:
-        st.error("歷史數據缺少名次欄位")
+        debug_info.error("❌ 歷史數據缺少名次欄位")
         return None, None
     history.rename(columns={finish_col: 'finish_position'}, inplace=True)
-    
+    debug_info.text("✅ finish_position 欄位處理完成")
+
     # 建立中文名對照
+    debug_info.text("🔍 Step 8: 載入中文名對照...")
     name_map = load_horse_name_map()
-    
+    debug_info.text(f"✅ 載入 {len(name_map)} 個中文名")
+
     # 生成特徵
+    debug_info.text("🔍 Step 9: 生成特徵...")
     race_sel = get_latest_features(race_sel, history)
     race_sel = compute_stats(race_sel, history, target)
     race_sel['中文名'] = race_sel['horse_id'].map(name_map).fillna(race_sel['horse_id'])
-    
+    debug_info.text("✅ 特徵生成完成")
+
     # 賠率處理
+    debug_info.text("🔍 Step 10: 處理賠率...")
     if 'win_odds' not in race_sel.columns:
         race_sel['win_odds'] = 4.0
     else:
         race_sel['win_odds'] = race_sel['win_odds'].replace(0, 4.0).fillna(4.0)
     race_sel['win_odds'] = pd.to_numeric(race_sel['win_odds'], errors='coerce').fillna(4.0)
     race_sel['odds_rank_in_race'] = race_sel['win_odds'].rank(ascending=True)
-    
+    debug_info.text("✅ 賠率處理完成")
+
     # 填充缺失特徵
     for f in FEATURES_EN:
         if f not in race_sel.columns:
@@ -425,27 +448,34 @@ def run_prediction(date_str, race_no):
         X[col] = pd.to_numeric(X[col], errors='coerce').fillna(0)
     
     # 映射為模型期望的特徵名稱
+    debug_info.text("🔍 Step 11: 映射特徵名稱...")
     X.rename(columns=NAME_MAPPING, inplace=True)
     for col in EXPECTED_FEATURES:
         if col not in X.columns:
             X[col] = 0
     X = X[EXPECTED_FEATURES]
-    
+    debug_info.text("✅ 特徵映射完成")
+
     # 預測
+    debug_info.text("🔍 Step 12: 執行預測...")
     prob_xgb = xgb_model.predict_proba(X)[:, 1]
     prob_cat = cat_model.predict_proba(X)[:, 1]
     prob_final = (prob_xgb * 25 + prob_cat) / 26
     rank_score = rank_model.predict(X)
-    
+    debug_info.text("✅ 預測完成")
+
     # 輸出結果
     result = race_sel[['中文名', 'draw', 'win_odds']].copy()
     result.rename(columns={'中文名': '馬匹名稱', 'draw': '檔位', 'win_odds': '賠率'}, inplace=True)
     result['預測勝率'] = prob_final
     result['值博指數'] = result['預測勝率'] / result['賠率']
     result = result.sort_values('值博指數', ascending=False)
-    
+
+    debug_info.text("✅ 結果已生成")
+    debug_info.empty()  # 清除除錯訊息
+
     pool_rec = generate_pool_recommendations(result)
-    
+
     return result, pool_rec
 
 # ============================================================
