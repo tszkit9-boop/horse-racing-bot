@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整修正版（含後台新增/刪除用戶 + 登出按鈕）
+賽馬預測系統 - 完整修正版
+- 只有 super_admin 先見到後台
+- VIP 只係付費用戶，冇後台權限
 """
 
 import streamlit as st
@@ -25,7 +27,7 @@ CONFIG = {
     # ----- 基本設定 -----
     "enable_registration": True,       # 是否啟用「用戶註冊」功能（True = 需要註冊登入）
     "enable_payment": False,           # 是否啟用「付費功能」（False = 全部免費）
-    "enable_admin": True,              # 是否顯示「後台管理」按鈕（但只會顯示俾 admin/VIP）
+    "enable_admin": True,              # 是否啟用後台功能（但只會顯示俾 super_admin）
     "currency": "HKD",                 # 貨幣單位
     "free_limit": 2,                   # 免費用戶免費預測場次
     "subscription_price": 9.99,        # 每月訂閱價格
@@ -88,8 +90,8 @@ def load_users():
                 "free_usage": 0,
                 "total_usage": 0,
                 "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                "note": "系統管理員",
-                "group": "VIP",
+                "note": "系統超級管理員",
+                "group": "super_admin",    # ← 只有 super_admin 先有後台權限
                 "phone": "",
                 "history": [
                     {"date": "2025-04-09", "race": 9, "horse": "浪漫勇士", "timestamp": "2025-04-09 14:30:00", "predicted_prob": 0.35},
@@ -622,7 +624,10 @@ def show_user_dashboard(username):
     group = user_data.get('group', 'free')
     is_paid = user_data.get('is_paid', False)
     
-    if group == 'VIP':
+    # 判斷級別顯示名稱
+    if group == 'super_admin':
+        level = "👑 超級管理員"
+    elif group == 'VIP':
         level = "👑 VIP"
     elif is_paid:
         level = "💎 付費用戶"
@@ -634,7 +639,7 @@ def show_user_dashboard(username):
     col1.metric("👤 用戶", username)
     col2.metric("🏷️ 級別", level)
     col3.metric("📊 總預測次數", stats['total_predictions'])
-    if not is_paid and group != 'VIP':
+    if not is_paid and group not in ['VIP', 'super_admin']:
         remain = max(0, CONFIG["free_limit"] - stats['free_used'])
         col4.metric("📊 剩餘免費場次", remain)
     else:
@@ -722,7 +727,7 @@ def login_page():
                                 'total_usage': 0,
                                 'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                                 'note': '',
-                                'group': 'free',
+                                'group': 'free',    # 預設係免費
                                 'history': []
                             }
                             save_users(users)
@@ -748,6 +753,7 @@ def show_paywall():
                     users = load_users()
                     if st.session_state.username in users:
                         users[st.session_state.username]['is_paid'] = True
+                        users[st.session_state.username]['group'] = 'VIP'
                         users[st.session_state.username]['paid_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         users[st.session_state.username]['expiry_date'] = (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S')
                         save_users(users)
@@ -769,7 +775,7 @@ def admin_user_management():
             new_username = st.text_input("新用戶名", key="new_user_name")
             new_password = st.text_input("密碼", type="password", key="new_user_pw")
         with col2:
-            new_group = st.selectbox("群組", ["free", "paid", "VIP"], key="new_user_group")
+            new_group = st.selectbox("群組", ["free", "paid", "VIP", "super_admin"], key="new_user_group")
             new_is_paid = st.checkbox("付費狀態", value=False, key="new_user_paid")
         if st.button("建立用戶", key="create_user_btn"):
             if not new_username or not new_password:
@@ -835,7 +841,7 @@ def admin_user_management():
         col1.metric("👤 用戶", selected_user)
         col2.metric("🏷️ 級別", user_data.get('group', 'free').upper())
         col3.metric("📊 總預測次數", len(user_data.get('history', [])))
-        if user_data.get('is_paid', False) or user_data.get('group') == 'VIP':
+        if user_data.get('is_paid', False) or user_data.get('group') in ['VIP', 'super_admin']:
             col4.metric("📊 剩餘場次", "∞")
         else:
             used = user_data.get('free_usage', 0)
@@ -881,7 +887,7 @@ def admin_user_management():
         username = st.selectbox("選擇要編輯的用戶", list(users.keys()), key="edit_user_select")
         if username:
             user = users[username]
-            new_group = st.selectbox("群組", ['free', 'paid', 'VIP'], index=['free','paid','VIP'].index(user.get('group','free')), key="edit_group")
+            new_group = st.selectbox("群組", ['free', 'paid', 'VIP', 'super_admin'], index=['free','paid','VIP','super_admin'].index(user.get('group','free')), key="edit_group")
             new_is_paid = st.checkbox("付費狀態", value=user.get('is_paid', False), key="edit_is_paid")
             new_password = st.text_input("新密碼（留空 = 不變）", type="password", key="edit_password", placeholder="輸入新密碼")
             note = st.text_area("備註", value=user.get('note', ''), key="edit_note")
@@ -903,13 +909,15 @@ def admin_analytics():
     total_users = len(users)
     paid_users = sum(1 for u in users.values() if u.get('is_paid', False))
     vip_users = sum(1 for u in users.values() if u.get('group') == 'VIP')
+    super_admin_users = sum(1 for u in users.values() if u.get('group') == 'super_admin')
     total_pred = sum(u.get('total_usage', 0) for u in users.values())
     
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("總用戶", total_users)
     col2.metric("付費用戶", paid_users)
     col3.metric("VIP", vip_users)
-    col4.metric("總預測次數", total_pred)
+    col4.metric("超級管理員", super_admin_users)
+    col5.metric("總預測次數", total_pred)
     
     if users:
         df_users = pd.DataFrame.from_dict(users, orient='index')
@@ -1063,7 +1071,7 @@ def admin_accuracy_monitor():
 def admin_subscription():
     st.subheader("⏰ 訂閱管理 & 到期提醒")
     users = load_users()
-    paid_users = {u: data for u, data in users.items() if data.get('is_paid', False) or data.get('group') == 'VIP'}
+    paid_users = {u: data for u, data in users.items() if data.get('is_paid', False) or data.get('group') in ['VIP', 'super_admin']}
     if not paid_users:
         st.info("暫時沒有付費用戶")
         return
@@ -1226,16 +1234,16 @@ def admin_security():
         st.dataframe(df_log, use_container_width=True)
     st.write("多管理員管理")
     users = load_users()
-    admin_list = [u for u, d in users.items() if d.get('group') == 'VIP' or d.get('is_admin')]
-    st.write("現有管理員：", ", ".join(admin_list) if admin_list else "無")
-    new_admin = st.text_input("新增管理員用戶名", key="new_admin_name")
-    if st.button("設為管理員", key="add_admin"):
+    admin_list = [u for u, d in users.items() if d.get('group') == 'super_admin']
+    st.write("現有超級管理員：", ", ".join(admin_list) if admin_list else "無")
+    new_admin = st.text_input("新增超級管理員用戶名", key="new_admin_name")
+    if st.button("設為超級管理員", key="add_admin"):
         if new_admin in users:
-            users[new_admin]['group'] = 'VIP'
+            users[new_admin]['group'] = 'super_admin'
             users[new_admin]['is_admin'] = True
             save_users(users)
-            log_admin_action(st.session_state.username, f"新增管理員 {new_admin}")
-            st.success("✅ 已設為管理員")
+            log_admin_action(st.session_state.username, f"新增超級管理員 {new_admin}")
+            st.success(f"✅ {new_admin} 已設為超級管理員")
             st.rerun()
         else:
             st.error("用戶不存在")
@@ -1269,7 +1277,7 @@ def admin_page():
         return
     
     st.title("🔐 後台管理")
-    st.info(f"👤 管理員：{st.session_state.get('admin_username', 'admin')} | 已通過驗證")
+    st.info(f"👤 超級管理員：{st.session_state.get('admin_username', 'admin')} | 已通過驗證")
     if st.button("🚪 登出後台", key="logout_admin"):
         st.session_state.admin_authenticated = False
         st.session_state.show_admin = False
@@ -1351,9 +1359,9 @@ def main():
                 continue
             user = load_users().get(st.session_state.username, {})
             group = user.get('group', 'free')
-            if target == '付費用戶' and group not in ['paid', 'VIP']:
+            if target == '付費用戶' and group not in ['paid', 'VIP', 'super_admin']:
                 continue
-            if target == 'VIP' and group != 'VIP':
+            if target == 'VIP' and group not in ['VIP', 'super_admin']:
                 continue
             if target == '免費用戶' and group != 'free':
                 continue
@@ -1384,8 +1392,8 @@ def main():
         st.markdown("AI 驅動・即時預測・彩池推薦")
         st.caption(f"{datetime.now().strftime('%Y年%m月%d日')} · 36個特徵 · 三模型融合 · 六種彩池")
     with col2:
-        # 🔐 只有 admin 或 VIP 先見到「後台」按鈕
-        if CONFIG["enable_admin"] and st.session_state.get("role") in ["admin", "VIP"]:
+        # 🔐 只有 super_admin 先見到「後台」按鈕
+        if CONFIG["enable_admin"] and st.session_state.get("role") == "super_admin":
             if st.button("🔐 後台", use_container_width=True, key="go_to_admin"):
                 st.session_state.show_admin = True
                 st.session_state.admin_authenticated = False
@@ -1405,16 +1413,15 @@ def main():
             if CONFIG["enable_payment"]:
                 users = load_users()
                 user_data = users.get(st.session_state.username, {})
-                if user_data.get('is_paid', False):
+                if user_data.get('is_paid', False) or user_data.get('group') in ['VIP', 'super_admin']:
                     st.success("✅ 付費用戶")
                 else:
                     remain = max(0, CONFIG["free_limit"] - st.session_state.usage_count)
                     st.info(f"📊 剩餘免費場次：{remain} 場")
             if st.button("📋 我的預測記錄", key="show_history_btn"):
                 st.session_state.show_history = not st.session_state.show_history
-            # ✅ 新增登出按鈕
+            # 登出按鈕
             if st.button("🚪 登出", key="logout_btn"):
-                # 清除所有 session state
                 for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history']:
                     if key in st.session_state:
                         del st.session_state[key]
@@ -1455,7 +1462,7 @@ def main():
         if CONFIG["enable_payment"]:
             users = load_users()
             user_data = users.get(st.session_state.username, {})
-            is_paid = user_data.get('is_paid', False)
+            is_paid = user_data.get('is_paid', False) or user_data.get('group') in ['VIP', 'super_admin']
             if not is_paid:
                 if st.session_state.usage_count >= CONFIG["free_limit"]:
                     show_paywall()
