@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整修正版（免費用戶隱藏後台按鈕）
+賽馬預測系統 - 完整修正版（含後台新增/刪除用戶）
 """
 
 import streamlit as st
@@ -758,17 +758,74 @@ def show_paywall():
 # 8. 後台所有模組（完整實作）
 # ============================================================
 
-# ---------- 8.1 用戶管理 ----------
+# ---------- 8.1 用戶管理（包含新增/刪除用戶） ----------
 def admin_user_management():
     st.subheader("👥 用戶管理")
+    
+    # ---------- 新增用戶 ----------
+    with st.expander("➕ 新增用戶", expanded=False):
+        col1, col2 = st.columns(2)
+        with col1:
+            new_username = st.text_input("新用戶名", key="new_user_name")
+            new_password = st.text_input("密碼", type="password", key="new_user_pw")
+        with col2:
+            new_group = st.selectbox("群組", ["free", "paid", "VIP"], key="new_user_group")
+            new_is_paid = st.checkbox("付費狀態", value=False, key="new_user_paid")
+        if st.button("建立用戶", key="create_user_btn"):
+            if not new_username or not new_password:
+                st.warning("請填寫用戶名同密碼")
+            else:
+                users = load_users()
+                if new_username in users:
+                    st.error("❌ 用戶名已被使用")
+                else:
+                    users[new_username] = {
+                        "password": new_password,
+                        "is_paid": new_is_paid,
+                        "paid_date": None,
+                        "expiry_date": None,
+                        "free_usage": 0,
+                        "total_usage": 0,
+                        "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        "note": "手動新增",
+                        "group": new_group,
+                        "phone": "",
+                        "history": []
+                    }
+                    save_users(users)
+                    log_admin_action(st.session_state.username, f"新增用戶 {new_username}")
+                    st.success(f"✅ 用戶 {new_username} 已建立！")
+                    st.rerun()
+    
+    # ---------- 現有用戶列表 ----------
     users = load_users()
     if not users:
         st.info("暫無用戶")
         return
+    
+    st.write("現有用戶列表：")
     df = pd.DataFrame.from_dict(users, orient='index')
     st.dataframe(df, use_container_width=True)
     
+    # ---------- 刪除用戶 ----------
     st.divider()
+    st.subheader("🗑️ 刪除用戶")
+    del_user = st.selectbox("選擇要刪除嘅用戶", list(users.keys()), key="del_user_select")
+    if del_user:
+        if del_user == "admin":
+            st.warning("⚠️ 唔可以刪除 admin 帳號")
+        else:
+            confirm = st.checkbox(f"確認刪除 {del_user}？", key="confirm_del")
+            if confirm and st.button("🗑️ 確認刪除", key="del_user_btn"):
+                users.pop(del_user)
+                save_users(users)
+                log_admin_action(st.session_state.username, f"刪除用戶 {del_user}")
+                st.success(f"✅ 用戶 {del_user} 已刪除")
+                st.rerun()
+    
+    st.divider()
+    
+    # ---------- 原有「查看用戶視角」同「編輯用戶」----------
     st.subheader("👁️ 查看用戶視角")
     selected_user = st.selectbox("選擇要查看的用戶", list(users.keys()), key="view_user_select")
     if selected_user:
