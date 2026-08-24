@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整穩定版（已修復所有已知 BUG）
+賽馬預測系統 - 完整穩定版（已修復 admin 權限問題）
 """
 
 import streamlit as st
@@ -111,12 +111,12 @@ def load_users():
         }
         save_users(users)
     else:
-        # ✅ BUG 修復：自動將 admin 升級為 super_admin
+        # 確保 admin 為 super_admin
         if "admin" in users and users["admin"].get("group") != "super_admin":
             users["admin"]["group"] = "super_admin"
             users["admin"]["note"] = "系統超級管理員（已自動升級）"
             save_users(users)
-        # ✅ BUG 修復：補齊所有用戶缺少的欄位（free_usage, total_usage等）
+        # 補齊所有用戶缺少的欄位
         for uid, u in users.items():
             if 'plan' not in u:
                 u['plan'] = None
@@ -748,7 +748,7 @@ def login_page():
                 st.session_state.logged_in = True
                 st.session_state.username = username
                 st.session_state.role = users[username].get('group', 'free')
-                # ✅ 讀取已使用的免費次數
+                # 讀取已使用的免費次數
                 st.session_state.usage_count = users[username].get('free_usage', 0)
                 st.rerun()
             else:
@@ -796,8 +796,8 @@ def login_page():
                                 'is_paid': False,
                                 'paid_date': None,
                                 'expiry_date': None,
-                                'free_usage': 0,      # ✅ 初始化免費使用次數
-                                'total_usage': 0,     # ✅ 初始化總使用次數
+                                'free_usage': 0,
+                                'total_usage': 0,
                                 'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                                 'note': '',
                                 'group': 'free',
@@ -809,7 +809,7 @@ def login_page():
                             st.rerun()
 
 # ============================================================
-# 🔧 付款牆（使用表單，穩定不閃退）
+# 🔧 付款牆（使用表單）
 # ============================================================
 def show_paywall():
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
@@ -887,7 +887,7 @@ def show_paywall():
                             except:
                                 pass
 
-                # ✅ 儲存上傳記錄（加強錯誤處理）
+                # 儲存上傳記錄
                 proofs = load_payment_proofs()
                 if not proofs:
                     proofs = {}
@@ -927,7 +927,7 @@ def show_paywall():
                     st.error("❌ 提交失敗，請重新嘗試。如問題持續，請聯絡管理員。")
 
 # ============================================================
-# 8. 後台所有模組（完整實作，無佔位符）
+# 8. 後台所有模組（完整實作）
 # ============================================================
 
 # ---------- 8.1 用戶管理 ----------
@@ -1606,7 +1606,7 @@ def admin_page():
         admin_security() if CONFIG["module_security"] else st.info("模組已關閉")
 
 # ============================================================
-# 10. 主頁面
+# 10. 主頁面（已修復 admin 權限問題）
 # ============================================================
 def main():
     if 'logged_in' not in st.session_state:
@@ -1696,12 +1696,10 @@ def main():
                 if user_data.get('is_paid', False) or user_data.get('group') in ['VIP', 'super_admin']:
                     st.success("✅ 付費用戶")
                 else:
-                    # ✅ 直接從用戶數據讀取已使用免費次數
                     used = user_data.get('free_usage', 0)
                     remain = max(0, CONFIG["free_limit"] - used)
                     st.info(f"📊 剩餘免費場次：{remain} 場")
             else:
-                # 付費功能關閉，但仍顯示剩餘免費次數
                 users = load_users()
                 user_data = users.get(st.session_state.username, {})
                 used = user_data.get('free_usage', 0)
@@ -1744,33 +1742,41 @@ def main():
         st.info("今日沒有賽事")
 
     if predict_btn:
-        # ✅ 檢查免費限額（從 users.json 讀取真實使用次數）
+        # ✅ 修復：超級管理員（super_admin）無限預測，不受限額影響
         users = load_users()
         user_data = users.get(st.session_state.username, {})
-        used_free = user_data.get('free_usage', 0)
-        is_paid = user_data.get('is_paid', False) or user_data.get('group') in ['VIP', 'super_admin']
+        group = user_data.get('group', 'free')
         
-        if CONFIG["enable_payment"]:
-            if not is_paid:
-                # 檢查是否過期（如果有 expiry_date）
-                expiry = user_data.get('expiry_date')
-                if expiry:
-                    try:
-                        expiry_date = pd.to_datetime(expiry)
-                        if expiry_date < datetime.now():
-                            st.error("❌ 你嘅訂閱已過期，請重新付費")
-                            show_paywall()
-                            return
-                    except:
-                        pass
+        # 如果是 super_admin，跳過所有限額檢查
+        if group == 'super_admin':
+            is_super_admin = True
+        else:
+            is_super_admin = False
+        
+        if not is_super_admin:
+            # 非管理員才檢查限額
+            used_free = user_data.get('free_usage', 0)
+            is_paid = user_data.get('is_paid', False) or user_data.get('group') in ['VIP']
+            
+            if CONFIG["enable_payment"]:
+                if not is_paid:
+                    expiry = user_data.get('expiry_date')
+                    if expiry:
+                        try:
+                            expiry_date = pd.to_datetime(expiry)
+                            if expiry_date < datetime.now():
+                                st.error("❌ 你嘅訂閱已過期，請重新付費")
+                                show_paywall()
+                                return
+                        except:
+                            pass
+                    if used_free >= CONFIG["free_limit"]:
+                        show_paywall()
+                        return
+            else:
                 if used_free >= CONFIG["free_limit"]:
                     show_paywall()
                     return
-        else:
-            # 付費功能關閉，只檢查免費限額
-            if used_free >= CONFIG["free_limit"]:
-                show_paywall()
-                return
 
         date_str = date.strftime('%Y-%m-%d')
         with st.spinner(f"執行預測 {date_str} 第 {race_no} 場..."):
@@ -1789,14 +1795,14 @@ def main():
                     winner_name = result.iloc[0]['馬匹名稱'] if not result.empty else "未知"
                     prob = result.iloc[0]['預測勝率'] if not result.empty else None
                     record_prediction(st.session_state.username, date_str, race_no, winner_name, prob)
-                    # ✅ 更新用戶的免費使用次數
-                    users = load_users()
-                    if st.session_state.username in users:
-                        users[st.session_state.username]['free_usage'] = users[st.session_state.username].get('free_usage', 0) + 1
-                        users[st.session_state.username]['total_usage'] = users[st.session_state.username].get('total_usage', 0) + 1
-                        save_users(users)
-                        # 更新 session state 中的 usage_count
-                        st.session_state.usage_count = users[st.session_state.username]['free_usage']
+                    # ✅ 如果不是 super_admin，才更新免費使用次數
+                    if not is_super_admin:
+                        users = load_users()
+                        if st.session_state.username in users:
+                            users[st.session_state.username]['free_usage'] = users[st.session_state.username].get('free_usage', 0) + 1
+                            users[st.session_state.username]['total_usage'] = users[st.session_state.username].get('total_usage', 0) + 1
+                            save_users(users)
+                            st.session_state.usage_count = users[st.session_state.username]['free_usage']
                     st.info("📝 預測已記錄到你的歷史")
 
     st.divider()
