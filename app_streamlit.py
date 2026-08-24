@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整穩定版（付費功能關閉）
+賽馬預測系統 - 完整版（含優惠碼付款折扣功能）
 """
 
 import streamlit as st
@@ -30,7 +30,7 @@ CONFIG = {
     "free_limit": 2,                   # 免費用戶免費預測場次（2場 = 免費試玩2場）
     "admin_password": "z54060437K",    # 後台管理員密碼（請改為你嘅密碼）
     
-    # ----- 訂閱價格（三種方案，備用） -----
+    # ----- 訂閱價格（三種方案） -----
     "price_day": 18,                   # 日費價格（港幣 $18）
     "price_month": 128,                # 月費價格（港幣 $128）
     "price_quarter": 328,              # 季費價格（港幣 $328，3個月）
@@ -789,12 +789,200 @@ def login_page():
                             st.rerun()
 
 # ============================================================
-# 7. 付費牆（付費功能關閉，但保留代碼備用）
+# 7. 付費牆（含優惠碼折扣功能）
 # ============================================================
 def show_paywall():
-    """付費牆（目前功能關閉，只顯示提示）"""
+    """顯示付費牆，提供日/月/季三種方案 + 優惠碼折扣"""
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
-    st.info("🔒 付費功能目前關閉中，請聯絡管理員開通。")
+    
+    st.subheader("💳 選擇你嘅方案")
+    
+    # 三種方案並排顯示
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown(f"""
+        <div style="border:1px solid #ddd; border-radius:10px; padding:20px; text-align:center;">
+            <h3>☀️ 日費</h3>
+            <p style="font-size:28px; font-weight:bold; color:#FF6B6B;">${CONFIG['price_day']}</p>
+            <p>24小時無限預測</p>
+            <p style="font-size:12px; color:#888;">適合即日試玩</p>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("選擇日費", key="buy_day", use_container_width=True):
+            st.session_state['selected_plan'] = 'day'
+            st.session_state['plan_price'] = CONFIG['price_day']
+            # 清除之前嘅優惠碼狀態
+            if 'applied_promo' in st.session_state:
+                del st.session_state['applied_promo']
+            if 'discount_type' in st.session_state:
+                del st.session_state['discount_type']
+            if 'discount_value' in st.session_state:
+                del st.session_state['discount_value']
+            st.rerun()
+    
+    with col2:
+        st.markdown(f"""
+        <div style="border:2px solid #4CAF50; border-radius:10px; padding:20px; text-align:center; background:#f0faf0;">
+            <h3>📆 月費</h3>
+            <p style="font-size:28px; font-weight:bold; color:#4CAF50;">${CONFIG['price_month']}</p>
+            <p>30天無限預測</p>
+            <p style="font-size:12px; color:#888;">最受歡迎 🔥</p>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("選擇月費", key="buy_month", use_container_width=True):
+            st.session_state['selected_plan'] = 'month'
+            st.session_state['plan_price'] = CONFIG['price_month']
+            if 'applied_promo' in st.session_state:
+                del st.session_state['applied_promo']
+            if 'discount_type' in st.session_state:
+                del st.session_state['discount_type']
+            if 'discount_value' in st.session_state:
+                del st.session_state['discount_value']
+            st.rerun()
+    
+    with col3:
+        st.markdown(f"""
+        <div style="border:1px solid #ddd; border-radius:10px; padding:20px; text-align:center;">
+            <h3>📅 季費</h3>
+            <p style="font-size:28px; font-weight:bold; color:#FFA500;">${CONFIG['price_quarter']}</p>
+            <p>90天無限預測</p>
+            <p style="font-size:12px; color:#888;">節省 15% 💰</p>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("選擇季費", key="buy_quarter", use_container_width=True):
+            st.session_state['selected_plan'] = 'quarter'
+            st.session_state['plan_price'] = CONFIG['price_quarter']
+            if 'applied_promo' in st.session_state:
+                del st.session_state['applied_promo']
+            if 'discount_type' in st.session_state:
+                del st.session_state['discount_type']
+            if 'discount_value' in st.session_state:
+                del st.session_state['discount_value']
+            st.rerun()
+    
+    # ---------- 顯示已選擇方案 + 優惠碼輸入 ----------
+    if 'selected_plan' in st.session_state:
+        plan_names = {'day': '日費', 'month': '月費', 'quarter': '季費'}
+        plan_days = {'day': 1, 'month': 30, 'quarter': 90}
+        original_price = st.session_state['plan_price']
+        final_price = original_price
+        
+        st.divider()
+        
+        # 顯示所選方案
+        st.info(f"📌 你已選擇 **{plan_names[st.session_state['selected_plan']]}**（原價 ${original_price}，有效期 {plan_days[st.session_state['selected_plan']]} 天）")
+        
+        # ----- 優惠碼輸入 -----
+        st.subheader("🎟️ 有優惠碼？")
+        col_promo1, col_promo2 = st.columns([3, 1])
+        with col_promo1:
+            promo_input = st.text_input("輸入優惠碼", key="promo_input_paywall", placeholder="例如 A7K3X9P2")
+        with col_promo2:
+            if st.button("套用優惠碼", key="apply_promo_paywall"):
+                if not promo_input:
+                    st.warning("請輸入優惠碼")
+                else:
+                    promos = load_promos()
+                    promo_data = promos.get(promo_input)
+                    if not promo_data:
+                        st.error("❌ 優惠碼不存在")
+                    elif promo_data.get('used', False):
+                        st.error("❌ 優惠碼已被使用")
+                    else:
+                        # 檢查過期
+                        expiry = promo_data.get('expiry')
+                        if expiry:
+                            try:
+                                expiry_date = datetime.fromisoformat(expiry)
+                                if expiry_date < datetime.now():
+                                    st.error("❌ 優惠碼已過期")
+                                    promo_valid = False
+                                else:
+                                    promo_valid = True
+                            except:
+                                promo_valid = True
+                        else:
+                            promo_valid = True
+                        
+                        if promo_valid:
+                            discount_type = promo_data.get('discount_type', 'percentage')
+                            discount_value = promo_data.get('discount_value', 0)
+                            st.session_state['applied_promo'] = promo_input
+                            st.session_state['discount_type'] = discount_type
+                            st.session_state['discount_value'] = discount_value
+                            st.success(f"✅ 優惠碼已套用！")
+                            st.rerun()
+        
+        # ----- 計算折後價 -----
+        discount_applied = False
+        discount_desc = ""
+        
+        if 'applied_promo' in st.session_state:
+            discount_type = st.session_state.get('discount_type', 'percentage')
+            discount_value = st.session_state.get('discount_value', 0)
+            
+            if discount_type == 'percentage':
+                final_price = original_price * (1 - discount_value / 100)
+                discount_desc = f"{discount_value}% 折扣"
+                discount_applied = True
+            elif discount_type == 'fixed':
+                final_price = max(0, original_price - discount_value)
+                discount_desc = f"減 ${discount_value}"
+                discount_applied = True
+            elif discount_type == 'free':
+                final_price = 0
+                discount_desc = "全免！"
+                discount_applied = True
+            
+            final_price = round(final_price, 2)
+            
+            if discount_applied:
+                if final_price > 0:
+                    st.success(f"💰 原價 **${original_price}** → 折後 **${final_price:.2f}**（{discount_desc}）")
+                else:
+                    st.success(f"🎉 恭喜！優惠碼已套用，**完全免費！**（{discount_desc}）")
+        
+        # ----- 付款按鈕（管理員開通） -----
+        st.markdown("---")
+        st.markdown("**付款方式：** FPS / PayMe / 銀行轉帳")
+        st.markdown("📩 付款後 WhatsApp 通知開通")
+        
+        if CONFIG["enable_admin"]:
+            with st.expander("🔐 管理員開通（測試用）"):
+                admin_code = st.text_input("管理員密碼", type="password", key="admin_paywall_pw")
+                if admin_code == CONFIG["admin_password"]:
+                    if st.button("✅ 手動開通此用戶", key="manual_activate"):
+                        users = load_users()
+                        if st.session_state.username in users:
+                            # 如果優惠碼免費，直接開通唔使收錢
+                            if discount_applied and final_price == 0:
+                                st.success("🎉 優惠碼全免！已自動開通！")
+                            
+                            users[st.session_state.username]['is_paid'] = True
+                            users[st.session_state.username]['group'] = 'VIP'
+                            users[st.session_state.username]['paid_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            days = get_plan_days(st.session_state['selected_plan'])
+                            users[st.session_state.username]['expiry_date'] = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+                            users[st.session_state.username]['plan'] = st.session_state['selected_plan']
+                            
+                            # 如果有用優惠碼，標記為已使用
+                            if 'applied_promo' in st.session_state:
+                                promos = load_promos()
+                                promo_code = st.session_state['applied_promo']
+                                if promo_code in promos:
+                                    promos[promo_code]['used'] = True
+                                    promos[promo_code]['used_by'] = st.session_state.username
+                                    promos[promo_code]['used_at'] = datetime.now().isoformat()
+                                    save_promos(promos)
+                            
+                            save_users(users)
+                            st.success(f"✅ 已開通！有效期 {days} 天")
+                            # 清除 session 狀態
+                            for key in ['selected_plan', 'plan_price', 'applied_promo', 'discount_type', 'discount_value']:
+                                if key in st.session_state:
+                                    del st.session_state[key]
+                            st.rerun()
 
 # ============================================================
 # 8. 後台所有模組
@@ -992,7 +1180,7 @@ def admin_finance():
             st.success("✅ 已記錄")
             st.rerun()
 
-# ---------- 8.4 優惠碼管理 ----------
+# ---------- 8.4 優惠碼管理（已加入折扣設定） ----------
 def admin_promo_codes():
     st.subheader("🎟️ 優惠碼管理")
     promos = load_promos()
@@ -1000,19 +1188,37 @@ def admin_promo_codes():
     with col1:
         st.write("現有優惠碼")
         if promos:
-            st.dataframe(pd.DataFrame.from_dict(promos, orient='index'), use_container_width=True)
+            df = pd.DataFrame.from_dict(promos, orient='index')
+            # 確保顯示折扣資訊
+            if 'discount_type' not in df.columns:
+                df['discount_type'] = 'percentage'
+            if 'discount_value' not in df.columns:
+                df['discount_value'] = 0
+            st.dataframe(df, use_container_width=True)
         else:
             st.info("暫無優惠碼")
     with col2:
         st.write("產生新優惠碼")
         duration = st.number_input("有效期 (天)", min_value=1, value=30, key="promo_duration")
+        discount_type = st.selectbox("折扣類型", ["percentage", "fixed", "free"], key="promo_discount_type",
+                                     format_func=lambda x: {"percentage": "百分比（%折扣）", "fixed": "固定金額（減$）", "free": "完全免費"}.get(x, x))
+        discount_value = st.number_input("折扣數值", min_value=0, value=20, key="promo_discount_value", 
+                                         help="百分比：20 = 8折（減20%）；固定金額：減指定金額；免費：無效")
         if st.button("產生優惠碼", key="gen_promo"):
             code = generate_promo_code()
             expiry = (datetime.now() + timedelta(days=duration)).isoformat()
-            promos[code] = {"used": False, "expiry": expiry, "created_at": datetime.now().isoformat()}
+            promos[code] = {
+                "used": False,
+                "expiry": expiry,
+                "created_at": datetime.now().isoformat(),
+                "discount_type": discount_type,
+                "discount_value": discount_value
+            }
             save_promos(promos)
             st.success(f"✅ 優惠碼已產生：`{code}` 有效期 {duration} 天")
             st.rerun()
+        
+        st.write("---")
         st.write("套用優惠碼")
         code_input = st.text_input("優惠碼", key="apply_promo_code")
         username_input = st.text_input("用戶名稱", key="apply_promo_user")
@@ -1469,7 +1675,7 @@ def main():
             if st.button("📋 我的預測記錄", key="show_history_btn"):
                 st.session_state.show_history = not st.session_state.show_history
             if st.button("🚪 登出", key="logout_btn"):
-                for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history', 'selected_plan']:
+                for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history', 'selected_plan', 'applied_promo', 'discount_type', 'discount_value']:
                     if key in st.session_state:
                         del st.session_state[key]
                 st.rerun()
