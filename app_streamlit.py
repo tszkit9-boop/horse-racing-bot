@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版（付款提交保證顯示成功訊息）
+賽馬預測系統 - 最終穩定版（付款提交保證顯示成功訊息）
 """
 
 import streamlit as st
@@ -18,7 +18,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 import random
 from PIL import Image
-import base64
 
 # ============================================================
 # 🔐 功能開關
@@ -816,21 +815,9 @@ def login_page():
                             st.rerun()
 
 # ============================================================
-# 🔧 付款牆（保證顯示成功訊息）
+# 🔧 付款牆（提交後設定 session state）
 # ============================================================
 def show_paywall():
-    # 檢查是否已經提交成功（用 session state 記錄）
-    if st.session_state.get('payment_submitted', False):
-        st.success("✅ 付款申請已成功提交！管理員將盡快審核。")
-        st.info("📩 請同時 WhatsApp 通知管理員（可加快審核）")
-        if st.button("⬅️ 返回主頁"):
-            # 清除付款相關 session 狀態
-            for key in ['payment_submitted', 'selected_plan', 'plan_price']:
-                if key in st.session_state:
-                    del st.session_state[key]
-            st.rerun()
-        st.stop()  # 暫停執行，只顯示成功訊息
-    
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
     st.subheader("💳 選擇你嘅方案")
 
@@ -911,18 +898,16 @@ def show_paywall():
                             except:
                                 pass
 
-                # --- 儲存上傳記錄 ---
+                # 儲存上傳記錄
                 proofs = load_payment_proofs()
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                 file_extension = uploaded_file.type.split('/')[1] if '/' in uploaded_file.type else 'png'
                 filename = f"{st.session_state.username}_{timestamp}.{file_extension}"
                 filepath = os.path.join(PAYMENT_PROOFS_DIR, filename)
                 
-                # 儲存圖片
                 try:
                     with open(filepath, 'wb') as f:
                         f.write(uploaded_file.getbuffer())
-                    image_saved = True
                 except Exception as e:
                     st.error(f"❌ 圖片儲存失敗：{e}")
                     st.stop()
@@ -943,16 +928,14 @@ def show_paywall():
                 }
                 proofs['proof_records'].append(new_proof)
                 
-                # 寫入 JSON
                 if save_payment_proofs(proofs):
                     log_admin_action(st.session_state.username, f"提交付款申請 - 方案：{get_plan_name(plan_choice)}，金額：${final_price}")
-                    # 設定 session state 標記為已提交
+                    # ✅ 關鍵：設定 session state 標記為已提交
                     st.session_state['payment_submitted'] = True
-                    st.session_state['selected_plan'] = plan_choice
-                    st.session_state['plan_price'] = final_price
-                    st.rerun()  # 重新整理頁面，顯示成功訊息
+                    st.session_state['payment_message'] = f"✅ 付款申請已成功提交！（方案：{get_plan_name(plan_choice)}，金額：${final_price}）"
+                    st.rerun()
                 else:
-                    st.error("❌ 提交失敗，請重新嘗試。如問題持續，請聯絡管理員。")
+                    st.error("❌ 提交失敗，請重新嘗試。")
                     st.stop()
 
 # ============================================================
@@ -1638,6 +1621,18 @@ def admin_page():
 # 10. 主頁面
 # ============================================================
 def main():
+    # ✅ 先檢查付款提交成功標記
+    if st.session_state.get('payment_submitted', False):
+        st.success(st.session_state.get('payment_message', '✅ 付款申請已成功提交！管理員將盡快審核。'))
+        st.info("📩 請同時 WhatsApp 通知管理員（可加快審核）")
+        if st.button("⬅️ 返回主頁"):
+            # 清除付款相關 session 狀態
+            for key in ['payment_submitted', 'payment_message', 'selected_plan', 'plan_price']:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.rerun()
+        st.stop()  # 暫停執行，只顯示成功訊息
+
     if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
     if 'username' not in st.session_state:
