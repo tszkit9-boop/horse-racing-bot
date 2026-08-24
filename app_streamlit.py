@@ -27,7 +27,7 @@ from PIL import Image
 CONFIG = {
     # ----- 基本設定 -----
     "enable_registration": True,       # 是否啟用「用戶註冊」功能（True = 需要註冊登入）
-    "enable_payment": False,           # 是否啟用「付費功能」（False = 全部免費，唔使俾錢）
+    "enable_payment": True,           # 是否啟用「付費功能」（False = 全部免費，唔使俾錢）
     "enable_admin": True,              # 是否啟用後台功能（只顯示俾 super_admin）
     "currency": "HKD",                 # 貨幣單位（HKD = 港幣）
     "free_limit": 2,                   # 免費用戶免費預測場次（2場 = 免費試玩2場）
