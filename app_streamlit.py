@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - Streamlit 網頁版（直接整合預測功能）
+賽馬預測系統 - Streamlit 網頁版（完整診斷版）
 """
 
 import streamlit as st
@@ -23,11 +23,40 @@ st.title("🏇 賽馬預測系統")
 st.markdown("AI 驅動・即時預測・彩池推薦")
 
 # ============================================================
-# 2. 載入模型（用 @st.cache_data 加快速度）
+# 2. 診斷：顯示排位表資訊
+# ============================================================
+st.subheader("📋 排位表診斷")
+try:
+    df_debug = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
+    st.write(f"✅ 成功讀取排位表，共 {len(df_debug)} 筆記錄")
+    st.write(f"欄位名稱：{df_debug.columns.tolist()}")
+    
+    # 顯示日期欄位樣本（如果存在）
+    if 'race_date' in df_debug.columns:
+        st.write(f"日期欄位樣本（前10個）：{df_debug['race_date'].head(10).tolist()}")
+    elif '比賽日期' in df_debug.columns:
+        st.write(f"日期欄位樣本（前10個）：{df_debug['比賽日期'].head(10).tolist()}")
+    else:
+        st.warning("找不到日期欄位")
+    
+    # 顯示場次欄位樣本（如果存在）
+    if 'race_no' in df_debug.columns:
+        st.write(f"場次欄位樣本（前10個）：{df_debug['race_no'].head(10).tolist()}")
+    elif '場次' in df_debug.columns:
+        st.write(f"場次欄位樣本（前10個）：{df_debug['場次'].head(10).tolist()}")
+    else:
+        st.warning("找不到場次欄位")
+        
+except Exception as e:
+    st.error(f"讀取排位表失敗：{e}")
+
+st.divider()
+
+# ============================================================
+# 3. 載入模型
 # ============================================================
 @st.cache_resource
 def load_models():
-    """載入三個模型"""
     try:
         with open('hk_racing_model.pkl', 'rb') as f:
             xgb_obj = pickle.load(f)
@@ -43,10 +72,9 @@ def load_models():
         return None, None, None
 
 # ============================================================
-# 3. 預測函數（直接執行，唔用 subprocess）
+# 4. 預測函數（含日期和場次處理）
 # ============================================================
 def run_prediction(date_str, race_no):
-    """直接執行預測，回傳結果 DataFrame 同彩池推薦"""
     xgb_model, cat_model, rank_model = load_models()
     if xgb_model is None:
         return None, None
@@ -58,18 +86,48 @@ def run_prediction(date_str, race_no):
         st.error(f"讀取排位表失敗：{e}")
         return None, None
     
-    # 處理日期
-    df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce')
+    # 處理日期欄位（支援多種格式）
+    if 'race_date' in df.columns:
+        date_col = 'race_date'
+    elif '比賽日期' in df.columns:
+        date_col = '比賽日期'
+    else:
+        st.error("找不到日期欄位")
+        return None, None
+    
+    # 標準化日期：先轉為字串，將 '/' 替換為 '-'，再轉 datetime
+    df[date_col] = df[date_col].astype(str).str.replace('/', '-')
+    df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
+    df = df.dropna(subset=[date_col])
+    
+    # 處理場次欄位
+    if 'race_no' in df.columns:
+        race_col = 'race_no'
+    elif '場次' in df.columns:
+        race_col = '場次'
+    else:
+        st.error("找不到場次欄位")
+        return None, None
+    
+    # 提取數字（例如從 "Race 1" 提取 1）
+    df[race_col] = df[race_col].astype(str).str.extract(r'(\d+)')[0]
+    df[race_col] = pd.to_numeric(df[race_col], errors='coerce')
+    df = df.dropna(subset=[race_col])
+    
+    # 篩選指定日期和場次
     target = pd.to_datetime(date_str)
-    race_sel = df[(df['race_date'].dt.date == target.date()) & (df['race_no'] == race_no)]
+    race_sel = df[(df[date_col].dt.date == target.date()) & (df[race_col] == race_no)]
     
     if race_sel.empty:
         st.error(f"❌ 日期 {date_str} 第 {race_no} 場無數據")
         return None, None
     
-    # 簡化版特徵生成（省略複雜特徵，直接用基本特徵）
-    # 實際使用時可加入完整特徵工程
+    # 簡化特徵（實際使用時可擴充）
     features = ['draw', 'act_wt', 'distance', 'rtg', 'win_odds']
+    # 確保所有特徵欄位存在，若無則補0
+    for f in features:
+        if f not in race_sel.columns:
+            race_sel[f] = 0
     X = race_sel[features].copy()
     X = X.fillna(0)
     
@@ -80,7 +138,14 @@ def run_prediction(date_str, race_no):
     
     # 結果
     result = race_sel[['horse_id', 'draw', 'win_odds']].copy()
-    result['馬匹名稱'] = result['horse_id']  # 如果有中文名對照可加入
+    # 嘗試加入中文名（如果有對照表）
+    try:
+        name_map = pd.read_csv('horse_name_mapping.csv', encoding='utf-8-sig')
+        name_dict = dict(zip(name_map['horse_id'], name_map['馬名']))
+        result['馬匹名稱'] = result['horse_id'].map(name_dict).fillna(result['horse_id'])
+    except:
+        result['馬匹名稱'] = result['horse_id']
+    
     result['預測勝率'] = prob_final
     result['值博指數'] = result['預測勝率'] / result['win_odds'].replace(0, 4.0)
     result = result.sort_values('值博指數', ascending=False)
@@ -93,7 +158,7 @@ def run_prediction(date_str, race_no):
     return result, pool_rec
 
 # ============================================================
-# 4. 側邊欄
+# 5. 側邊欄
 # ============================================================
 with st.sidebar:
     st.header("🎯 控制面板")
@@ -102,25 +167,35 @@ with st.sidebar:
     predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True)
 
 # ============================================================
-# 5. 主區域
+# 6. 今日賽程
 # ============================================================
 st.subheader("📅 今日賽程")
 try:
     df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
-    df_sched['race_date'] = pd.to_datetime(df_sched['race_date'], errors='coerce')
-    today = datetime.now().date()
-    day_races = df_sched[df_sched['race_date'].dt.date == today]
-    if day_races.empty:
-        st.info("今日沒有賽事")
+    # 同樣處理日期
+    if 'race_date' in df_sched.columns:
+        date_col_sched = 'race_date'
+    elif '比賽日期' in df_sched.columns:
+        date_col_sched = '比賽日期'
     else:
-        for course in day_races['race_course'].unique():
-            races = day_races[day_races['race_course'] == course]['race_no'].unique()
-            st.write(f"🏟️ **{course}**：第 {', '.join(map(str, sorted(races)))} 場")
-except:
-    st.warning("無法載入賽程")
+        st.warning("找不到日期欄位")
+        date_col_sched = None
+    if date_col_sched:
+        df_sched[date_col_sched] = df_sched[date_col_sched].astype(str).str.replace('/', '-')
+        df_sched[date_col_sched] = pd.to_datetime(df_sched[date_col_sched], errors='coerce')
+        today = datetime.now().date()
+        day_races = df_sched[df_sched[date_col_sched].dt.date == today]
+        if day_races.empty:
+            st.info("今日沒有賽事")
+        else:
+            for course in day_races['race_course'].unique():
+                races = day_races[day_races['race_course'] == course]['race_no'].unique()
+                st.write(f"🏟️ **{course}**：第 {', '.join(map(str, sorted(races)))} 場")
+except Exception as e:
+    st.warning(f"無法載入賽程：{e}")
 
 # ============================================================
-# 6. 執行預測
+# 7. 執行預測
 # ============================================================
 if predict_btn:
     date_str = date.strftime('%Y-%m-%d')
@@ -138,7 +213,7 @@ if predict_btn:
                 st.text(pool)
 
 # ============================================================
-# 7. 底部
+# 8. 底部
 # ============================================================
 st.divider()
 st.caption(f"🕐 最後更新：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
