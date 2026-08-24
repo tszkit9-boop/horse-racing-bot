@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整穩定版（已修復 admin 權限問題）
+賽馬預測系統 - 完整穩定版（修復 admin 被收費問題）
 """
 
 import streamlit as st
@@ -111,12 +111,12 @@ def load_users():
         }
         save_users(users)
     else:
-        # 確保 admin 為 super_admin
+        # ✅ 確保 admin 為 super_admin
         if "admin" in users and users["admin"].get("group") != "super_admin":
             users["admin"]["group"] = "super_admin"
             users["admin"]["note"] = "系統超級管理員（已自動升級）"
             save_users(users)
-        # 補齊所有用戶缺少的欄位
+        # ✅ 補齊所有用戶缺少的欄位
         for uid, u in users.items():
             if 'plan' not in u:
                 u['plan'] = None
@@ -1606,7 +1606,7 @@ def admin_page():
         admin_security() if CONFIG["module_security"] else st.info("模組已關閉")
 
 # ============================================================
-# 10. 主頁面（已修復 admin 權限問題）
+# 10. 主頁面
 # ============================================================
 def main():
     if 'logged_in' not in st.session_state:
@@ -1742,19 +1742,17 @@ def main():
         st.info("今日沒有賽事")
 
     if predict_btn:
-        # ✅ 修復：超級管理員（super_admin）無限預測，不受限額影響
+        # ✅ 關鍵修復：檢查用戶角色，super_admin 直接跳過所有付費限制
         users = load_users()
         user_data = users.get(st.session_state.username, {})
-        group = user_data.get('group', 'free')
+        user_role = user_data.get('group', 'free')
         
-        # 如果是 super_admin，跳過所有限額檢查
-        if group == 'super_admin':
-            is_super_admin = True
+        # 如果係 super_admin，無限免費，直接執行預測
+        if user_role == "super_admin":
+            # 直接執行預測，唔使檢查付費
+            pass
         else:
-            is_super_admin = False
-        
-        if not is_super_admin:
-            # 非管理員才檢查限額
+            # 普通用戶檢查免費限額
             used_free = user_data.get('free_usage', 0)
             is_paid = user_data.get('is_paid', False) or user_data.get('group') in ['VIP']
             
@@ -1795,8 +1793,8 @@ def main():
                     winner_name = result.iloc[0]['馬匹名稱'] if not result.empty else "未知"
                     prob = result.iloc[0]['預測勝率'] if not result.empty else None
                     record_prediction(st.session_state.username, date_str, race_no, winner_name, prob)
-                    # ✅ 如果不是 super_admin，才更新免費使用次數
-                    if not is_super_admin:
+                    # 更新用戶的免費使用次數（只對非 super_admin 更新）
+                    if user_role != "super_admin":
                         users = load_users()
                         if st.session_state.username in users:
                             users[st.session_state.username]['free_usage'] = users[st.session_state.username].get('free_usage', 0) + 1
