@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整修正版（含後台新增/刪除用戶）
+賽馬預測系統 - 完整修正版（含後台新增/刪除用戶 + 登出按鈕）
 """
 
 import streamlit as st
@@ -883,11 +883,14 @@ def admin_user_management():
             user = users[username]
             new_group = st.selectbox("群組", ['free', 'paid', 'VIP'], index=['free','paid','VIP'].index(user.get('group','free')), key="edit_group")
             new_is_paid = st.checkbox("付費狀態", value=user.get('is_paid', False), key="edit_is_paid")
+            new_password = st.text_input("新密碼（留空 = 不變）", type="password", key="edit_password", placeholder="輸入新密碼")
             note = st.text_area("備註", value=user.get('note', ''), key="edit_note")
             if st.button("儲存變更", key="save_user_changes"):
                 users[username]['group'] = new_group
                 users[username]['is_paid'] = new_is_paid
                 users[username]['note'] = note
+                if new_password:
+                    users[username]['password'] = new_password
                 save_users(users)
                 log_admin_action(st.session_state.username, f"編輯用戶 {username}")
                 st.success("✅ 已更新")
@@ -1307,7 +1310,7 @@ def admin_page():
         admin_security() if CONFIG["module_security"] else st.info("模組已關閉")
 
 # ============================================================
-# 10. 主頁面（含公告顯示，並修正後台按鈕權限）
+# 10. 主頁面（含公告顯示、後台權限控制、登出按鈕）
 # ============================================================
 def main():
     # 初始化 session state
@@ -1394,7 +1397,7 @@ def main():
     elif not CONFIG["enable_registration"]:
         st.info("🔓 目前為公開模式，任何人皆可使用")
 
-    # ----- 側邊欄 -----
+    # ----- 側邊欄（已加入登出按鈕） -----
     with st.sidebar:
         st.header("🎯 控制面板")
         if CONFIG["enable_registration"] and st.session_state.logged_in:
@@ -1409,6 +1412,13 @@ def main():
                     st.info(f"📊 剩餘免費場次：{remain} 場")
             if st.button("📋 我的預測記錄", key="show_history_btn"):
                 st.session_state.show_history = not st.session_state.show_history
+            # ✅ 新增登出按鈕
+            if st.button("🚪 登出", key="logout_btn"):
+                # 清除所有 session state
+                for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history']:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.rerun()
         date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="predict_date")
         race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race")
         predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn")
