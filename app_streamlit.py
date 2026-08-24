@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-SHTSN 36特徵三核心賽馬AI預測系統 — Streamlit 網頁版
-已整合 CONFIG 功能開關，所有設定集中管理
+SHTSN 36特徵三核心賽馬AI預測系統 — Streamlit 網頁版（完整版）
+整合 CONFIG 功能開關，支援預測、儀表板、歷史記錄、準確度統計及後台七大模組
 """
 
 import streamlit as st
