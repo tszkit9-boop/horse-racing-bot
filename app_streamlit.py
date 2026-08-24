@@ -20,22 +20,28 @@ import plotly.graph_objects as go
 # ============================================================
 # 🔐 功能開關
 # ============================================================
+# ============================================================
+# 🔐 功能開關（全部中文說明）
+# ============================================================
 CONFIG = {
-    "enable_registration": False,
-    "enable_payment": False,
-    "enable_admin": True,
-    "currency": "HKD",
-    "free_limit": 2,
-    "subscription_price": 9.99,
-    "admin_password": "admin123",
-    "module_user_management": True,
-    "module_analytics": True,
-    "module_finance": True,
-    "module_monitoring": True,
-    "module_content": True,
-    "module_automation": True,
-    "module_security": True,
-    "module_promo": True,
+    # ----- 基本設定 -----
+    "enable_registration": False,      # 是否啟用「用戶註冊」功能（False = 任何人都用得，唔使註冊）
+    "enable_payment": False,           # 是否啟用「付費功能」（False = 全部免費，唔使俾錢）
+    "enable_admin": True,              # 是否顯示「後台管理」按鈕（True = 會顯示）
+    "currency": "HKD",                 # 貨幣單位（HKD = 港幣）
+    "free_limit": 2,                   # 免費用戶可以預測幾多場（2場 = 免費試玩2場）
+    "subscription_price": 320,        # 每月訂閱價格（港幣 $320）
+    "admin_password": "z54060437K@",      # 後台管理員密碼（請改為你嘅密碼）
+    
+    # ----- 後台七大模組開關（全部可以獨立開關） -----
+    "module_user_management": True,    # 用戶管理（進階）：睇到所有用戶、開通/取消訂閱、加備註
+    "module_analytics": True,          # 數據分析與統計：睇到用戶增長、活躍度、功能使用分佈
+    "module_finance": True,            # 財務管理：記錄收入、睇到月收入/年收入
+    "module_monitoring": True,         # 系統監控：檢查檔案狀態、錯誤日誌、系統資訊
+    "module_content": True,            # 內容管理：公告、上傳排位表、FAQ
+    "module_automation": True,         # 自動化工具：到期提醒、自動開通設定
+    "module_security": True,           # 安全與權限：操作日誌、多管理員、IP限制
+    "module_promo": True,              # 優惠碼管理：建立、管理、應用優惠碼
 }
 
 # ============================================================
