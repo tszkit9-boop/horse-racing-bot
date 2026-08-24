@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版（所有功能齊全，無佔位）
+賽馬預測系統 - 完整版（已修復付款審核記錄問題）
 """
 
 import streamlit as st
@@ -54,7 +54,7 @@ st.set_page_config(
 )
 
 # ============================================================
-# 2. 數據讀寫函數
+# 2. 數據讀寫函數（加強版）
 # ============================================================
 USER_DATA_FILE = 'users.json'
 FINANCE_FILE = 'finance.json'
@@ -66,18 +66,27 @@ ACCURACY_FILE = 'accuracy.json'
 PAYMENT_PROOFS_FILE = 'payment_proofs.json'
 PAYMENT_PROOFS_DIR = 'payment_proofs'
 
+# 確保目錄存在
 if not os.path.exists(PAYMENT_PROOFS_DIR):
     os.makedirs(PAYMENT_PROOFS_DIR)
 
 def load_json(file):
     if os.path.exists(file):
-        with open(file, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        try:
+            with open(file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return {}
     return {}
 
 def save_json(file, data):
-    with open(file, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    try:
+        with open(file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print(f"保存失敗：{e}")
+        return False
 
 def load_users():
     users = load_json(USER_DATA_FILE)
@@ -106,6 +115,7 @@ def load_users():
         if "admin" in users and users["admin"].get("group") != "super_admin":
             users["admin"]["group"] = "super_admin"
             users["admin"]["note"] = "系統超級管理員（已自動升級）"
+            save_users(users)
         for uid, u in users.items():
             if 'plan' not in u:
                 u['plan'] = None
@@ -123,37 +133,37 @@ def load_users():
     return users
 
 def save_users(users):
-    save_json(USER_DATA_FILE, users)
+    return save_json(USER_DATA_FILE, users)
 
 def load_finance():
     return load_json(FINANCE_FILE)
 
 def save_finance(finance):
-    save_json(FINANCE_FILE, finance)
+    return save_json(FINANCE_FILE, finance)
 
 def load_promos():
     return load_json(PROMO_FILE)
 
 def save_promos(promos):
-    save_json(PROMO_FILE, promos)
+    return save_json(PROMO_FILE, promos)
 
 def load_logs():
     return load_json(LOG_FILE)
 
 def save_logs(logs):
-    save_json(LOG_FILE, logs)
+    return save_json(LOG_FILE, logs)
 
 def load_accuracy():
     return load_json(ACCURACY_FILE)
 
 def save_accuracy(acc):
-    save_json(ACCURACY_FILE, acc)
+    return save_json(ACCURACY_FILE, acc)
 
 def load_payment_proofs():
     return load_json(PAYMENT_PROOFS_FILE)
 
 def save_payment_proofs(proofs):
-    save_json(PAYMENT_PROOFS_FILE, proofs)
+    return save_json(PAYMENT_PROOFS_FILE, proofs)
 
 def log_admin_action(admin, action):
     logs = load_logs()
@@ -214,7 +224,7 @@ def load_models():
         return None, None, None
 
 # ============================================================
-# 4. 完整特徵工程（36特徵）
+# 4. 完整特徵工程
 # ============================================================
 FEATURES_EN = [
     'draw', 'act_wt', 'distance', 'rtg', 'avg_rank_last3',
@@ -792,7 +802,7 @@ def login_page():
                             st.rerun()
 
 # ============================================================
-# 付款牆（使用表單，選擇方案不閃退）
+# 🔧 付款牆
 # ============================================================
 def show_paywall():
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
@@ -870,15 +880,24 @@ def show_paywall():
                             except:
                                 pass
 
+                # 儲存上傳記錄（加強版）
                 proofs = load_payment_proofs()
+                if not proofs:
+                    proofs = {}
+                if 'proof_records' not in proofs:
+                    proofs['proof_records'] = []
+                
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                filename = f"{st.session_state.username}_{timestamp}.{uploaded_file.type.split('/')[1]}"
+                file_extension = uploaded_file.type.split('/')[1] if '/' in uploaded_file.type else 'png'
+                filename = f"{st.session_state.username}_{timestamp}.{file_extension}"
                 filepath = os.path.join(PAYMENT_PROOFS_DIR, filename)
+                
+                # 儲存圖片
                 with open(filepath, 'wb') as f:
                     f.write(uploaded_file.getbuffer())
 
                 new_proof = {
-                    "id": len(proofs.get('proof_records', [])) + 1,
+                    "id": len(proofs['proof_records']) + 1,
                     "username": st.session_state.username,
                     "plan": plan_choice,
                     "plan_name": get_plan_name(plan_choice),
@@ -891,16 +910,16 @@ def show_paywall():
                     "uploaded_at": datetime.now().isoformat(),
                     "status": "pending"
                 }
-                if 'proof_records' not in proofs:
-                    proofs['proof_records'] = []
                 proofs['proof_records'].append(new_proof)
-                save_payment_proofs(proofs)
-
-                log_admin_action(st.session_state.username, f"提交付款申請 - 方案：{get_plan_name(plan_choice)}，金額：${final_price}")
-
-                st.success("✅ 付款申請已提交！管理員將盡快審核。")
-                st.info("📩 請同時 WhatsApp 通知管理員（可加快審核）")
-                st.rerun()
+                
+                # 確保保存成功
+                if save_payment_proofs(proofs):
+                    log_admin_action(st.session_state.username, f"提交付款申請 - 方案：{get_plan_name(plan_choice)}，金額：${final_price}")
+                    st.success("✅ 付款申請已提交！管理員將盡快審核。")
+                    st.info("📩 請同時 WhatsApp 通知管理員（可加快審核）")
+                    st.rerun()
+                else:
+                    st.error("❌ 提交失敗，請重新嘗試。如問題持續，請聯絡管理員。")
 
 # ============================================================
 # 8. 後台所有模組（完整實作）
