@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版（日/月/季三種方案，所有功能齊全，無錯誤）
+賽馬預測系統 - 完整穩定版（付費功能關閉）
 """
 
 import streamlit as st
@@ -24,21 +24,21 @@ import random
 CONFIG = {
     # ----- 基本設定 -----
     "enable_registration": True,       # 是否啟用「用戶註冊」功能（True = 需要註冊登入）
-    "enable_payment": False,            # 是否啟用「付費功能」（True = 啟用付費訂閱）
+    "enable_payment": False,           # 是否啟用「付費功能」（False = 全部免費，唔使俾錢）
     "enable_admin": True,              # 是否啟用後台功能（只顯示俾 super_admin）
-    "currency": "HKD",                 # 貨幣單位
-    "free_limit": 2,                   # 免費用戶免費預測場次
-    "admin_password": "z54060437K",    # 後台管理員密碼
+    "currency": "HKD",                 # 貨幣單位（HKD = 港幣）
+    "free_limit": 2,                   # 免費用戶免費預測場次（2場 = 免費試玩2場）
+    "admin_password": "z54060437K",    # 後台管理員密碼（請改為你嘅密碼）
     
-    # ----- 訂閱價格（三種方案） -----
-    "price_day": 18,                   # 日費
-    "price_month": 128,                # 月費
-    "price_quarter": 328,              # 季費（3個月）
+    # ----- 訂閱價格（三種方案，備用） -----
+    "price_day": 18,                   # 日費價格（港幣 $18）
+    "price_month": 128,                # 月費價格（港幣 $128）
+    "price_quarter": 328,              # 季費價格（港幣 $328，3個月）
     
     # ----- 驗證碼設定 -----
     "verification_expiry": 5,          # 驗證碼有效期（分鐘）
     
-      # ----- 後台七大模組開關（全部可以獨立開關） -----
+    # ----- 後台十大模組開關（全部可以獨立開關） -----
     "module_user_management": True,    # 用戶管理（進階）：睇到所有用戶、開通/取消訂閱、加備註
     "module_analytics": True,          # 數據分析與統計：睇到用戶增長、活躍度、功能使用分佈
     "module_finance": True,            # 財務管理：記錄收入、睇到月收入/年收入
@@ -104,11 +104,25 @@ def load_users():
         }
         save_users(users)
     else:
-        # 確保 admin 為 super_admin
+        # 確保 admin 為 super_admin，並補齊所有用戶缺失欄位
         if "admin" in users and users["admin"].get("group") != "super_admin":
             users["admin"]["group"] = "super_admin"
             users["admin"]["note"] = "系統超級管理員（已自動升級）"
-            save_users(users)
+        # 為所有用戶補齊預設欄位
+        for uid, u in users.items():
+            if 'plan' not in u:
+                u['plan'] = None
+            if 'paid_date' not in u:
+                u['paid_date'] = None
+            if 'expiry_date' not in u:
+                u['expiry_date'] = None
+            if 'phone' not in u:
+                u['phone'] = ''
+            if 'note' not in u:
+                u['note'] = ''
+            if 'history' not in u:
+                u['history'] = []
+        save_users(users)
     return users
 
 def save_users(users):
@@ -161,14 +175,10 @@ def generate_promo_code():
 def generate_verification_code():
     return ''.join(random.choices('0123456789', k=6))
 
-# 輔助函數：方案天數、名稱、價格
 def get_plan_days(plan):
-    if plan == 'day':
-        return 1
-    elif plan == 'month':
-        return 30
-    elif plan == 'quarter':
-        return 90
+    if plan == 'day': return 1
+    elif plan == 'month': return 30
+    elif plan == 'quarter': return 90
     return 0
 
 def get_plan_name(plan):
@@ -176,12 +186,9 @@ def get_plan_name(plan):
     return names.get(plan, '未知')
 
 def get_plan_price(plan):
-    if plan == 'day':
-        return CONFIG['price_day']
-    elif plan == 'month':
-        return CONFIG['price_month']
-    elif plan == 'quarter':
-        return CONFIG['price_quarter']
+    if plan == 'day': return CONFIG['price_day']
+    elif plan == 'month': return CONFIG['price_month']
+    elif plan == 'quarter': return CONFIG['price_quarter']
     return 0
 
 # ============================================================
@@ -634,7 +641,7 @@ def record_prediction(username, date_str, race_no, horse_name, predicted_prob=No
 def get_user_stats(username):
     users = load_users()
     if username not in users:
-        return {'total_predictions': 0, 'free_used': 0, 'is_paid': False, 'group': 'free'}
+        return {'total_predictions': 0, 'free_used': 0, 'is_paid': False, 'group': 'free', 'plan': None}
     user = users[username]
     history = user.get('history', [])
     total = len(history)
@@ -782,79 +789,12 @@ def login_page():
                             st.rerun()
 
 # ============================================================
-# 7. 付費牆（日/月/季）
+# 7. 付費牆（付費功能關閉，但保留代碼備用）
 # ============================================================
 def show_paywall():
+    """付費牆（目前功能關閉，只顯示提示）"""
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
-    st.subheader("💳 選擇你嘅方案")
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.markdown(f"""
-        <div style="border:1px solid #ddd; border-radius:10px; padding:20px; text-align:center;">
-            <h3>☀️ 日費</h3>
-            <p style="font-size:28px; font-weight:bold; color:#FF6B6B;">${CONFIG['price_day']}</p>
-            <p>24小時無限預測</p>
-            <p style="font-size:12px; color:#888;">適合即日試玩</p>
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button("選擇日費", key="buy_day", use_container_width=True):
-            st.session_state['selected_plan'] = 'day'
-            st.session_state['plan_price'] = CONFIG['price_day']
-            st.rerun()
-    
-    with col2:
-        st.markdown(f"""
-        <div style="border:2px solid #4CAF50; border-radius:10px; padding:20px; text-align:center; background:#f0faf0;">
-            <h3>📆 月費</h3>
-            <p style="font-size:28px; font-weight:bold; color:#4CAF50;">${CONFIG['price_month']}</p>
-            <p>30天無限預測</p>
-            <p style="font-size:12px; color:#888;">最受歡迎 🔥</p>
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button("選擇月費", key="buy_month", use_container_width=True):
-            st.session_state['selected_plan'] = 'month'
-            st.session_state['plan_price'] = CONFIG['price_month']
-            st.rerun()
-    
-    with col3:
-        st.markdown(f"""
-        <div style="border:1px solid #ddd; border-radius:10px; padding:20px; text-align:center;">
-            <h3>📅 季費</h3>
-            <p style="font-size:28px; font-weight:bold; color:#FFA500;">${CONFIG['price_quarter']}</p>
-            <p>90天無限預測</p>
-            <p style="font-size:12px; color:#888;">節省 15% 💰</p>
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button("選擇季費", key="buy_quarter", use_container_width=True):
-            st.session_state['selected_plan'] = 'quarter'
-            st.session_state['plan_price'] = CONFIG['price_quarter']
-            st.rerun()
-    
-    if 'selected_plan' in st.session_state:
-        plan_names = {'day': '日費', 'month': '月費', 'quarter': '季費'}
-        plan_days = {'day': 1, 'month': 30, 'quarter': 90}
-        st.info(f"你已選擇 **{plan_names[st.session_state['selected_plan']]}**（${st.session_state['plan_price']}，有效期 {plan_days[st.session_state['selected_plan']]} 天）")
-        st.markdown("""
-        **付款方式：** FPS / PayMe / 銀行轉帳  
-        📩 付款後 WhatsApp 通知開通
-        """)
-        if CONFIG["enable_admin"]:
-            with st.expander("🔐 管理員開通（測試用）"):
-                admin_code = st.text_input("管理員密碼", type="password", key="admin_paywall_pw")
-                if admin_code == CONFIG["admin_password"]:
-                    if st.button("✅ 手動開通此用戶", key="manual_activate"):
-                        users = load_users()
-                        if st.session_state.username in users:
-                            users[st.session_state.username]['is_paid'] = True
-                            users[st.session_state.username]['group'] = 'VIP'
-                            users[st.session_state.username]['paid_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                            days = get_plan_days(st.session_state['selected_plan'])
-                            users[st.session_state.username]['expiry_date'] = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
-                            users[st.session_state.username]['plan'] = st.session_state['selected_plan']
-                            save_users(users)
-                            st.success(f"✅ 已開通！有效期 {days} 天")
-                            st.rerun()
+    st.info("🔒 付費功能目前關閉中，請聯絡管理員開通。")
 
 # ============================================================
 # 8. 後台所有模組
@@ -1168,14 +1108,16 @@ def admin_subscription():
         return
 
     df_paid = pd.DataFrame.from_dict(paid_users, orient='index')
-    if 'expiry_date' not in df_paid:
-        df_paid['expiry_date'] = None
+    required_cols = ['is_paid', 'group', 'plan', 'paid_date', 'expiry_date']
+    for col in required_cols:
+        if col not in df_paid.columns:
+            df_paid[col] = None
     df_paid['expiry_date'] = pd.to_datetime(df_paid['expiry_date'], errors='coerce')
     today = datetime.now()
     df_paid['days_left'] = (df_paid['expiry_date'] - today).dt.days
-    df_paid['status'] = df_paid['days_left'].apply(lambda x: '🟢 有效' if x > 7 else ('🟡 快到期' if x > 0 else '🔴 已過期'))
-
-    st.dataframe(df_paid[['is_paid', 'group', 'plan', 'paid_date', 'expiry_date', 'days_left', 'status']], use_container_width=True)
+    df_paid['status'] = df_paid['days_left'].apply(lambda x: '🟢 有效' if x > 7 else ('🟡 快到期' if x > 0 else '🔴 已過期') if pd.notna(x) else '⚪ 未設定')
+    display_cols = ['is_paid', 'group', 'plan', 'paid_date', 'expiry_date', 'days_left', 'status']
+    st.dataframe(df_paid[display_cols], use_container_width=True)
 
     auto = load_json(AUTOMATION_FILE)
     remind_days = auto.get('remind_days', 3)
@@ -1504,9 +1446,7 @@ def main():
             if CONFIG["enable_payment"]:
                 users = load_users()
                 user_data = users.get(st.session_state.username, {})
-                # 檢查是否付費或 VIP 或 super_admin
                 if user_data.get('is_paid', False) or user_data.get('group') in ['VIP', 'super_admin']:
-                    # 檢查是否過期
                     expiry = user_data.get('expiry_date')
                     if expiry:
                         try:
@@ -1522,6 +1462,10 @@ def main():
                 else:
                     remain = max(0, CONFIG["free_limit"] - st.session_state.usage_count)
                     st.info(f"📊 剩餘免費場次：{remain} 場")
+            else:
+                # 付費功能關閉，顯示剩餘免費場次
+                remain = max(0, CONFIG["free_limit"] - st.session_state.usage_count)
+                st.info(f"📊 剩餘免費場次：{remain} 場")
             if st.button("📋 我的預測記錄", key="show_history_btn"):
                 st.session_state.show_history = not st.session_state.show_history
             if st.button("🚪 登出", key="logout_btn"):
@@ -1562,18 +1506,16 @@ def main():
 
     # ----- 執行預測 -----
     if predict_btn:
-        # 檢查付費狀態
+        # 檢查免費限額（付費功能關閉，只檢查限額）
         if CONFIG["enable_payment"]:
             users = load_users()
             user_data = users.get(st.session_state.username, {})
             is_paid = user_data.get('is_paid', False) or user_data.get('group') in ['VIP', 'super_admin']
             if not is_paid:
-                # 檢查是否還有免費額度
                 if st.session_state.usage_count >= CONFIG["free_limit"]:
                     show_paywall()
                     return
             else:
-                # 檢查是否過期
                 expiry = user_data.get('expiry_date')
                 if expiry:
                     try:
@@ -1583,11 +1525,12 @@ def main():
                             show_paywall()
                             return
                     except:
-                        pass  # 若日期無效則跳過
+                        pass
         else:
-            # 如果沒啟用付費，只檢查免費限額
+            # 付費功能關閉，只檢查免費限額
             if st.session_state.usage_count >= CONFIG["free_limit"]:
-                st.warning(f"你已用盡免費場次，但付費功能關閉中，請管理員開啟。")
+                st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
+                st.info("🔒 付費功能目前關閉中，請聯絡管理員開通。")
                 return
 
         date_str = date.strftime('%Y-%m-%d')
