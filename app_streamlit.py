@@ -1,9 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整修正版
-- 只有 super_admin 先見到後台
-- VIP 只係付費用戶，冇後台權限
+賽馬預測系統 - 完整版（含日費/月費/季費三種方案）
+所有設定全中文說明
 """
 
 import streamlit as st
@@ -26,12 +25,16 @@ import random
 CONFIG = {
     # ----- 基本設定 -----
     "enable_registration": True,       # 是否啟用「用戶註冊」功能（True = 需要註冊登入）
-    "enable_payment": False,           # 是否啟用「付費功能」（False = 全部免費）
+    "enable_payment": False,            # 是否啟用「付費功能」（True = 啟用付費訂閱）
     "enable_admin": True,              # 是否啟用後台功能（但只會顯示俾 super_admin）
-    "currency": "HKD",                 # 貨幣單位
-    "free_limit": 2,                   # 免費用戶免費預測場次
-    "subscription_price": 9.99,        # 每月訂閱價格
-    "admin_password": "z54060437K",    # 後台管理員密碼
+    "currency": "HKD",                 # 貨幣單位（HKD = 港幣）
+    "free_limit": 2,                   # 免費用戶免費預測場次（2場 = 免費試玩2場）
+    "admin_password": "z54060437K",    # 後台管理員密碼（請改為你嘅密碼）
+    
+    # ----- 訂閱價格（三種方案） -----
+    "price_day": 18,                   # 日費價格（港幣 $18）
+    "price_month": 128,                # 月費價格（港幣 $128）
+    "price_quarter": 328,              # 季費價格（港幣 $328，3個月）
     
     # ----- 驗證碼設定 -----
     "verification_expiry": 5,          # 驗證碼有效期（分鐘）
@@ -69,16 +72,19 @@ PROMO_FILE = 'promo_codes.json'
 ACCURACY_FILE = 'accuracy.json'
 
 def load_json(file):
+    """讀取 JSON 檔案，若不存在則返回空字典"""
     if os.path.exists(file):
         with open(file, 'r', encoding='utf-8') as f:
             return json.load(f)
     return {}
 
 def save_json(file, data):
+    """儲存 JSON 檔案"""
     with open(file, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 def load_users():
+    """載入用戶資料，若無 admin 則自動建立，並自動升級為 super_admin"""
     users = load_json(USER_DATA_FILE)
     if not users or "admin" not in users:
         users = {
@@ -91,8 +97,9 @@ def load_users():
                 "total_usage": 0,
                 "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 "note": "系統超級管理員",
-                "group": "super_admin",    # ← 只有 super_admin 先有後台權限
+                "group": "super_admin",
                 "phone": "",
+                "plan": None,
                 "history": [
                     {"date": "2025-04-09", "race": 9, "horse": "浪漫勇士", "timestamp": "2025-04-09 14:30:00", "predicted_prob": 0.35},
                     {"date": "2025-04-09", "race": 10, "horse": "金鎗六十", "timestamp": "2025-04-09 15:00:00", "predicted_prob": 0.42}
@@ -100,6 +107,12 @@ def load_users():
             }
         }
         save_users(users)
+    else:
+        # 如果 admin 存在但 group 唔係 super_admin，自動升級
+        if "admin" in users and users["admin"].get("group") != "super_admin":
+            users["admin"]["group"] = "super_admin"
+            users["admin"]["note"] = "系統超級管理員（已自動升級）"
+            save_users(users)
     return users
 
 def save_users(users):
@@ -130,6 +143,7 @@ def save_accuracy(acc):
     save_json(ACCURACY_FILE, acc)
 
 def log_admin_action(admin, action):
+    """記錄管理員操作日誌"""
     logs = load_logs()
     if 'logs' not in logs:
         logs['logs'] = []
@@ -141,23 +155,51 @@ def log_admin_action(admin, action):
     save_logs(logs)
 
 def authenticate(username, password):
+    """驗證用戶登入"""
     users = load_users()
     if username in users and users[username].get('password') == password:
         return True
     return False
 
 def generate_promo_code():
+    """產生隨機優惠碼"""
     return ''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=8))
 
-# ---------- 純數字驗證碼 ----------
 def generate_verification_code():
+    """生成 6 位純數字驗證碼"""
     return ''.join(random.choices('0123456789', k=6))
+
+def get_plan_days(plan):
+    """根據方案返回有效天數"""
+    if plan == 'day':
+        return 1
+    elif plan == 'month':
+        return 30
+    elif plan == 'quarter':
+        return 90
+    return 0
+
+def get_plan_price(plan):
+    """根據方案返回價格"""
+    if plan == 'day':
+        return CONFIG['price_day']
+    elif plan == 'month':
+        return CONFIG['price_month']
+    elif plan == 'quarter':
+        return CONFIG['price_quarter']
+    return 0
+
+def get_plan_name(plan):
+    """根據方案返回顯示名稱"""
+    names = {'day': '日費', 'month': '月費', 'quarter': '季費'}
+    return names.get(plan, '未知')
 
 # ============================================================
 # 3. 模型載入
 # ============================================================
 @st.cache_resource
 def load_models():
+    """載入 XGBoost、CatBoost、Ranking 三個模型"""
     try:
         with open('hk_racing_model.pkl', 'rb') as f:
             xgb_obj = pickle.load(f)
@@ -241,6 +283,7 @@ NAME_MAPPING = {
 }
 
 def standardize_columns_safe(df):
+    """標準化欄位名稱（中英對照）"""
     rename_map = {
         '騎師': 'jockey', '練馬師': 'trainer', '路程': 'distance',
         '場地': 'going', '檔位': 'draw', '評分': 'rtg',
@@ -260,12 +303,14 @@ def standardize_columns_safe(df):
     return df
 
 def ensure_series(df):
+    """確保 DataFrame 內冇嵌套嘅 Series"""
     for col in df.columns:
         if isinstance(df[col], pd.DataFrame):
             df[col] = df[col].iloc[:, 0]
     return df
 
 def get_finish_column(df):
+    """搵出名次欄位名稱"""
     candidates = ['finish_position', '名次', 'Position', 'pos', 'Rank', 'rank', '最終名次']
     for col in candidates:
         if col in df.columns:
@@ -273,6 +318,7 @@ def get_finish_column(df):
     return None
 
 def safe_parse_dates(df):
+    """安全解析日期欄位"""
     date_col = None
     for col in ['race_date', '比賽日期']:
         if col in df.columns:
@@ -289,6 +335,7 @@ def safe_parse_dates(df):
     return df, date_col
 
 def get_latest_features(race_df, history_df):
+    """從歷史數據攞最新特徵"""
     history_df['race_date'] = pd.to_datetime(history_df['race_date'], errors='coerce')
     latest = history_df.sort_values('race_date').groupby('horse_id').last().reset_index()
     merged = race_df.merge(latest, on='horse_id', how='left', suffixes=('', '_hist'))
@@ -308,6 +355,7 @@ def get_latest_features(race_df, history_df):
     return merged
 
 def compute_stats(race_df, history_df, race_date):
+    """計算各種統計特徵（騎師勝率、練馬師勝率、近3場名次等）"""
     history_df = ensure_series(history_df)
     if history_df.columns.duplicated().any():
         history_df = history_df.loc[:, ~history_df.columns.duplicated(keep='first')]
@@ -400,6 +448,7 @@ def compute_stats(race_df, history_df, race_date):
 
 @st.cache_data
 def load_horse_name_map():
+    """載入馬匹 ID 對應中文名對照表"""
     try:
         df_map = pd.read_csv('horse_name_mapping.csv', encoding='utf-8-sig')
         if 'horse_id' in df_map.columns and '馬名' in df_map.columns:
@@ -409,6 +458,7 @@ def load_horse_name_map():
     return {}
 
 def generate_pool_recommendations(df, top_n=6):
+    """根據預測勝率生成六種彩池推薦"""
     top_horses = df.head(top_n)
     horse_names = top_horses['馬匹名稱'].tolist()
     probs = top_horses['預測勝率'].tolist()
@@ -464,6 +514,7 @@ def generate_pool_recommendations(df, top_n=6):
     return rec
 
 def run_prediction(date_str, race_no):
+    """執行預測核心函數，回傳結果 DataFrame 同彩池推薦文字"""
     xgb_model, cat_model, rank_model = load_models()
     if xgb_model is None:
         return None, None
@@ -574,6 +625,7 @@ def run_prediction(date_str, race_no):
 # 5. 用戶功能（儀表板、歷史、統計）
 # ============================================================
 def record_prediction(username, date_str, race_no, horse_name, predicted_prob=None):
+    """記錄用戶嘅預測歷史，同時寫入 accuracy.json 方便日後比對"""
     users = load_users()
     if username in users:
         if 'history' not in users[username]:
@@ -601,6 +653,7 @@ def record_prediction(username, date_str, race_no, horse_name, predicted_prob=No
         save_accuracy(acc)
 
 def get_user_stats(username):
+    """攞用戶統計數據"""
     users = load_users()
     if username not in users:
         return {'total_predictions': 0, 'free_used': 0, 'is_paid': False, 'group': 'free'}
@@ -612,10 +665,12 @@ def get_user_stats(username):
         'total_predictions': total,
         'free_used': free_used,
         'is_paid': user.get('is_paid', False),
-        'group': user.get('group', 'free')
+        'group': user.get('group', 'free'),
+        'plan': user.get('plan', None)
     }
 
 def show_user_dashboard(username):
+    """顯示用戶個人儀表板"""
     if not username:
         return
     stats = get_user_stats(username)
@@ -623,8 +678,9 @@ def show_user_dashboard(username):
     user_data = users.get(username, {})
     group = user_data.get('group', 'free')
     is_paid = user_data.get('is_paid', False)
+    plan = user_data.get('plan', None)
+    expiry = user_data.get('expiry_date', None)
     
-    # 判斷級別顯示名稱
     if group == 'super_admin':
         level = "👑 超級管理員"
     elif group == 'VIP':
@@ -643,10 +699,25 @@ def show_user_dashboard(username):
         remain = max(0, CONFIG["free_limit"] - stats['free_used'])
         col4.metric("📊 剩餘免費場次", remain)
     else:
-        col4.metric("📊 剩餘場次", "∞")
+        # 顯示到期日
+        if expiry:
+            try:
+                expiry_date = pd.to_datetime(expiry)
+                days_left = (expiry_date - datetime.now()).days
+                if days_left > 0:
+                    col4.metric("📊 剩餘日數", f"{days_left} 天")
+                else:
+                    col4.metric("📊 狀態", "⚠️ 已過期")
+            except:
+                col4.metric("📊 剩餘場次", "∞")
+        else:
+            col4.metric("📊 剩餘場次", "∞")
     st.markdown("---")
+    if plan:
+        st.caption(f"📌 當前方案：{get_plan_name(plan)}")
 
 def show_prediction_history(username):
+    """顯示用戶嘅預測歷史（最近20條）"""
     if not username:
         st.info("請先登入以查看歷史記錄")
         return
@@ -662,9 +733,10 @@ def show_prediction_history(username):
     st.dataframe(df, use_container_width=True)
 
 # ============================================================
-# 6. 登入/註冊（已移除電郵，驗證碼直接顯示）
+# 6. 登入/註冊
 # ============================================================
 def login_page():
+    """登入/註冊頁面"""
     st.title("🔐 登入 / 註冊")
     tab1, tab2 = st.tabs(["登入", "註冊"])
     
@@ -727,7 +799,8 @@ def login_page():
                                 'total_usage': 0,
                                 'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                                 'note': '',
-                                'group': 'free',    # 預設係免費
+                                'group': 'free',
+                                'plan': None,
                                 'history': []
                             }
                             save_users(users)
@@ -735,40 +808,95 @@ def login_page():
                             st.rerun()
 
 # ============================================================
-# 7. 付費牆
+# 7. 付費牆（日費 / 月費 / 季費）
 # ============================================================
 def show_paywall():
+    """顯示付費牆，提供日/月/季三種方案"""
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
-    st.markdown(f"""
-    ### 💳 升級至付費版（{CONFIG['currency']}）
-    每月 {CONFIG['currency']} {CONFIG['subscription_price']:.2f}
-    **付款方式：** FPS / PayMe / 銀行轉帳
-    📩 付款後 WhatsApp 通知開通
-    """)
-    if CONFIG["enable_admin"]:
-        with st.expander("🔐 管理員開通"):
-            admin_code = st.text_input("管理員密碼", type="password", key="admin_paywall_pw")
-            if admin_code == CONFIG["admin_password"]:
-                if st.button("✅ 手動開通此用戶", key="manual_activate"):
-                    users = load_users()
-                    if st.session_state.username in users:
-                        users[st.session_state.username]['is_paid'] = True
-                        users[st.session_state.username]['group'] = 'VIP'
-                        users[st.session_state.username]['paid_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        users[st.session_state.username]['expiry_date'] = (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S')
-                        save_users(users)
-                        st.success("✅ 已開通！")
-                        st.rerun()
+    
+    st.subheader("💳 選擇你嘅方案")
+    
+    # 三種方案並排顯示
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown(f"""
+        <div style="border:1px solid #ddd; border-radius:10px; padding:20px; text-align:center;">
+            <h3>☀️ 日費</h3>
+            <p style="font-size:28px; font-weight:bold; color:#FF6B6B;">${CONFIG['price_day']}</p>
+            <p>24小時無限預測</p>
+            <p style="font-size:12px; color:#888;">適合即日試玩</p>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("選擇日費", key="buy_day", use_container_width=True):
+            st.session_state['selected_plan'] = 'day'
+            st.session_state['plan_price'] = CONFIG['price_day']
+            st.rerun()
+    
+    with col2:
+        st.markdown(f"""
+        <div style="border:2px solid #4CAF50; border-radius:10px; padding:20px; text-align:center; background:#f0faf0;">
+            <h3>📆 月費</h3>
+            <p style="font-size:28px; font-weight:bold; color:#4CAF50;">${CONFIG['price_month']}</p>
+            <p>30天無限預測</p>
+            <p style="font-size:12px; color:#888;">最受歡迎 🔥</p>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("選擇月費", key="buy_month", use_container_width=True):
+            st.session_state['selected_plan'] = 'month'
+            st.session_state['plan_price'] = CONFIG['price_month']
+            st.rerun()
+    
+    with col3:
+        st.markdown(f"""
+        <div style="border:1px solid #ddd; border-radius:10px; padding:20px; text-align:center;">
+            <h3>📅 季費</h3>
+            <p style="font-size:28px; font-weight:bold; color:#FFA500;">${CONFIG['price_quarter']}</p>
+            <p>90天無限預測</p>
+            <p style="font-size:12px; color:#888;">節省 15% 💰</p>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("選擇季費", key="buy_quarter", use_container_width=True):
+            st.session_state['selected_plan'] = 'quarter'
+            st.session_state['plan_price'] = CONFIG['price_quarter']
+            st.rerun()
+    
+    # 顯示選擇咗邊個方案
+    if 'selected_plan' in st.session_state:
+        plan_names = {'day': '日費', 'month': '月費', 'quarter': '季費'}
+        plan_days = {'day': 1, 'month': 30, 'quarter': 90}
+        st.info(f"你已選擇 **{plan_names[st.session_state['selected_plan']]}**（${st.session_state['plan_price']}，有效期 {plan_days[st.session_state['selected_plan']]} 天）")
+        
+        st.markdown("""
+        **付款方式：** FPS / PayMe / 銀行轉帳  
+        📩 付款後 WhatsApp 通知開通
+        """)
+        
+        if CONFIG["enable_admin"]:
+            with st.expander("🔐 管理員開通（測試用）"):
+                admin_code = st.text_input("管理員密碼", type="password", key="admin_paywall_pw")
+                if admin_code == CONFIG["admin_password"]:
+                    if st.button("✅ 手動開通此用戶", key="manual_activate"):
+                        users = load_users()
+                        if st.session_state.username in users:
+                            users[st.session_state.username]['is_paid'] = True
+                            users[st.session_state.username]['group'] = 'VIP'
+                            users[st.session_state.username]['paid_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            days = get_plan_days(st.session_state['selected_plan'])
+                            users[st.session_state.username]['expiry_date'] = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+                            users[st.session_state.username]['plan'] = st.session_state['selected_plan']
+                            save_users(users)
+                            st.success(f"✅ 已開通！有效期 {days} 天")
+                            st.rerun()
 
 # ============================================================
 # 8. 後台所有模組（完整實作）
 # ============================================================
 
-# ---------- 8.1 用戶管理（包含新增/刪除用戶） ----------
+# ---------- 8.1 用戶管理 ----------
 def admin_user_management():
     st.subheader("👥 用戶管理")
     
-    # ---------- 新增用戶 ----------
     with st.expander("➕ 新增用戶", expanded=False):
         col1, col2 = st.columns(2)
         with col1:
@@ -796,6 +924,7 @@ def admin_user_management():
                         "note": "手動新增",
                         "group": new_group,
                         "phone": "",
+                        "plan": None,
                         "history": []
                     }
                     save_users(users)
@@ -803,7 +932,6 @@ def admin_user_management():
                     st.success(f"✅ 用戶 {new_username} 已建立！")
                     st.rerun()
     
-    # ---------- 現有用戶列表 ----------
     users = load_users()
     if not users:
         st.info("暫無用戶")
@@ -813,7 +941,6 @@ def admin_user_management():
     df = pd.DataFrame.from_dict(users, orient='index')
     st.dataframe(df, use_container_width=True)
     
-    # ---------- 刪除用戶 ----------
     st.divider()
     st.subheader("🗑️ 刪除用戶")
     del_user = st.selectbox("選擇要刪除嘅用戶", list(users.keys()), key="del_user_select")
@@ -830,8 +957,6 @@ def admin_user_management():
                 st.rerun()
     
     st.divider()
-    
-    # ---------- 原有「查看用戶視角」同「編輯用戶」----------
     st.subheader("👁️ 查看用戶視角")
     selected_user = st.selectbox("選擇要查看的用戶", list(users.keys()), key="view_user_select")
     if selected_user:
@@ -1084,7 +1209,7 @@ def admin_subscription():
     df_paid['days_left'] = (df_paid['expiry_date'] - today).dt.days
     df_paid['status'] = df_paid['days_left'].apply(lambda x: '🟢 有效' if x > 7 else ('🟡 快到期' if x > 0 else '🔴 已過期'))
 
-    st.dataframe(df_paid[['is_paid', 'group', 'paid_date', 'expiry_date', 'days_left', 'status']], use_container_width=True)
+    st.dataframe(df_paid[['is_paid', 'group', 'plan', 'paid_date', 'expiry_date', 'days_left', 'status']], use_container_width=True)
 
     auto = load_json(AUTOMATION_FILE)
     remind_days = auto.get('remind_days', 3)
@@ -1122,7 +1247,7 @@ def admin_monitoring():
         df_log = pd.DataFrame(logs['logs'][-20:])
         st.dataframe(df_log, use_container_width=True)
 
-# ---------- 8.8 內容管理（含完整公告系統） ----------
+# ---------- 8.8 內容管理 ----------
 def admin_content():
     st.subheader("📝 內容管理")
     content = load_json(CONTENT_FILE)
@@ -1249,9 +1374,10 @@ def admin_security():
             st.error("用戶不存在")
 
 # ============================================================
-# 9. 後台頁面（密碼驗證 + 所有分頁）
+# 9. 後台頁面
 # ============================================================
 def admin_page():
+    """後台主頁面，含密碼驗證"""
     if 'admin_authenticated' not in st.session_state:
         st.session_state.admin_authenticated = False
     
@@ -1318,9 +1444,10 @@ def admin_page():
         admin_security() if CONFIG["module_security"] else st.info("模組已關閉")
 
 # ============================================================
-# 10. 主頁面（含公告顯示、後台權限控制、登出按鈕）
+# 10. 主頁面（含所有功能整合）
 # ============================================================
 def main():
+    """主程式：控制頁面流程"""
     # 初始化 session state
     if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
@@ -1405,7 +1532,7 @@ def main():
     elif not CONFIG["enable_registration"]:
         st.info("🔓 目前為公開模式，任何人皆可使用")
 
-    # ----- 側邊欄（已加入登出按鈕） -----
+    # ----- 側邊欄 -----
     with st.sidebar:
         st.header("🎯 控制面板")
         if CONFIG["enable_registration"] and st.session_state.logged_in:
@@ -1420,9 +1547,8 @@ def main():
                     st.info(f"📊 剩餘免費場次：{remain} 場")
             if st.button("📋 我的預測記錄", key="show_history_btn"):
                 st.session_state.show_history = not st.session_state.show_history
-            # 登出按鈕
             if st.button("🚪 登出", key="logout_btn"):
-                for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history']:
+                for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history', 'selected_plan']:
                     if key in st.session_state:
                         del st.session_state[key]
                 st.rerun()
@@ -1459,11 +1585,23 @@ def main():
 
     # ----- 執行預測 -----
     if predict_btn:
+        # 檢查付費狀態（如果啟用付費功能）
         if CONFIG["enable_payment"]:
             users = load_users()
             user_data = users.get(st.session_state.username, {})
             is_paid = user_data.get('is_paid', False) or user_data.get('group') in ['VIP', 'super_admin']
             if not is_paid:
+                # 檢查是否已過期
+                expiry = user_data.get('expiry_date')
+                if expiry:
+                    try:
+                        expiry_date = pd.to_datetime(expiry)
+                        if expiry_date < datetime.now():
+                            st.error("❌ 你嘅訂閱已過期，請重新付費")
+                            show_paywall()
+                            return
+                    except:
+                        pass
                 if st.session_state.usage_count >= CONFIG["free_limit"]:
                     show_paywall()
                     return
