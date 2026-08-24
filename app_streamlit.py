@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整穩定版（修復 admin 被收費問題）
+賽馬預測系統 - 最終穩定版（付款提交一定見反應）
 """
 
 import streamlit as st
@@ -74,7 +74,8 @@ def load_json(file):
         try:
             with open(file, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except:
+        except Exception as e:
+            print(f"讀取 {file} 失敗：{e}")
             return {}
     return {}
 
@@ -84,7 +85,7 @@ def save_json(file, data):
             json.dump(data, f, ensure_ascii=False, indent=2)
         return True
     except Exception as e:
-        print(f"保存失敗：{e}")
+        print(f"保存 {file} 失敗：{e}")
         return False
 
 def load_users():
@@ -111,12 +112,10 @@ def load_users():
         }
         save_users(users)
     else:
-        # ✅ 確保 admin 為 super_admin
         if "admin" in users and users["admin"].get("group") != "super_admin":
             users["admin"]["group"] = "super_admin"
             users["admin"]["note"] = "系統超級管理員（已自動升級）"
             save_users(users)
-        # ✅ 補齊所有用戶缺少的欄位
         for uid, u in users.items():
             if 'plan' not in u:
                 u['plan'] = None
@@ -165,7 +164,15 @@ def save_accuracy(acc):
     return save_json(ACCURACY_FILE, acc)
 
 def load_payment_proofs():
-    return load_json(PAYMENT_PROOFS_FILE)
+    """載入付款記錄，若檔案不存在或結構不完整則初始化"""
+    proofs = load_json(PAYMENT_PROOFS_FILE)
+    if not proofs:
+        proofs = {"proof_records": []}
+        save_payment_proofs(proofs)
+    elif "proof_records" not in proofs:
+        proofs["proof_records"] = []
+        save_payment_proofs(proofs)
+    return proofs
 
 def save_payment_proofs(proofs):
     return save_json(PAYMENT_PROOFS_FILE, proofs)
@@ -748,7 +755,6 @@ def login_page():
                 st.session_state.logged_in = True
                 st.session_state.username = username
                 st.session_state.role = users[username].get('group', 'free')
-                # 讀取已使用的免費次數
                 st.session_state.usage_count = users[username].get('free_usage', 0)
                 st.rerun()
             else:
@@ -809,7 +815,7 @@ def login_page():
                             st.rerun()
 
 # ============================================================
-# 🔧 付款牆（使用表單）
+# 🔧 付款牆（使用表單，並確保提交後顯示結果）
 # ============================================================
 def show_paywall():
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
@@ -821,6 +827,7 @@ def show_paywall():
         "quarter": f"📅 季費  ${CONFIG['price_quarter']} (90天)"
     }
 
+    # 顯示表單
     with st.form(key="payment_form"):
         plan_choice = st.radio(
             "請選擇付費方案：",
@@ -849,14 +856,20 @@ def show_paywall():
 
         submitted = st.form_submit_button("📩 提交付款申請，等待管理員審核")
 
+        # ✅ 關鍵修改：處理提交結果，並確保訊息顯示
         if submitted:
+            # 驗證
             if not plan_choice:
                 st.error("❌ 請先選擇一個付費方案")
+                st.stop()  # 停止執行，讓錯誤訊息顯示
             elif uploaded_file is None:
                 st.error("❌ 請先上傳過數證明（轉帳截圖）")
+                st.stop()
             elif not st.session_state.get('logged_in', False):
                 st.error("❌ 請先登入")
+                st.stop()
             else:
+                # 計算折扣
                 final_price = original_price
                 discount_applied = False
                 discount_desc = ""
@@ -888,19 +901,18 @@ def show_paywall():
                                 pass
 
                 # 儲存上傳記錄
-                proofs = load_payment_proofs()
-                if not proofs:
-                    proofs = {}
-                if 'proof_records' not in proofs:
-                    proofs['proof_records'] = []
-                
+                proofs = load_payment_proofs()  # 確保初始化
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                 file_extension = uploaded_file.type.split('/')[1] if '/' in uploaded_file.type else 'png'
                 filename = f"{st.session_state.username}_{timestamp}.{file_extension}"
                 filepath = os.path.join(PAYMENT_PROOFS_DIR, filename)
                 
-                with open(filepath, 'wb') as f:
-                    f.write(uploaded_file.getbuffer())
+                try:
+                    with open(filepath, 'wb') as f:
+                        f.write(uploaded_file.getbuffer())
+                except Exception as e:
+                    st.error(f"❌ 圖片儲存失敗：{e}")
+                    st.stop()
 
                 new_proof = {
                     "id": len(proofs['proof_records']) + 1,
@@ -920,11 +932,14 @@ def show_paywall():
                 
                 if save_payment_proofs(proofs):
                     log_admin_action(st.session_state.username, f"提交付款申請 - 方案：{get_plan_name(plan_choice)}，金額：${final_price}")
-                    st.success("✅ 付款申請已提交！管理員將盡快審核。")
+                    st.success("✅ 付款申請已成功提交！管理員將盡快審核。")
                     st.info("📩 請同時 WhatsApp 通知管理員（可加快審核）")
+                    # 清除表單狀態，但保留成功訊息
+                    st.session_state['payment_submitted'] = True
                     st.rerun()
                 else:
                     st.error("❌ 提交失敗，請重新嘗試。如問題持續，請聯絡管理員。")
+                    st.stop()
 
 # ============================================================
 # 8. 後台所有模組（完整實作）
@@ -1742,20 +1757,15 @@ def main():
         st.info("今日沒有賽事")
 
     if predict_btn:
-        # ✅ 關鍵修復：檢查用戶角色，super_admin 直接跳過所有付費限制
+        # ✅ super_admin 無限免費
         users = load_users()
         user_data = users.get(st.session_state.username, {})
         user_role = user_data.get('group', 'free')
         
-        # 如果係 super_admin，無限免費，直接執行預測
-        if user_role == "super_admin":
-            # 直接執行預測，唔使檢查付費
-            pass
-        else:
-            # 普通用戶檢查免費限額
+        if user_role != "super_admin":
+            # 普通用戶檢查
             used_free = user_data.get('free_usage', 0)
             is_paid = user_data.get('is_paid', False) or user_data.get('group') in ['VIP']
-            
             if CONFIG["enable_payment"]:
                 if not is_paid:
                     expiry = user_data.get('expiry_date')
@@ -1793,7 +1803,6 @@ def main():
                     winner_name = result.iloc[0]['馬匹名稱'] if not result.empty else "未知"
                     prob = result.iloc[0]['預測勝率'] if not result.empty else None
                     record_prediction(st.session_state.username, date_str, race_no, winner_name, prob)
-                    # 更新用戶的免費使用次數（只對非 super_admin 更新）
                     if user_role != "super_admin":
                         users = load_users()
                         if st.session_state.username in users:
