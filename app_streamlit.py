@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - Streamlit 網頁版（完全整合版）
-所有邏輯直接內嵌，不依賴外部腳本
+賽馬預測系統 - Streamlit 網頁版（最終修正）
+完全複製 predict_race_card.py 嘅日期處理邏輯
 """
 
 import streamlit as st
@@ -10,6 +10,7 @@ import pandas as pd
 import numpy as np
 import pickle
 import os
+import sys
 from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
@@ -42,7 +43,7 @@ def load_models():
         return None, None, None
 
 # ============================================================
-# 3. 完整特徵工程（由 predict_race_card.py 移植）
+# 3. 完整特徵工程（與 predict_race_card.py 一致）
 # ============================================================
 FEATURES_EN = [
     'draw', 'act_wt', 'distance', 'rtg', 'avg_rank_last3',
@@ -135,13 +136,6 @@ def get_finish_column(df):
         if col in df.columns:
             return col
     return None
-
-def safe_parse_dates(df, date_col):
-    if date_col not in df.columns:
-        return pd.Series([pd.NaT] * len(df))
-    dates = df[date_col].astype(str).str.strip()
-    dates = dates.str.replace('/', '-')
-    return pd.to_datetime(dates, errors='coerce')
 
 def get_latest_features(race_df, history_df):
     history_df['race_date'] = pd.to_datetime(history_df['race_date'], errors='coerce')
@@ -325,36 +319,44 @@ def generate_pool_recommendations(df, top_n=6):
     return rec
 
 # ============================================================
-# 6. 預測主函數（直接執行，不呼叫 subprocess）
+# 6. 預測主函數（完全複製本地 predict_race_card.py 嘅日期處理）
 # ============================================================
 def run_prediction(date_str, race_no):
     xgb_model, cat_model, rank_model = load_models()
     if xgb_model is None:
-        st.error("模型載入失敗")
         return None, None
 
-    # 讀取排位表
     try:
         df = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
     except Exception as e:
         st.error(f"讀取排位表失敗：{e}")
         return None, None
 
+    # 標準化欄位
     df = standardize_columns(df)
-    df = df.loc[:, ~df.columns.duplicated(keep='first')]
+    if df.columns.duplicated().any():
+        df = df.loc[:, ~df.columns.duplicated(keep='first')]
     df = ensure_series(df)
 
-    # 處理日期
-    if 'race_date' not in df.columns:
+    # 確定日期欄位
+    if 'race_date' in df.columns:
+        date_col = 'race_date'
+    elif '比賽日期' in df.columns:
+        date_col = '比賽日期'
+    else:
         st.error("找不到日期欄位")
         return None, None
-    df['race_date'] = safe_parse_dates(df, 'race_date')
-    df = df.dropna(subset=['race_date'])
+
+    # ---- 完全複製本地 predict_race_card.py 嘅日期處理 ----
+    print(f"[INFO] 使用日期欄位：'{date_col}'")
+    df[date_col] = df[date_col].astype(str).str.extract(r'(\d{8})')[0]
+    df[date_col] = pd.to_datetime(df[date_col], format='%Y%m%d', errors='coerce')
+    df = df.dropna(subset=[date_col])
     if df.empty:
-        st.error("無有效日期")
+        st.error("無效日期")
         return None, None
 
-    # 處理場次
+    # 場次處理
     if 'race_no' not in df.columns:
         st.error("找不到場次欄位")
         return None, None
@@ -362,11 +364,16 @@ def run_prediction(date_str, race_no):
     df['race_no'] = pd.to_numeric(df['race_no'], errors='coerce')
     df = df.dropna(subset=['race_no'])
     if df.empty:
-        st.error("無有效場次")
+        st.error("無效場次")
+        return None, None
+
+    latest_date = df[date_col].max()
+    if pd.isna(latest_date):
+        st.error("無法找到有效日期")
         return None, None
 
     target = pd.to_datetime(date_str)
-    race_sel = df[(df['race_date'].dt.date == target.date()) & (df['race_no'] == race_no)]
+    race_sel = df[(df[date_col] == target) & (df['race_no'] == race_no)]
     if race_sel.empty:
         st.error(f"日期 {date_str} 第 {race_no} 場無數據")
         return None, None
@@ -379,17 +386,13 @@ def run_prediction(date_str, race_no):
         return None, None
 
     history = standardize_columns(history)
-    history = history.loc[:, ~history.columns.duplicated(keep='first')]
+    if history.columns.duplicated().any():
+        history = history.loc[:, ~history.columns.duplicated(keep='first')]
     history = ensure_series(history)
-    if 'race_date' not in history.columns:
-        if '比賽日期' in history.columns:
-            history.rename(columns={'比賽日期': 'race_date'}, inplace=True)
-        else:
-            st.error("歷史數據缺少日期欄位")
-            return None, None
     history['race_date'] = pd.to_datetime(history['race_date'], errors='coerce')
     history = history.dropna(subset=['race_date'])
 
+    # 確保 finish_position 存在
     finish_col = get_finish_column(history)
     if finish_col is None:
         st.error("歷史數據缺少名次欄位")
@@ -453,14 +456,15 @@ with st.sidebar:
     predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True)
 
 # ============================================================
-# 8. 今日賽程（錯誤靜音）
+# 8. 今日賽程
 # ============================================================
 st.subheader("📅 今日賽程")
 try:
     df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
     df_sched = standardize_columns(df_sched)
     if 'race_date' in df_sched.columns:
-        df_sched['race_date'] = safe_parse_dates(df_sched, 'race_date')
+        df_sched['race_date'] = df_sched['race_date'].astype(str).str.extract(r'(\d{8})')[0]
+        df_sched['race_date'] = pd.to_datetime(df_sched['race_date'], format='%Y%m%d', errors='coerce')
         df_sched = df_sched.dropna(subset=['race_date'])
         today = datetime.now().date()
         day_races = df_sched[df_sched['race_date'].dt.date == today]
@@ -493,8 +497,8 @@ if predict_btn:
                 st.subheader("🎯 彩池推薦")
                 st.text(pool)
         except Exception as e:
-            st.error(f"❌ 預測過程中發生錯誤")
-            st.code(f"錯誤類型：{type(e).__name__}\n錯誤訊息：{str(e)}")
+            st.error(f"❌ 預測錯誤")
+            st.code(f"錯誤：{str(e)}")
             import traceback
             st.code(traceback.format_exc())
 
@@ -503,4 +507,4 @@ if predict_btn:
 # ============================================================
 st.divider()
 st.caption(f"🕐 最後更新：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-st.caption("🔐 數據來源：HKJC | 系統版本：v4.0-最終整合")
+st.caption("🔐 數據來源：HKJC | 系統版本：v4.1-本地日期修復")
