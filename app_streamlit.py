@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - Streamlit 網頁版（美化主題版）
+賽馬預測系統 - Streamlit 網頁版（終極日期修復）
 """
 
 import streamlit as st
@@ -15,264 +15,14 @@ warnings.filterwarnings('ignore')
 from catboost import CatBoostClassifier
 
 # ============================================================
-# 1. 設定頁面 + 自訂 CSS
+# 1. 設定頁面
 # ============================================================
-st.set_page_config(
-    page_title="🏇 賽馬預測系統",
-    page_icon="🐎",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="🏇 賽馬預測系統", layout="wide")
+st.title("🏇 賽馬預測系統")
+st.markdown("AI 驅動・即時預測・彩池推薦")
 
 # ============================================================
-# 2. 自訂 CSS 主題（賽馬風格）
-# ============================================================
-st.markdown("""
-<style>
-    /* 全局字體 */
-    body, .stApp {
-        font-family: 'Segoe UI', 'PingFang HK', sans-serif;
-        background: #f5f0eb;
-    }
-    
-    /* 標題區塊 */
-    .main-header {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-        padding: 30px 40px;
-        border-radius: 20px;
-        margin-bottom: 30px;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-        color: white;
-        text-align: center;
-        position: relative;
-        overflow: hidden;
-    }
-    .main-header h1 {
-        font-size: 3rem;
-        font-weight: 700;
-        margin: 0;
-        letter-spacing: 2px;
-        text-shadow: 0 2px 8px rgba(0,0,0,0.5);
-    }
-    .main-header p {
-        font-size: 1.2rem;
-        opacity: 0.85;
-        margin-top: 8px;
-        letter-spacing: 4px;
-    }
-    .main-header .horse-icon {
-        position: absolute;
-        right: 40px;
-        top: 50%;
-        transform: translateY(-50%);
-        font-size: 4.5rem;
-        opacity: 0.25;
-    }
-    
-    /* 控制面板 */
-    .sidebar-title {
-        font-size: 1.6rem;
-        font-weight: 700;
-        color: #0f3460;
-        border-bottom: 3px solid #e6b800;
-        padding-bottom: 12px;
-        margin-bottom: 20px;
-    }
-    .sidebar-label {
-        font-weight: 600;
-        color: #1a1a2e;
-        margin-top: 10px;
-    }
-    
-    /* 卡片風格 */
-    .card {
-        background: white;
-        padding: 25px 30px;
-        border-radius: 16px;
-        box-shadow: 0 6px 24px rgba(0,0,0,0.08);
-        margin-bottom: 20px;
-        border-left: 5px solid #e6b800;
-        transition: transform 0.2s;
-    }
-    .card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 32px rgba(0,0,0,0.12);
-    }
-    .card-title {
-        font-size: 1.3rem;
-        font-weight: 700;
-        color: #0f3460;
-        margin-bottom: 8px;
-    }
-    .card-sub {
-        color: #6c757d;
-        font-size: 0.95rem;
-    }
-    
-    /* 結果表格 */
-    .result-table {
-        background: white;
-        border-radius: 16px;
-        overflow: hidden;
-        box-shadow: 0 6px 24px rgba(0,0,0,0.08);
-    }
-    .result-table th {
-        background: #0f3460;
-        color: white;
-        font-weight: 600;
-        padding: 12px 16px;
-    }
-    .result-table td {
-        padding: 12px 16px;
-        border-bottom: 1px solid #f0ebe6;
-    }
-    .result-table tr:last-child td {
-        border-bottom: none;
-    }
-    .result-table tr:hover {
-        background: #f8f4f0;
-    }
-    
-    /* 排名徽章 */
-    .badge-1 {
-        background: #e6b800;
-        color: #1a1a2e;
-        font-weight: 700;
-        padding: 4px 14px;
-        border-radius: 30px;
-        font-size: 0.9rem;
-        display: inline-block;
-    }
-    .badge-2 {
-        background: #c0c0c0;
-        color: #1a1a2e;
-        font-weight: 700;
-        padding: 4px 14px;
-        border-radius: 30px;
-        font-size: 0.9rem;
-        display: inline-block;
-    }
-    .badge-3 {
-        background: #cd7f32;
-        color: white;
-        font-weight: 700;
-        padding: 4px 14px;
-        border-radius: 30px;
-        font-size: 0.9rem;
-        display: inline-block;
-    }
-    .badge-other {
-        background: #e9ecef;
-        color: #495057;
-        padding: 4px 14px;
-        border-radius: 30px;
-        font-size: 0.9rem;
-        display: inline-block;
-    }
-    
-    /* 彩池推薦 */
-    .pool-box {
-        background: #f8f9fa;
-        border-radius: 16px;
-        padding: 20px 25px;
-        font-family: 'Consolas', 'Courier New', monospace;
-        font-size: 0.9rem;
-        border: 1px solid #e9ecef;
-        max-height: 450px;
-        overflow-y: auto;
-        line-height: 1.7;
-        white-space: pre-wrap;
-    }
-    
-    /* 底部 */
-    .footer {
-        text-align: center;
-        padding: 20px 0 10px;
-        border-top: 1px solid #ddd;
-        color: #999;
-        font-size: 0.85rem;
-        margin-top: 30px;
-    }
-    
-    /* 響應式 */
-    @media (max-width: 768px) {
-        .main-header h1 {
-            font-size: 1.8rem;
-        }
-        .main-header .horse-icon {
-            display: none;
-        }
-        .card {
-            padding: 15px 18px;
-        }
-    }
-    
-    /* Streamlit 自訂 */
-    .stButton > button {
-        background: linear-gradient(135deg, #0f3460, #1a1a2e);
-        color: white;
-        border: none;
-        border-radius: 30px;
-        padding: 0.6rem 2rem;
-        font-weight: 600;
-        font-size: 1.1rem;
-        transition: all 0.3s;
-        box-shadow: 0 4px 16px rgba(15, 52, 96, 0.3);
-        width: 100%;
-    }
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 24px rgba(15, 52, 96, 0.4);
-        background: linear-gradient(135deg, #1a1a2e, #0f3460);
-    }
-    .stButton > button:active {
-        transform: translateY(0px);
-    }
-    .stSelectbox > div > div {
-        border-radius: 30px;
-    }
-    .stDateInput > div > div {
-        border-radius: 30px;
-    }
-    
-    /* 成功訊息 */
-    .stAlert {
-        border-radius: 16px;
-        border-left: 6px solid #28a745;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-    }
-    .stError {
-        border-radius: 16px;
-        border-left: 6px solid #dc3545;
-    }
-    
-    /* 今日賽程標籤 */
-    .schedule-tag {
-        background: #e9ecef;
-        padding: 6px 14px;
-        border-radius: 30px;
-        display: inline-block;
-        margin: 4px 6px 4px 0;
-        font-size: 0.9rem;
-        border: 1px solid #dee2e6;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# ============================================================
-# 3. 標題 Header
-# ============================================================
-st.markdown(f"""
-<div class="main-header">
-    <div class="horse-icon">🐎</div>
-    <h1>🏇 賽馬預測系統</h1>
-    <p>AI 驅動 · 即時預測 · 彩池推薦</p>
-    <p style="font-size:0.85rem; opacity:0.6; margin-top:10px;">📊 36 個特徵 · 三模型融合 · {datetime.now().strftime('%Y年%m月%d日')}</p>
-</div>
-""", unsafe_allow_html=True)
-
-# ============================================================
-# 4. 載入模型（cache）
+# 2. 載入模型
 # ============================================================
 @st.cache_resource
 def load_models():
@@ -291,7 +41,7 @@ def load_models():
         return None, None, None
 
 # ============================================================
-# 5. 完整特徵工程
+# 3. 完整特徵工程
 # ============================================================
 FEATURES_EN = [
     'draw', 'act_wt', 'distance', 'rtg', 'avg_rank_last3',
@@ -358,18 +108,41 @@ NAME_MAPPING = {
     'injury_severity': '傷患嚴重程度'
 }
 
-def standardize_columns(df):
+# ============================================================
+# 4. 安全的欄位標準化（不會覆蓋日期）
+# ============================================================
+def standardize_columns_safe(df):
+    """只改名必要欄位，絕對不改日期欄位"""
     rename_map = {
-        '騎師': 'jockey', '練馬師': 'trainer', '路程': 'distance',
-        '場地': 'going', '檔位': 'draw', '評分': 'rtg',
-        '馬匹編號': 'horse_id', '比賽日期': 'race_date', '場次': 'race_no',
-        '馬場': 'race_course', '實際負磅': 'act_wt',
-        '名次': 'finish_position', '最終名次': 'finish_position',
-        'Position': 'finish_position', 'Rank': 'finish_position',
-        'pos': 'finish_position', '排名': 'finish_position',
-        '馬名': 'horse_name'
+        '騎師': 'jockey',
+        '練馬師': 'trainer',
+        '路程': 'distance',
+        '場地': 'going',
+        '檔位': 'draw',
+        '評分': 'rtg',
+        '馬匹編號': 'horse_id',
+        '馬匹ID': 'horse_id',
+        '馬號': 'horse_id',
+        '馬匹id': 'horse_id',
+        'horse': 'horse_id',
+        '場次': 'race_no',
+        '馬場': 'race_course',
+        '實際負磅': 'act_wt',
+        '名次': 'finish_position',
+        '最終名次': 'finish_position',
+        '馬名': 'horse_name',
+        '賠率': 'win_odds',
+        '獨贏賠率': 'win_odds',
     }
     df.rename(columns=rename_map, inplace=True, errors='ignore')
+    
+    # 確保日期欄位名統一為 race_date
+    if '比賽日期' in df.columns and 'race_date' not in df.columns:
+        df.rename(columns={'比賽日期': 'race_date'}, inplace=True)
+    elif '比賽日期' in df.columns and 'race_date' in df.columns:
+        # 如果兩者都有，保留 race_date，刪除比賽日期
+        df.drop(columns=['比賽日期'], inplace=True, errors='ignore')
+    
     return df
 
 def ensure_series(df):
@@ -385,12 +158,46 @@ def get_finish_column(df):
             return col
     return None
 
-def safe_parse_dates(df, date_col):
-    if date_col not in df.columns:
-        return pd.Series([pd.NaT] * len(df))
-    dates = df[date_col].astype(str).str.strip()
-    dates = dates.str.replace('/', '-')
-    return pd.to_datetime(dates, errors='coerce')
+def safe_parse_dates(df):
+    """從 DataFrame 搵出日期欄位並安全解析"""
+    date_col = None
+    for col in ['race_date', '比賽日期']:
+        if col in df.columns:
+            date_col = col
+            break
+    
+    if date_col is None:
+        st.error("❌ 找不到日期欄位")
+        st.write("現有欄位：", df.columns.tolist())
+        return None, None
+    
+    st.info(f"📅 使用日期欄位：'{date_col}'")
+    
+    # 複製數據
+    dates = df[date_col].copy()
+    
+    # 轉為字串，去除前後空格
+    dates = dates.astype(str).str.strip()
+    
+    # 顯示樣本（除錯用）
+    sample = dates.head(10).tolist()
+    st.write(f"日期樣本：{sample}")
+    
+    # 嘗試直接解析（pandas 會自動推斷）
+    parsed = pd.to_datetime(dates, errors='coerce')
+    
+    valid_count = parsed.notna().sum()
+    st.info(f"✅ 成功解析 {valid_count} 個日期")
+    
+    if valid_count == 0:
+        st.error("❌ 無法解析任何日期")
+        return None, None
+    
+    # 將解析結果存入新欄位
+    df['parsed_date'] = parsed
+    df['parsed_date_col'] = date_col
+    
+    return df, date_col
 
 def get_latest_features(race_df, history_df):
     history_df['race_date'] = pd.to_datetime(history_df['race_date'], errors='coerce')
@@ -503,7 +310,7 @@ def compute_stats(race_df, history_df, race_date):
     return race_df
 
 # ============================================================
-# 6. 中文馬名對照
+# 5. 中文馬名對照
 # ============================================================
 @st.cache_data
 def load_horse_name_map():
@@ -516,7 +323,7 @@ def load_horse_name_map():
     return {}
 
 # ============================================================
-# 7. 彩池推薦
+# 6. 彩池推薦
 # ============================================================
 def generate_pool_recommendations(df, top_n=6):
     top_horses = df.head(top_n)
@@ -574,79 +381,88 @@ def generate_pool_recommendations(df, top_n=6):
     return rec
 
 # ============================================================
-# 8. 預測主函數
+# 7. 預測主函數
 # ============================================================
 def run_prediction(date_str, race_no):
     xgb_model, cat_model, rank_model = load_models()
     if xgb_model is None:
-        st.error("模型載入失敗")
         return None, None
 
+    # 讀取排位表
     try:
         df = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
     except Exception as e:
         st.error(f"讀取排位表失敗：{e}")
         return None, None
 
-    df = standardize_columns(df)
+    # 安全標準化欄位（不改日期）
+    df = standardize_columns_safe(df)
     df = df.loc[:, ~df.columns.duplicated(keep='first')]
     df = ensure_series(df)
 
-    if 'race_date' not in df.columns:
-        st.error("找不到日期欄位")
-        return None, None
-    df['race_date'] = safe_parse_dates(df, 'race_date')
-    df = df.dropna(subset=['race_date'])
-    if df.empty:
-        st.error("無有效日期")
+    # 安全解析日期（顯示除錯資訊）
+    df, date_col = safe_parse_dates(df)
+    if df is None or date_col is None:
         return None, None
 
+    # 用解析後嘅日期覆蓋原有欄位
+    df['race_date'] = df['parsed_date']
+    df = df.dropna(subset=['race_date'])
+    if df.empty:
+        st.error("❌ 無有效日期")
+        return None, None
+
+    # 場次處理
     if 'race_no' not in df.columns:
-        st.error("找不到場次欄位")
+        st.error("❌ 找不到場次欄位")
         return None, None
     df['race_no'] = df['race_no'].astype(str).str.extract(r'(\d+)')[0]
     df['race_no'] = pd.to_numeric(df['race_no'], errors='coerce')
     df = df.dropna(subset=['race_no'])
     if df.empty:
-        st.error("無有效場次")
+        st.error("❌ 無有效場次")
         return None, None
 
+    # 篩選
     target = pd.to_datetime(date_str)
     race_sel = df[(df['race_date'].dt.date == target.date()) & (df['race_no'] == race_no)]
     if race_sel.empty:
-        st.error(f"日期 {date_str} 第 {race_no} 場無數據")
+        st.error(f"❌ 日期 {date_str} 第 {race_no} 場無數據")
         return None, None
 
+    # 載入歷史數據
     try:
         history = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
     except:
-        st.error("缺少歷史數據檔案 ALL_DATA_MERGED.csv")
+        st.error("❌ 缺少歷史數據檔案 ALL_DATA_MERGED.csv")
         return None, None
 
-    history = standardize_columns(history)
+    history = standardize_columns_safe(history)
     history = history.loc[:, ~history.columns.duplicated(keep='first')]
     history = ensure_series(history)
     if 'race_date' not in history.columns:
         if '比賽日期' in history.columns:
             history.rename(columns={'比賽日期': 'race_date'}, inplace=True)
         else:
-            st.error("歷史數據缺少日期欄位")
+            st.error("❌ 歷史數據缺少日期欄位")
             return None, None
     history['race_date'] = pd.to_datetime(history['race_date'], errors='coerce')
     history = history.dropna(subset=['race_date'])
 
     finish_col = get_finish_column(history)
     if finish_col is None:
-        st.error("歷史數據缺少名次欄位")
+        st.error("❌ 歷史數據缺少名次欄位")
         return None, None
     history.rename(columns={finish_col: 'finish_position'}, inplace=True)
 
     name_map = load_horse_name_map()
 
+    # 生成特徵
     race_sel = get_latest_features(race_sel, history)
     race_sel = compute_stats(race_sel, history, target)
     race_sel['中文名'] = race_sel['horse_id'].map(name_map).fillna(race_sel['horse_id'])
 
+    # 賠率
     if 'win_odds' not in race_sel.columns:
         race_sel['win_odds'] = 4.0
     else:
@@ -670,11 +486,13 @@ def run_prediction(date_str, race_no):
             X[col] = 0
     X = X[EXPECTED_FEATURES]
 
+    # 預測
     prob_xgb = xgb_model.predict_proba(X)[:, 1]
     prob_cat = cat_model.predict_proba(X)[:, 1]
     prob_final = (prob_xgb * 25 + prob_cat) / 26
     rank_score = rank_model.predict(X)
 
+    # 結果
     result = race_sel[['中文名', 'draw', 'win_odds']].copy()
     result.rename(columns={'中文名': '馬匹名稱', 'draw': '檔位', 'win_odds': '賠率'}, inplace=True)
     result['預測勝率'] = prob_final
@@ -685,107 +503,54 @@ def run_prediction(date_str, race_no):
     return result, pool_rec
 
 # ============================================================
-# 9. 側邊欄
+# 8. 側邊欄
 # ============================================================
 with st.sidebar:
-    st.markdown('<div class="sidebar-title">🎯 控制面板</div>', unsafe_allow_html=True)
-    
-    date = st.date_input(
-        "📅 選擇日期",
-        value=pd.to_datetime("2025-04-09"),
-        help="選擇你想預測嘅賽馬日期"
-    )
-    
-    race_no = st.selectbox(
-        "🏇 選擇場次",
-        list(range(1, 12)),
-        index=8,
-        help="選擇你想預測嘅場次號碼"
-    )
-    
+    st.header("🎯 控制面板")
+    date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"))
+    race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8)
     predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True)
 
 # ============================================================
-# 10. 今日賽程
+# 9. 今日賽程
 # ============================================================
-st.markdown('<div class="card"><div class="card-title">📅 今日賽程</div>', unsafe_allow_html=True)
+st.subheader("📅 今日賽程")
 try:
     df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
-    df_sched = standardize_columns(df_sched)
+    df_sched = standardize_columns_safe(df_sched)
     if 'race_date' in df_sched.columns:
-        df_sched['race_date'] = safe_parse_dates(df_sched, 'race_date')
+        df_sched['race_date'] = pd.to_datetime(df_sched['race_date'], errors='coerce')
         df_sched = df_sched.dropna(subset=['race_date'])
         today = datetime.now().date()
         day_races = df_sched[df_sched['race_date'].dt.date == today]
         if day_races.empty:
-            st.info("🏟️ 今日沒有賽事")
+            st.info("今日沒有賽事")
         else:
-            st.write("🏟️ 今日賽事：")
             for course in day_races['race_course'].unique():
                 races = day_races[day_races['race_course'] == course]['race_no'].unique()
-                race_tags = ''.join([f'<span class="schedule-tag">第{r}場</span>' for r in sorted(races)])
-                st.markdown(f"**{course}** &nbsp; {race_tags}", unsafe_allow_html=True)
+                st.write(f"🏟️ **{course}**：第 {', '.join(map(str, sorted(races)))} 場")
     else:
-        st.info("🏟️ 今日沒有賽事")
-except Exception:
-    st.info("🏟️ 今日沒有賽事")
-st.markdown('</div>', unsafe_allow_html=True)
+        st.info("今日沒有賽事")
+except Exception as e:
+    st.info(f"今日沒有賽事（錯誤：{e}）")
 
 # ============================================================
-# 11. 執行預測
+# 10. 執行預測
 # ============================================================
 if predict_btn:
     date_str = date.strftime('%Y-%m-%d')
-    with st.spinner(f"⏳ 執行預測 {date_str} 第 {race_no} 場..."):
+    with st.spinner(f"執行預測 {date_str} 第 {race_no} 場..."):
         try:
             result, pool = run_prediction(date_str, race_no)
             if result is not None:
                 st.success(f"✅ {date_str} 第 {race_no} 場 預測完成")
-                
-                # TOP 5 卡片
-                st.markdown('<div class="card"><div class="card-title">🏇 預測 TOP 5</div>', unsafe_allow_html=True)
-                
+                st.subheader("🏇 預測 TOP 5")
                 display_df = result.head(5)[['馬匹名稱', '檔位', '預測勝率', '值博指數']].copy()
                 display_df['預測勝率'] = display_df['預測勝率'].apply(lambda x: f"{x:.2%}")
                 display_df['值博指數'] = display_df['值博指數'].apply(lambda x: f"{x:.4f}")
-                
-                # 重新命名為中文
-                display_df.columns = ['馬匹名稱', '檔位', '預測勝率', '值博指數']
-                
-                # 加入排名徽章
-                def format_rank(idx):
-                    if idx == 0:
-                        return '<span class="badge-1">🏆 1</span>'
-                    elif idx == 1:
-                        return '<span class="badge-2">🥈 2</span>'
-                    elif idx == 2:
-                        return '<span class="badge-3">🥉 3</span>'
-                    else:
-                        return f'<span class="badge-other">{idx+1}</span>'
-                
-                # 顯示美化表格
-                for idx, row in display_df.iterrows():
-                    rank_badge = format_rank(idx)
-                    col1, col2, col3, col4, col5 = st.columns([1, 3, 1.5, 2, 2])
-                    with col1:
-                        st.markdown(rank_badge, unsafe_allow_html=True)
-                    with col2:
-                        st.write(f"**{row['馬匹名稱']}**")
-                    with col3:
-                        st.write(f"檔位 {row['檔位']}")
-                    with col4:
-                        st.write(f"勝率 {row['預測勝率']}")
-                    with col5:
-                        st.write(f"值博指數 {row['值博指數']}")
-                    st.divider()
-                
-                st.markdown('</div>', unsafe_allow_html=True)
-                
-                # 彩池推薦卡片
-                st.markdown('<div class="card"><div class="card-title">🎯 彩池推薦</div>', unsafe_allow_html=True)
-                st.markdown(f'<div class="pool-box">{pool}</div>', unsafe_allow_html=True)
-                st.markdown('</div>', unsafe_allow_html=True)
-                
+                st.dataframe(display_df, use_container_width=True)
+                st.subheader("🎯 彩池推薦")
+                st.text(pool)
         except Exception as e:
             st.error(f"❌ 預測過程中發生錯誤")
             st.code(f"錯誤類型：{type(e).__name__}\n錯誤訊息：{str(e)}")
@@ -793,12 +558,8 @@ if predict_btn:
             st.code(traceback.format_exc())
 
 # ============================================================
-# 12. 底部
+# 11. 底部
 # ============================================================
-st.markdown("""
-<div class="footer">
-    🕐 最後更新：""" + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + """ &nbsp;|&nbsp; 
-    🔐 數據來源：HKJC &nbsp;|&nbsp; 
-    ⚡ 系統版本：v5.0-美化版
-</div>
-""", unsafe_allow_html=True)
+st.divider()
+st.caption(f"🕐 最後更新：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+st.caption("🔐 數據來源：HKJC | 系統版本：v6.0-日期修復終極版")
