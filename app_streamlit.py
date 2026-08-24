@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - Streamlit 網頁版（完整診斷版）
+賽馬預測系統 - Streamlit 網頁版（完整診斷版 + 數值修正）
 """
 
 import streamlit as st
@@ -31,7 +31,6 @@ try:
     st.write(f"✅ 成功讀取排位表，共 {len(df_debug)} 筆記錄")
     st.write(f"欄位名稱：{df_debug.columns.tolist()}")
     
-    # 顯示日期欄位樣本（如果存在）
     if 'race_date' in df_debug.columns:
         st.write(f"日期欄位樣本（前10個）：{df_debug['race_date'].head(10).tolist()}")
     elif '比賽日期' in df_debug.columns:
@@ -39,7 +38,6 @@ try:
     else:
         st.warning("找不到日期欄位")
     
-    # 顯示場次欄位樣本（如果存在）
     if 'race_no' in df_debug.columns:
         st.write(f"場次欄位樣本（前10個）：{df_debug['race_no'].head(10).tolist()}")
     elif '場次' in df_debug.columns:
@@ -72,7 +70,7 @@ def load_models():
         return None, None, None
 
 # ============================================================
-# 4. 預測函數（含日期和場次處理）
+# 4. 預測函數（含日期和場次處理 + 數值強制轉換）
 # ============================================================
 def run_prediction(date_str, race_no):
     xgb_model, cat_model, rank_model = load_models()
@@ -86,7 +84,7 @@ def run_prediction(date_str, race_no):
         st.error(f"讀取排位表失敗：{e}")
         return None, None
     
-    # 處理日期欄位（支援多種格式）
+    # 處理日期欄位
     if 'race_date' in df.columns:
         date_col = 'race_date'
     elif '比賽日期' in df.columns:
@@ -95,7 +93,6 @@ def run_prediction(date_str, race_no):
         st.error("找不到日期欄位")
         return None, None
     
-    # 標準化日期：先轉為字串，將 '/' 替換為 '-'，再轉 datetime
     df[date_col] = df[date_col].astype(str).str.replace('/', '-')
     df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
     df = df.dropna(subset=[date_col])
@@ -109,12 +106,11 @@ def run_prediction(date_str, race_no):
         st.error("找不到場次欄位")
         return None, None
     
-    # 提取數字（例如從 "Race 1" 提取 1）
     df[race_col] = df[race_col].astype(str).str.extract(r'(\d+)')[0]
     df[race_col] = pd.to_numeric(df[race_col], errors='coerce')
     df = df.dropna(subset=[race_col])
     
-    # 篩選指定日期和場次
+    # 篩選
     target = pd.to_datetime(date_str)
     race_sel = df[(df[date_col].dt.date == target.date()) & (df[race_col] == race_no)]
     
@@ -122,14 +118,18 @@ def run_prediction(date_str, race_no):
         st.error(f"❌ 日期 {date_str} 第 {race_no} 場無數據")
         return None, None
     
-    # 簡化特徵（實際使用時可擴充）
+    # 特徵準備
     features = ['draw', 'act_wt', 'distance', 'rtg', 'win_odds']
-    # 確保所有特徵欄位存在，若無則補0
     for f in features:
         if f not in race_sel.columns:
             race_sel[f] = 0
     X = race_sel[features].copy()
+    
+    # ===== 關鍵修正：強制轉換所有特徵為數值 =====
+    for col in X.columns:
+        X[col] = pd.to_numeric(X[col], errors='coerce')
     X = X.fillna(0)
+    # =============================================
     
     # 預測
     prob_xgb = xgb_model.predict_proba(X)[:, 1]
@@ -138,7 +138,6 @@ def run_prediction(date_str, race_no):
     
     # 結果
     result = race_sel[['horse_id', 'draw', 'win_odds']].copy()
-    # 嘗試加入中文名（如果有對照表）
     try:
         name_map = pd.read_csv('horse_name_mapping.csv', encoding='utf-8-sig')
         name_dict = dict(zip(name_map['horse_id'], name_map['馬名']))
@@ -150,7 +149,7 @@ def run_prediction(date_str, race_no):
     result['值博指數'] = result['預測勝率'] / result['win_odds'].replace(0, 4.0)
     result = result.sort_values('值博指數', ascending=False)
     
-    # 彩池推薦（簡化版）
+    # 彩池推薦
     pool_rec = "【獨贏】\n"
     for i, row in result.head(3).iterrows():
         pool_rec += f"  {row['馬匹名稱']} (勝率 {row['預測勝率']:.2%})\n"
@@ -172,7 +171,6 @@ with st.sidebar:
 st.subheader("📅 今日賽程")
 try:
     df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
-    # 同樣處理日期
     if 'race_date' in df_sched.columns:
         date_col_sched = 'race_date'
     elif '比賽日期' in df_sched.columns:
