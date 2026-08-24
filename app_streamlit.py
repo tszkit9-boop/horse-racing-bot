@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版（含優惠碼付款折扣功能）
+賽馬預測系統 - 完整版（含付款上傳證明 + 後台審核）
 """
 
 import streamlit as st
@@ -17,6 +17,9 @@ from catboost import CatBoostClassifier
 import plotly.express as px
 import plotly.graph_objects as go
 import random
+import base64
+from io import BytesIO
+from PIL import Image
 
 # ============================================================
 # 🔐 功能開關（全部中文說明）
@@ -69,6 +72,12 @@ AUTOMATION_FILE = 'automation.json'
 CONTENT_FILE = 'content.json'
 PROMO_FILE = 'promo_codes.json'
 ACCURACY_FILE = 'accuracy.json'
+PAYMENT_PROOFS_FILE = 'payment_proofs.json'   # 新增：付款證明記錄
+PAYMENT_PROOFS_DIR = 'payment_proofs'          # 新增：上傳圖片儲存目錄
+
+# 確保目錄存在
+if not os.path.exists(PAYMENT_PROOFS_DIR):
+    os.makedirs(PAYMENT_PROOFS_DIR)
 
 def load_json(file):
     if os.path.exists(file):
@@ -104,11 +113,9 @@ def load_users():
         }
         save_users(users)
     else:
-        # 確保 admin 為 super_admin，並補齊所有用戶缺失欄位
         if "admin" in users and users["admin"].get("group") != "super_admin":
             users["admin"]["group"] = "super_admin"
             users["admin"]["note"] = "系統超級管理員（已自動升級）"
-        # 為所有用戶補齊預設欄位
         for uid, u in users.items():
             if 'plan' not in u:
                 u['plan'] = None
@@ -151,6 +158,12 @@ def load_accuracy():
 
 def save_accuracy(acc):
     save_json(ACCURACY_FILE, acc)
+
+def load_payment_proofs():
+    return load_json(PAYMENT_PROOFS_FILE)
+
+def save_payment_proofs(proofs):
+    save_json(PAYMENT_PROOFS_FILE, proofs)
 
 def log_admin_action(admin, action):
     logs = load_logs()
@@ -789,10 +802,10 @@ def login_page():
                             st.rerun()
 
 # ============================================================
-# 7. 付費牆（含優惠碼折扣功能）
+# 7. 付費牆（含優惠碼折扣 + 上傳過數證明）
 # ============================================================
 def show_paywall():
-    """顯示付費牆，提供日/月/季三種方案 + 優惠碼折扣"""
+    """顯示付費牆，提供日/月/季三種方案 + 優惠碼折扣 + 上傳過數證明"""
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
     
     st.subheader("💳 選擇你嘅方案")
@@ -812,13 +825,10 @@ def show_paywall():
         if st.button("選擇日費", key="buy_day", use_container_width=True):
             st.session_state['selected_plan'] = 'day'
             st.session_state['plan_price'] = CONFIG['price_day']
-            # 清除之前嘅優惠碼狀態
-            if 'applied_promo' in st.session_state:
-                del st.session_state['applied_promo']
-            if 'discount_type' in st.session_state:
-                del st.session_state['discount_type']
-            if 'discount_value' in st.session_state:
-                del st.session_state['discount_value']
+            # 清除之前嘅狀態
+            for key in ['applied_promo', 'discount_type', 'discount_value']:
+                if key in st.session_state:
+                    del st.session_state[key]
             st.rerun()
     
     with col2:
@@ -833,12 +843,9 @@ def show_paywall():
         if st.button("選擇月費", key="buy_month", use_container_width=True):
             st.session_state['selected_plan'] = 'month'
             st.session_state['plan_price'] = CONFIG['price_month']
-            if 'applied_promo' in st.session_state:
-                del st.session_state['applied_promo']
-            if 'discount_type' in st.session_state:
-                del st.session_state['discount_type']
-            if 'discount_value' in st.session_state:
-                del st.session_state['discount_value']
+            for key in ['applied_promo', 'discount_type', 'discount_value']:
+                if key in st.session_state:
+                    del st.session_state[key]
             st.rerun()
     
     with col3:
@@ -853,15 +860,12 @@ def show_paywall():
         if st.button("選擇季費", key="buy_quarter", use_container_width=True):
             st.session_state['selected_plan'] = 'quarter'
             st.session_state['plan_price'] = CONFIG['price_quarter']
-            if 'applied_promo' in st.session_state:
-                del st.session_state['applied_promo']
-            if 'discount_type' in st.session_state:
-                del st.session_state['discount_type']
-            if 'discount_value' in st.session_state:
-                del st.session_state['discount_value']
+            for key in ['applied_promo', 'discount_type', 'discount_value']:
+                if key in st.session_state:
+                    del st.session_state[key]
             st.rerun()
     
-    # ---------- 顯示已選擇方案 + 優惠碼輸入 ----------
+    # ---------- 顯示已選擇方案 + 優惠碼 + 上傳證明 ----------
     if 'selected_plan' in st.session_state:
         plan_names = {'day': '日費', 'month': '月費', 'quarter': '季費'}
         plan_days = {'day': 1, 'month': 30, 'quarter': 90}
@@ -890,21 +894,16 @@ def show_paywall():
                     elif promo_data.get('used', False):
                         st.error("❌ 優惠碼已被使用")
                     else:
-                        # 檢查過期
                         expiry = promo_data.get('expiry')
+                        promo_valid = True
                         if expiry:
                             try:
                                 expiry_date = datetime.fromisoformat(expiry)
                                 if expiry_date < datetime.now():
                                     st.error("❌ 優惠碼已過期")
                                     promo_valid = False
-                                else:
-                                    promo_valid = True
                             except:
-                                promo_valid = True
-                        else:
-                            promo_valid = True
-                        
+                                pass
                         if promo_valid:
                             discount_type = promo_data.get('discount_type', 'percentage')
                             discount_value = promo_data.get('discount_value', 0)
@@ -943,46 +942,84 @@ def show_paywall():
                 else:
                     st.success(f"🎉 恭喜！優惠碼已套用，**完全免費！**（{discount_desc}）")
         
-        # ----- 付款按鈕（管理員開通） -----
-        st.markdown("---")
-        st.markdown("**付款方式：** FPS / PayMe / 銀行轉帳")
-        st.markdown("📩 付款後 WhatsApp 通知開通")
+        # ----- 上傳過數證明 -----
+        st.divider()
+        st.subheader("📤 上傳過數證明")
+        st.caption("請上傳你嘅 FPS / PayMe / 銀行轉帳截圖")
         
-        if CONFIG["enable_admin"]:
-            with st.expander("🔐 管理員開通（測試用）"):
-                admin_code = st.text_input("管理員密碼", type="password", key="admin_paywall_pw")
-                if admin_code == CONFIG["admin_password"]:
-                    if st.button("✅ 手動開通此用戶", key="manual_activate"):
-                        users = load_users()
-                        if st.session_state.username in users:
-                            # 如果優惠碼免費，直接開通唔使收錢
-                            if discount_applied and final_price == 0:
-                                st.success("🎉 優惠碼全免！已自動開通！")
-                            
-                            users[st.session_state.username]['is_paid'] = True
-                            users[st.session_state.username]['group'] = 'VIP'
-                            users[st.session_state.username]['paid_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                            days = get_plan_days(st.session_state['selected_plan'])
-                            users[st.session_state.username]['expiry_date'] = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
-                            users[st.session_state.username]['plan'] = st.session_state['selected_plan']
-                            
-                            # 如果有用優惠碼，標記為已使用
-                            if 'applied_promo' in st.session_state:
-                                promos = load_promos()
-                                promo_code = st.session_state['applied_promo']
-                                if promo_code in promos:
-                                    promos[promo_code]['used'] = True
-                                    promos[promo_code]['used_by'] = st.session_state.username
-                                    promos[promo_code]['used_at'] = datetime.now().isoformat()
-                                    save_promos(promos)
-                            
-                            save_users(users)
-                            st.success(f"✅ 已開通！有效期 {days} 天")
-                            # 清除 session 狀態
-                            for key in ['selected_plan', 'plan_price', 'applied_promo', 'discount_type', 'discount_value']:
-                                if key in st.session_state:
-                                    del st.session_state[key]
-                            st.rerun()
+        uploaded_file = st.file_uploader(
+            "選擇截圖（PNG / JPG）",
+            type=['png', 'jpg', 'jpeg'],
+            key="proof_upload"
+        )
+        
+        proof_status = ""
+        if uploaded_file is not None:
+            # 讀取圖片並轉為 bytes
+            file_bytes = uploaded_file.getvalue()
+            st.image(file_bytes, caption="你上傳嘅證明", width=300)
+            proof_status = "✅ 已上傳"
+        
+        # ----- 提交按鈕 -----
+        st.divider()
+        
+        col_submit1, col_submit2, col_submit3 = st.columns([1, 2, 1])
+        with col_submit2:
+            if st.button("📩 提交付款申請，等待管理員審核", type="primary", use_container_width=True, key="submit_payment"):
+                # 檢查是否上傳咗證明
+                if uploaded_file is None:
+                    st.error("❌ 請先上傳過數證明（轉帳截圖）")
+                else:
+                    # 檢查用戶是否已登入
+                    if not st.session_state.get('logged_in', False):
+                        st.error("❌ 請先登入")
+                    else:
+                        # 儲存上傳記錄
+                        proofs = load_payment_proofs()
+                        
+                        # 儲存圖片到本地目錄
+                        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                        filename = f"{st.session_state.username}_{timestamp}.{uploaded_file.type.split('/')[1]}"
+                        filepath = os.path.join(PAYMENT_PROOFS_DIR, filename)
+                        
+                        with open(filepath, 'wb') as f:
+                            f.write(uploaded_file.getbuffer())
+                        
+                        # 建立記錄
+                        new_proof = {
+                            "id": len(proofs) + 1,
+                            "username": st.session_state.username,
+                            "plan": st.session_state['selected_plan'],
+                            "plan_name": plan_names[st.session_state['selected_plan']],
+                            "original_price": original_price,
+                            "final_price": final_price,
+                            "discount_applied": discount_applied,
+                            "discount_desc": discount_desc,
+                            "promo_code": st.session_state.get('applied_promo', None),
+                            "filename": filename,
+                            "uploaded_at": datetime.now().isoformat(),
+                            "status": "pending"  # pending / approved / rejected
+                        }
+                        
+                        if 'proof_records' not in proofs:
+                            proofs['proof_records'] = []
+                        proofs['proof_records'].append(new_proof)
+                        save_payment_proofs(proofs)
+                        
+                        # 記錄到日誌
+                        log_admin_action(
+                            st.session_state.username, 
+                            f"提交付款申請 - 方案：{plan_names[st.session_state['selected_plan']]}，金額：${final_price}"
+                        )
+                        
+                        st.success("✅ 付款申請已提交！管理員將盡快審核。")
+                        st.info("📩 請同時 WhatsApp 通知管理員（可加快審核）")
+                        
+                        # 清除 session 狀態
+                        for key in ['selected_plan', 'plan_price', 'applied_promo', 'discount_type', 'discount_value']:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        st.rerun()
 
 # ============================================================
 # 8. 後台所有模組
@@ -1180,7 +1217,7 @@ def admin_finance():
             st.success("✅ 已記錄")
             st.rerun()
 
-# ---------- 8.4 優惠碼管理（已加入折扣設定） ----------
+# ---------- 8.4 優惠碼管理 ----------
 def admin_promo_codes():
     st.subheader("🎟️ 優惠碼管理")
     promos = load_promos()
@@ -1189,7 +1226,6 @@ def admin_promo_codes():
         st.write("現有優惠碼")
         if promos:
             df = pd.DataFrame.from_dict(promos, orient='index')
-            # 確保顯示折扣資訊
             if 'discount_type' not in df.columns:
                 df['discount_type'] = 'percentage'
             if 'discount_value' not in df.columns:
@@ -1487,8 +1523,123 @@ def admin_security():
         else:
             st.error("用戶不存在")
 
+# ---------- 8.11 付款審核（新功能） ----------
+def admin_payment_review():
+    st.subheader("📤 付款審核")
+    
+    proofs_data = load_payment_proofs()
+    records = proofs_data.get('proof_records', [])
+    
+    if not records:
+        st.info("暫時沒有付款申請記錄")
+        return
+    
+    # 分為待審核、已通過、已拒絕
+    pending = [r for r in records if r.get('status') == 'pending']
+    approved = [r for r in records if r.get('status') == 'approved']
+    rejected = [r for r in records if r.get('status') == 'rejected']
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("⏳ 待審核", len(pending))
+    col2.metric("✅ 已通過", len(approved))
+    col3.metric("❌ 已拒絕", len(rejected))
+    
+    st.divider()
+    
+    # 顯示待審核記錄
+    st.subheader("⏳ 待審核付款申請")
+    
+    if not pending:
+        st.info("🎉 目前沒有待審核嘅付款申請")
+    else:
+        for idx, rec in enumerate(pending):
+            with st.container():
+                col1, col2, col3 = st.columns([2, 2, 1])
+                with col1:
+                    st.markdown(f"**👤 用戶：** {rec.get('username', '未知')}")
+                    st.markdown(f"**📌 方案：** {rec.get('plan_name', '未知')}")
+                    st.markdown(f"**💰 金額：** ${rec.get('final_price', 0):.2f}")
+                    if rec.get('discount_applied'):
+                        st.markdown(f"**🎟️ 折扣：** {rec.get('discount_desc', '')}")
+                    if rec.get('promo_code'):
+                        st.markdown(f"**優惠碼：** {rec.get('promo_code')}")
+                with col2:
+                    st.markdown(f"**📅 提交時間：** {rec.get('uploaded_at', '未知')}")
+                    # 顯示圖片
+                    filename = rec.get('filename')
+                    if filename:
+                        filepath = os.path.join(PAYMENT_PROOFS_DIR, filename)
+                        if os.path.exists(filepath):
+                            try:
+                                image = Image.open(filepath)
+                                st.image(image, caption="過數證明", width=200)
+                            except:
+                                st.warning("無法載入圖片")
+                        else:
+                            st.warning("圖片檔案不存在")
+                with col3:
+                    # 審核按鈕
+                    if st.button("✅ 確認付款並升級", key=f"approve_{idx}"):
+                        # 升級用戶
+                        users = load_users()
+                        username = rec.get('username')
+                        if username in users:
+                            plan = rec.get('plan', 'month')
+                            days = get_plan_days(plan)
+                            users[username]['is_paid'] = True
+                            users[username]['group'] = 'VIP'
+                            users[username]['paid_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            users[username]['expiry_date'] = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+                            users[username]['plan'] = plan
+                            save_users(users)
+                            
+                            # 如果有用優惠碼，標記為已使用
+                            promo_code = rec.get('promo_code')
+                            if promo_code:
+                                promos = load_promos()
+                                if promo_code in promos:
+                                    promos[promo_code]['used'] = True
+                                    promos[promo_code]['used_by'] = username
+                                    promos[promo_code]['used_at'] = datetime.now().isoformat()
+                                    save_promos(promos)
+                            
+                            # 更新審核記錄
+                            rec['status'] = 'approved'
+                            rec['approved_at'] = datetime.now().isoformat()
+                            rec['approved_by'] = st.session_state.username
+                            save_payment_proofs(proofs_data)
+                            
+                            log_admin_action(st.session_state.username, f"批准付款申請：{username} - {rec.get('plan_name')}")
+                            st.success(f"✅ {username} 已升級為付費用戶！")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ 用戶 {username} 不存在")
+                    
+                    if st.button("❌ 拒絕", key=f"reject_{idx}"):
+                        rec['status'] = 'rejected'
+                        rec['rejected_at'] = datetime.now().isoformat()
+                        rec['rejected_by'] = st.session_state.username
+                        save_payment_proofs(proofs_data)
+                        log_admin_action(st.session_state.username, f"拒絕付款申請：{rec.get('username')}")
+                        st.warning(f"已拒絕 {rec.get('username')} 嘅付款申請")
+                        st.rerun()
+                
+                st.divider()
+    
+    # 顯示已通過記錄（摺疊）
+    if approved:
+        with st.expander(f"✅ 已通過記錄（{len(approved)}）"):
+            df_approved = pd.DataFrame(approved)
+            st.dataframe(df_approved[['username', 'plan_name', 'final_price', 'uploaded_at', 'approved_at']], use_container_width=True)
+    
+    # 顯示已拒絕記錄（摺疊）
+    if rejected:
+        with st.expander(f"❌ 已拒絕記錄（{len(rejected)}）"):
+            df_rejected = pd.DataFrame(rejected)
+            st.dataframe(df_rejected[['username', 'plan_name', 'final_price', 'uploaded_at']], use_container_width=True)
+
 # ============================================================
-# 9. 後台頁面
+# 9. 後台頁面（已加入付款審核分頁）
 # ============================================================
 def admin_page():
     if 'admin_authenticated' not in st.session_state:
@@ -1530,6 +1681,7 @@ def admin_page():
         "🎟️ 優惠碼", 
         "📈 預測監控", 
         "⏰ 訂閱管理", 
+        "📤 付款審核",    # 新加
         "📡 監控", 
         "📝 內容", 
         "🤖 自動化", 
@@ -1548,12 +1700,14 @@ def admin_page():
     with tabs[5]:
         admin_subscription()
     with tabs[6]:
-        admin_monitoring() if CONFIG["module_monitoring"] else st.info("模組已關閉")
+        admin_payment_review()   # 新加
     with tabs[7]:
-        admin_content() if CONFIG["module_content"] else st.info("模組已關閉")
+        admin_monitoring() if CONFIG["module_monitoring"] else st.info("模組已關閉")
     with tabs[8]:
-        admin_automation() if CONFIG["module_automation"] else st.info("模組已關閉")
+        admin_content() if CONFIG["module_content"] else st.info("模組已關閉")
     with tabs[9]:
+        admin_automation() if CONFIG["module_automation"] else st.info("模組已關閉")
+    with tabs[10]:
         admin_security() if CONFIG["module_security"] else st.info("模組已關閉")
 
 # ============================================================
