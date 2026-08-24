@@ -1,14 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - Streamlit 網頁版
-用法: streamlit run app_streamlit.py
+賽馬預測系統 - Streamlit 網頁版（Cloud 修正版）
 """
 
 import streamlit as st
 import pandas as pd
 import subprocess
 import os
+import sys
 from datetime import datetime
 
 st.set_page_config(page_title="🏇 賽馬預測系統", layout="wide")
@@ -17,9 +17,14 @@ st.set_page_config(page_title="🏇 賽馬預測系統", layout="wide")
 st.title("🏇 賽馬預測系統")
 st.markdown("AI 驅動・即時預測・彩池推薦")
 
-# 設定工作目錄
-BASE_DIR = r'C:\Users\defaultuser100000\Desktop1'
+# ============================================================
+# 設定工作目錄（Cloud 適用）
+# ============================================================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 os.chdir(BASE_DIR)
+
+# 除錯：顯示當前目錄（可選）
+# st.write(f"當前工作目錄：{os.getcwd()}")
 
 # ============================================================
 # 側邊欄控制
@@ -40,7 +45,7 @@ with st.sidebar:
     st.divider()
     
     # 系統狀態
-    st.caption(f"📁 工作目錄：{BASE_DIR}")
+    st.caption(f"📁 工作目錄：{os.getcwd()}")
 
 # ============================================================
 # 主區域
