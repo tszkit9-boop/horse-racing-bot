@@ -2,8 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 SHTSN 36特徵三核心賽馬AI預測系統 — Streamlit 網頁版
-包含：預測、特徵工程、個人儀表板、預測歷史、準確度統計、後台七大模組、優惠碼管理
-依賴：predict_race_card.py, model_backtest_final.py, users.json, 模型檔案等
+已整合 CONFIG 功能開關，所有設定集中管理
 """
 
 import streamlit as st
@@ -17,6 +16,30 @@ from datetime import datetime, timedelta
 import plotly.express as px
 import plotly.graph_objects as go
 from pathlib import Path
+
+# ============================================================
+# 🔐 功能開關（全部中文說明）
+# ============================================================
+CONFIG = {
+    # ----- 基本設定 -----
+    "enable_registration": False,      # 是否啟用「用戶註冊」功能（False = 任何人都用得，唔使註冊）
+    "enable_payment": False,           # 是否啟用「付費功能」（False = 全部免費，唔使俾錢）
+    "enable_admin": True,              # 是否顯示「後台管理」按鈕（True = 會顯示）
+    "currency": "HKD",                 # 貨幣單位（HKD = 港幣）
+    "free_limit": 2,                   # 免費用戶可以預測幾多場（2場 = 免費試玩2場）
+    "subscription_price": 9.99,        # 每月訂閱價格（港幣 $9.99）
+    "admin_password": "admin123",      # 後台管理員密碼（請改為你嘅密碼）
+    
+    # ----- 後台七大模組開關（全部可以獨立開關） -----
+    "module_user_management": True,    # 用戶管理（進階）：睇到所有用戶、開通/取消訂閱、加備註
+    "module_analytics": True,          # 數據分析與統計：睇到用戶增長、活躍度、功能使用分佈
+    "module_finance": True,            # 財務管理：記錄收入、睇到月收入/年收入
+    "module_monitoring": True,         # 系統監控：檢查檔案狀態、錯誤日誌、系統資訊
+    "module_content": True,            # 內容管理：公告、上傳排位表、FAQ
+    "module_automation": True,         # 自動化工具：到期提醒、自動開通設定
+    "module_security": True,           # 安全與權限：操作日誌、多管理員、IP限制
+    "module_promo": True,              # 優惠碼管理：建立、管理、應用優惠碼
+}
 
 # ---------- 頁面設定 ----------
 st.set_page_config(
@@ -51,15 +74,15 @@ except ImportError as e:
 # ---------- 工具函數 ----------
 @st.cache_resource
 def load_user_data():
-    """載入用戶數據，若無則建立"""
+    """載入用戶數據，若無則建立（使用 CONFIG 中的 admin_password）"""
     if USER_FILE.exists():
         with open(USER_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
     else:
-        # 建立預設管理員
+        # 建立預設管理員，密碼使用 CONFIG["admin_password"]
         default = {
             "admin": {
-                "password": hashlib.md5("admin123".encode()).hexdigest(),
+                "password": hashlib.md5(CONFIG["admin_password"].encode()).hexdigest(),
                 "role": "admin",
                 "subscription": "vip",
                 "free_used": 0,
@@ -92,7 +115,8 @@ def get_subscription(username):
     return users.get(username, {}).get("subscription", "free")
 
 def get_free_limit(role):
-    return 2 if role == "free" else 9999
+    # 使用 CONFIG 中的 free_limit
+    return CONFIG["free_limit"] if role == "free" else 9999
 
 def can_predict(username):
     users = load_user_data()
@@ -177,7 +201,6 @@ def apply_promo(username, code):
 def run_prediction(race_date, race_no):
     """調用預測核心，回傳結果 DataFrame 和建議投注"""
     try:
-        # 假設 predict_race 返回 (預測結果df, 推薦彩池)
         result_df, recommendations = predict_race(race_date, race_no)
         return result_df, recommendations
     except Exception as e:
@@ -186,49 +209,54 @@ def run_prediction(race_date, race_no):
 
 # ---------- 準確度統計 ----------
 def get_accuracy_stats(username):
-    """比對用戶預測歷史與實際賽果，計算命中率、ROI等"""
-    # 這裡需要從預測歷史和實際結果比對，但為簡化，我們模擬
-    # 實際應從 prediction_history/ 讀取並與 ALL_DATA_MERGED 對比
+    """比對用戶預測歷史與實際賽果，計算命中率、ROI等（此處為模擬）"""
     history = load_prediction_history(username)
     if not history:
         return None
-    # 假設每個歷史記錄包含 prediction 和實際結果，但我們暫時返回模擬數據
-    # 真實實現應呼叫 compare_results.py 或自行比對
+    # 實際應從 prediction_history/ 讀取並與 ALL_DATA_MERGED 對比
     return {
         "total": len(history),
         "hits": int(len(history)*0.3955),  # 模擬
         "roi": 0.5821
     }
 
-# ---------- 後台模組 ----------
+# ---------- 後台模組（根據 CONFIG 開關決定是否顯示） ----------
 def admin_user_management():
+    if not CONFIG["module_user_management"]:
+        st.info("此模組已被管理員關閉")
+        return
     st.subheader("👥 用戶管理")
     users = load_user_data()
     df = pd.DataFrame.from_dict(users, orient='index')
     st.dataframe(df)
-    # 編輯功能略，可擴展
 
 def admin_analytics():
+    if not CONFIG["module_analytics"]:
+        st.info("此模組已被管理員關閉")
+        return
     st.subheader("📊 數據分析")
-    # DAU 趨勢、功能使用分佈
     st.info("此處顯示 DAU 趨勢圖表及功能使用統計（需整合日誌數據）")
-    # 模擬圖表
     dates = pd.date_range(end=datetime.now(), periods=30)
     dau = np.random.randint(10, 50, size=30)
     fig = px.line(x=dates, y=dau, title="DAU 趨勢 (最近30天)")
     st.plotly_chart(fig, use_container_width=True)
 
 def admin_finance():
+    if not CONFIG["module_finance"]:
+        st.info("此模組已被管理員關閉")
+        return
     st.subheader("💰 財務管理")
     users = load_user_data()
     paid_users = [u for u in users.values() if u.get("subscription") in ["paid", "vip"]]
     total_paid = len(paid_users)
-    monthly_income = total_paid * 9.99
+    monthly_income = total_paid * CONFIG["subscription_price"]
     st.metric("付費用戶數", total_paid)
-    st.metric("估計月收入 (HKD)", f"${monthly_income:.2f}")
-    # 可加上收入記錄
+    st.metric(f"估計月收入 ({CONFIG['currency']})", f"{CONFIG['currency']} {monthly_income:.2f}")
 
 def admin_promo():
+    if not CONFIG["module_promo"]:
+        st.info("此模組已被管理員關閉")
+        return
     st.subheader("🎟️ 優惠碼管理")
     promos = load_promos()
     col1, col2 = st.columns(2)
@@ -261,15 +289,16 @@ def admin_promo():
                     st.error(msg)
 
 def admin_monitoring():
+    if not CONFIG["module_monitoring"]:
+        st.info("此模組已被管理員關閉")
+        return
     st.subheader("📡 系統監控")
-    # 顯示檔案狀態、錯誤日誌
     files = [DATA_FILE, RACECARD_FILE, XGB_MODEL, CAT_MODEL, RANK_MODEL]
     for f in files:
         if f.exists():
             st.success(f"✅ {f.name} 存在 ({f.stat().st_size/1024:.1f} KB)")
         else:
             st.error(f"❌ {f.name} 不存在")
-    # 錯誤日誌（若存在 log 檔）
     log_file = BASE_DIR / "error.log"
     if log_file.exists():
         with open(log_file, 'r') as lf:
@@ -277,19 +306,23 @@ def admin_monitoring():
             st.text_area("最近錯誤日誌", ''.join(lines), height=200)
 
 def admin_content():
+    if not CONFIG["module_content"]:
+        st.info("此模組已被管理員關閉")
+        return
     st.subheader("📝 內容管理")
     st.text_area("公告內容", value="歡迎使用 SHTSN 賽馬AI預測系統！", height=100)
     uploaded_file = st.file_uploader("上傳排位表 (CSV)", type=['csv'])
     if uploaded_file:
-        # 儲存至指定路徑
         with open(RACECARD_FILE, 'wb') as f:
             f.write(uploaded_file.getbuffer())
         st.success("排位表已更新！")
-    # FAQ
     faq = st.text_area("FAQ (JSON格式)", value='[{"問":"如何使用？","答":"請參考說明"}]')
     st.info("FAQ 儲存功能可自行實現")
 
 def admin_automation():
+    if not CONFIG["module_automation"]:
+        st.info("此模組已被管理員關閉")
+        return
     st.subheader("🤖 自動化工具")
     st.write("到期提醒設定")
     days = st.number_input("提前幾天提醒", min_value=1, value=3)
@@ -298,6 +331,9 @@ def admin_automation():
     st.write("自動開通設定 (模擬)")
 
 def admin_security():
+    if not CONFIG["module_security"]:
+        st.info("此模組已被管理員關閉")
+        return
     st.subheader("🔐 安全與權限")
     st.write("操作日誌 (模擬)")
     st.dataframe(pd.DataFrame({
@@ -322,7 +358,7 @@ def main():
     
     # 用戶登入區
     if "username" not in st.session_state:
-        st.session_state.username = "admin"  # 預設管理員
+        st.session_state.username = "admin"
         st.session_state.role = "admin"
     username = st.sidebar.text_input("用戶名", value=st.session_state.username)
     password = st.sidebar.text_input("密碼", type="password")
@@ -347,12 +383,15 @@ def main():
         st.sidebar.markdown(f"**剩餘免費場次:** {limit - used if role=='free' else '∞'}")
         st.sidebar.markdown(f"**總預測次數:** {load_user_data().get(user, {}).get('total_predictions', 0)}")
     
-    # 導航
+    # 導航菜單（根據 CONFIG 及用戶角色動態顯示）
     menu = ["🏠 主頁", "🔮 預測", "📊 個人儀表板", "📜 預測歷史", "🎯 準確度統計"]
-    if st.session_state.get("role") in ["admin", "vip"]:
+    # 如果啟用了後台管理且用戶為 admin 或 vip，顯示後台管理
+    if CONFIG["enable_admin"] and st.session_state.get("role") in ["admin", "vip"]:
         menu.append("⚙️ 後台管理")
-    if st.session_state.get("role") in ["admin"]:
+    # 優惠碼管理獨立顯示（僅 admin）
+    if CONFIG["enable_admin"] and st.session_state.get("role") == "admin" and CONFIG["module_promo"]:
         menu.append("🎟️ 優惠碼管理 (後台)")
+    
     choice = st.sidebar.radio("導航", menu)
     
     st.sidebar.markdown("---")
@@ -376,13 +415,12 @@ def main():
     
     elif choice == "🔮 預測":
         st.title("🔮 賽事預測")
-        # 選擇日期和場次
         today = datetime.now().date()
         race_date = st.date_input("賽事日期", today)
         race_no = st.number_input("場次", min_value=1, max_value=12, value=9)
         if st.button("執行預測"):
             if not can_predict(st.session_state.username)[0]:
-                st.warning("免費場次已用完，請升級付費或使用優惠碼。")
+                st.warning(f"免費場次已用完，請升級付費（每月 {CONFIG['currency']} {CONFIG['subscription_price']}）或使用優惠碼。")
             else:
                 with st.spinner("正在預測，請稍候..."):
                     result_df, rec = run_prediction(race_date.strftime("%Y-%m-%d"), race_no)
@@ -392,7 +430,6 @@ def main():
                     if rec:
                         st.subheader("推薦彩池")
                         st.write(rec)
-                    # 記錄預測
                     record_prediction(st.session_state.username, race_date.strftime("%Y-%m-%d"), race_no, result_df.to_dict())
                     st.info("預測已記錄至歷史")
     
@@ -419,7 +456,6 @@ def main():
         if history:
             df_hist = pd.DataFrame(history)
             st.dataframe(df_hist)
-            # 可下載
             csv = df_hist.to_csv(index=False)
             st.download_button("下載歷史 CSV", csv, "prediction_history.csv")
         else:
@@ -434,7 +470,6 @@ def main():
             col1.metric("總預測場次", stats["total"])
             col2.metric("命中次數", stats["hits"])
             col3.metric("ROI", f"{stats['roi']*100:.2f}%")
-            # 繪圖
             fig = go.Figure(data=[go.Bar(x=["命中", "未命中"], y=[stats["hits"], stats["total"]-stats["hits"]])])
             st.plotly_chart(fig, use_container_width=True)
         else:
@@ -442,27 +477,66 @@ def main():
     
     elif choice == "⚙️ 後台管理":
         st.title("⚙️ 後台管理七大模組")
-        tabs = st.tabs(["👥 用戶管理", "📊 數據分析", "💰 財務管理", "🎟️ 優惠碼", "📡 系統監控", "📝 內容管理", "🤖 自動化", "🔐 安全權限"])
-        with tabs[0]:
-            admin_user_management()
-        with tabs[1]:
-            admin_analytics()
-        with tabs[2]:
-            admin_finance()
-        with tabs[3]:
-            admin_promo()
-        with tabs[4]:
-            admin_monitoring()
-        with tabs[5]:
-            admin_content()
-        with tabs[6]:
-            admin_automation()
-        with tabs[7]:
-            admin_security()
+        # 動態構建 tabs，只顯示已開啟的模組
+        tabs_list = []
+        if CONFIG["module_user_management"]:
+            tabs_list.append("👥 用戶管理")
+        if CONFIG["module_analytics"]:
+            tabs_list.append("📊 數據分析")
+        if CONFIG["module_finance"]:
+            tabs_list.append("💰 財務管理")
+        if CONFIG["module_promo"]:
+            tabs_list.append("🎟️ 優惠碼")
+        if CONFIG["module_monitoring"]:
+            tabs_list.append("📡 系統監控")
+        if CONFIG["module_content"]:
+            tabs_list.append("📝 內容管理")
+        if CONFIG["module_automation"]:
+            tabs_list.append("🤖 自動化")
+        if CONFIG["module_security"]:
+            tabs_list.append("🔐 安全權限")
+        
+        if not tabs_list:
+            st.warning("所有後台模組已被管理員關閉，請至 CONFIG 開啟。")
+        else:
+            tabs = st.tabs(tabs_list)
+            tab_idx = 0
+            if CONFIG["module_user_management"]:
+                with tabs[tab_idx]:
+                    admin_user_management()
+                tab_idx += 1
+            if CONFIG["module_analytics"]:
+                with tabs[tab_idx]:
+                    admin_analytics()
+                tab_idx += 1
+            if CONFIG["module_finance"]:
+                with tabs[tab_idx]:
+                    admin_finance()
+                tab_idx += 1
+            if CONFIG["module_promo"]:
+                with tabs[tab_idx]:
+                    admin_promo()
+                tab_idx += 1
+            if CONFIG["module_monitoring"]:
+                with tabs[tab_idx]:
+                    admin_monitoring()
+                tab_idx += 1
+            if CONFIG["module_content"]:
+                with tabs[tab_idx]:
+                    admin_content()
+                tab_idx += 1
+            if CONFIG["module_automation"]:
+                with tabs[tab_idx]:
+                    admin_automation()
+                tab_idx += 1
+            if CONFIG["module_security"]:
+                with tabs[tab_idx]:
+                    admin_security()
+                tab_idx += 1
     
     elif choice == "🎟️ 優惠碼管理 (後台)":
         st.title("🎟️ 優惠碼管理")
-        admin_promo()  # 功能同上
+        admin_promo()  # 重用函數，內部已檢查開關
     
     # 頁腳
     st.sidebar.markdown("---")
