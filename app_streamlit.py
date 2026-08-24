@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 終極完整版（後台七大模組 + 優惠碼管理）
+賽馬預測系統 - 終極完整版（預測 + 七大模組 + 優惠碼管理）
 """
 
 import streamlit as st
@@ -18,10 +18,9 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # ============================================================
-# 🔐 功能開關（所有模組獨立控制）
+# 🔐 功能開關
 # ============================================================
 CONFIG = {
-    # ----- 基本設定 -----
     "enable_registration": False,
     "enable_payment": False,
     "enable_admin": True,
@@ -29,8 +28,6 @@ CONFIG = {
     "free_limit": 2,
     "subscription_price": 9.99,
     "admin_password": "admin123",
-    
-    # ----- 七大模組開關 -----
     "module_user_management": True,
     "module_analytics": True,
     "module_finance": True,
@@ -38,7 +35,7 @@ CONFIG = {
     "module_content": True,
     "module_automation": True,
     "module_security": True,
-    "module_promo": True,          # 優惠碼管理（獨立模組）
+    "module_promo": True,
 }
 
 # ============================================================
@@ -52,7 +49,7 @@ st.set_page_config(
 )
 
 # ============================================================
-# 2. 數據檔案
+# 2. 數據讀寫函數
 # ============================================================
 USER_DATA_FILE = 'users.json'
 FINANCE_FILE = 'finance.json'
@@ -61,9 +58,6 @@ AUTOMATION_FILE = 'automation.json'
 CONTENT_FILE = 'content.json'
 PROMO_FILE = 'promo_codes.json'
 
-# ============================================================
-# 3. 數據讀寫函數
-# ============================================================
 def load_json(file):
     if os.path.exists(file):
         with open(file, 'r', encoding='utf-8') as f:
@@ -115,7 +109,7 @@ def generate_promo_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
 # ============================================================
-# 4. 模型載入 + 特徵工程（請從你原有檔案複製）
+# 3. 模型載入
 # ============================================================
 @st.cache_resource
 def load_models():
@@ -134,15 +128,17 @@ def load_models():
         return None, None, None
 
 # ============================================================
-# 此處請貼上你原本嘅 FEATURES_EN, EXPECTED_FEATURES, NAME_MAPPING
-# 以及 standardize_columns_safe, ensure_series, get_finish_column,
-# safe_parse_dates, get_latest_features, compute_stats,
-# load_horse_name_map, generate_pool_recommendations, run_prediction
-# 等函數（從你原有 app_streamlit.py 複製）
+# 4. 特徵工程函數（請從你原有檔案複製過來）
+# ============================================================
+# ⚠️ 請將你原本嘅 FEATURES_EN、EXPECTED_FEATURES、NAME_MAPPING
+# 以及 standardize_columns_safe、ensure_series、get_finish_column、
+# safe_parse_dates、get_latest_features、compute_stats、
+# load_horse_name_map、generate_pool_recommendations、run_prediction
+# 等函數貼上到呢個位置（從你原有 app_streamlit.py 複製）
 # ============================================================
 
 # ============================================================
-# 5. 登入/註冊頁面
+# 5. 登入/註冊
 # ============================================================
 def login_page():
     st.title("🔐 登入 / 註冊")
@@ -193,17 +189,9 @@ def show_paywall():
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
     st.markdown(f"""
     ### 💳 升級至付費版（{CONFIG['currency']}）
-    **付費版功能：**
-    - ✅ 無限場次預測
-    - ✅ 全部彩池推薦
-    - ✅ 賽果對比
-    - ✅ 歷史記錄
-    **價格：** 每月 {CONFIG['currency']} {CONFIG['subscription_price']:.2f}
-    **付款方式：**
-    1. FPS 轉數快：`你的FPS ID`
-    2. PayMe：`你的PayMe連結`
-    3. 銀行轉帳：`你的戶口號碼`
-    📩 付款後請將入數紙 WhatsApp 到 `你的電話號碼`，我哋會喺 30 分鐘內為你開通。
+    每月 {CONFIG['currency']} {CONFIG['subscription_price']:.2f}
+    **付款方式：** FPS / PayMe / 銀行轉帳
+    📩 付款後 WhatsApp 通知開通
     """)
     if CONFIG["enable_admin"]:
         with st.expander("🔐 管理員開通"):
@@ -467,7 +455,7 @@ def module_security():
         st.success("✅ 已儲存")
 
 # ============================================================
-# 🎫 優惠碼管理（獨立模組）
+# 🎫 優惠碼管理
 # ============================================================
 def module_promo_codes():
     st.subheader("🎫 優惠碼管理")
@@ -744,9 +732,9 @@ def main():
                     return
         date_str = date.strftime('%Y-%m-%d')
         with st.spinner(f"執行預測 {date_str} 第 {race_no} 場..."):
-            # 此處請呼叫你原本嘅 run_prediction 函數
+            # ⚠️ 請將下面嘅示範程式碼換成你原本嘅 run_prediction 函數
             st.success(f"✅ {date_str} 第 {race_no} 場 預測完成")
-            st.info("（此處顯示預測 TOP 5 同彩池推薦）")
+            st.info("（請將 run_prediction 函數貼上到此處）")
             if CONFIG["enable_payment"]:
                 users = load_users()
                 if st.session_state.username in users:
@@ -757,7 +745,7 @@ def main():
 
     st.divider()
     st.caption(f"🕐 最後更新：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    st.caption("🔐 數據來源：HKJC | 系統版本：v11.0-終極企業版")
+    st.caption("🔐 數據來源：HKJC | 系統版本：v12.0-終極完整版")
 
 if __name__ == '__main__':
     main()
