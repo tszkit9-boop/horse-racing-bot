@@ -26,7 +26,7 @@ from email.mime.multipart import MIMEMultipart
 # ============================================================
 CONFIG = {
     # ----- 基本設定 -----
-    "enable_registration": False,       # 是否啟用「用戶註冊」功能（True = 需要註冊登入）
+    "enable_registration": True,       # 是否啟用「用戶註冊」功能（True = 需要註冊登入）
     "enable_payment": False,           # 是否啟用「付費功能」（False = 全部免費）
     "enable_admin": True,              # 是否顯示「後台管理」按鈕
     "currency": "HKD",                 # 貨幣單位
