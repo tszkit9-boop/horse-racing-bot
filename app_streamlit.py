@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版（已修復所有重複ID錯誤）
+賽馬預測系統 - 完整版（已修正所有重複 key 錯誤）
 """
 
 import streamlit as st
@@ -1062,8 +1062,9 @@ def admin_subscription():
 
     auto = load_json(AUTOMATION_FILE)
     remind_days = auto.get('remind_days', 3)
-    new_remind = st.number_input("提前幾天提醒", min_value=1, value=remind_days, key="remind_days_input")
-    if st.button("儲存提醒設定", key="save_remind"):
+    # 🔧 修改 key 為唯一
+    new_remind = st.number_input("提前幾天提醒", min_value=1, value=remind_days, key="remind_days_sub")
+    if st.button("儲存提醒設定", key="save_remind_sub"):
         auto['remind_days'] = new_remind
         save_json(AUTOMATION_FILE, auto)
         st.success(f"✅ 已設為提前 {new_remind} 天提醒")
@@ -1187,17 +1188,18 @@ def admin_content():
             f.write(uploaded.getbuffer())
         st.success("✅ 排位表已更新")
 
-# ---------- 8.9 自動化工具（已修復） ----------
+# ---------- 8.9 自動化工具（已修正 key） ----------
 def admin_automation():
     st.subheader("🤖 自動化工具")
     auto = load_json(AUTOMATION_FILE)
+    # 🔧 修改 key 為唯一
     days = st.number_input(
         "提前幾天提醒",
         min_value=1,
         value=auto.get('remind_days', 3),
-        key="remind_days_input"           # ✅ 加入唯一 key
+        key="remind_days_auto"
     )
-    if st.button("儲存設定", key="save_remind_settings"):   # ✅ 加入唯一 key
+    if st.button("儲存設定", key="save_remind_auto"):
         auto['remind_days'] = days
         save_json(AUTOMATION_FILE, auto)
         st.success("✅ 已儲存")
