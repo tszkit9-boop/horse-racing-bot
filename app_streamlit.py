@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版（付款牆改用 radio 選擇，穩定不閃退）
+賽馬預測系統 - 完整穩定版（付款牆使用表單，不閃退）
 """
 
 import streamlit as st
@@ -792,33 +792,46 @@ def login_page():
                             st.rerun()
 
 # ============================================================
-# 🔧 付款牆（改用 radio 選擇，穩定不閃退）
+# 🔧 付款牆（使用表單，穩定不閃退）
 # ============================================================
 def show_paywall():
+    """顯示付費牆，使用表單確保穩定"""
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
     
     st.subheader("💳 選擇你嘅方案")
     
-    # 使用 radio 選擇方案
+    # 使用 radio 選擇方案（唔會觸發 rerun，只會更新 session_state）
     plan_options = {
         "day": f"☀️ 日費  ${CONFIG['price_day']}   (1天)",
         "month": f"📆 月費  ${CONFIG['price_month']}  (30天)",
         "quarter": f"📅 季費  ${CONFIG['price_quarter']} (90天)"
     }
-    selected_plan_label = st.radio(
-        "揀你嘅付費方案：",
+    
+    # 用 radio 選擇，直接儲存到 session_state
+    selected_key = st.radio(
+        "請選擇付費方案：",
         options=list(plan_options.keys()),
         format_func=lambda x: plan_options[x],
         key="plan_radio",
-        index=None
+        index=0 if st.session_state.get("selected_plan") is None else None
     )
     
-    # 如果揀咗方案，顯示付款細節
-    if selected_plan_label:
-        plan = selected_plan_label
+    # 如果用戶選擇咗，更新 session_state
+    if selected_key:
+        st.session_state["selected_plan"] = selected_key
+        st.session_state["plan_price"] = get_plan_price(selected_key)
+    else:
+        # 如果未有選擇，就用 session_state 入面嘅值（如果存在）
+        if "selected_plan" not in st.session_state:
+            st.session_state["selected_plan"] = None
+            st.session_state["plan_price"] = 0
+    
+    # 如果已經選擇咗方案，顯示付款詳細
+    if st.session_state["selected_plan"] is not None:
+        plan = st.session_state["selected_plan"]
         plan_name = get_plan_name(plan)
         plan_days = get_plan_days(plan)
-        original_price = get_plan_price(plan)
+        original_price = st.session_state["plan_price"]
         final_price = original_price
         
         st.divider()
@@ -858,7 +871,7 @@ def show_paywall():
                             st.session_state['discount_type'] = discount_type
                             st.session_state['discount_value'] = discount_value
                             st.success(f"✅ 優惠碼已套用！")
-                            st.rerun()
+                            st.rerun()  # 只喺成功套用時 refresh 一次顯示折後價
         
         # ---- 計算折後價 ----
         discount_applied = False
@@ -885,23 +898,25 @@ def show_paywall():
                 else:
                     st.success(f"🎉 恭喜！優惠碼已套用，**完全免費！**（{discount_desc}）")
         
-        # ---- 上傳過數證明 ----
+        # ---- 上傳過數證明（用 form） ----
         st.divider()
         st.subheader("📤 上傳過數證明")
         st.caption("請上傳你嘅 FPS / PayMe / 銀行轉帳截圖")
-        uploaded_file = st.file_uploader(
-            "選擇截圖（PNG / JPG）",
-            type=['png', 'jpg', 'jpeg'],
-            key="proof_upload"
-        )
-        if uploaded_file is not None:
-            st.image(uploaded_file, caption="你上傳嘅證明", width=300)
         
-        # ---- 提交按鈕 ----
-        st.divider()
-        col_submit1, col_submit2, col_submit3 = st.columns([1, 2, 1])
-        with col_submit2:
-            if st.button("📩 提交付款申請，等待管理員審核", type="primary", use_container_width=True, key="submit_payment"):
+        # 建立一個表單，提交時不會觸發頁面重新載入（穩定）
+        with st.form(key="payment_form"):
+            uploaded_file = st.file_uploader(
+                "選擇截圖（PNG / JPG）",
+                type=['png', 'jpg', 'jpeg'],
+                key="proof_upload"
+            )
+            if uploaded_file is not None:
+                st.image(uploaded_file, caption="你上傳嘅證明", width=300)
+            
+            # 提交按鈕
+            submit_button = st.form_submit_button("📩 提交付款申請，等待管理員審核")
+            
+            if submit_button:
                 if uploaded_file is None:
                     st.error("❌ 請先上傳過數證明（轉帳截圖）")
                 elif not st.session_state.get('logged_in', False):
@@ -939,8 +954,8 @@ def show_paywall():
                     st.success("✅ 付款申請已提交！管理員將盡快審核。")
                     st.info("📩 請同時 WhatsApp 通知管理員（可加快審核）")
                     
-                    # 清除 session 狀態（清除 radio 選擇）
-                    for k in ['plan_radio', 'applied_promo', 'discount_type', 'discount_value']:
+                    # 清除 session 狀態，重新整理
+                    for k in ['selected_plan', 'plan_price', 'applied_promo', 'discount_type', 'discount_value']:
                         if k in st.session_state:
                             del st.session_state[k]
                     st.rerun()
@@ -1643,7 +1658,7 @@ def main():
     if 'admin_authenticated' not in st.session_state:
         st.session_state.admin_authenticated = False
 
-    # 顯示公告（略）
+    # 顯示公告
     content = load_json(CONTENT_FILE)
     announcements = content.get('announcements', [])
     today = datetime.now().date()
