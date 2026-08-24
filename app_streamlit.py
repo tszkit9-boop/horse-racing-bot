@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版（已移除電郵要求，驗證碼直接顯示）
+賽馬預測系統 - 完整修正版（免費用戶隱藏後台按鈕）
 """
 
 import streamlit as st
@@ -25,7 +25,7 @@ CONFIG = {
     # ----- 基本設定 -----
     "enable_registration": True,       # 是否啟用「用戶註冊」功能（True = 需要註冊登入）
     "enable_payment": False,           # 是否啟用「付費功能」（False = 全部免費）
-    "enable_admin": True,              # 是否顯示「後台管理」按鈕
+    "enable_admin": True,              # 是否顯示「後台管理」按鈕（但只會顯示俾 admin/VIP）
     "currency": "HKD",                 # 貨幣單位
     "free_limit": 2,                   # 免費用戶免費預測場次
     "subscription_price": 9.99,        # 每月訂閱價格
@@ -671,6 +671,7 @@ def login_page():
             if username in users and users[username].get('password') == password:
                 st.session_state.logged_in = True
                 st.session_state.username = username
+                st.session_state.role = users[username].get('group', 'free')
                 st.rerun()
             else:
                 st.error("❌ 用戶名稱或密碼錯誤")
@@ -1249,7 +1250,7 @@ def admin_page():
         admin_security() if CONFIG["module_security"] else st.info("模組已關閉")
 
 # ============================================================
-# 10. 主頁面（含公告顯示）
+# 10. 主頁面（含公告顯示，並修正後台按鈕權限）
 # ============================================================
 def main():
     # 初始化 session state
@@ -1257,6 +1258,8 @@ def main():
         st.session_state.logged_in = False
     if 'username' not in st.session_state:
         st.session_state.username = None
+    if 'role' not in st.session_state:
+        st.session_state.role = 'free'
     if 'usage_count' not in st.session_state:
         st.session_state.usage_count = 0
     if 'show_admin' not in st.session_state:
@@ -1321,7 +1324,8 @@ def main():
         st.markdown("AI 驅動・即時預測・彩池推薦")
         st.caption(f"{datetime.now().strftime('%Y年%m月%d日')} · 36個特徵 · 三模型融合 · 六種彩池")
     with col2:
-        if CONFIG["enable_admin"]:
+        # 🔐 只有 admin 或 VIP 先見到「後台」按鈕
+        if CONFIG["enable_admin"] and st.session_state.get("role") in ["admin", "VIP"]:
             if st.button("🔐 後台", use_container_width=True, key="go_to_admin"):
                 st.session_state.show_admin = True
                 st.session_state.admin_authenticated = False
