@@ -29,7 +29,7 @@ CONFIG = {
     "currency": "HKD",                 # 貨幣單位
     "free_limit": 2,                   # 免費用戶免費預測場次
     "subscription_price": 9.99,        # 每月訂閱價格
-    "admin_password": "z54060437K",    # 後台管理員密碼
+    "admin_password": "Z54060437k",    # 後台管理員密碼
     
     # ----- 驗證碼設定 -----
     "verification_expiry": 5,          # 驗證碼有效期（分鐘）
