@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版（已修正所有重複 key 錯誤）
+賽馬預測系統 - 完整版（已移除電郵要求，驗證碼直接顯示）
 """
 
 import streamlit as st
@@ -17,9 +17,6 @@ from catboost import CatBoostClassifier
 import plotly.express as px
 import plotly.graph_objects as go
 import random
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
 # ============================================================
 # 🔐 功能開關（全部中文說明）
@@ -34,11 +31,7 @@ CONFIG = {
     "subscription_price": 9.99,        # 每月訂閱價格
     "admin_password": "z54060437K",    # 後台管理員密碼
     
-    # ----- 電郵設定（用嚟發驗證碼，可選） -----
-    "smtp_server": "smtp.gmail.com",
-    "smtp_port": 587,
-    "smtp_email": "",                  # 填你嘅電郵（留空則只顯示驗證碼）
-    "smtp_password": "",               # 填你嘅 Gmail 應用程式密碼
+    # ----- 驗證碼設定 -----
     "verification_expiry": 5,          # 驗證碼有效期（分鐘）
     
     # ----- 後台十大模組開關（全部可以獨立開關） -----
@@ -97,9 +90,7 @@ def load_users():
                 "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 "note": "系統管理員",
                 "group": "VIP",
-                "email": "",
                 "phone": "",
-                "email_verified": True,
                 "history": [
                     {"date": "2025-04-09", "race": 9, "horse": "浪漫勇士", "timestamp": "2025-04-09 14:30:00", "predicted_prob": 0.35},
                     {"date": "2025-04-09", "race": 10, "horse": "金鎗六十", "timestamp": "2025-04-09 15:00:00", "predicted_prob": 0.42}
@@ -159,25 +150,6 @@ def generate_promo_code():
 # ---------- 純數字驗證碼 ----------
 def generate_verification_code():
     return ''.join(random.choices('0123456789', k=6))
-
-def send_verification_email(email, code):
-    if not CONFIG.get("smtp_email") or not CONFIG.get("smtp_password"):
-        return False
-    try:
-        msg = MIMEMultipart()
-        msg['From'] = CONFIG["smtp_email"]
-        msg['To'] = email
-        msg['Subject'] = "🏇 賽馬預測系統 - 驗證碼"
-        body = f"你嘅驗證碼係：{code}\n有效期 {CONFIG['verification_expiry']} 分鐘"
-        msg.attach(MIMEText(body, 'plain'))
-        server = smtplib.SMTP(CONFIG["smtp_server"], CONFIG["smtp_port"])
-        server.starttls()
-        server.login(CONFIG["smtp_email"], CONFIG["smtp_password"])
-        server.send_message(msg)
-        server.quit()
-        return True
-    except:
-        return False
 
 # ============================================================
 # 3. 模型載入
@@ -685,7 +657,7 @@ def show_prediction_history(username):
     st.dataframe(df, use_container_width=True)
 
 # ============================================================
-# 6. 登入/註冊（含純數字驗證碼，註冊後即時用得）
+# 6. 登入/註冊（已移除電郵，驗證碼直接顯示）
 # ============================================================
 def login_page():
     st.title("🔐 登入 / 註冊")
@@ -707,7 +679,6 @@ def login_page():
         st.subheader("📝 註冊新帳號")
         with st.form("register_form"):
             new_user = st.text_input("用戶名稱（最少 3 個字）", key="reg_user")
-            email = st.text_input("電郵地址", key="reg_email")
             phone = st.text_input("手機號碼（可選）", key="reg_phone")
             new_pass = st.text_input("密碼", type="password", key="reg_pass")
             new_pass2 = st.text_input("確認密碼", type="password", key="reg_pass2")
@@ -717,24 +688,15 @@ def login_page():
                 verify_code_input = st.text_input("驗證碼", key="reg_verify", placeholder="輸入 6 位數字", max_chars=6)
             with col2:
                 if st.form_submit_button("📨 獲取驗證碼", type="secondary"):
-                    if not email:
-                        st.warning("請先輸入電郵地址")
-                    else:
-                        code = generate_verification_code()
-                        st.session_state['reg_verify_code'] = code
-                        st.session_state['reg_verify_email'] = email
-                        st.session_state['reg_verify_expiry'] = datetime.now() + timedelta(minutes=CONFIG.get('verification_expiry', 5))
-                        if not send_verification_email(email, code):
-                            st.info(f"📧 驗證碼已生成（因為未設定 SMTP，請複製）：{code}")
-                        else:
-                            st.success("✅ 驗證碼已發送到你嘅電郵")
+                    code = generate_verification_code()
+                    st.session_state['reg_verify_code'] = code
+                    st.session_state['reg_verify_expiry'] = datetime.now() + timedelta(minutes=CONFIG.get('verification_expiry', 5))
+                    st.info(f"📧 你嘅驗證碼係：**{code}**（有效期 5 分鐘）")
             
             submitted = st.form_submit_button("註冊")
             if submitted:
                 if len(new_user) < 3:
                     st.error("❌ 用戶名稱至少 3 個字")
-                elif not email or '@' not in email:
-                    st.error("❌ 請輸入有效嘅電郵地址")
                 elif new_pass != new_pass2:
                     st.error("❌ 密碼不一致")
                 elif len(new_pass) < 4:
@@ -749,27 +711,22 @@ def login_page():
                         if new_user in users:
                             st.error("❌ 用戶名稱已被使用")
                         else:
-                            if any(u.get('email') == email for u in users.values()):
-                                st.error("❌ 呢個電郵已經被註冊")
-                            else:
-                                users[new_user] = {
-                                    'password': new_pass,
-                                    'email': email,
-                                    'phone': phone,
-                                    'is_paid': False,
-                                    'paid_date': None,
-                                    'expiry_date': None,
-                                    'free_usage': 0,
-                                    'total_usage': 0,
-                                    'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                    'note': '',
-                                    'group': 'free',
-                                    'history': [],
-                                    'email_verified': True
-                                }
-                                save_users(users)
-                                st.success("✅ 註冊成功！請用你嘅帳號登入。")
-                                st.rerun()
+                            users[new_user] = {
+                                'password': new_pass,
+                                'phone': phone,
+                                'is_paid': False,
+                                'paid_date': None,
+                                'expiry_date': None,
+                                'free_usage': 0,
+                                'total_usage': 0,
+                                'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                'note': '',
+                                'group': 'free',
+                                'history': []
+                            }
+                            save_users(users)
+                            st.success("✅ 註冊成功！請用你嘅帳號登入。")
+                            st.rerun()
 
 # ============================================================
 # 7. 付費牆
@@ -1062,7 +1019,6 @@ def admin_subscription():
 
     auto = load_json(AUTOMATION_FILE)
     remind_days = auto.get('remind_days', 3)
-    # 🔧 修改 key 為唯一
     new_remind = st.number_input("提前幾天提醒", min_value=1, value=remind_days, key="remind_days_sub")
     if st.button("儲存提醒設定", key="save_remind_sub"):
         auto['remind_days'] = new_remind
@@ -1102,7 +1058,6 @@ def admin_content():
     st.subheader("📝 內容管理")
     content = load_json(CONTENT_FILE)
     
-    # 發佈新公告
     with st.expander("📢 發佈新公告", expanded=False):
         col1, col2 = st.columns(2)
         with col1:
@@ -1136,7 +1091,6 @@ def admin_content():
                 st.success("✅ 公告已發佈！")
                 st.rerun()
     
-    # 現有公告列表
     st.subheader("📋 現有公告")
     announcements = content.get('announcements', [])
     today = datetime.now().date()
@@ -1170,7 +1124,6 @@ def admin_content():
     else:
         st.info("暫時冇生效中嘅公告")
     
-    # 公告歷史
     with st.expander("📋 公告歷史（已過期/已刪除）"):
         inactive = [a for a in content.get('announcements', []) if a.get('status') in ['expired', 'deleted']]
         if inactive:
@@ -1179,7 +1132,6 @@ def admin_content():
         else:
             st.info("暫無歷史記錄")
     
-    # 上傳排位表
     st.write("---")
     st.write("上傳排位表")
     uploaded = st.file_uploader("選擇 CSV 排位表", type=['csv'], key="upload_racecard")
@@ -1188,11 +1140,10 @@ def admin_content():
             f.write(uploaded.getbuffer())
         st.success("✅ 排位表已更新")
 
-# ---------- 8.9 自動化工具（已修正 key） ----------
+# ---------- 8.9 自動化工具 ----------
 def admin_automation():
     st.subheader("🤖 自動化工具")
     auto = load_json(AUTOMATION_FILE)
-    # 🔧 修改 key 為唯一
     days = st.number_input(
         "提前幾天提醒",
         min_value=1,
