@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 最終完整版（側邊欄正常・所有功能齊全）
+賽馬預測系統 - 完整更改版（用戶儀表板新增預測統計層）
 """
 
 import streamlit as st
@@ -20,7 +20,7 @@ import random
 from PIL import Image
 
 # ============================================================
-# 🔒 隱藏 Streamlit 平台 UI（保留側邊欄）
+# 🔒 隱藏 Streamlit 平台 UI（只隱藏工具欄，不影響側邊欄）
 # ============================================================
 st.set_page_config(
     page_title="🏇 賽馬預測系統",
@@ -34,10 +34,8 @@ st.set_page_config(
     }
 )
 
-# 只隱藏平台 UI，保留側邊欄
 st.markdown("""
 <style>
-    /* 隱藏平台元素（不影響側邊欄） */
     div[data-testid="stToolbar"] { display: none !important; }
     .stAppDeployButton { display: none !important; }
     #MainMenu { display: none !important; }
@@ -49,66 +47,21 @@ st.markdown("""
     [data-testid="stHeader"] { display: none !important; }
     [data-testid="stDecoration"] { display: none !important; }
     .stApp > header { display: none !important; }
-    
-    /* 確保側邊欄正常顯示 */
     section[data-testid="stSidebar"] {
         display: block !important;
         visibility: visible !important;
         opacity: 1 !important;
+        width: 300px !important;
     }
     section[data-testid="stSidebar"] * {
         display: block !important;
         visibility: visible !important;
         opacity: 1 !important;
     }
-    
-    /* 移除頂部多餘空白 */
     .stApp > header + div {
         padding-top: 0 !important;
     }
 </style>
-<script>
-    function removePlatformUI() {
-        // 只移除平台元素，不動側邊欄
-        const selectors = [
-            'div[data-testid="stToolbar"]',
-            '.stAppDeployButton',
-            '#MainMenu',
-            'footer',
-            'header',
-            'button[kind="share"]',
-            'a[href*="streamlit.io"]',
-            '.st-emotion-cache-1r6slb0',
-            '[data-testid="stHeader"]',
-            '[data-testid="stDecoration"]'
-        ];
-        selectors.forEach(sel => {
-            document.querySelectorAll(sel).forEach(el => el.remove());
-        });
-        // 只移除包含 Manage/Share 的平台元素，不影響側邊欄
-        document.querySelectorAll('button, a, div, span').forEach(el => {
-            if (el.textContent && (
-                el.textContent.includes('Manage') || 
-                el.textContent.includes('Share') || 
-                el.textContent.includes('Settings')
-            )) {
-                // 檢查是否在側邊欄內
-                if (!el.closest('section[data-testid="stSidebar"]')) {
-                    el.remove();
-                    if (el.parentElement && el.parentElement.children.length === 0) {
-                        el.parentElement.remove();
-                    }
-                }
-            }
-        });
-    }
-    removePlatformUI();
-    setInterval(removePlatformUI, 500);
-    new MutationObserver(removePlatformUI).observe(document.body, { 
-        childList: true, 
-        subtree: true 
-    });
-</script>
 """, unsafe_allow_html=True)
 
 # ============================================================
@@ -753,7 +706,7 @@ def run_prediction(date_str, race_no):
     return result, pool_rec
 
 # ============================================================
-# 5. 用戶功能（含邀請獎勵）
+# 5. 用戶功能（已修改 show_user_dashboard 增加預測統計層）
 # ============================================================
 def record_prediction(username, date_str, race_no, horse_name, predicted_prob=None):
     users = load_users()
@@ -821,6 +774,7 @@ def show_user_dashboard(username):
     else:
         level = "🆓 免費用戶"
     
+    # ---- 第一層：用戶基本資料 ----
     st.markdown("---")
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("👤 用戶", username)
@@ -837,12 +791,49 @@ def show_user_dashboard(username):
     if plan:
         st.caption(f"📌 當前方案：{get_plan_name(plan)}")
     
+    # ---- 第二層：邀請獎勵 ----
     if CONFIG.get("enable_invite_reward", True):
         st.markdown("---")
         st.subheader("🎁 邀請獎勵")
-        st.caption(f"你的邀請碼：**{invite_code}**")
-        st.caption(f"已成功邀請 **{invite_count}** 位朋友")
-        st.caption(f"已獲得獎勵次數：**{invite_rewards}** 次（已自動加到你的預測額度）")
+        col_inv1, col_inv2, col_inv3 = st.columns(3)
+        with col_inv1:
+            st.caption(f"你的邀請碼：**{invite_code}**")
+        with col_inv2:
+            st.caption(f"已成功邀請 **{invite_count}** 位朋友")
+        with col_inv3:
+            st.caption(f"已獲得獎勵次數：**{invite_rewards}** 次（已自動加到你的預測額度）")
+    
+    # ---- 第三層：預測統計（新加） ----
+    st.markdown("---")
+    st.subheader("📊 預測統計")
+    
+    # 計算今日預測次數
+    today = datetime.now().strftime('%Y-%m-%d')
+    history = user_data.get('history', [])
+    today_count = sum(1 for h in history if h.get('date') == today)
+    
+    col_p1, col_p2, col_p3, col_p4 = st.columns(4)
+    with col_p1:
+        st.metric("📈 總預測", stats['total_predictions'])
+    with col_p2:
+        st.metric("📅 今日已用", today_count)
+    with col_p3:
+        if limit == -1:
+            st.metric("🔮 剩餘次數", "♾️ 無限")
+        else:
+            remain = max(0, limit - user_data.get('free_usage', 0))
+            st.metric("🔮 剩餘次數", remain)
+    with col_p4:
+        # 快捷預測按鈕
+        if st.button("🚀 去預測", use_container_width=True, key="quick_predict"):
+            st.session_state.page = "預測"
+            st.rerun()
+    
+    # 顯示今日已用場次（如果有的話）
+    if today_count > 0:
+        st.caption(f"📝 今日已進行 {today_count} 次預測")
+    else:
+        st.caption("📝 今日尚未進行預測")
 
 def show_prediction_history(username):
     if not username:
@@ -2094,7 +2085,7 @@ def admin_page():
             tab_functions[name]()
 
 # ============================================================
-# 10. 主頁面（含每日免費重心推介，側邊欄正常顯示）
+# 10. 主頁面（含每日免費重心推介）
 # ============================================================
 def main():
     if 'logged_in' not in st.session_state:
@@ -2226,7 +2217,7 @@ def main():
                 st.rerun()
 
     if CONFIG["enable_registration"] and st.session_state.logged_in:
-        show_user_dashboard(st.session_state.username)
+        show_user_dashboard(st.session_state.username)   # 已更新版本
     elif not CONFIG["enable_registration"]:
         st.info("🔓 目前為公開模式，任何人皆可使用")
 
