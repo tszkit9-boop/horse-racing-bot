@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整修正版（已修復 NameError）
+賽馬預測系統 - 預測控制置中版
 """
 
 import streamlit as st
@@ -51,7 +51,7 @@ st.markdown("""
         display: block !important;
         visibility: visible !important;
         opacity: 1 !important;
-        width: 300px !important;
+        width: 280px !important;
     }
     section[data-testid="stSidebar"] * {
         display: block !important;
@@ -2078,7 +2078,7 @@ def admin_page():
             tab_functions[name]()
 
 # ============================================================
-# 10. 主頁面（已修正 NameError）
+# 10. 主頁面（預測控制移去中間）
 # ============================================================
 def main():
     if 'logged_in' not in st.session_state:
@@ -2196,7 +2196,7 @@ def main():
         except:
             pass
 
-    # 主標題
+    # ----- 主標題 -----
     col1, col2 = st.columns([6, 1])
     with col1:
         st.title("🏇 賽馬預測系統")
@@ -2209,14 +2209,26 @@ def main():
                 st.session_state.admin_authenticated = False
                 st.rerun()
 
+    # ----- 用戶儀表板（包含預測統計） -----
     if CONFIG["enable_registration"] and st.session_state.logged_in:
         show_user_dashboard(st.session_state.username)
     elif not CONFIG["enable_registration"]:
         st.info("🔓 目前為公開模式，任何人皆可使用")
 
-    # ----- 側邊欄（定義 is_super_admin） -----
+    # ----- 預測控制（移到中間） -----
+    st.markdown("---")
+    st.subheader("🎯 賽事預測控制")
+    col_date, col_race, col_btn = st.columns([2, 2, 1])
+    with col_date:
+        date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="predict_date_mid")
+    with col_race:
+        race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race_mid")
+    with col_btn:
+        predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
+
+    # ----- 側邊欄（淨係保留用戶資訊、聯絡方式、導航） -----
     with st.sidebar:
-        st.header("🎯 控制面板")
+        st.header("🎯 用戶資訊")
         if CONFIG["enable_registration"] and st.session_state.logged_in:
             st.write(f"👤 用戶：{st.session_state.username}")
             users = load_users()
@@ -2228,9 +2240,9 @@ def main():
                 used = user_data.get('free_usage', 0)
                 remain = max(0, limit - used)
                 st.info(f"📊 剩餘免費場次：{remain} 場")
-            if st.button("📋 我的預測記錄", key="show_history_btn"):
+            if st.button("📋 我的預測記錄", key="show_history_btn_side"):
                 st.session_state.show_history = not st.session_state.show_history
-            if st.button("🚪 登出", key="logout_btn"):
+            if st.button("🚪 登出", key="logout_btn_side"):
                 for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history']:
                     if key in st.session_state:
                         del st.session_state[key]
@@ -2241,29 +2253,24 @@ def main():
             st.markdown("Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
             st.markdown("[🔗 點擊連結搵我哋](https://t.me/bryhjdjbrbxibvrjskofndhiebdpaq)")
             
-            # ----- 導航選項 -----
             st.divider()
             st.subheader("📌 導航")
-            # ✅ 修正：定義 is_super_admin
             is_super_admin = user_data.get('group') == 'super_admin'
             pages = ["主頁面", "預測", "賽程", "馬匹查詢", "騎師查詢", "對比", "趨勢", "用戶儀表板", "預測歷史"]
             if is_super_admin:
                 pages.append("後台管理")
-            selected = st.selectbox("前往", pages, index=0, key="nav_select")
+            selected = st.selectbox("前往", pages, index=0, key="nav_select_side")
             if selected != st.session_state.get('page', '主頁面'):
                 st.session_state.page = selected
                 st.rerun()
-        
-        # 日期和場次選擇
-        date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="predict_date")
-        race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race")
-        predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn")
 
+    # ----- 顯示歷史記錄 -----
     if CONFIG["enable_registration"] and st.session_state.logged_in and st.session_state.get('show_history', False):
         st.subheader("📋 我的預測記錄")
         show_prediction_history(st.session_state.username)
         st.divider()
 
+    # ----- 今日賽程 -----
     st.subheader("📅 今日賽程")
     try:
         df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
