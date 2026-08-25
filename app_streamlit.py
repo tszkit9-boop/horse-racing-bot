@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版（自動升級 + 自動終止）
+賽馬預測系統 - 完整修正版（自動升級已修復）
 """
 
 import streamlit as st
@@ -1491,7 +1491,7 @@ def admin_security():
             st.error("用戶不存在")
 
 # ============================================================
-# ---------- 8.11 付款審核（完整升級版） ----------
+# ---------- 8.11 付款審核（修正版：按鈕 key 已修復） ----------
 # ============================================================
 def admin_payment_review():
     st.subheader("📤 付款審核")
@@ -1606,17 +1606,15 @@ def admin_payment_review():
                         pass
             with cols[4]:
                 if status == "pending":
-                    col_a, col_r = st.columns(2)
-                    with col_a:
-                        if st.button("✅ 批准", key=f"app_{original_idx}_{username}"):
-                            _approve_payment(rec, proofs_data)
-                            st.rerun()
-                    with col_r:
-                        if st.button("❌ 拒絕", key=f"rej_{original_idx}_{username}"):
-                            _reject_payment(rec, proofs_data)
-                            st.rerun()
+                    # 修正重點：簡化 key，避免 username 可能嘅問題
+                    if st.button("✅ 批准", key=f"approve_{original_idx}"):
+                        _approve_payment(rec, proofs_data)
+                        st.rerun()
+                    if st.button("❌ 拒絕", key=f"reject_{original_idx}"):
+                        _reject_payment(rec, proofs_data)
+                        st.rerun()
                 elif status == "approved":
-                    if st.button("↩️ 退款", key=f"ref_{original_idx}_{username}"):
+                    if st.button("↩️ 退款", key=f"refund_{original_idx}"):
                         _refund_payment(rec, proofs_data)
                         st.rerun()
                 else:
@@ -1633,53 +1631,69 @@ def admin_payment_review():
             st.info("暫無日誌")
 
 
-# ---------- 輔助函數（加入詳細除錯） ----------
+# ---------- 輔助函數（強制升級，含詳細除錯） ----------
 def _approve_payment(rec, proofs_data):
+    """批准付款：更新記錄狀態及用戶權限（強制升級，含詳細除錯）"""
     try:
         st.info("⏳ 開始處理批准...")
         
+        # 1. 更新付款記錄
         rec['status'] = 'approved'
         rec['approved_at'] = datetime.now().isoformat()
         rec['approved_by'] = st.session_state.username
         save_payment_proofs(proofs_data)
-        st.success("✅ 付款記錄已更新")
+        st.success("✅ 1. 付款記錄已更新")
         
+        # 2. 獲取用戶名
         username = rec.get('username')
         if not username:
             st.error("❌ 記錄中缺少 username")
             return
+        st.info(f"👤 2. 正在升級用戶：{username}")
         
-        st.info(f"👤 正在升級用戶：{username}")
-        
+        # 3. 載入用戶數據
         users = load_users()
         if username not in users:
             st.error(f"❌ 用戶 {username} 不存在於 users.json")
-            st.info("📌 請確保 users.json 檔案存在並且包含該用戶")
+            st.info("📌 請確保該用戶已經註冊（存在於 users.json）")
             return
+        st.success(f"✅ 3. 找到用戶 {username}")
         
+        # 4. 獲取方案並計算到期日
         plan = rec.get('plan', 'month')
         days = get_plan_days(plan)
         if days == 0:
             st.warning(f"⚠️ 方案 '{plan}' 無效，使用預設 30 天")
             days = 30
-        
         expiry = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
-        st.info(f"📅 到期日設為：{expiry}（{plan}，{days}天）")
+        st.info(f"📅 4. 到期日設為：{expiry}（{plan}，{days}天）")
         
+        # 5. 更新用戶資料
         users[username]['is_paid'] = True
         users[username]['group'] = 'VIP'
         users[username]['paid_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         users[username]['expiry_date'] = expiry
         users[username]['plan'] = plan
-        users[username]['predictions_limit'] = -1
+        users[username]['predictions_limit'] = -1  # 無限
         
+        # 6. 強制寫入並檢查結果
+        st.write("📝 嘗試寫入 users.json...")
         if save_users(users):
-            st.success(f"✅ {username} 已升級為 VIP！")
+            st.success(f"✅ 5. {username} 已升級為 VIP！")
             st.success(f"📅 到期日：{expiry}")
             st.success(f"♾️ 預測次數：無限")
+            # 記錄操作
             log_admin_action(st.session_state.username, f"批准付款並升級 {username} 為 VIP（{plan}）")
+            
+            # 驗證寫入成功
+            verify_users = load_users()
+            if verify_users.get(username, {}).get('group') == 'VIP':
+                st.success("✅ 6. 寫入驗證成功！users.json 已更新")
+            else:
+                st.error("❌ 6. 寫入驗證失敗！users.json 可能未被更新")
         else:
-            st.error("❌ 儲存 users.json 失敗，請檢查寫入權限")
+            st.error("❌ 儲存 users.json 失敗！請檢查檔案權限或路徑")
+            st.info("可能原因：1) 檔案被鎖定 2) 權限不足 3) 磁碟空間不足")
             
     except Exception as e:
         st.error(f"❌ 升級過程中發生錯誤：{e}")
@@ -1688,6 +1702,7 @@ def _approve_payment(rec, proofs_data):
 
 
 def _reject_payment(rec, proofs_data):
+    """拒絕付款：只更新記錄狀態"""
     rec['status'] = 'rejected'
     rec['approved_at'] = datetime.now().isoformat()
     rec['approved_by'] = st.session_state.username
@@ -1697,6 +1712,7 @@ def _reject_payment(rec, proofs_data):
 
 
 def _refund_payment(rec, proofs_data):
+    """退款：降級用戶"""
     users = load_users()
     username = rec.get('username')
     if username in users:
