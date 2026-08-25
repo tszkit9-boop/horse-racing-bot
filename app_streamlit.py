@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 最終完整版（側邊欄有預測選項・所有功能齊全）
+賽馬預測系統 - 完整修正版（已修復 NameError）
 """
 
 import streamlit as st
@@ -20,7 +20,7 @@ import random
 from PIL import Image
 
 # ============================================================
-# 🔒 隱藏 Streamlit 平台 UI（只隱藏工具欄，不影響側邊欄）
+# 🔒 隱藏 Streamlit 平台 UI
 # ============================================================
 st.set_page_config(
     page_title="🏇 賽馬預測系統",
@@ -706,7 +706,7 @@ def run_prediction(date_str, race_no):
     return result, pool_rec
 
 # ============================================================
-# 5. 用戶功能（含預測統計層）
+# 5. 用戶功能
 # ============================================================
 def record_prediction(username, date_str, race_no, horse_name, predicted_prob=None):
     users = load_users()
@@ -774,7 +774,6 @@ def show_user_dashboard(username):
     else:
         level = "🆓 免費用戶"
     
-    # ---- 第一層：用戶基本資料 ----
     st.markdown("---")
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("👤 用戶", username)
@@ -791,7 +790,6 @@ def show_user_dashboard(username):
     if plan:
         st.caption(f"📌 當前方案：{get_plan_name(plan)}")
     
-    # ---- 第二層：邀請獎勵 ----
     if CONFIG.get("enable_invite_reward", True):
         st.markdown("---")
         st.subheader("🎁 邀請獎勵")
@@ -803,10 +801,8 @@ def show_user_dashboard(username):
         with col_inv3:
             st.caption(f"已獲得獎勵次數：**{invite_rewards}** 次（已自動加到你的預測額度）")
     
-    # ---- 第三層：預測統計 ----
     st.markdown("---")
     st.subheader("📊 預測統計")
-    
     today = datetime.now().strftime('%Y-%m-%d')
     history = user_data.get('history', [])
     today_count = sum(1 for h in history if h.get('date') == today)
@@ -848,7 +844,7 @@ def show_prediction_history(username):
     st.dataframe(df, use_container_width=True)
 
 # ============================================================
-# 6. 登入/註冊（含邀請碼）
+# 6. 登入/註冊
 # ============================================================
 def login_page():
     st.title("🔐 登入 / 註冊")
@@ -2082,7 +2078,7 @@ def admin_page():
             tab_functions[name]()
 
 # ============================================================
-# 10. 主頁面（含每日免費重心推介，側邊欄有預測選項）
+# 10. 主頁面（已修正 NameError）
 # ============================================================
 def main():
     if 'logged_in' not in st.session_state:
@@ -2218,7 +2214,7 @@ def main():
     elif not CONFIG["enable_registration"]:
         st.info("🔓 目前為公開模式，任何人皆可使用")
 
-    # ----- 側邊欄（包含「預測」選項） -----
+    # ----- 側邊欄（定義 is_super_admin） -----
     with st.sidebar:
         st.header("🎯 控制面板")
         if CONFIG["enable_registration"] and st.session_state.logged_in:
@@ -2245,9 +2241,11 @@ def main():
             st.markdown("Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
             st.markdown("[🔗 點擊連結搵我哋](https://t.me/bryhjdjbrbxibvrjskofndhiebdpaq)")
             
-            # ----- 導航選項（包含「預測」） -----
+            # ----- 導航選項 -----
             st.divider()
             st.subheader("📌 導航")
+            # ✅ 修正：定義 is_super_admin
+            is_super_admin = user_data.get('group') == 'super_admin'
             pages = ["主頁面", "預測", "賽程", "馬匹查詢", "騎師查詢", "對比", "趨勢", "用戶儀表板", "預測歷史"]
             if is_super_admin:
                 pages.append("後台管理")
@@ -2256,7 +2254,7 @@ def main():
                 st.session_state.page = selected
                 st.rerun()
         
-        # 日期和場次選擇（所有用戶可見）
+        # 日期和場次選擇
         date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="predict_date")
         race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race")
         predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn")
@@ -2286,7 +2284,7 @@ def main():
     except:
         st.info("今日沒有賽事")
 
-    # ----- 執行預測（如果撳咗按鈕） -----
+    # ----- 執行預測 -----
     if predict_btn:
         users = load_users()
         user_data = users.get(st.session_state.username, {})
@@ -2311,7 +2309,6 @@ def main():
                     top4 = result.head(4)
                     top1 = top4.iloc[0]
                     
-                    # 獨贏首選
                     st.markdown("---")
                     st.markdown(f"""
                     <div style="
@@ -2336,7 +2333,6 @@ def main():
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    # 連贏推薦
                     st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🔗 連贏推薦</h3>", unsafe_allow_html=True)
                     col1, col2 = st.columns(2)
                     with col1:
@@ -2363,7 +2359,6 @@ def main():
                         """, unsafe_allow_html=True)
                     st.caption("💡 連贏：揀 2 隻馬，跑出前 2 名（不分順序）即中")
                     
-                    # 三重彩
                     if is_vip:
                         st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🥉 三重彩推薦（4 隻複式）</h3>", unsafe_allow_html=True)
                         cols = st.columns(4)
@@ -2390,7 +2385,6 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
                     
-                    # 四重彩
                     if is_vip:
                         st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🏅 四重彩推薦（4 隻複式）</h3>", unsafe_allow_html=True)
                         cols = st.columns(4)
@@ -2415,7 +2409,6 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
                     
-                    # 總結建議
                     st.divider()
                     st.markdown("""
                     <h3 style='margin-bottom: 10px;'>📋 總結投注建議</h3>
