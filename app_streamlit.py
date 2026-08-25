@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 最終完整版（含獨贏/連贏/三重彩/四重彩橫排顯示）
+賽馬預測系統 - 最終美化完整版（獨贏/連贏/三重彩/四重彩美化顯示）
 """
 
 import streamlit as st
@@ -1835,7 +1835,7 @@ def admin_page():
         admin_security() if CONFIG["module_security"] else st.info("模組已關閉")
 
 # ============================================================
-# 10. 主頁面（已加入免責聲明、獨贏/連贏/三重彩/四重彩顯示）
+# 10. 主頁面（美化版預測結果顯示）
 # ============================================================
 def main():
     if 'logged_in' not in st.session_state:
@@ -1991,81 +1991,147 @@ def main():
                     top4 = result.head(4)
                     top1 = top4.iloc[0]
                     
-                    # --- 獨贏首選 ---
+                    # --- 獨贏首選（美化版特大橫幅） ---
                     st.markdown("---")
                     st.markdown(f"""
                     <div style="
-                        background: linear-gradient(135deg, #ff6f00, #ffab00);
-                        border-radius: 15px;
-                        padding: 20px 30px;
+                        background: linear-gradient(135deg, #1a237e, #0d47a1, #1565c0);
+                        border-radius: 20px;
+                        padding: 25px 30px;
                         text-align: center;
-                        box-shadow: 0 4px 15px rgba(255, 111, 0, 0.3);
+                        box-shadow: 0 8px 32px rgba(21, 101, 192, 0.4);
+                        border: 2px solid rgba(255, 215, 0, 0.3);
+                        position: relative;
+                        overflow: hidden;
                     ">
-                        <span style="font-size: 18px; color: #fff; font-weight: bold;">🏆 獨贏首選</span><br>
-                        <span style="font-size: 42px; color: #fff; font-weight: 900; letter-spacing: 2px;">{top1['馬匹名稱']}</span><br>
-                        <span style="font-size: 20px; color: #fff;">檔位 {top1['檔位']}　｜　勝率 {top1['預測勝率']:.2%}　｜　值博指數 {top1['值博指數']:.4f}</span>
+                        <div style="position: absolute; top: -30px; right: -30px; font-size: 100px; opacity: 0.1;">🏆</div>
+                        <div style="position: absolute; bottom: -20px; left: -20px; font-size: 80px; opacity: 0.08;">⭐</div>
+                        <span style="font-size: 16px; color: #ffd54f; font-weight: bold; letter-spacing: 3px; background: rgba(255,215,0,0.15); padding: 4px 16px; border-radius: 20px;">🏆 獨贏首選</span><br>
+                        <span style="font-size: 48px; color: #ffffff; font-weight: 900; letter-spacing: 3px; text-shadow: 0 2px 8px rgba(0,0,0,0.3); display: inline-block; margin-top: 8px;">{top1['馬匹名稱']}</span><br>
+                        <div style="display: flex; justify-content: center; gap: 30px; margin-top: 10px; flex-wrap: wrap;">
+                            <span style="font-size: 18px; color: #bbdefb;">檔位 <b style="color: #ffffff; font-size: 22px;">{top1['檔位']}</b></span>
+                            <span style="font-size: 18px; color: #bbdefb;">勝率 <b style="color: #69f0ae; font-size: 22px;">{top1['預測勝率']:.2%}</b></span>
+                            <span style="font-size: 18px; color: #bbdefb;">值博指數 <b style="color: #ffd54f; font-size: 22px;">{top1['值博指數']:.4f}</b></span>
+                        </div>
                     </div>
                     """, unsafe_allow_html=True)
-                    st.markdown("---")
                     
-                    # --- 連贏推薦 (前2) ---
-                    st.subheader("🔗 連贏推薦")
+                    # --- 連贏推薦（美化版） ---
+                    st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🔗 連贏推薦</h3>", unsafe_allow_html=True)
                     col1, col2 = st.columns(2)
                     with col1:
                         st.markdown(f"""
-                        <div style="border:1px solid #ddd;border-radius:10px;padding:12px;text-align:center;background-color:#e3f2fd;margin:5px;">
-                            <h4>🏇 {top4.iloc[0]['馬匹名稱']}</h4>
-                            <p>檔位：<b>{top4.iloc[0]['檔位']}</b>　勝率：<b style="color:#2e7d32;">{top4.iloc[0]['預測勝率']:.2%}</b></p>
+                        <div style="
+                            background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+                            border-radius: 14px;
+                            padding: 16px 20px;
+                            text-align: center;
+                            box-shadow: 0 4px 12px rgba(13, 71, 161, 0.15);
+                            border-left: 5px solid #0d47a1;
+                        ">
+                            <span style="font-size: 28px;">🏇</span>
+                            <h4 style="margin: 4px 0 2px 0; color: #0d47a1;">{top4.iloc[0]['馬匹名稱']}</h4>
+                            <div style="display: flex; justify-content: center; gap: 20px; font-size: 14px; color: #555;">
+                                <span>檔位 <b>{top4.iloc[0]['檔位']}</b></span>
+                                <span>勝率 <b style="color:#2e7d32;">{top4.iloc[0]['預測勝率']:.2%}</b></span>
+                            </div>
                         </div>
                         """, unsafe_allow_html=True)
                     with col2:
                         st.markdown(f"""
-                        <div style="border:1px solid #ddd;border-radius:10px;padding:12px;text-align:center;background-color:#e3f2fd;margin:5px;">
-                            <h4>🏇 {top4.iloc[1]['馬匹名稱']}</h4>
-                            <p>檔位：<b>{top4.iloc[1]['檔位']}</b>　勝率：<b style="color:#2e7d32;">{top4.iloc[1]['預測勝率']:.2%}</b></p>
+                        <div style="
+                            background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+                            border-radius: 14px;
+                            padding: 16px 20px;
+                            text-align: center;
+                            box-shadow: 0 4px 12px rgba(13, 71, 161, 0.15);
+                            border-left: 5px solid #0d47a1;
+                        ">
+                            <span style="font-size: 28px;">🏇</span>
+                            <h4 style="margin: 4px 0 2px 0; color: #0d47a1;">{top4.iloc[1]['馬匹名稱']}</h4>
+                            <div style="display: flex; justify-content: center; gap: 20px; font-size: 14px; color: #555;">
+                                <span>檔位 <b>{top4.iloc[1]['檔位']}</b></span>
+                                <span>勝率 <b style="color:#2e7d32;">{top4.iloc[1]['預測勝率']:.2%}</b></span>
+                            </div>
                         </div>
                         """, unsafe_allow_html=True)
                     st.caption("💡 連贏：揀 2 隻馬，跑出前 2 名（不分順序）即中")
                     
-                    # --- 三重彩推薦 (前4) ---
-                    st.subheader("🥉 三重彩推薦（4 隻複式）")
+                    # --- 三重彩推薦（美化版） ---
+                    st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🥉 三重彩推薦（4 隻複式）</h3>", unsafe_allow_html=True)
                     cols = st.columns(4)
+                    colors = ['#fce4ec', '#f3e5f5', '#e8eaf6', '#e0f7fa']
                     for i in range(4):
                         row = top4.iloc[i]
                         with cols[i]:
                             st.markdown(f"""
-                            <div style="border:1px solid #ddd;border-radius:10px;padding:10px;text-align:center;background-color:#fce4ec;margin:3px;">
-                                <h4>🏇 {row['馬匹名稱']}</h4>
-                                <p>檔位：<b>{row['檔位']}</b><br>勝率：<b style="color:#2e7d32;">{row['預測勝率']:.2%}</b></p>
+                            <div style="
+                                background: {colors[i]};
+                                border-radius: 12px;
+                                padding: 14px 10px;
+                                text-align: center;
+                                box-shadow: 0 3px 10px rgba(0,0,0,0.08);
+                                border: 1px solid rgba(0,0,0,0.05);
+                            ">
+                                <span style="font-size: 24px;">🏇</span>
+                                <h5 style="margin: 2px 0; color: #333; font-size: 15px;">{row['馬匹名稱']}</h5>
+                                <div style="font-size: 13px; color: #555;">
+                                    檔位 <b>{row['檔位']}</b><br>
+                                    勝率 <b style="color:#2e7d32;">{row['預測勝率']:.2%}</b>
+                                </div>
                             </div>
                             """, unsafe_allow_html=True)
                     st.caption("💡 三重彩：揀 3 隻馬，順序估中冠亞季軍。以上 4 隻馬可做複式三重彩（4 選 3）")
                     
-                    # --- 四重彩推薦 (前4) ---
-                    st.subheader("🏅 四重彩推薦（4 隻複式）")
+                    # --- 四重彩推薦（美化版） ---
+                    st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🏅 四重彩推薦（4 隻複式）</h3>", unsafe_allow_html=True)
                     cols = st.columns(4)
+                    colors2 = ['#e8f5e9', '#e0f2f1', '#fff3e0', '#fbe9e7']
                     for i in range(4):
                         row = top4.iloc[i]
                         with cols[i]:
                             st.markdown(f"""
-                            <div style="border:1px solid #ddd;border-radius:10px;padding:10px;text-align:center;background-color:#e8f5e9;margin:3px;">
-                                <h4>🏇 {row['馬匹名稱']}</h4>
-                                <p>檔位：<b>{row['檔位']}</b><br>勝率：<b style="color:#2e7d32;">{row['預測勝率']:.2%}</b></p>
+                            <div style="
+                                background: {colors2[i]};
+                                border-radius: 12px;
+                                padding: 14px 10px;
+                                text-align: center;
+                                box-shadow: 0 3px 10px rgba(0,0,0,0.08);
+                                border: 1px solid rgba(0,0,0,0.05);
+                            ">
+                                <span style="font-size: 24px;">🏇</span>
+                                <h5 style="margin: 2px 0; color: #333; font-size: 15px;">{row['馬匹名稱']}</h5>
+                                <div style="font-size: 13px; color: #555;">
+                                    檔位 <b>{row['檔位']}</b><br>
+                                    勝率 <b style="color:#2e7d32;">{row['預測勝率']:.2%}</b>
+                                </div>
                             </div>
                             """, unsafe_allow_html=True)
                     st.caption("💡 四重彩：揀 4 隻馬，順序估中冠亞季殿軍。以上 4 隻馬可做複式四重彩（4 選 4）")
                     
-                    # --- 總結投注建議 ---
+                    # --- 總結投注建議（美化版） ---
                     st.divider()
-                    st.subheader("📋 總結投注建議")
+                    st.markdown("""
+                    <h3 style='margin-bottom: 10px;'>📋 總結投注建議</h3>
+                    <div style="
+                        background: linear-gradient(135deg, #f1f8e9, #dcedc8);
+                        border-radius: 16px;
+                        padding: 20px 24px;
+                        border: 2px solid #2e7d32;
+                        box-shadow: 0 4px 16px rgba(46, 125, 50, 0.15);
+                    ">
+                    """, unsafe_allow_html=True)
+                    
                     st.markdown(f"""
-                    <div style="border:2px solid #2e7d32;border-radius:10px;padding:15px;background-color:#f1f8e9;">
-                        <p>🏆 <b>獨贏</b>：{top4.iloc[0]['馬匹名稱']}</p>
-                        <p>🔗 <b>連贏</b>：{top4.iloc[0]['馬匹名稱']} + {top4.iloc[1]['馬匹名稱']}</p>
-                        <p>🥉 <b>三重彩</b>：{top4.iloc[0]['馬匹名稱']}、{top4.iloc[1]['馬匹名稱']}、{top4.iloc[2]['馬匹名稱']}、{top4.iloc[3]['馬匹名稱']}（複式 4 選 3）</p>
-                        <p>🏅 <b>四重彩</b>：{top4.iloc[0]['馬匹名稱']}、{top4.iloc[1]['馬匹名稱']}、{top4.iloc[2]['馬匹名稱']}、{top4.iloc[3]['馬匹名稱']}（複式 4 選 4）</p>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 30px; font-size: 15px;">
+                        <div>🏆 <b>獨贏</b>：<span style="color: #1a237e; font-weight: bold;">{top4.iloc[0]['馬匹名稱']}</span></div>
+                        <div>🔗 <b>連贏</b>：<span style="color: #0d47a1; font-weight: bold;">{top4.iloc[0]['馬匹名稱']} + {top4.iloc[1]['馬匹名稱']}</span></div>
+                        <div style="grid-column: span 2;">🥉 <b>三重彩</b>：<span style="color: #4a148c; font-weight: bold;">{top4.iloc[0]['馬匹名稱']}、{top4.iloc[1]['馬匹名稱']}、{top4.iloc[2]['馬匹名稱']}、{top4.iloc[3]['馬匹名稱']}</span>（複式 4 選 3）</div>
+                        <div style="grid-column: span 2;">🏅 <b>四重彩</b>：<span style="color: #1b5e20; font-weight: bold;">{top4.iloc[0]['馬匹名稱']}、{top4.iloc[1]['馬匹名稱']}、{top4.iloc[2]['馬匹名稱']}、{top4.iloc[3]['馬匹名稱']}</span>（複式 4 選 4）</div>
                     </div>
                     """, unsafe_allow_html=True)
+                    
+                    st.markdown("</div>", unsafe_allow_html=True)
                     
                     # --- 彩池推薦 ---
                     st.subheader("🎯 彩池推薦（詳細）")
