@@ -805,7 +805,7 @@ def login_page():
                             st.rerun()
 
 # ============================================================
-# 🔧 付款牆（修復版）
+# 🔧 付款牆（修復版 - 顯示提交成功）
 # ============================================================
 def show_paywall():
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
@@ -817,7 +817,7 @@ def show_paywall():
         "quarter": f"📅 季費  ${CONFIG['price_quarter']} (90天)"
     }
 
-    # 如果已經提交成功，顯示成功訊息並停止
+    # 如果已經提交成功，顯示成功訊息
     if st.session_state.get('payment_just_submitted', False):
         st.success("✅ 付款申請已成功提交！管理員將盡快審核。")
         st.info("📩 請同時 WhatsApp 通知管理員（可加快審核）")
@@ -859,6 +859,9 @@ def show_paywall():
         submitted = st.form_submit_button("📩 提交付款申請，等待管理員審核")
 
         if submitted:
+            # 顯示處理中
+            st.info("⏳ 正在處理你嘅申請...")
+            
             # 驗證
             if not plan_choice:
                 st.error("❌ 請先選擇一個付費方案")
@@ -869,78 +872,87 @@ def show_paywall():
             elif not st.session_state.get('logged_in', False):
                 st.error("❌ 請先登入")
                 st.stop()
+            
+            # 計算最終價格
+            original_price = get_plan_price(plan_choice)
+            final_price = original_price
+            discount_applied = False
+            discount_desc = ""
+            promo_code_used = None
+            
+            if promo_input:
+                promos = load_promos()
+                promo_data = promos.get(promo_input)
+                if promo_data and not promo_data.get('used', False):
+                    expiry = promo_data.get('expiry')
+                    if expiry:
+                        try:
+                            expiry_date = datetime.fromisoformat(expiry)
+                            if expiry_date >= datetime.now():
+                                discount_type = promo_data.get('discount_type', 'percentage')
+                                discount_value = promo_data.get('discount_value', 0)
+                                if discount_type == 'percentage':
+                                    final_price = original_price * (1 - discount_value / 100)
+                                    discount_desc = f"{discount_value}% 折扣"
+                                elif discount_type == 'fixed':
+                                    final_price = max(0, original_price - discount_value)
+                                    discount_desc = f"減 ${discount_value}"
+                                elif discount_type == 'free':
+                                    final_price = 0
+                                    discount_desc = "全免！"
+                                final_price = round(final_price, 2)
+                                discount_applied = True
+                                promo_code_used = promo_input
+                        except:
+                            pass
+
+            # 確保目錄存在
+            os.makedirs(PAYMENT_PROOFS_DIR, exist_ok=True)
+            
+            # 儲存圖片
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            file_extension = uploaded_file.type.split('/')[1] if '/' in uploaded_file.type else 'png'
+            filename = f"{st.session_state.username}_{timestamp}.{file_extension}"
+            filepath = os.path.join(PAYMENT_PROOFS_DIR, filename)
+            
+            try:
+                with open(filepath, 'wb') as f:
+                    f.write(uploaded_file.getbuffer())
+                st.success(f"✅ 圖片已儲存：{filename}")
+            except Exception as e:
+                st.error(f"❌ 圖片儲存失敗：{e}")
+                st.stop()
+
+            # 載入付款記錄
+            proofs = load_payment_proofs()
+            
+            # 建立新記錄
+            new_proof = {
+                "id": len(proofs['proof_records']) + 1,
+                "username": st.session_state.username,
+                "plan": plan_choice,
+                "plan_name": get_plan_name(plan_choice),
+                "original_price": original_price,
+                "final_price": final_price,
+                "discount_applied": discount_applied,
+                "discount_desc": discount_desc,
+                "promo_code": promo_code_used,
+                "filename": filename,
+                "uploaded_at": datetime.now().isoformat(),
+                "status": "pending"
+            }
+            proofs['proof_records'].append(new_proof)
+            
+            # 儲存記錄
+            if save_payment_proofs(proofs):
+                log_admin_action(st.session_state.username, f"提交付款申請 - 方案：{get_plan_name(plan_choice)}，金額：${final_price}")
+                st.session_state['payment_just_submitted'] = True
+                st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
+                st.success("✅ 提交成功！請稍等...")
+                st.rerun()
             else:
-                # 計算折扣（如有）
-                final_price = original_price
-                discount_applied = False
-                discount_desc = ""
-                promo_code_used = None
-                if promo_input:
-                    promos = load_promos()
-                    promo_data = promos.get(promo_input)
-                    if promo_data and not promo_data.get('used', False):
-                        expiry = promo_data.get('expiry')
-                        if expiry:
-                            try:
-                                expiry_date = datetime.fromisoformat(expiry)
-                                if expiry_date >= datetime.now():
-                                    discount_type = promo_data.get('discount_type', 'percentage')
-                                    discount_value = promo_data.get('discount_value', 0)
-                                    if discount_type == 'percentage':
-                                        final_price = original_price * (1 - discount_value / 100)
-                                        discount_desc = f"{discount_value}% 折扣"
-                                    elif discount_type == 'fixed':
-                                        final_price = max(0, original_price - discount_value)
-                                        discount_desc = f"減 ${discount_value}"
-                                    elif discount_type == 'free':
-                                        final_price = 0
-                                        discount_desc = "全免！"
-                                    final_price = round(final_price, 2)
-                                    discount_applied = True
-                                    promo_code_used = promo_input
-                            except:
-                                pass
-
-                # 儲存付款記錄
-                proofs = load_payment_proofs()
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                file_extension = uploaded_file.type.split('/')[1] if '/' in uploaded_file.type else 'png'
-                filename = f"{st.session_state.username}_{timestamp}.{file_extension}"
-                filepath = os.path.join(PAYMENT_PROOFS_DIR, filename)
-                
-                # 嘗試儲存圖片
-                try:
-                    with open(filepath, 'wb') as f:
-                        f.write(uploaded_file.getbuffer())
-                except Exception as e:
-                    st.error(f"❌ 圖片儲存失敗：{e}")
-                    st.stop()
-
-                new_proof = {
-                    "id": len(proofs['proof_records']) + 1,
-                    "username": st.session_state.username,
-                    "plan": plan_choice,
-                    "plan_name": get_plan_name(plan_choice),
-                    "original_price": original_price,
-                    "final_price": final_price,
-                    "discount_applied": discount_applied,
-                    "discount_desc": discount_desc,
-                    "promo_code": promo_code_used,
-                    "filename": filename,
-                    "uploaded_at": datetime.now().isoformat(),
-                    "status": "pending"
-                }
-                proofs['proof_records'].append(new_proof)
-                
-                if save_payment_proofs(proofs):
-                    log_admin_action(st.session_state.username, f"提交付款申請 - 方案：{get_plan_name(plan_choice)}，金額：${final_price}")
-                    # 設定 session 標記
-                    st.session_state['payment_just_submitted'] = True
-                    st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
-                    st.rerun()  # 重新整理以顯示成功訊息
-                else:
-                    st.error("❌ 提交失敗，請重新嘗試。")
-                    st.stop()
+                st.error("❌ 寫入付款記錄失敗，請檢查檔案權限")
+                st.stop()
 
 # ============================================================
 # 8. 後台所有模組（完整實作）
@@ -1455,219 +1467,70 @@ def admin_security():
         else:
             st.error("用戶不存在")
 
-# ============================================================
-# ---------- 8.11 付款審核（全新升級版）----------
-# ============================================================
+# ---------- 8.11 付款審核（已修復） ----------
 def admin_payment_review():
-    """
-    付款審核 - 功能齊全版
-    包含：統計、篩選、搜尋、批准、拒絕、批量批准、退款、操作日誌
-    """
     st.subheader("📤 付款審核")
     
-    # ---- 載入數據 ----
+    # 直接從檔案讀取，確保最新數據
     proofs_data = load_payment_proofs()
     records = proofs_data.get('proof_records', [])
     
-    # ---- 統計卡片 ----
-    pending = [r for r in records if r.get('status') == 'pending']
-    approved = [r for r in records if r.get('status') == 'approved']
-    rejected = [r for r in records if r.get('status') == 'rejected']
-    total_income = sum(r.get('final_price', 0) for r in approved)
-    
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("⏳ 待審核", len(pending))
-    col2.metric("✅ 已批准", len(approved))
-    col3.metric("❌ 已拒絕", len(rejected))
-    col4.metric("💰 總收入", f"${total_income:.2f}")
-    
+    # 除錯資訊
+    st.write("**📁 除錯資訊**")
+    st.write(f"付款記錄檔案路徑：`{PAYMENT_PROOFS_FILE}`")
+    st.write(f"檔案存在：{'✅' if os.path.exists(PAYMENT_PROOFS_FILE) else '❌'}")
+    if os.path.exists(PAYMENT_PROOFS_FILE):
+        with open(PAYMENT_PROOFS_FILE, 'r', encoding='utf-8') as f:
+            content = f.read()
+        st.text_area("檔案內容（原始JSON）：", content, height=150)
     st.divider()
     
-    # ---- 篩選與搜尋 ----
-    with st.expander("🔍 篩選與搜尋", expanded=True):
-        col_s1, col_s2, col_s3 = st.columns([2, 2, 1])
-        with col_s1:
-            search_term = st.text_input("搜尋用戶名稱", placeholder="輸入用戶名")
-        with col_s2:
-            status_filter = st.selectbox(
-                "狀態篩選",
-                ["全部", "pending", "approved", "rejected"],
-                format_func=lambda x: {"pending": "待審核", "approved": "已批准", "rejected": "已拒絕", "全部": "全部"}.get(x, x)
-            )
-        with col_s3:
-            if status_filter in ["pending", "全部"] and len(pending) > 0:
-                if st.button("📦 批量批准全部待審"):
-                    # 批量批准
-                    for rec in pending:
-                        _approve_payment(rec, proofs_data)
-                    st.success(f"✅ 已批量批准 {len(pending)} 條記錄")
-                    log_admin_action(st.session_state.username, f"批量批准了 {len(pending)} 條付款申請")
-                    st.rerun()
-    
-    # ---- 過濾 ----
-    filtered = records.copy()
-    if search_term:
-        filtered = [r for r in filtered if search_term.lower() in r.get('username', '').lower()]
-    if status_filter != "全部":
-        filtered = [r for r in filtered if r.get('status') == status_filter]
-    
-    if not filtered:
-        st.info("📭 沒有符合條件的記錄")
+    if not records:
+        st.info("暫時沒有付款申請記錄")
         return
     
-    st.subheader(f"📋 共 {len(filtered)} 條記錄")
-    
-    # ---- 顯示每條記錄 ----
-    for idx, rec in enumerate(filtered):
-        # 找出在原始列表中的索引（用於更新）
-        original_idx = records.index(rec)
-        status = rec.get('status', 'pending')
-        
-        with st.container():
-            cols = st.columns([2, 2, 1.5, 1.5, 2])
-            with cols[0]:
-                st.write(f"👤 **{rec.get('username', '未知')}**")
-                st.caption(f"ID: {rec.get('id', '')}")
-            with cols[1]:
-                plan_name = rec.get('plan_name', '未知方案')
-                price = rec.get('final_price', 0)
-                st.write(f"📌 {plan_name}")
-                st.write(f"💰 ${price:.2f}")
-                if rec.get('discount_applied'):
-                    st.caption(f"折扣: {rec.get('discount_desc', '')}")
-            with cols[2]:
-                uploaded_at = rec.get('uploaded_at', '')
-                if uploaded_at:
-                    try:
-                        dt = datetime.fromisoformat(uploaded_at)
-                        st.caption(f"📅 {dt.strftime('%Y-%m-%d %H:%M')}")
-                    except:
-                        st.caption(uploaded_at)
-                # 顯示圖片
-                filename = rec.get('filename')
-                if filename:
-                    filepath = os.path.join(PAYMENT_PROOFS_DIR, filename)
-                    if os.path.exists(filepath):
-                        try:
-                            image = Image.open(filepath)
-                            st.image(image, width=120)
-                        except:
-                            st.caption("圖片無法載入")
-                    else:
-                        st.caption("圖片檔案缺失")
-            with cols[3]:
-                # 狀態標籤
-                if status == "pending":
-                    st.warning("⏳ 待審核")
-                elif status == "approved":
-                    st.success("✅ 已批准")
-                    # 顯示到期日（如果有的話）
-                    users = load_users()
-                    user_data = users.get(rec.get('username'), {})
-                    expiry = user_data.get('expiry_date')
-                    if expiry:
-                        try:
-                            exp_dt = pd.to_datetime(expiry)
-                            days_left = (exp_dt - datetime.now()).days
-                            st.caption(f"到期: {exp_dt.strftime('%Y-%m-%d')} ({days_left}天)")
-                        except:
-                            pass
-                elif status == "rejected":
-                    st.error("❌ 已拒絕")
-                else:
-                    st.info(status)
-                # 顯示審核人及時間
-                if rec.get('approved_by'):
-                    st.caption(f"操作人: {rec['approved_by']}")
-                if rec.get('approved_at'):
-                    try:
-                        dt = datetime.fromisoformat(rec['approved_at'])
-                        st.caption(f"操作時間: {dt.strftime('%Y-%m-%d %H:%M')}")
-                    except:
-                        pass
-            with cols[4]:
-                # 操作按鈕
-                if status == "pending":
-                    col_a, col_r = st.columns(2)
-                    with col_a:
-                        if st.button("✅ 批准", key=f"app_{original_idx}"):
-                            _approve_payment(rec, proofs_data)
-                            log_admin_action(st.session_state.username, f"批准付款申請：{rec['username']} ({rec['plan_name']})")
-                            st.rerun()
-                    with col_r:
-                        if st.button("❌ 拒絕", key=f"rej_{original_idx}"):
-                            _reject_payment(rec, proofs_data)
-                            log_admin_action(st.session_state.username, f"拒絕付款申請：{rec['username']} ({rec['plan_name']})")
-                            st.rerun()
-                elif status == "approved":
-                    # 提供退款按鈕（降級用戶）
-                    if st.button("↩️ 退款", key=f"ref_{original_idx}"):
-                        _refund_payment(rec, proofs_data)
-                        log_admin_action(st.session_state.username, f"退款：{rec['username']} ({rec['plan_name']})")
-                        st.rerun()
-                else:
-                    st.write("已處理")
-            st.divider()
-    
-    # ---- 操作日誌（最近20條） ----
-    with st.expander("📜 操作日誌 (最近20條)"):
-        logs = load_logs()
-        log_entries = logs.get('logs', [])[-20:]
-        if log_entries:
-            for log in reversed(log_entries):
-                st.text(f"[{log['time']}] {log['admin']} - {log['action']}")
-        else:
-            st.info("暫無日誌")
-
-# ---------- 輔助函數（用於付款審核） ----------
-def _approve_payment(rec, proofs_data):
-    """批准付款：更新記錄狀態及用戶權限"""
-    # 更新付款記錄
-    rec['status'] = 'approved'
-    rec['approved_at'] = datetime.now().isoformat()
-    rec['approved_by'] = st.session_state.username
-    save_payment_proofs(proofs_data)
-    
-    # 升級用戶
-    users = load_users()
-    username = rec.get('username')
-    if username in users:
-        plan = rec.get('plan', 'month')
-        days = get_plan_days(plan)
-        users[username]['is_paid'] = True
-        users[username]['group'] = 'VIP'
-        users[username]['paid_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        users[username]['expiry_date'] = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
-        users[username]['plan'] = plan
-        save_users(users)
+    pending = [r for r in records if r.get('status') == 'pending']
+    if not pending:
+        st.info("🎉 目前沒有待審核嘅付款申請")
     else:
-        st.warning(f"⚠️ 用戶 {username} 不存在，無法升級")
-
-def _reject_payment(rec, proofs_data):
-    """拒絕付款：只更新記錄狀態"""
-    rec['status'] = 'rejected'
-    rec['approved_at'] = datetime.now().isoformat()
-    rec['approved_by'] = st.session_state.username
-    save_payment_proofs(proofs_data)
-
-def _refund_payment(rec, proofs_data):
-    """退款：降級用戶"""
-    users = load_users()
-    username = rec.get('username')
-    if username in users:
-        users[username]['is_paid'] = False
-        users[username]['group'] = 'free'
-        users[username]['expiry_date'] = None
-        users[username]['plan'] = None
-        save_users(users)
-        # 記錄退款標記（可選）
-        rec['refunded'] = True
-        rec['refunded_at'] = datetime.now().isoformat()
-        rec['refunded_by'] = st.session_state.username
-        save_payment_proofs(proofs_data)
-        st.success(f"✅ 已為 {username} 辦理退款，用戶已降級")
-    else:
-        st.error(f"❌ 用戶 {username} 不存在")
+        for idx, rec in enumerate(pending):
+            with st.container():
+                col1, col2, col3 = st.columns([2,2,1])
+                with col1:
+                    st.write(f"👤 {rec.get('username')}")
+                    st.write(f"📌 {rec.get('plan_name')}")
+                    st.write(f"💰 ${rec.get('final_price')}")
+                with col2:
+                    st.write(f"📅 {rec.get('uploaded_at')}")
+                    filename = rec.get('filename')
+                    if filename:
+                        filepath = os.path.join(PAYMENT_PROOFS_DIR, filename)
+                        if os.path.exists(filepath):
+                            try:
+                                image = Image.open(filepath)
+                                st.image(image, width=150)
+                            except:
+                                st.warning("無法載入圖片")
+                with col3:
+                    if st.button("✅ 確認升級", key=f"approve_{idx}"):
+                        users = load_users()
+                        username = rec.get('username')
+                        if username in users:
+                            plan = rec.get('plan', 'month')
+                            days = get_plan_days(plan)
+                            users[username]['is_paid'] = True
+                            users[username]['group'] = 'VIP'
+                            users[username]['paid_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            users[username]['expiry_date'] = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+                            users[username]['plan'] = plan
+                            save_users(users)
+                            rec['status'] = 'approved'
+                            rec['approved_at'] = datetime.now().isoformat()
+                            rec['approved_by'] = st.session_state.username
+                            save_payment_proofs(proofs_data)
+                            st.success(f"✅ {username} 已升級！")
+                            st.rerun()
+                st.divider()
 
 # ============================================================
 # 9. 後台頁面
@@ -1731,7 +1594,7 @@ def admin_page():
     with tabs[5]:
         admin_subscription()
     with tabs[6]:
-        admin_payment_review()   # <-- 呼叫全新升級版
+        admin_payment_review()
     with tabs[7]:
         admin_monitoring() if CONFIG["module_monitoring"] else st.info("模組已關閉")
     with tabs[8]:
