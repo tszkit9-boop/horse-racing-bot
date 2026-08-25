@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 最終完整版（含系統設定・邀請獎勵・每日重心・隱藏平台按鈕）
-所有功能齊全，可直接部署
+賽馬預測系統 - 最終完整版（含系統設定・所有功能齊全）
 """
 
 import streamlit as st
@@ -21,7 +20,7 @@ import random
 from PIL import Image
 
 # ============================================================
-# 🔒 隱藏 Streamlit 平台 UI（四層保護）
+# 🔒 隱藏 Streamlit 平台 UI（四層保護・永不復原）
 # ============================================================
 st.set_page_config(
     page_title="🏇 賽馬預測系統",
@@ -35,8 +34,10 @@ st.set_page_config(
     }
 )
 
+# 強制隱藏所有平台 UI（永不復原）
 st.markdown("""
 <style>
+    /* 隱藏所有平台元素 */
     div[data-testid="stToolbar"] { display: none !important; }
     .stAppDeployButton { display: none !important; }
     #MainMenu { display: none !important; }
@@ -47,20 +48,51 @@ st.markdown("""
     .st-emotion-cache-1r6slb0 { display: none !important; }
     [data-testid="stHeader"] { display: none !important; }
     [data-testid="stDecoration"] { display: none !important; }
+    .stApp > header { display: none !important; }
+    .stApp > header + div { padding-top: 0 !important; }
 </style>
 <script>
-    function removeUI() {
-        document.querySelectorAll('div[data-testid="stToolbar"], .stAppDeployButton, #MainMenu, footer, header, button[kind="share"], a[href*="streamlit.io"]').forEach(el => el.style.display = 'none');
+    // 永久移除函數
+    function permanentlyRemoveUI() {
+        // 移除所有平台元素
+        const selectors = [
+            'div[data-testid="stToolbar"]',
+            '.stAppDeployButton',
+            '#MainMenu',
+            'footer',
+            'header',
+            'button[kind="share"]',
+            'a[href*="streamlit.io"]',
+            '.st-emotion-cache-1r6slb0',
+            '[data-testid="stHeader"]',
+            '[data-testid="stDecoration"]'
+        ];
+        selectors.forEach(sel => {
+            document.querySelectorAll(sel).forEach(el => el.remove());
+        });
+        // 移除任何包含 Manage/Share 文字的元素
         document.querySelectorAll('button, a, div, span').forEach(el => {
-            if (el.textContent && (el.textContent.includes('Manage') || el.textContent.includes('Share') || el.textContent.includes('Settings'))) {
-                el.style.display = 'none';
-                if (el.parentElement && el.parentElement.children.length === 1) el.parentElement.style.display = 'none';
+            if (el.textContent && (
+                el.textContent.includes('Manage') || 
+                el.textContent.includes('Share') || 
+                el.textContent.includes('Settings')
+            )) {
+                el.remove();
+                if (el.parentElement && el.parentElement.children.length === 0) {
+                    el.parentElement.remove();
+                }
             }
         });
     }
-    removeUI();
-    setInterval(removeUI, 300);
-    new MutationObserver(removeUI).observe(document.body, { childList: true, subtree: true });
+    // 立即執行
+    permanentlyRemoveUI();
+    // 每 300ms 檢查一次，確保永久消失
+    setInterval(permanentlyRemoveUI, 300);
+    // DOM 變化時自動重新執行
+    new MutationObserver(permanentlyRemoveUI).observe(document.body, { 
+        childList: true, 
+        subtree: true 
+    });
 </script>
 """, unsafe_allow_html=True)
 
@@ -122,7 +154,7 @@ def save_system_config(config):
 CONFIG = load_system_config()
 
 # ============================================================
-# 2. 數據讀寫函數（完整）
+# 2. 數據讀寫函數
 # ============================================================
 USER_DATA_FILE = 'users.json'
 FINANCE_FILE = 'finance.json'
@@ -308,7 +340,7 @@ def load_models():
         return None, None, None
 
 # ============================================================
-# 4. 特徵工程（36 特徵）- 完整實作
+# 4. 特徵工程（36 特徵）
 # ============================================================
 FEATURES_EN = [
     'draw', 'act_wt', 'distance', 'rtg', 'avg_rank_last3',
