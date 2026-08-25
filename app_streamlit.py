@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 最終美化完整版（獨贏/連贏/三重彩/四重彩美化顯示）
+賽馬預測系統 - 最終完整版（獨立開關・所有功能齊全）
 """
 
 import streamlit as st
@@ -23,16 +23,17 @@ from PIL import Image
 # 🔐 系統設定（全部中文）
 # ============================================================
 CONFIG = {
-    "enable_registration": True,
-    "enable_payment": True,
-    "enable_admin": True,
-    "currency": "HKD",
-    "free_limit": 2,
-    "admin_password": "z54060437K",
-    "price_day": 18,
-    "price_month": 128,
-    "price_quarter": 328,
-    "verification_expiry": 5,
+    "enable_registration": True,      # 開放註冊
+    "enable_payment": True,           # ✅ 啟用付款（想關閉就改 False）
+    "enable_admin": True,             # 啟用後台管理
+    "currency": "HKD",                # 貨幣單位
+    "free_limit": 2,                  # 免費用戶免費預測次數
+    "admin_password": "z54060437K",   # 管理員密碼
+    "price_day": 18,                  # 日費價格
+    "price_month": 128,               # 月費價格
+    "price_quarter": 328,             # 季費價格
+    "verification_expiry": 5,         # 驗證碼有效期（分鐘）
+    "enable_vip_content": True,       # ✅ 獨立開關：三重彩/四重彩 VIP 專屬顯示
     "module_user_management": True,
     "module_analytics": True,
     "module_finance": True,
@@ -1835,7 +1836,7 @@ def admin_page():
         admin_security() if CONFIG["module_security"] else st.info("模組已關閉")
 
 # ============================================================
-# 10. 主頁面（美化版預測結果顯示）
+# 10. 主頁面（獨立開關・所有功能齊全）
 # ============================================================
 def main():
     if 'logged_in' not in st.session_state:
@@ -1977,6 +1978,16 @@ def main():
         user_data = users.get(st.session_state.username, {})
         limit = user_data.get('predictions_limit', CONFIG['free_limit'])
         used = user_data.get('free_usage', 0)
+        user_group = user_data.get('group', 'free')
+        
+        # =========================================================
+        # ✅ 獨立開關：enable_vip_content
+        # =========================================================
+        if CONFIG.get("enable_vip_content", True):
+            is_vip = user_group in ['VIP', 'super_admin']
+        else:
+            is_vip = True   # 關閉 VIP 專屬功能，所有人開放
+        # =========================================================
         
         if CONFIG["enable_payment"] and limit != -1 and used >= limit:
             show_paywall()
@@ -2016,7 +2027,7 @@ def main():
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    # --- 連贏推薦（美化版） ---
+                    # --- 連贏推薦（所有人可見） ---
                     st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🔗 連贏推薦</h3>", unsafe_allow_html=True)
                     col1, col2 = st.columns(2)
                     with col1:
@@ -2057,59 +2068,102 @@ def main():
                         """, unsafe_allow_html=True)
                     st.caption("💡 連贏：揀 2 隻馬，跑出前 2 名（不分順序）即中")
                     
-                    # --- 三重彩推薦（美化版） ---
-                    st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🥉 三重彩推薦（4 隻複式）</h3>", unsafe_allow_html=True)
-                    cols = st.columns(4)
-                    colors = ['#fce4ec', '#f3e5f5', '#e8eaf6', '#e0f7fa']
-                    for i in range(4):
-                        row = top4.iloc[i]
-                        with cols[i]:
-                            st.markdown(f"""
-                            <div style="
-                                background: {colors[i]};
-                                border-radius: 12px;
-                                padding: 14px 10px;
-                                text-align: center;
-                                box-shadow: 0 3px 10px rgba(0,0,0,0.08);
-                                border: 1px solid rgba(0,0,0,0.05);
-                            ">
-                                <span style="font-size: 24px;">🏇</span>
-                                <h5 style="margin: 2px 0; color: #333; font-size: 15px;">{row['馬匹名稱']}</h5>
-                                <div style="font-size: 13px; color: #555;">
-                                    檔位 <b>{row['檔位']}</b><br>
-                                    勝率 <b style="color:#2e7d32;">{row['預測勝率']:.2%}</b>
+                    # --- 三重彩推薦（根據 enable_vip_content 開關） ---
+                    if is_vip:
+                        st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🥉 三重彩推薦（4 隻複式）</h3>", unsafe_allow_html=True)
+                        cols = st.columns(4)
+                        colors = ['#fce4ec', '#f3e5f5', '#e8eaf6', '#e0f7fa']
+                        for i in range(4):
+                            row = top4.iloc[i]
+                            with cols[i]:
+                                st.markdown(f"""
+                                <div style="
+                                    background: {colors[i]};
+                                    border-radius: 12px;
+                                    padding: 14px 10px;
+                                    text-align: center;
+                                    box-shadow: 0 3px 10px rgba(0,0,0,0.08);
+                                    border: 1px solid rgba(0,0,0,0.05);
+                                ">
+                                    <span style="font-size: 24px;">🏇</span>
+                                    <h5 style="margin: 2px 0; color: #333; font-size: 15px;">{row['馬匹名稱']}</h5>
+                                    <div style="font-size: 13px; color: #555;">
+                                        檔位 <b>{row['檔位']}</b><br>
+                                        勝率 <b style="color:#2e7d32;">{row['預測勝率']:.2%}</b>
+                                    </div>
                                 </div>
+                                """, unsafe_allow_html=True)
+                        st.caption("💡 三重彩：揀 3 隻馬，順序估中冠亞季軍。以上 4 隻馬可做複式三重彩（4 選 3）")
+                    else:
+                        st.markdown("""
+                        <div style="
+                            background: linear-gradient(135deg, #fff3e0, #ffe0b2);
+                            border-radius: 16px;
+                            padding: 30px 20px;
+                            text-align: center;
+                            border: 2px dashed #ff6f00;
+                            margin: 10px 0;
+                        ">
+                            <span style="font-size: 48px;">🔒</span>
+                            <h3 style="color: #e65100; margin: 10px 0;">三重彩推薦</h3>
+                            <p style="color: #bf360c; font-size: 16px;">此內容僅限 <b>VIP 會員</b> 查看</p>
+                            <p style="color: #888; font-size: 14px;">升級 VIP 即可解鎖三重彩、四重彩等獨家彩池推薦</p>
+                            <div style="margin-top: 15px;">
+                                <span style="
+                                    background: #ff6f00;
+                                    color: white;
+                                    padding: 8px 24px;
+                                    border-radius: 20px;
+                                    font-weight: bold;
+                                    font-size: 14px;
+                                ">💎 立即升級 VIP</span>
                             </div>
-                            """, unsafe_allow_html=True)
-                    st.caption("💡 三重彩：揀 3 隻馬，順序估中冠亞季軍。以上 4 隻馬可做複式三重彩（4 選 3）")
+                        </div>
+                        """, unsafe_allow_html=True)
                     
-                    # --- 四重彩推薦（美化版） ---
-                    st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🏅 四重彩推薦（4 隻複式）</h3>", unsafe_allow_html=True)
-                    cols = st.columns(4)
-                    colors2 = ['#e8f5e9', '#e0f2f1', '#fff3e0', '#fbe9e7']
-                    for i in range(4):
-                        row = top4.iloc[i]
-                        with cols[i]:
-                            st.markdown(f"""
-                            <div style="
-                                background: {colors2[i]};
-                                border-radius: 12px;
-                                padding: 14px 10px;
-                                text-align: center;
-                                box-shadow: 0 3px 10px rgba(0,0,0,0.08);
-                                border: 1px solid rgba(0,0,0,0.05);
-                            ">
-                                <span style="font-size: 24px;">🏇</span>
-                                <h5 style="margin: 2px 0; color: #333; font-size: 15px;">{row['馬匹名稱']}</h5>
-                                <div style="font-size: 13px; color: #555;">
-                                    檔位 <b>{row['檔位']}</b><br>
-                                    勝率 <b style="color:#2e7d32;">{row['預測勝率']:.2%}</b>
+                    # --- 四重彩推薦（根據 enable_vip_content 開關） ---
+                    if is_vip:
+                        st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🏅 四重彩推薦（4 隻複式）</h3>", unsafe_allow_html=True)
+                        cols = st.columns(4)
+                        colors2 = ['#e8f5e9', '#e0f2f1', '#fff3e0', '#fbe9e7']
+                        for i in range(4):
+                            row = top4.iloc[i]
+                            with cols[i]:
+                                st.markdown(f"""
+                                <div style="
+                                    background: {colors2[i]};
+                                    border-radius: 12px;
+                                    padding: 14px 10px;
+                                    text-align: center;
+                                    box-shadow: 0 3px 10px rgba(0,0,0,0.08);
+                                    border: 1px solid rgba(0,0,0,0.05);
+                                ">
+                                    <span style="font-size: 24px;">🏇</span>
+                                    <h5 style="margin: 2px 0; color: #333; font-size: 15px;">{row['馬匹名稱']}</h5>
+                                    <div style="font-size: 13px; color: #555;">
+                                        檔位 <b>{row['檔位']}</b><br>
+                                        勝率 <b style="color:#2e7d32;">{row['預測勝率']:.2%}</b>
+                                    </div>
                                 </div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                    st.caption("💡 四重彩：揀 4 隻馬，順序估中冠亞季殿軍。以上 4 隻馬可做複式四重彩（4 選 4）")
+                                """, unsafe_allow_html=True)
+                        st.caption("💡 四重彩：揀 4 隻馬，順序估中冠亞季殿軍。以上 4 隻馬可做複式四重彩（4 選 4）")
+                    else:
+                        st.markdown("""
+                        <div style="
+                            background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
+                            border-radius: 16px;
+                            padding: 20px 20px;
+                            text-align: center;
+                            border: 2px dashed #2e7d32;
+                            margin: 10px 0;
+                        ">
+                            <span style="font-size: 36px;">🔒</span>
+                            <h4 style="color: #1b5e20; margin: 5px 0;">四重彩推薦</h4>
+                            <p style="color: #555; font-size: 14px;">升級 VIP 即可解鎖四重彩推薦</p>
+                        </div>
+                        """, unsafe_allow_html=True)
                     
-                    # --- 總結投注建議（美化版） ---
+                    # --- 總結投注建議 ---
                     st.divider()
                     st.markdown("""
                     <h3 style='margin-bottom: 10px;'>📋 總結投注建議</h3>
@@ -2122,14 +2176,27 @@ def main():
                     ">
                     """, unsafe_allow_html=True)
                     
-                    st.markdown(f"""
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 30px; font-size: 15px;">
-                        <div>🏆 <b>獨贏</b>：<span style="color: #1a237e; font-weight: bold;">{top4.iloc[0]['馬匹名稱']}</span></div>
-                        <div>🔗 <b>連贏</b>：<span style="color: #0d47a1; font-weight: bold;">{top4.iloc[0]['馬匹名稱']} + {top4.iloc[1]['馬匹名稱']}</span></div>
-                        <div style="grid-column: span 2;">🥉 <b>三重彩</b>：<span style="color: #4a148c; font-weight: bold;">{top4.iloc[0]['馬匹名稱']}、{top4.iloc[1]['馬匹名稱']}、{top4.iloc[2]['馬匹名稱']}、{top4.iloc[3]['馬匹名稱']}</span>（複式 4 選 3）</div>
-                        <div style="grid-column: span 2;">🏅 <b>四重彩</b>：<span style="color: #1b5e20; font-weight: bold;">{top4.iloc[0]['馬匹名稱']}、{top4.iloc[1]['馬匹名稱']}、{top4.iloc[2]['馬匹名稱']}、{top4.iloc[3]['馬匹名稱']}</span>（複式 4 選 4）</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    if is_vip:
+                        st.markdown(f"""
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 30px; font-size: 15px;">
+                            <div>🏆 <b>獨贏</b>：<span style="color: #1a237e; font-weight: bold;">{top4.iloc[0]['馬匹名稱']}</span></div>
+                            <div>🔗 <b>連贏</b>：<span style="color: #0d47a1; font-weight: bold;">{top4.iloc[0]['馬匹名稱']} + {top4.iloc[1]['馬匹名稱']}</span></div>
+                            <div style="grid-column: span 2;">🥉 <b>三重彩</b>：<span style="color: #4a148c; font-weight: bold;">{top4.iloc[0]['馬匹名稱']}、{top4.iloc[1]['馬匹名稱']}、{top4.iloc[2]['馬匹名稱']}、{top4.iloc[3]['馬匹名稱']}</span>（複式 4 選 3）</div>
+                            <div style="grid-column: span 2;">🏅 <b>四重彩</b>：<span style="color: #1b5e20; font-weight: bold;">{top4.iloc[0]['馬匹名稱']}、{top4.iloc[1]['馬匹名稱']}、{top4.iloc[2]['馬匹名稱']}、{top4.iloc[3]['馬匹名稱']}</span>（複式 4 選 4）</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"""
+                        <div style="font-size: 15px;">
+                            <div>🏆 <b>獨贏</b>：<span style="color: #1a237e; font-weight: bold;">{top4.iloc[0]['馬匹名稱']}</span></div>
+                            <div>🔗 <b>連贏</b>：<span style="color: #0d47a1; font-weight: bold;">{top4.iloc[0]['馬匹名稱']} + {top4.iloc[1]['馬匹名稱']}</span></div>
+                            <div style="margin-top: 12px; padding: 12px; background: #fff3e0; border-radius: 10px; text-align: center; border: 1px dashed #ff6f00;">
+                                <span style="font-size: 20px;">🔒</span>
+                                <span style="color: #e65100; font-weight: bold;"> 三重彩及四重彩推薦僅限 VIP 會員查看</span>
+                                <br><span style="font-size: 13px; color: #888;">升級 VIP 即可解鎖完整投注建議</span>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
                     
                     st.markdown("</div>", unsafe_allow_html=True)
                     
