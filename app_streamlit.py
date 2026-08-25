@@ -804,7 +804,7 @@ def login_page():
 # ============================================================
 # 🔧 付款牆（修復版 - 顯示提交成功）
 # ============================================================
-def show_paywall():
+defdef show_paywall():
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
     st.subheader("💳 選擇你嘅方案")
 
@@ -857,16 +857,15 @@ def show_paywall():
         if submitted:
             st.info("⏳ 正在處理你嘅申請...")
             
+            # 驗證
             if not plan_choice:
                 st.error("❌ 請先選擇一個付費方案")
-                st.stop()
-            elif uploaded_file is None:
-                st.error("❌ 請先上傳過數證明（轉帳截圖）")
                 st.stop()
             elif not st.session_state.get('logged_in', False):
                 st.error("❌ 請先登入")
                 st.stop()
             
+            # 計算最終價格
             original_price = get_plan_price(plan_choice)
             final_price = original_price
             discount_applied = False
@@ -899,26 +898,31 @@ def show_paywall():
                         except:
                             pass
 
+            # 確保目錄存在
             os.makedirs(PAYMENT_PROOFS_DIR, exist_ok=True)
             
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            file_extension = uploaded_file.type.split('/')[1] if '/' in uploaded_file.type else 'png'
-            filename = f"{st.session_state.username}_{timestamp}.{file_extension}"
-            filepath = os.path.join(PAYMENT_PROOFS_DIR, filename)
-            
-            try:
-                with open(filepath, 'wb') as f:
-                    f.write(uploaded_file.getbuffer())
-                st.success(f"✅ 圖片已儲存：{filename}")
-            except Exception as e:
-                st.error(f"❌ 圖片儲存失敗：{e}")
-                st.stop()
+            # 儲存圖片（如果有的話）
+            filename = None
+            if uploaded_file is not None:
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                file_extension = uploaded_file.type.split('/')[1] if '/' in uploaded_file.type else 'png'
+                filename = f"{st.session_state.username}_{timestamp}.{file_extension}"
+                filepath = os.path.join(PAYMENT_PROOFS_DIR, filename)
+                try:
+                    with open(filepath, 'wb') as f:
+                        f.write(uploaded_file.getbuffer())
+                    st.success(f"✅ 圖片已儲存：{filename}")
+                except Exception as e:
+                    st.error(f"⚠️ 圖片儲存失敗：{e}，但會繼續提交")
+                    filename = None
+            else:
+                st.warning("⚠️ 你未上傳圖片，但仍可提交（管理員可手動審核）")
 
+            # 建立記錄（強制寫入，即使冇圖片）
             proofs = load_payment_proofs()
-            
             new_proof = {
                 "id": len(proofs['proof_records']) + 1,
-                "username": st.session_state.username,
+                "username": st.session_state.username,  # ← 自動攞當前用戶名
                 "plan": plan_choice,
                 "plan_name": get_plan_name(plan_choice),
                 "original_price": original_price,
@@ -926,17 +930,18 @@ def show_paywall():
                 "discount_applied": discount_applied,
                 "discount_desc": discount_desc,
                 "promo_code": promo_code_used,
-                "filename": filename,
+                "filename": filename if filename else "無圖片",
                 "uploaded_at": datetime.now().isoformat(),
                 "status": "pending"
             }
             proofs['proof_records'].append(new_proof)
             
+            # 儲存記錄
             if save_payment_proofs(proofs):
                 log_admin_action(st.session_state.username, f"提交付款申請 - 方案：{get_plan_name(plan_choice)}，金額：${final_price}")
                 st.session_state['payment_just_submitted'] = True
                 st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
-                st.success("✅ 提交成功！請稍等...")
+                st.success("✅ 提交成功！管理員將盡快審核。")
                 st.rerun()
             else:
                 st.error("❌ 寫入付款記錄失敗，請檢查檔案權限")
