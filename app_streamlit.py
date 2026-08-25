@@ -1,5 +1,5 @@
 # =============================================================
-# SHTSN 賽馬AI預測系統 - 最終完整穩定版
+# SHTSN 賽馬AI預測系統 - Cloud 部署版 (強制建立檔案)
 # =============================================================
 
 import streamlit as st
@@ -29,6 +29,58 @@ CONFIG = {
 USERS_FILE = "users.json"
 PREDICTION_HISTORY_DIR = "prediction_history"
 os.makedirs(PREDICTION_HISTORY_DIR, exist_ok=True)
+
+# =============================================================
+# 強制建立檔案（在頁面頂部顯示狀態）
+# =============================================================
+def ensure_files_exist():
+    """確保所有必要檔案存在，並在頁面顯示狀態"""
+    status_messages = []
+    
+    # 1. users.json
+    if not os.path.exists(USERS_FILE):
+        default_users = {
+            "admin": {
+                "username": "admin",
+                "password": hashlib.sha256(CONFIG["admin_password"].encode()).hexdigest(),
+                "level": "超級管理員",
+                "email": "admin@shstn.com",
+                "registered_at": datetime.now().isoformat(),
+                "predictions_used": 0,
+                "predictions_limit": -1,
+                "is_active": True
+            }
+        }
+        with open(USERS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(default_users, f, ensure_ascii=False, indent=2)
+        status_messages.append("✅ users.json 已建立")
+    else:
+        status_messages.append("✅ users.json 已存在")
+    
+    # 2. payment_proofs.json
+    if not os.path.exists("payment_proofs.json"):
+        with open("payment_proofs.json", 'w', encoding='utf-8') as f:
+            json.dump({"records": []}, f, ensure_ascii=False, indent=2)
+        status_messages.append("✅ payment_proofs.json 已建立")
+    else:
+        status_messages.append("✅ payment_proofs.json 已存在")
+    
+    # 3. payment_audit.json
+    if not os.path.exists("payment_audit.json"):
+        with open("payment_audit.json", 'w', encoding='utf-8') as f:
+            json.dump({"logs": []}, f, ensure_ascii=False, indent=2)
+        status_messages.append("✅ payment_audit.json 已建立")
+    else:
+        status_messages.append("✅ payment_audit.json 已存在")
+    
+    return status_messages
+
+# ---------- 在頁面頂部顯示檔案狀態 ----------
+file_status = ensure_files_exist()
+with st.sidebar:
+    st.subheader("📁 檔案狀態")
+    for msg in file_status:
+        st.text(msg)
 
 # =============================================================
 # 付款審核相關函數
@@ -277,24 +329,6 @@ def payment_review_page():
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-def init_users():
-    if not os.path.exists(USERS_FILE):
-        default_users = {
-            "admin": {
-                "username": "admin",
-                "password": hash_password(CONFIG["admin_password"]),
-                "level": "超級管理員",
-                "email": "admin@shstn.com",
-                "registered_at": datetime.now().isoformat(),
-                "predictions_used": 0,
-                "predictions_limit": -1,
-                "is_active": True
-            }
-        }
-        save_json(USERS_FILE, default_users)
-        st.success("管理員帳戶已建立 (admin / z54060437K)")
-    return load_json(USERS_FILE, {})
-
 def get_current_user():
     if "user" in st.session_state:
         users = load_json(USERS_FILE, {})
@@ -335,15 +369,16 @@ if "page" not in st.session_state:
 if "is_admin" not in st.session_state:
     st.session_state.is_admin = False
 
-# 初始化用戶檔案（如果不存在會自動建立）
-init_users()
-
 # =============================================================
 # 側邊欄登入
 # =============================================================
 def sidebar_login():
     with st.sidebar:
         st.title("🏇 SHTSN 賽馬AI")
+        
+        # 顯示檔案狀態（已喺頂部顯示）
+        st.divider()
+        
         if st.session_state.logged_in:
             user = get_current_user()
             if user:
