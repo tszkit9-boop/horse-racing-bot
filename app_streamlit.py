@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版（所有功能齊全）
+賽馬預測系統 - 付款審核修復版（所有功能完整）
 """
 
 import streamlit as st
@@ -20,34 +20,27 @@ import random
 from PIL import Image
 
 # ============================================================
-# 🔐 功能開關（全部中文說明）
+# 🔐 功能開關
 # ============================================================
 CONFIG = {
-    # ----- 基本設定 -----
-    "enable_registration": True,       # 是否啟用「用戶註冊」功能（True = 需要註冊登入）
-    "enable_payment": False,           # 是否啟用「付費功能」（False = 全部免費，唔使俾錢）
-    "enable_admin": True,              # 是否顯示「後台管理」按鈕（True = 會顯示）
-    "currency": "HKD",                 # 貨幣單位（HKD = 港幣）
-    "free_limit": 2,                   # 免費用戶可以預測幾多場（2場 = 免費試玩2場）
-    "admin_password": "z54060437K",    # 後台管理員密碼（請改為你嘅密碼）
-    
-    # ----- 訂閱價格（三種方案） -----
-    "price_day": 18,                   # 日費價格（港幣 $18）
-    "price_month": 128,                # 月費價格（港幣 $128）
-    "price_quarter": 328,              # 季費價格（港幣 $328，3個月）
-    
-    # ----- 驗證碼設定 -----
-    "verification_expiry": 5,          # 驗證碼有效期（分鐘）
-    
-    # ----- 後台十大模組開關（全部可以獨立開關） -----
-    "module_user_management": True,    # 用戶管理（進階）：睇到所有用戶、開通/取消訂閱、加備註
-    "module_analytics": True,          # 數據分析與統計：睇到用戶增長、活躍度、功能使用分佈
-    "module_finance": True,            # 財務管理：記錄收入、睇到月收入/年收入
-    "module_monitoring": True,         # 系統監控：檢查檔案狀態、錯誤日誌、系統資訊
-    "module_content": True,            # 內容管理：公告、上傳排位表、FAQ
-    "module_automation": True,         # 自動化工具：到期提醒、自動開通設定
-    "module_security": True,           # 安全與權限：操作日誌、多管理員、IP限制
-    "module_promo": True,              # 優惠碼管理：建立、管理、應用優惠碼
+    "enable_registration": True,
+    "enable_payment": False,
+    "enable_admin": True,
+    "currency": "HKD",
+    "free_limit": 2,
+    "admin_password": "z54060437K",
+    "price_day": 18,
+    "price_month": 128,
+    "price_quarter": 328,
+    "verification_expiry": 5,
+    "module_user_management": True,
+    "module_analytics": True,
+    "module_finance": True,
+    "module_monitoring": True,
+    "module_content": True,
+    "module_automation": True,
+    "module_security": True,
+    "module_promo": True,
 }
 
 # ============================================================
@@ -61,7 +54,7 @@ st.set_page_config(
 )
 
 # ============================================================
-# 2. 數據讀寫函數
+# 2. 數據讀寫函數（加強錯誤處理）
 # ============================================================
 USER_DATA_FILE = 'users.json'
 FINANCE_FILE = 'finance.json'
@@ -81,7 +74,8 @@ def load_json(file):
         try:
             with open(file, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except:
+        except Exception as e:
+            st.error(f"讀取 {file} 失敗：{e}")
             return {}
     return {}
 
@@ -90,7 +84,8 @@ def save_json(file, data):
         with open(file, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         return True
-    except:
+    except Exception as e:
+        st.error(f"寫入 {file} 失敗：{e}")
         return False
 
 def load_users():
@@ -629,7 +624,7 @@ def run_prediction(date_str, race_no):
     return result, pool_rec
 
 # ============================================================
-# 5. 用戶功能（儀表板、歷史、統計）
+# 5. 用戶功能
 # ============================================================
 def record_prediction(username, date_str, race_no, horse_name, predicted_prob=None):
     users = load_users()
@@ -810,7 +805,7 @@ def login_page():
                             st.rerun()
 
 # ============================================================
-# 7. 付款牆（已修復提交問題）
+# 🔧 付款牆（修復版）
 # ============================================================
 def show_paywall():
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
@@ -822,6 +817,7 @@ def show_paywall():
         "quarter": f"📅 季費  ${CONFIG['price_quarter']} (90天)"
     }
 
+    # 如果已經提交成功，顯示成功訊息並停止
     if st.session_state.get('payment_just_submitted', False):
         st.success("✅ 付款申請已成功提交！管理員將盡快審核。")
         st.info("📩 請同時 WhatsApp 通知管理員（可加快審核）")
@@ -863,6 +859,7 @@ def show_paywall():
         submitted = st.form_submit_button("📩 提交付款申請，等待管理員審核")
 
         if submitted:
+            # 驗證
             if not plan_choice:
                 st.error("❌ 請先選擇一個付費方案")
                 st.stop()
@@ -873,6 +870,7 @@ def show_paywall():
                 st.error("❌ 請先登入")
                 st.stop()
             else:
+                # 計算折扣（如有）
                 final_price = original_price
                 discount_applied = False
                 discount_desc = ""
@@ -903,11 +901,14 @@ def show_paywall():
                             except:
                                 pass
 
+                # 儲存付款記錄
                 proofs = load_payment_proofs()
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                 file_extension = uploaded_file.type.split('/')[1] if '/' in uploaded_file.type else 'png'
                 filename = f"{st.session_state.username}_{timestamp}.{file_extension}"
                 filepath = os.path.join(PAYMENT_PROOFS_DIR, filename)
+                
+                # 嘗試儲存圖片
                 try:
                     with open(filepath, 'wb') as f:
                         f.write(uploaded_file.getbuffer())
@@ -930,11 +931,13 @@ def show_paywall():
                     "status": "pending"
                 }
                 proofs['proof_records'].append(new_proof)
+                
                 if save_payment_proofs(proofs):
                     log_admin_action(st.session_state.username, f"提交付款申請 - 方案：{get_plan_name(plan_choice)}，金額：${final_price}")
+                    # 設定 session 標記
                     st.session_state['payment_just_submitted'] = True
                     st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
-                    st.rerun()
+                    st.rerun()  # 重新整理以顯示成功訊息
                 else:
                     st.error("❌ 提交失敗，請重新嘗試。")
                     st.stop()
@@ -1452,10 +1455,11 @@ def admin_security():
         else:
             st.error("用戶不存在")
 
-# ---------- 8.11 付款審核 ----------
+# ---------- 8.11 付款審核（已修復） ----------
 def admin_payment_review():
     st.subheader("📤 付款審核")
     
+    # 直接從檔案讀取，確保最新數據
     proofs_data = load_payment_proofs()
     records = proofs_data.get('proof_records', [])
     
