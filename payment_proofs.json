@@ -10,7 +10,7 @@
       "discount_applied": false,
       "discount_desc": "",
       "promo_code": null,
-      "filename": "admin_month.png",
+      "filename": "admin_test.png",
       "uploaded_at": "2026-08-25T10:00:00",
       "status": "approved",
       "approved_at": "2026-08-25T10:30:00",
@@ -26,7 +26,7 @@
       "discount_applied": false,
       "discount_desc": "",
       "promo_code": null,
-      "filename": "testuser_day.png",
+      "filename": "無圖片",
       "uploaded_at": "2026-08-25T11:00:00",
       "status": "pending"
     },
@@ -40,7 +40,7 @@
       "discount_applied": false,
       "discount_desc": "",
       "promo_code": null,
-      "filename": "testuser_month.png",
+      "filename": "無圖片",
       "uploaded_at": "2026-08-25T12:00:00",
       "status": "pending"
     },
@@ -54,7 +54,7 @@
       "discount_applied": false,
       "discount_desc": "",
       "promo_code": null,
-      "filename": "testuser_quarter.png",
+      "filename": "無圖片",
       "uploaded_at": "2026-08-25T13:00:00",
       "status": "pending"
     },
@@ -68,8 +68,22 @@
       "discount_applied": true,
       "discount_desc": "20% 折扣",
       "promo_code": "SAVE20",
-      "filename": "vip_discount.png",
+      "filename": "無圖片",
       "uploaded_at": "2026-08-25T14:00:00",
+      "status": "pending"
+    },
+    {
+      "id": 6,
+      "username": "arkit",
+      "plan": "month",
+      "plan_name": "月費",
+      "original_price": 128,
+      "final_price": 128,
+      "discount_applied": false,
+      "discount_desc": "",
+      "promo_code": null,
+      "filename": "無圖片",
+      "uploaded_at": "2026-08-25T15:00:00",
       "status": "pending"
     }
   ]
