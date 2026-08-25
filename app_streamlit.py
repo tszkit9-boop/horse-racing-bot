@@ -1,5 +1,5 @@
 # =============================================================
-# SHTSN 賽馬AI預測系統 - Cloud 部署版 (強制建立檔案)
+# SHTSN 賽馬AI預測系統 - 最終極穩定版（已修正縮排）
 # =============================================================
 
 import streamlit as st
@@ -30,14 +30,9 @@ USERS_FILE = "users.json"
 PREDICTION_HISTORY_DIR = "prediction_history"
 os.makedirs(PREDICTION_HISTORY_DIR, exist_ok=True)
 
-# =============================================================
-# 強制建立檔案（在頁面頂部顯示狀態）
-# =============================================================
-def ensure_files_exist():
-    """確保所有必要檔案存在，並在頁面顯示狀態"""
-    status_messages = []
-    
-    # 1. users.json
+# ---------- 強制建立所有必要檔案 ----------
+def ensure_all_files():
+    # users.json
     if not os.path.exists(USERS_FILE):
         default_users = {
             "admin": {
@@ -53,38 +48,20 @@ def ensure_files_exist():
         }
         with open(USERS_FILE, 'w', encoding='utf-8') as f:
             json.dump(default_users, f, ensure_ascii=False, indent=2)
-        status_messages.append("✅ users.json 已建立")
-    else:
-        status_messages.append("✅ users.json 已存在")
     
-    # 2. payment_proofs.json
+    # payment_proofs.json
     if not os.path.exists("payment_proofs.json"):
         with open("payment_proofs.json", 'w', encoding='utf-8') as f:
             json.dump({"records": []}, f, ensure_ascii=False, indent=2)
-        status_messages.append("✅ payment_proofs.json 已建立")
-    else:
-        status_messages.append("✅ payment_proofs.json 已存在")
     
-    # 3. payment_audit.json
+    # payment_audit.json
     if not os.path.exists("payment_audit.json"):
         with open("payment_audit.json", 'w', encoding='utf-8') as f:
             json.dump({"logs": []}, f, ensure_ascii=False, indent=2)
-        status_messages.append("✅ payment_audit.json 已建立")
-    else:
-        status_messages.append("✅ payment_audit.json 已存在")
-    
-    return status_messages
 
-# ---------- 在頁面頂部顯示檔案狀態 ----------
-file_status = ensure_files_exist()
-with st.sidebar:
-    st.subheader("📁 檔案狀態")
-    for msg in file_status:
-        st.text(msg)
+ensure_all_files()  # 喺 app 啟動時立即執行
 
-# =============================================================
-# 付款審核相關函數
-# =============================================================
+# ---------- 付款審核相關函數 ----------
 PROOF_FILE = "payment_proofs.json"
 AUDIT_FILE = "payment_audit.json"
 
@@ -106,11 +83,6 @@ def save_json(filepath, data):
     except Exception as e:
         st.error(f"儲存檔案失敗：{e}")
         return False
-
-def init_payment_files():
-    for f, default in [(PROOF_FILE, {"records": []}), (AUDIT_FILE, {"logs": []})]:
-        if not os.path.exists(f):
-            save_json(f, default)
 
 def log_action(action, detail=""):
     data = load_json(AUDIT_FILE, {"logs": []})
@@ -211,8 +183,6 @@ def batch_approve_all(records):
 
 def payment_review_page():
     st.header("💳 付款審核管理")
-    init_payment_files()
-
     if not st.session_state.get("is_admin", False):
         st.error("⛔ 你沒有權限訪問此頁面")
         return
@@ -323,9 +293,7 @@ def payment_review_page():
         else:
             st.info("暫無日誌")
 
-# =============================================================
-# 用戶管理與認證
-# =============================================================
+# ---------- 用戶管理與認證 ----------
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
@@ -369,16 +337,10 @@ if "page" not in st.session_state:
 if "is_admin" not in st.session_state:
     st.session_state.is_admin = False
 
-# =============================================================
-# 側邊欄登入
-# =============================================================
+# ---------- 側邊欄登入 ----------
 def sidebar_login():
     with st.sidebar:
         st.title("🏇 SHTSN 賽馬AI")
-        
-        # 顯示檔案狀態（已喺頂部顯示）
-        st.divider()
-        
         if st.session_state.logged_in:
             user = get_current_user()
             if user:
@@ -451,9 +413,7 @@ def sidebar_login():
                         save_json(USERS_FILE, users)
                         st.success("註冊成功！請登入")
 
-# =============================================================
-# 各個頁面
-# =============================================================
+# ---------- 頁面內容 ----------
 def main_page():
     st.title("🏇 SHTSN 36特徵三核心賽馬AI預測系統")
     st.markdown("### 歡迎使用最先進嘅賽馬預測系統")
@@ -608,9 +568,7 @@ def admin_page():
         else:
             st.info("暫無日誌")
 
-# =============================================================
-# 主路由
-# =============================================================
+# ---------- 主路由（縮排絕對正確） ----------
 def main():
     sidebar_login()
     page = st.session_state.get("page", "主頁面")
