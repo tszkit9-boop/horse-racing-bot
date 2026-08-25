@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 最終完整版（獨立開關・所有功能齊全）
+賽馬預測系統 - 最終完整版（含系統設定・超級管理員專屬）
 """
 
 import streamlit as st
@@ -20,20 +20,22 @@ import random
 from PIL import Image
 
 # ============================================================
-# 🔐 系統設定（全部中文）
+# 🔐 系統設定（動態載入）
 # ============================================================
-CONFIG = {
-    "enable_registration": True,      # 開放註冊
-    "enable_payment": True,           # ✅ 啟用付款（想關閉就改 False）
-    "enable_admin": True,             # 啟用後台管理
-    "currency": "HKD",                # 貨幣單位
-    "free_limit": 2,                  # 免費用戶免費預測次數
-    "admin_password": "z54060437K",   # 管理員密碼
-    "price_day": 18,                  # 日費價格
-    "price_month": 128,               # 月費價格
-    "price_quarter": 328,             # 季費價格
-    "verification_expiry": 5,         # 驗證碼有效期（分鐘）
-    "enable_vip_content": True,       # ✅ 獨立開關：三重彩/四重彩 VIP 專屬顯示
+CONFIG_FILE = 'system_config.json'
+
+DEFAULT_CONFIG = {
+    "enable_registration": True,
+    "enable_payment": True,
+    "enable_admin": True,
+    "currency": "HKD",
+    "free_limit": 2,
+    "admin_password": "z54060437K",
+    "price_day": 18,
+    "price_month": 128,
+    "price_quarter": 328,
+    "verification_expiry": 5,
+    "enable_vip_content": True,
     "module_user_management": True,
     "module_analytics": True,
     "module_finance": True,
@@ -43,6 +45,36 @@ CONFIG = {
     "module_security": True,
     "module_promo": True,
 }
+
+def load_system_config():
+    """載入系統設定，若檔案不存在則建立預設"""
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            for key, value in DEFAULT_CONFIG.items():
+                if key not in config:
+                    config[key] = value
+            return config
+        except Exception as e:
+            st.error(f"讀取設定檔失敗：{e}")
+            return DEFAULT_CONFIG.copy()
+    else:
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(DEFAULT_CONFIG, f, ensure_ascii=False, indent=2)
+        return DEFAULT_CONFIG.copy()
+
+def save_system_config(config):
+    try:
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        st.error(f"儲存設定失敗：{e}")
+        return False
+
+# 載入設定
+CONFIG = load_system_config()
 
 # ============================================================
 # 1. 頁面設定
@@ -1764,7 +1796,86 @@ def _refund_payment(rec, proofs_data):
         st.code(traceback.format_exc())
 
 # ============================================================
-# 9. 後台頁面
+# ---------- ⚙️ 系統設定（僅超級管理員可見） ----------
+# ============================================================
+def admin_system_settings():
+    # 權限檢查：只有超級管理員可以修改
+    users = load_users()
+    admin_username = st.session_state.get('admin_username', 'admin')
+    user_group = users.get(admin_username, {}).get('group', 'free')
+    if user_group != 'super_admin':
+        st.error("⛔ 只有超級管理員可以修改系統設定")
+        return
+    
+    st.subheader("⚙️ 系統設定")
+    st.info("修改設定後，撳「儲存設定」會自動重新整理頁面，新設定即時生效。")
+    
+    config = load_system_config()
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### 🔐 基本設定")
+        enable_registration = st.checkbox("開放註冊", value=config.get("enable_registration", True))
+        enable_payment = st.checkbox("啟用付款功能", value=config.get("enable_payment", True))
+        enable_admin = st.checkbox("啟用後台管理", value=config.get("enable_admin", True))
+        enable_vip_content = st.checkbox("🔒 三重彩/四重彩 VIP 專屬", value=config.get("enable_vip_content", True))
+        
+        st.markdown("#### 💰 價格設定")
+        price_day = st.number_input("日費價格 (HKD)", min_value=0, value=config.get("price_day", 18), step=1)
+        price_month = st.number_input("月費價格 (HKD)", min_value=0, value=config.get("price_month", 128), step=1)
+        price_quarter = st.number_input("季費價格 (HKD)", min_value=0, value=config.get("price_quarter", 328), step=1)
+    
+    with col2:
+        st.markdown("#### 📊 預設限制")
+        free_limit = st.number_input("免費預測次數", min_value=0, value=config.get("free_limit", 2), step=1)
+        verification_expiry = st.number_input("驗證碼有效期 (分鐘)", min_value=1, value=config.get("verification_expiry", 5), step=1)
+        currency = st.text_input("貨幣單位", value=config.get("currency", "HKD"))
+        admin_password = st.text_input("管理員密碼", value=config.get("admin_password", "z54060437K"), type="password")
+        
+        st.markdown("#### 🧩 後台模組開關")
+        module_user_management = st.checkbox("用戶管理模組", value=config.get("module_user_management", True))
+        module_analytics = st.checkbox("數據分析模組", value=config.get("module_analytics", True))
+        module_finance = st.checkbox("財務管理模組", value=config.get("module_finance", True))
+        module_monitoring = st.checkbox("系統監控模組", value=config.get("module_monitoring", True))
+        module_content = st.checkbox("內容管理模組", value=config.get("module_content", True))
+        module_automation = st.checkbox("自動化工具模組", value=config.get("module_automation", True))
+        module_security = st.checkbox("安全與權限模組", value=config.get("module_security", True))
+        module_promo = st.checkbox("優惠碼模組", value=config.get("module_promo", True))
+    
+    st.divider()
+    if st.button("💾 儲存設定", type="primary"):
+        new_config = {
+            "enable_registration": enable_registration,
+            "enable_payment": enable_payment,
+            "enable_admin": enable_admin,
+            "currency": currency,
+            "free_limit": free_limit,
+            "admin_password": admin_password,
+            "price_day": price_day,
+            "price_month": price_month,
+            "price_quarter": price_quarter,
+            "verification_expiry": verification_expiry,
+            "enable_vip_content": enable_vip_content,
+            "module_user_management": module_user_management,
+            "module_analytics": module_analytics,
+            "module_finance": module_finance,
+            "module_monitoring": module_monitoring,
+            "module_content": module_content,
+            "module_automation": module_automation,
+            "module_security": module_security,
+            "module_promo": module_promo,
+        }
+        if save_system_config(new_config):
+            st.success("✅ 設定已儲存！頁面將會重新整理以套用新設定。")
+            import time
+            time.sleep(1)
+            st.rerun()
+        else:
+            st.error("❌ 儲存失敗，請檢查檔案權限。")
+
+# ============================================================
+# 9. 後台頁面（含動態分頁・超級管理員專屬設定）
 # ============================================================
 def admin_page():
     if 'admin_authenticated' not in st.session_state:
@@ -1791,52 +1902,55 @@ def admin_page():
                 st.rerun()
         return
     
+    # 獲取當前管理員角色
+    users = load_users()
+    admin_username = st.session_state.get('admin_username', 'admin')
+    user_group = users.get(admin_username, {}).get('group', 'free')
+    is_super_admin = (user_group == 'super_admin')
+    
     st.title("🔐 後台管理")
-    st.info(f"👤 超級管理員：{st.session_state.get('admin_username', 'admin')} | 已通過驗證")
+    st.info(f"👤 管理員：{admin_username} | 身份：{'超級管理員' if is_super_admin else '管理員'}")
     if st.button("🚪 登出後台", key="logout_admin"):
         st.session_state.admin_authenticated = False
         st.session_state.show_admin = False
         st.rerun()
     st.divider()
     
-    tabs = st.tabs([
-        "👥 用戶管理", 
-        "📊 數據分析", 
-        "💰 財務", 
-        "🎟️ 優惠碼", 
-        "📈 預測監控", 
-        "⏰ 訂閱管理", 
-        "📤 付款審核", 
-        "📡 監控", 
-        "📝 內容", 
-        "🤖 自動化", 
-        "🔐 安全"
-    ])
-    with tabs[0]:
-        admin_user_management() if CONFIG["module_user_management"] else st.info("模組已關閉")
-    with tabs[1]:
-        admin_analytics() if CONFIG["module_analytics"] else st.info("模組已關閉")
-    with tabs[2]:
-        admin_finance() if CONFIG["module_finance"] else st.info("模組已關閉")
-    with tabs[3]:
-        admin_promo_codes() if CONFIG["module_promo"] else st.info("模組已關閉")
-    with tabs[4]:
-        admin_accuracy_monitor()
-    with tabs[5]:
-        admin_subscription()
-    with tabs[6]:
-        admin_payment_review()
-    with tabs[7]:
-        admin_monitoring() if CONFIG["module_monitoring"] else st.info("模組已關閉")
-    with tabs[8]:
-        admin_content() if CONFIG["module_content"] else st.info("模組已關閉")
-    with tabs[9]:
-        admin_automation() if CONFIG["module_automation"] else st.info("模組已關閉")
-    with tabs[10]:
-        admin_security() if CONFIG["module_security"] else st.info("模組已關閉")
+    # 定義所有分頁
+    tab_functions = {
+        "👥 用戶管理": admin_user_management if CONFIG.get("module_user_management", True) else lambda: st.info("模組已關閉"),
+        "📊 數據分析": admin_analytics if CONFIG.get("module_analytics", True) else lambda: st.info("模組已關閉"),
+        "💰 財務": admin_finance if CONFIG.get("module_finance", True) else lambda: st.info("模組已關閉"),
+        "🎟️ 優惠碼": admin_promo_codes if CONFIG.get("module_promo", True) else lambda: st.info("模組已關閉"),
+        "📈 預測監控": admin_accuracy_monitor,
+        "⏰ 訂閱管理": admin_subscription,
+        "📤 付款審核": admin_payment_review,
+        "📡 監控": admin_monitoring if CONFIG.get("module_monitoring", True) else lambda: st.info("模組已關閉"),
+        "📝 內容": admin_content if CONFIG.get("module_content", True) else lambda: st.info("模組已關閉"),
+        "🤖 自動化": admin_automation if CONFIG.get("module_automation", True) else lambda: st.info("模組已關閉"),
+        "🔐 安全": admin_security if CONFIG.get("module_security", True) else lambda: st.info("模組已關閉"),
+    }
+    
+    # 基本分頁列表
+    base_tabs = ["👥 用戶管理", "📊 數據分析", "💰 財務", "🎟️ 優惠碼", 
+                 "📈 預測監控", "⏰ 訂閱管理", "📤 付款審核", "📡 監控", 
+                 "📝 內容", "🤖 自動化", "🔐 安全"]
+    
+    # 超級管理員額外分頁
+    if is_super_admin:
+        tab_names = base_tabs + ["⚙️ 系統設定"]
+        tab_functions["⚙️ 系統設定"] = admin_system_settings
+    else:
+        tab_names = base_tabs
+    
+    # 建立分頁
+    tabs = st.tabs(tab_names)
+    for i, name in enumerate(tab_names):
+        with tabs[i]:
+            tab_functions[name]()
 
 # ============================================================
-# 10. 主頁面（獨立開關・所有功能齊全）
+# 10. 主頁面（所有功能齊全）
 # ============================================================
 def main():
     if 'logged_in' not in st.session_state:
@@ -1980,14 +2094,11 @@ def main():
         used = user_data.get('free_usage', 0)
         user_group = user_data.get('group', 'free')
         
-        # =========================================================
-        # ✅ 獨立開關：enable_vip_content
-        # =========================================================
+        # VIP 內容開關
         if CONFIG.get("enable_vip_content", True):
             is_vip = user_group in ['VIP', 'super_admin']
         else:
-            is_vip = True   # 關閉 VIP 專屬功能，所有人開放
-        # =========================================================
+            is_vip = True
         
         if CONFIG["enable_payment"] and limit != -1 and used >= limit:
             show_paywall()
@@ -1998,11 +2109,10 @@ def main():
                 if result is not None:
                     st.success(f"✅ {date_str} 第 {race_no} 場 預測完成")
                     
-                    # --- 提取前 4 名 ---
                     top4 = result.head(4)
                     top1 = top4.iloc[0]
                     
-                    # --- 獨贏首選（美化版特大橫幅） ---
+                    # 獨贏首選
                     st.markdown("---")
                     st.markdown(f"""
                     <div style="
@@ -2027,19 +2137,12 @@ def main():
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    # --- 連贏推薦（所有人可見） ---
+                    # 連贏推薦
                     st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🔗 連贏推薦</h3>", unsafe_allow_html=True)
                     col1, col2 = st.columns(2)
                     with col1:
                         st.markdown(f"""
-                        <div style="
-                            background: linear-gradient(135deg, #e3f2fd, #bbdefb);
-                            border-radius: 14px;
-                            padding: 16px 20px;
-                            text-align: center;
-                            box-shadow: 0 4px 12px rgba(13, 71, 161, 0.15);
-                            border-left: 5px solid #0d47a1;
-                        ">
+                        <div style="background: linear-gradient(135deg, #e3f2fd, #bbdefb); border-radius: 14px; padding: 16px 20px; text-align: center; box-shadow: 0 4px 12px rgba(13, 71, 161, 0.15); border-left: 5px solid #0d47a1;">
                             <span style="font-size: 28px;">🏇</span>
                             <h4 style="margin: 4px 0 2px 0; color: #0d47a1;">{top4.iloc[0]['馬匹名稱']}</h4>
                             <div style="display: flex; justify-content: center; gap: 20px; font-size: 14px; color: #555;">
@@ -2050,14 +2153,7 @@ def main():
                         """, unsafe_allow_html=True)
                     with col2:
                         st.markdown(f"""
-                        <div style="
-                            background: linear-gradient(135deg, #e3f2fd, #bbdefb);
-                            border-radius: 14px;
-                            padding: 16px 20px;
-                            text-align: center;
-                            box-shadow: 0 4px 12px rgba(13, 71, 161, 0.15);
-                            border-left: 5px solid #0d47a1;
-                        ">
+                        <div style="background: linear-gradient(135deg, #e3f2fd, #bbdefb); border-radius: 14px; padding: 16px 20px; text-align: center; box-shadow: 0 4px 12px rgba(13, 71, 161, 0.15); border-left: 5px solid #0d47a1;">
                             <span style="font-size: 28px;">🏇</span>
                             <h4 style="margin: 4px 0 2px 0; color: #0d47a1;">{top4.iloc[1]['馬匹名稱']}</h4>
                             <div style="display: flex; justify-content: center; gap: 20px; font-size: 14px; color: #555;">
@@ -2068,7 +2164,7 @@ def main():
                         """, unsafe_allow_html=True)
                     st.caption("💡 連贏：揀 2 隻馬，跑出前 2 名（不分順序）即中")
                     
-                    # --- 三重彩推薦（根據 enable_vip_content 開關） ---
+                    # 三重彩
                     if is_vip:
                         st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🥉 三重彩推薦（4 隻複式）</h3>", unsafe_allow_html=True)
                         cols = st.columns(4)
@@ -2077,51 +2173,25 @@ def main():
                             row = top4.iloc[i]
                             with cols[i]:
                                 st.markdown(f"""
-                                <div style="
-                                    background: {colors[i]};
-                                    border-radius: 12px;
-                                    padding: 14px 10px;
-                                    text-align: center;
-                                    box-shadow: 0 3px 10px rgba(0,0,0,0.08);
-                                    border: 1px solid rgba(0,0,0,0.05);
-                                ">
+                                <div style="background: {colors[i]}; border-radius: 12px; padding: 14px 10px; text-align: center; box-shadow: 0 3px 10px rgba(0,0,0,0.08); border: 1px solid rgba(0,0,0,0.05);">
                                     <span style="font-size: 24px;">🏇</span>
                                     <h5 style="margin: 2px 0; color: #333; font-size: 15px;">{row['馬匹名稱']}</h5>
-                                    <div style="font-size: 13px; color: #555;">
-                                        檔位 <b>{row['檔位']}</b><br>
-                                        勝率 <b style="color:#2e7d32;">{row['預測勝率']:.2%}</b>
-                                    </div>
+                                    <div style="font-size: 13px; color: #555;">檔位 <b>{row['檔位']}</b><br>勝率 <b style="color:#2e7d32;">{row['預測勝率']:.2%}</b></div>
                                 </div>
                                 """, unsafe_allow_html=True)
                         st.caption("💡 三重彩：揀 3 隻馬，順序估中冠亞季軍。以上 4 隻馬可做複式三重彩（4 選 3）")
                     else:
                         st.markdown("""
-                        <div style="
-                            background: linear-gradient(135deg, #fff3e0, #ffe0b2);
-                            border-radius: 16px;
-                            padding: 30px 20px;
-                            text-align: center;
-                            border: 2px dashed #ff6f00;
-                            margin: 10px 0;
-                        ">
+                        <div style="background: linear-gradient(135deg, #fff3e0, #ffe0b2); border-radius: 16px; padding: 30px 20px; text-align: center; border: 2px dashed #ff6f00; margin: 10px 0;">
                             <span style="font-size: 48px;">🔒</span>
                             <h3 style="color: #e65100; margin: 10px 0;">三重彩推薦</h3>
                             <p style="color: #bf360c; font-size: 16px;">此內容僅限 <b>VIP 會員</b> 查看</p>
                             <p style="color: #888; font-size: 14px;">升級 VIP 即可解鎖三重彩、四重彩等獨家彩池推薦</p>
-                            <div style="margin-top: 15px;">
-                                <span style="
-                                    background: #ff6f00;
-                                    color: white;
-                                    padding: 8px 24px;
-                                    border-radius: 20px;
-                                    font-weight: bold;
-                                    font-size: 14px;
-                                ">💎 立即升級 VIP</span>
-                            </div>
+                            <div style="margin-top: 15px;"><span style="background: #ff6f00; color: white; padding: 8px 24px; border-radius: 20px; font-weight: bold; font-size: 14px;">💎 立即升級 VIP</span></div>
                         </div>
                         """, unsafe_allow_html=True)
                     
-                    # --- 四重彩推薦（根據 enable_vip_content 開關） ---
+                    # 四重彩
                     if is_vip:
                         st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🏅 四重彩推薦（4 隻複式）</h3>", unsafe_allow_html=True)
                         cols = st.columns(4)
@@ -2130,50 +2200,27 @@ def main():
                             row = top4.iloc[i]
                             with cols[i]:
                                 st.markdown(f"""
-                                <div style="
-                                    background: {colors2[i]};
-                                    border-radius: 12px;
-                                    padding: 14px 10px;
-                                    text-align: center;
-                                    box-shadow: 0 3px 10px rgba(0,0,0,0.08);
-                                    border: 1px solid rgba(0,0,0,0.05);
-                                ">
+                                <div style="background: {colors2[i]}; border-radius: 12px; padding: 14px 10px; text-align: center; box-shadow: 0 3px 10px rgba(0,0,0,0.08); border: 1px solid rgba(0,0,0,0.05);">
                                     <span style="font-size: 24px;">🏇</span>
                                     <h5 style="margin: 2px 0; color: #333; font-size: 15px;">{row['馬匹名稱']}</h5>
-                                    <div style="font-size: 13px; color: #555;">
-                                        檔位 <b>{row['檔位']}</b><br>
-                                        勝率 <b style="color:#2e7d32;">{row['預測勝率']:.2%}</b>
-                                    </div>
+                                    <div style="font-size: 13px; color: #555;">檔位 <b>{row['檔位']}</b><br>勝率 <b style="color:#2e7d32;">{row['預測勝率']:.2%}</b></div>
                                 </div>
                                 """, unsafe_allow_html=True)
                         st.caption("💡 四重彩：揀 4 隻馬，順序估中冠亞季殿軍。以上 4 隻馬可做複式四重彩（4 選 4）")
                     else:
                         st.markdown("""
-                        <div style="
-                            background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
-                            border-radius: 16px;
-                            padding: 20px 20px;
-                            text-align: center;
-                            border: 2px dashed #2e7d32;
-                            margin: 10px 0;
-                        ">
+                        <div style="background: linear-gradient(135deg, #e8f5e9, #c8e6c9); border-radius: 16px; padding: 20px 20px; text-align: center; border: 2px dashed #2e7d32; margin: 10px 0;">
                             <span style="font-size: 36px;">🔒</span>
                             <h4 style="color: #1b5e20; margin: 5px 0;">四重彩推薦</h4>
                             <p style="color: #555; font-size: 14px;">升級 VIP 即可解鎖四重彩推薦</p>
                         </div>
                         """, unsafe_allow_html=True)
                     
-                    # --- 總結投注建議 ---
+                    # 總結建議
                     st.divider()
                     st.markdown("""
                     <h3 style='margin-bottom: 10px;'>📋 總結投注建議</h3>
-                    <div style="
-                        background: linear-gradient(135deg, #f1f8e9, #dcedc8);
-                        border-radius: 16px;
-                        padding: 20px 24px;
-                        border: 2px solid #2e7d32;
-                        box-shadow: 0 4px 16px rgba(46, 125, 50, 0.15);
-                    ">
+                    <div style="background: linear-gradient(135deg, #f1f8e9, #dcedc8); border-radius: 16px; padding: 20px 24px; border: 2px solid #2e7d32; box-shadow: 0 4px 16px rgba(46, 125, 50, 0.15);">
                     """, unsafe_allow_html=True)
                     
                     if is_vip:
@@ -2200,11 +2247,9 @@ def main():
                     
                     st.markdown("</div>", unsafe_allow_html=True)
                     
-                    # --- 彩池推薦 ---
                     st.subheader("🎯 彩池推薦（詳細）")
                     st.text(pool)
 
-                    # --- 記錄預測 ---
                     if CONFIG["enable_registration"] and st.session_state.logged_in:
                         winner_name = top4.iloc[0]['馬匹名稱']
                         prob = top4.iloc[0]['預測勝率']
@@ -2217,7 +2262,7 @@ def main():
                         st.session_state.usage_count += 1
                         st.info("📝 預測已記錄到你的歷史")
 
-    # ----- 頁腳（已加入免責聲明） -----
+    # ----- 頁腳 -----
     st.divider()
     st.warning("⚠️ **免責聲明**：本系統提供之預測僅供參考，不構成投注建議。賽馬活動涉及風險，用戶應量力而為，本系統不對任何投注損失負責。用戶必須年滿18歲。使用本服務即表示同意以上條款。")
     
