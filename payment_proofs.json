@@ -1,1 +1,76 @@
-{"proof_records":[{"id":1,"username":"admin","plan":"month","plan_name":"月費","original_price":128,"final_price":128,"discount_applied":false,"discount_desc":"","promo_code":null,"filename":"admin_test.png","uploaded_at":"2026-08-25T10:00:00","status":"pending"}]}
+{
+  "proof_records": [
+    {
+      "id": 1,
+      "username": "admin",
+      "plan": "month",
+      "plan_name": "月費",
+      "original_price": 128,
+      "final_price": 128,
+      "discount_applied": false,
+      "discount_desc": "",
+      "promo_code": null,
+      "filename": "admin_month.png",
+      "uploaded_at": "2026-08-25T10:00:00",
+      "status": "approved",
+      "approved_at": "2026-08-25T10:30:00",
+      "approved_by": "admin"
+    },
+    {
+      "id": 2,
+      "username": "testuser_day",
+      "plan": "day",
+      "plan_name": "日費",
+      "original_price": 18,
+      "final_price": 18,
+      "discount_applied": false,
+      "discount_desc": "",
+      "promo_code": null,
+      "filename": "testuser_day.png",
+      "uploaded_at": "2026-08-25T11:00:00",
+      "status": "pending"
+    },
+    {
+      "id": 3,
+      "username": "testuser_month",
+      "plan": "month",
+      "plan_name": "月費",
+      "original_price": 128,
+      "final_price": 128,
+      "discount_applied": false,
+      "discount_desc": "",
+      "promo_code": null,
+      "filename": "testuser_month.png",
+      "uploaded_at": "2026-08-25T12:00:00",
+      "status": "pending"
+    },
+    {
+      "id": 4,
+      "username": "testuser_quarter",
+      "plan": "quarter",
+      "plan_name": "季費",
+      "original_price": 328,
+      "final_price": 328,
+      "discount_applied": false,
+      "discount_desc": "",
+      "promo_code": null,
+      "filename": "testuser_quarter.png",
+      "uploaded_at": "2026-08-25T13:00:00",
+      "status": "pending"
+    },
+    {
+      "id": 5,
+      "username": "vip_discount",
+      "plan": "quarter",
+      "plan_name": "季費",
+      "original_price": 328,
+      "final_price": 262.4,
+      "discount_applied": true,
+      "discount_desc": "20% 折扣",
+      "promo_code": "SAVE20",
+      "filename": "vip_discount.png",
+      "uploaded_at": "2026-08-25T14:00:00",
+      "status": "pending"
+    }
+  ]
+}
