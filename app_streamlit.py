@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整更改版（用戶儀表板新增預測統計層）
+賽馬預測系統 - 最終完整版（側邊欄有預測選項・所有功能齊全）
 """
 
 import streamlit as st
@@ -706,7 +706,7 @@ def run_prediction(date_str, race_no):
     return result, pool_rec
 
 # ============================================================
-# 5. 用戶功能（已修改 show_user_dashboard 增加預測統計層）
+# 5. 用戶功能（含預測統計層）
 # ============================================================
 def record_prediction(username, date_str, race_no, horse_name, predicted_prob=None):
     users = load_users()
@@ -803,11 +803,10 @@ def show_user_dashboard(username):
         with col_inv3:
             st.caption(f"已獲得獎勵次數：**{invite_rewards}** 次（已自動加到你的預測額度）")
     
-    # ---- 第三層：預測統計（新加） ----
+    # ---- 第三層：預測統計 ----
     st.markdown("---")
     st.subheader("📊 預測統計")
     
-    # 計算今日預測次數
     today = datetime.now().strftime('%Y-%m-%d')
     history = user_data.get('history', [])
     today_count = sum(1 for h in history if h.get('date') == today)
@@ -824,12 +823,10 @@ def show_user_dashboard(username):
             remain = max(0, limit - user_data.get('free_usage', 0))
             st.metric("🔮 剩餘次數", remain)
     with col_p4:
-        # 快捷預測按鈕
         if st.button("🚀 去預測", use_container_width=True, key="quick_predict"):
             st.session_state.page = "預測"
             st.rerun()
     
-    # 顯示今日已用場次（如果有的話）
     if today_count > 0:
         st.caption(f"📝 今日已進行 {today_count} 次預測")
     else:
@@ -2085,7 +2082,7 @@ def admin_page():
             tab_functions[name]()
 
 # ============================================================
-# 10. 主頁面（含每日免費重心推介）
+# 10. 主頁面（含每日免費重心推介，側邊欄有預測選項）
 # ============================================================
 def main():
     if 'logged_in' not in st.session_state:
@@ -2150,7 +2147,7 @@ def main():
         admin_page()
         return
 
-    # ----- 每日免費重心推介（未登入都見到） -----
+    # ----- 每日免費重心推介 -----
     if CONFIG.get("enable_daily_free_tip", True):
         try:
             df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
@@ -2217,10 +2214,11 @@ def main():
                 st.rerun()
 
     if CONFIG["enable_registration"] and st.session_state.logged_in:
-        show_user_dashboard(st.session_state.username)   # 已更新版本
+        show_user_dashboard(st.session_state.username)
     elif not CONFIG["enable_registration"]:
         st.info("🔓 目前為公開模式，任何人皆可使用")
 
+    # ----- 側邊欄（包含「預測」選項） -----
     with st.sidebar:
         st.header("🎯 控制面板")
         if CONFIG["enable_registration"] and st.session_state.logged_in:
@@ -2246,7 +2244,19 @@ def main():
             st.caption("💬 聯絡管理員")
             st.markdown("Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
             st.markdown("[🔗 點擊連結搵我哋](https://t.me/bryhjdjbrbxibvrjskofndhiebdpaq)")
+            
+            # ----- 導航選項（包含「預測」） -----
+            st.divider()
+            st.subheader("📌 導航")
+            pages = ["主頁面", "預測", "賽程", "馬匹查詢", "騎師查詢", "對比", "趨勢", "用戶儀表板", "預測歷史"]
+            if is_super_admin:
+                pages.append("後台管理")
+            selected = st.selectbox("前往", pages, index=0, key="nav_select")
+            if selected != st.session_state.get('page', '主頁面'):
+                st.session_state.page = selected
+                st.rerun()
         
+        # 日期和場次選擇（所有用戶可見）
         date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="predict_date")
         race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race")
         predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn")
@@ -2276,6 +2286,7 @@ def main():
     except:
         st.info("今日沒有賽事")
 
+    # ----- 執行預測（如果撳咗按鈕） -----
     if predict_btn:
         users = load_users()
         user_data = users.get(st.session_state.username, {})
