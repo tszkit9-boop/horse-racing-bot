@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 最終完整版（含服務條款・所有功能齊全）
+賽馬預測系統 - 最終完整版（含免責聲明・所有功能齊全）
 """
 
 import streamlit as st
@@ -804,7 +804,7 @@ def login_page():
                 本系統有權隨時修訂服務條款，修訂後會於系統內公告。用戶繼續使用即表示同意最新條款。
 
                 **8. 聯絡我們**
-                如有任何疑問，可透過 WhatsApp 或 Telegram 聯絡管理員。
+                如有任何疑問，可透過 Telegram 聯絡管理員：@bryhjdjbrbxibvrjskofndhiebdpaq
 
                 **最後更新日期：2026 年 8 月 25 日**
                 """)
@@ -867,7 +867,8 @@ def show_paywall():
 
     if st.session_state.get('payment_just_submitted', False):
         st.success("✅ 付款申請已成功提交！管理員將盡快審核。")
-        st.info("📩 請同時 WhatsApp 通知管理員（可加快審核）")
+        st.info("📩 提交後請 Telegram 通知管理員（可加快審核）")
+        st.markdown("💬 Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
         if 'payment_detail' in st.session_state:
             st.write(st.session_state['payment_detail'])
         if st.button("返回主頁"):
@@ -1841,7 +1842,7 @@ def admin_page():
         admin_security() if CONFIG["module_security"] else st.info("模組已關閉")
 
 # ============================================================
-# 10. 主頁面
+# 10. 主頁面（已加入免責聲明 + Telegram）
 # ============================================================
 def main():
     if 'logged_in' not in st.session_state:
@@ -1943,6 +1944,13 @@ def main():
                     if key in st.session_state:
                         del st.session_state[key]
                 st.rerun()
+            
+            # ----- 側邊欄加入 Telegram 聯絡 -----
+            st.divider()
+            st.caption("💬 聯絡管理員")
+            st.markdown("Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
+            st.markdown("[🔗 點擊連結搵我哋](https://t.me/bryhjdjbrbxibvrjskofndhiebdpaq)")
+        
         date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="predict_date")
         race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race")
         predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn")
@@ -2007,9 +2015,19 @@ def main():
                         st.session_state.usage_count += 1
                         st.info("📝 預測已記錄到你的歷史")
 
+    # ----- 頁腳（已加入免責聲明） -----
     st.divider()
-    st.caption(f"🕐 最後更新：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    st.caption("🔐 數據來源：HKJC | 系統版本：v14.0-用戶體驗版")
+    
+    # 免責聲明（黃色框）
+    st.warning("⚠️ **免責聲明**：本系統提供之預測僅供參考，不構成投注建議。賽馬活動涉及風險，用戶應量力而為，本系統不對任何投注損失負責。用戶必須年滿18歲。使用本服務即表示同意以上條款。")
+    
+    col_f1, col_f2, col_f3 = st.columns(3)
+    with col_f1:
+        st.caption(f"🕐 最後更新：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    with col_f2:
+        st.caption("🔐 數據來源：HKJC | 系統版本：v14.0-用戶體驗版")
+    with col_f3:
+        st.caption("💬 Telegram：@bryhjdjbrbxibvrjskofndhiebdpaq")
 
 if __name__ == '__main__':
     main()
