@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 最終完整版（含系統設定・所有功能齊全）
+賽馬預測系統 - 最終完整版（側邊欄正常・所有功能齊全）
 """
 
 import streamlit as st
@@ -20,7 +20,7 @@ import random
 from PIL import Image
 
 # ============================================================
-# 🔒 隱藏 Streamlit 平台 UI（四層保護・永不復原）
+# 🔒 隱藏 Streamlit 平台 UI（保留側邊欄）
 # ============================================================
 st.set_page_config(
     page_title="🏇 賽馬預測系統",
@@ -34,10 +34,10 @@ st.set_page_config(
     }
 )
 
-# 強制隱藏所有平台 UI（永不復原）
+# 只隱藏平台 UI，保留側邊欄
 st.markdown("""
 <style>
-    /* 隱藏所有平台元素 */
+    /* 隱藏平台元素（不影響側邊欄） */
     div[data-testid="stToolbar"] { display: none !important; }
     .stAppDeployButton { display: none !important; }
     #MainMenu { display: none !important; }
@@ -49,12 +49,27 @@ st.markdown("""
     [data-testid="stHeader"] { display: none !important; }
     [data-testid="stDecoration"] { display: none !important; }
     .stApp > header { display: none !important; }
-    .stApp > header + div { padding-top: 0 !important; }
+    
+    /* 確保側邊欄正常顯示 */
+    section[data-testid="stSidebar"] {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+    }
+    section[data-testid="stSidebar"] * {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+    }
+    
+    /* 移除頂部多餘空白 */
+    .stApp > header + div {
+        padding-top: 0 !important;
+    }
 </style>
 <script>
-    // 永久移除函數
-    function permanentlyRemoveUI() {
-        // 移除所有平台元素
+    function removePlatformUI() {
+        // 只移除平台元素，不動側邊欄
         const selectors = [
             'div[data-testid="stToolbar"]',
             '.stAppDeployButton',
@@ -70,26 +85,26 @@ st.markdown("""
         selectors.forEach(sel => {
             document.querySelectorAll(sel).forEach(el => el.remove());
         });
-        // 移除任何包含 Manage/Share 文字的元素
+        // 只移除包含 Manage/Share 的平台元素，不影響側邊欄
         document.querySelectorAll('button, a, div, span').forEach(el => {
             if (el.textContent && (
                 el.textContent.includes('Manage') || 
                 el.textContent.includes('Share') || 
                 el.textContent.includes('Settings')
             )) {
-                el.remove();
-                if (el.parentElement && el.parentElement.children.length === 0) {
-                    el.parentElement.remove();
+                // 檢查是否在側邊欄內
+                if (!el.closest('section[data-testid="stSidebar"]')) {
+                    el.remove();
+                    if (el.parentElement && el.parentElement.children.length === 0) {
+                        el.parentElement.remove();
+                    }
                 }
             }
         });
     }
-    // 立即執行
-    permanentlyRemoveUI();
-    // 每 300ms 檢查一次，確保永久消失
-    setInterval(permanentlyRemoveUI, 300);
-    // DOM 變化時自動重新執行
-    new MutationObserver(permanentlyRemoveUI).observe(document.body, { 
+    removePlatformUI();
+    setInterval(removePlatformUI, 500);
+    new MutationObserver(removePlatformUI).observe(document.body, { 
         childList: true, 
         subtree: true 
     });
@@ -2079,7 +2094,7 @@ def admin_page():
             tab_functions[name]()
 
 # ============================================================
-# 10. 主頁面（含每日免費重心推介）
+# 10. 主頁面（含每日免費重心推介，側邊欄正常顯示）
 # ============================================================
 def main():
     if 'logged_in' not in st.session_state:
