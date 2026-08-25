@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 付款審核修復版（所有功能完整）
+賽馬預測系統 - 完整版（自動升級 + 自動終止）
 """
 
 import streamlit as st
@@ -93,6 +93,7 @@ def load_users():
     if not users or "admin" not in users:
         users = {
             "admin": {
+                "username": "admin",
                 "password": CONFIG["admin_password"],
                 "is_paid": False,
                 "paid_date": None,
@@ -110,7 +111,7 @@ def load_users():
         }
         save_users(users)
     else:
-        # 強制修復 admin：確保無限次數 & 超級管理員
+        # 強制修復 admin
         if "admin" in users:
             users["admin"]["group"] = "super_admin"
             users["admin"]["predictions_limit"] = -1
@@ -1277,26 +1278,25 @@ def admin_accuracy_monitor():
     with st.expander("📋 查看所有記錄"):
         st.dataframe(df_records, use_container_width=True)
 
-# ---------- 8.6 訂閱管理 ----------
+# ---------- 8.6 訂閱管理（已加入自動終止功能） ----------
 def admin_subscription():
     st.subheader("⏰ 訂閱管理 & 到期提醒")
     users = load_users()
     paid_users = {u: data for u, data in users.items() if data.get('is_paid', False) or data.get('group') in ['VIP', 'super_admin']}
     if not paid_users:
         st.info("暫時沒有付費用戶")
-        return
-
-    df_paid = pd.DataFrame.from_dict(paid_users, orient='index')
-    required_cols = ['is_paid', 'group', 'plan', 'paid_date', 'expiry_date']
-    for col in required_cols:
-        if col not in df_paid.columns:
-            df_paid[col] = None
-    df_paid['expiry_date'] = pd.to_datetime(df_paid['expiry_date'], errors='coerce')
-    today = datetime.now()
-    df_paid['days_left'] = (df_paid['expiry_date'] - today).dt.days
-    df_paid['status'] = df_paid['days_left'].apply(lambda x: '🟢 有效' if x > 7 else ('🟡 快到期' if x > 0 else '🔴 已過期') if pd.notna(x) else '⚪ 未設定')
-    display_cols = ['is_paid', 'group', 'plan', 'paid_date', 'expiry_date', 'days_left', 'status']
-    st.dataframe(df_paid[display_cols], use_container_width=True)
+    else:
+        df_paid = pd.DataFrame.from_dict(paid_users, orient='index')
+        required_cols = ['is_paid', 'group', 'plan', 'paid_date', 'expiry_date']
+        for col in required_cols:
+            if col not in df_paid.columns:
+                df_paid[col] = None
+        df_paid['expiry_date'] = pd.to_datetime(df_paid['expiry_date'], errors='coerce')
+        today = datetime.now()
+        df_paid['days_left'] = (df_paid['expiry_date'] - today).dt.days
+        df_paid['status'] = df_paid['days_left'].apply(lambda x: '🟢 有效' if x > 7 else ('🟡 快到期' if x > 0 else '🔴 已過期') if pd.notna(x) else '⚪ 未設定')
+        display_cols = ['is_paid', 'group', 'plan', 'paid_date', 'expiry_date', 'days_left', 'status']
+        st.dataframe(df_paid[display_cols], use_container_width=True)
 
     auto = load_json(AUTOMATION_FILE)
     remind_days = auto.get('remind_days', 3)
@@ -1307,10 +1307,39 @@ def admin_subscription():
         st.success(f"✅ 已設為提前 {new_remind} 天提醒")
         log_admin_action(st.session_state.username, f"設定提醒天數為 {new_remind}")
 
+    # ---------- 新增：自動終止過期會員 ----------
+    st.divider()
+    st.subheader("⏰ 自動終止過期會員")
+    
+    if st.button("🔍 檢查並終止過期會員", key="check_expired"):
+        users = load_users()
+        today = datetime.now()
+        expired = []
+        for uid, u in users.items():
+            if u.get('group') == 'VIP' and u.get('expiry_date'):
+                try:
+                    exp = pd.to_datetime(u['expiry_date'])
+                    if exp < today:
+                        u['group'] = 'free'
+                        u['is_paid'] = False
+                        u['predictions_limit'] = 2
+                        u['plan'] = None
+                        u['note'] = (u.get('note', '') + f' [於 {today.strftime("%Y-%m-%d")} 自動降級]').strip()
+                        expired.append(uid)
+                except Exception as e:
+                    st.warning(f"⚠️ 檢查 {uid} 時出錯：{e}")
+        if expired:
+            save_users(users)
+            st.success(f"✅ 已將 {len(expired)} 個過期會員降級：{', '.join(expired)}")
+            log_admin_action(st.session_state.username, f"自動終止過期會員：{', '.join(expired)}")
+        else:
+            st.info("✅ 目前沒有過期會員")
+
+    # ---------- 手動續期 ----------
     st.subheader("✏️ 手動續期")
-    username = st.selectbox("選擇用戶", list(paid_users.keys()), key="renew_user_select")
+    username = st.selectbox("選擇用戶", list(users.keys()), key="renew_user_select")
     if username:
-        new_expiry = st.date_input("新的到期日", value=pd.to_datetime(today + timedelta(days=30)), key="renew_date")
+        new_expiry = st.date_input("新的到期日", value=pd.to_datetime(datetime.now() + timedelta(days=30)), key="renew_date")
         if st.button("確認續期", key="renew_confirm"):
             users[username]['expiry_date'] = new_expiry.strftime('%Y-%m-%d %H:%M:%S')
             save_users(users)
@@ -1462,7 +1491,7 @@ def admin_security():
             st.error("用戶不存在")
 
 # ============================================================
-# ---------- 8.11 付款審核（完整升級版 · 確保自動升級） ----------
+# ---------- 8.11 付款審核（完整升級版） ----------
 # ============================================================
 def admin_payment_review():
     st.subheader("📤 付款審核")
@@ -1470,7 +1499,6 @@ def admin_payment_review():
     proofs_data = load_payment_proofs()
     records = proofs_data.get('proof_records', [])
     
-    # 統計
     pending = [r for r in records if r.get('status') == 'pending']
     approved = [r for r in records if r.get('status') == 'approved']
     rejected = [r for r in records if r.get('status') == 'rejected']
@@ -1483,7 +1511,6 @@ def admin_payment_review():
     col4.metric("💰 總收入", f"${total_income:.2f}")
     st.divider()
     
-    # 篩選
     with st.expander("🔍 篩選與搜尋", expanded=True):
         col_s1, col_s2, col_s3 = st.columns([2, 2, 1])
         with col_s1:
@@ -1596,7 +1623,6 @@ def admin_payment_review():
                     st.write("已處理")
             st.divider()
     
-    # 操作日誌
     with st.expander("📜 操作日誌 (最近20條)"):
         logs = load_logs()
         log_entries = logs.get('logs', [])[-20:]
@@ -1609,18 +1635,15 @@ def admin_payment_review():
 
 # ---------- 輔助函數（加入詳細除錯） ----------
 def _approve_payment(rec, proofs_data):
-    """批准付款：更新記錄狀態及用戶權限（強制升級）"""
     try:
         st.info("⏳ 開始處理批准...")
         
-        # 1. 更新付款記錄
         rec['status'] = 'approved'
         rec['approved_at'] = datetime.now().isoformat()
         rec['approved_by'] = st.session_state.username
         save_payment_proofs(proofs_data)
         st.success("✅ 付款記錄已更新")
         
-        # 2. 獲取用戶名
         username = rec.get('username')
         if not username:
             st.error("❌ 記錄中缺少 username")
@@ -1628,14 +1651,12 @@ def _approve_payment(rec, proofs_data):
         
         st.info(f"👤 正在升級用戶：{username}")
         
-        # 3. 載入用戶數據
         users = load_users()
         if username not in users:
             st.error(f"❌ 用戶 {username} 不存在於 users.json")
             st.info("📌 請確保 users.json 檔案存在並且包含該用戶")
             return
         
-        # 4. 獲取方案並計算到期日
         plan = rec.get('plan', 'month')
         days = get_plan_days(plan)
         if days == 0:
@@ -1645,15 +1666,13 @@ def _approve_payment(rec, proofs_data):
         expiry = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
         st.info(f"📅 到期日設為：{expiry}（{plan}，{days}天）")
         
-        # 5. 更新用戶資料（強制升級）
         users[username]['is_paid'] = True
         users[username]['group'] = 'VIP'
         users[username]['paid_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         users[username]['expiry_date'] = expiry
         users[username]['plan'] = plan
-        users[username]['predictions_limit'] = -1  # 無限次數
+        users[username]['predictions_limit'] = -1
         
-        # 6. 儲存用戶資料
         if save_users(users):
             st.success(f"✅ {username} 已升級為 VIP！")
             st.success(f"📅 到期日：{expiry}")
@@ -1669,7 +1688,6 @@ def _approve_payment(rec, proofs_data):
 
 
 def _reject_payment(rec, proofs_data):
-    """拒絕付款：只更新記錄狀態"""
     rec['status'] = 'rejected'
     rec['approved_at'] = datetime.now().isoformat()
     rec['approved_by'] = st.session_state.username
@@ -1679,7 +1697,6 @@ def _reject_payment(rec, proofs_data):
 
 
 def _refund_payment(rec, proofs_data):
-    """退款：降級用戶"""
     users = load_users()
     username = rec.get('username')
     if username in users:
@@ -1758,7 +1775,7 @@ def admin_page():
     with tabs[4]:
         admin_accuracy_monitor()
     with tabs[5]:
-        admin_subscription()
+        admin_subscription()   # 已包含自動終止
     with tabs[6]:
         admin_payment_review()
     with tabs[7]:
@@ -1789,7 +1806,7 @@ def main():
     if 'admin_authenticated' not in st.session_state:
         st.session_state.admin_authenticated = False
 
-    # 顯示公告
+    # 公告
     content = load_json(CONTENT_FILE)
     announcements = content.get('announcements', [])
     today = datetime.now().date()
@@ -1828,7 +1845,6 @@ def main():
         else:
             st.info(f"💡 {ann['title']}：{ann['content']}")
 
-    # 登入檢查
     if CONFIG["enable_registration"] and not st.session_state.logged_in:
         login_page()
         return
@@ -1837,7 +1853,6 @@ def main():
         admin_page()
         return
 
-    # 主頁標題
     col1, col2 = st.columns([6, 1])
     with col1:
         st.title("🏇 賽馬預測系統")
@@ -1850,13 +1865,11 @@ def main():
                 st.session_state.admin_authenticated = False
                 st.rerun()
 
-    # 用戶儀表板
     if CONFIG["enable_registration"] and st.session_state.logged_in:
         show_user_dashboard(st.session_state.username)
     elif not CONFIG["enable_registration"]:
         st.info("🔓 目前為公開模式，任何人皆可使用")
 
-    # 側邊欄
     with st.sidebar:
         st.header("🎯 控制面板")
         if CONFIG["enable_registration"] and st.session_state.logged_in:
@@ -1881,13 +1894,11 @@ def main():
         race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race")
         predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn")
 
-    # 顯示歷史記錄
     if CONFIG["enable_registration"] and st.session_state.logged_in and st.session_state.get('show_history', False):
         st.subheader("📋 我的預測記錄")
         show_prediction_history(st.session_state.username)
         st.divider()
 
-    # 今日賽程
     st.subheader("📅 今日賽程")
     try:
         df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
@@ -1908,7 +1919,6 @@ def main():
     except:
         st.info("今日沒有賽事")
 
-    # 執行預測
     if predict_btn:
         users = load_users()
         user_data = users.get(st.session_state.username, {})
@@ -1916,7 +1926,7 @@ def main():
         used = user_data.get('free_usage', 0)
         
         if limit == -1:
-            pass  # 無限次數
+            pass
         elif used >= limit:
             show_paywall()
             return
@@ -1946,7 +1956,6 @@ def main():
                     st.session_state.usage_count += 1
                     st.info("📝 預測已記錄到你的歷史")
 
-    # 頁腳
     st.divider()
     st.caption(f"🕐 最後更新：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     st.caption("🔐 數據來源：HKJC | 系統版本：v14.0-用戶體驗版")
