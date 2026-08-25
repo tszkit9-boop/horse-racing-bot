@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版（所有功能齊全）
-包含：自動升級、自動終止、付款審核、用戶管理、數據分析、財務、優惠碼、預測監控、訂閱管理、系統監控、內容管理、自動化、安全
+賽馬預測系統 - 最終完整版（自動升級 + 自動終止 + 新用戶自動記錄）
 """
 
 import streamlit as st
@@ -801,7 +800,7 @@ def login_page():
                             st.rerun()
 
 # ============================================================
-# 🔧 付款牆（極簡穩定版 - 唔使圖片都提交到）
+# 🔧 付款牆（最終穩定版 - 先寫記錄，後儲存圖片）
 # ============================================================
 def show_paywall():
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
@@ -859,7 +858,7 @@ def show_paywall():
             if not plan_choice:
                 st.error("❌ 請先選擇一個付費方案")
                 st.stop()
-            elif not st.session_state.get('logged_in', False):
+            if not st.session_state.get('logged_in', False):
                 st.error("❌ 請先登入")
                 st.stop()
             
@@ -870,12 +869,12 @@ def show_paywall():
             promo_code_used = None
             
             if promo_input:
-                promos = load_promos()
-                promo_data = promos.get(promo_input)
-                if promo_data and not promo_data.get('used', False):
-                    expiry = promo_data.get('expiry')
-                    if expiry:
-                        try:
+                try:
+                    promos = load_promos()
+                    promo_data = promos.get(promo_input)
+                    if promo_data and not promo_data.get('used', False):
+                        expiry = promo_data.get('expiry')
+                        if expiry:
                             expiry_date = datetime.fromisoformat(expiry)
                             if expiry_date >= datetime.now():
                                 discount_type = promo_data.get('discount_type', 'percentage')
@@ -892,27 +891,10 @@ def show_paywall():
                                 final_price = round(final_price, 2)
                                 discount_applied = True
                                 promo_code_used = promo_input
-                        except:
-                            pass
+                except:
+                    pass
 
-            os.makedirs(PAYMENT_PROOFS_DIR, exist_ok=True)
-            
-            filename = None
-            if uploaded_file is not None:
-                try:
-                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                    file_extension = uploaded_file.type.split('/')[1] if '/' in uploaded_file.type else 'png'
-                    filename = f"{st.session_state.username}_{timestamp}.{file_extension}"
-                    filepath = os.path.join(PAYMENT_PROOFS_DIR, filename)
-                    with open(filepath, 'wb') as f:
-                        f.write(uploaded_file.getbuffer())
-                    st.success(f"✅ 圖片已儲存：{filename}")
-                except Exception as e:
-                    st.error(f"⚠️ 圖片儲存失敗（但會繼續提交）：{e}")
-                    filename = None
-            else:
-                st.warning("⚠️ 你未上傳圖片，但仍可提交")
-
+            # ★★★ 先寫入記錄（無論圖片成唔成功） ★★★
             try:
                 proofs = load_payment_proofs()
                 new_proof = {
@@ -925,26 +907,55 @@ def show_paywall():
                     "discount_applied": discount_applied,
                     "discount_desc": discount_desc,
                     "promo_code": promo_code_used,
-                    "filename": filename if filename else "無圖片",
+                    "filename": "處理中",
                     "uploaded_at": datetime.now().isoformat(),
                     "status": "pending"
                 }
                 proofs['proof_records'].append(new_proof)
                 
-                if save_payment_proofs(proofs):
-                    st.session_state['payment_just_submitted'] = True
-                    st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
-                    st.success("✅ 提交成功！管理員將盡快審核。")
-                    st.rerun()
-                else:
-                    st.error("❌ 寫入付款記錄失敗，請檢查檔案權限")
+                if not save_payment_proofs(proofs):
+                    st.error("❌ 寫入付款記錄失敗，請聯絡管理員")
                     st.stop()
+                    
+                st.success("✅ 付款記錄已建立")
+                
             except Exception as e:
-                st.error(f"❌ 提交過程中發生錯誤：{e}")
+                st.error(f"❌ 建立記錄失敗：{e}")
                 st.stop()
 
+            # ★★★ 然後先處理圖片（即使失敗都唔影響記錄） ★★★
+            filename = "無圖片"
+            if uploaded_file is not None:
+                try:
+                    os.makedirs(PAYMENT_PROOFS_DIR, exist_ok=True)
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    file_extension = uploaded_file.type.split('/')[1] if '/' in uploaded_file.type else 'png'
+                    filename = f"{st.session_state.username}_{timestamp}.{file_extension}"
+                    filepath = os.path.join(PAYMENT_PROOFS_DIR, filename)
+                    with open(filepath, 'wb') as f:
+                        f.write(uploaded_file.getbuffer())
+                    st.success(f"✅ 圖片已儲存：{filename}")
+                    
+                    # 更新記錄補返 filename
+                    proofs = load_payment_proofs()
+                    if proofs['proof_records']:
+                        proofs['proof_records'][-1]['filename'] = filename
+                        save_payment_proofs(proofs)
+                        
+                except Exception as e:
+                    st.error(f"⚠️ 圖片儲存失敗（但記錄已保存）：{e}")
+                    filename = "無圖片"
+            else:
+                st.warning("⚠️ 你未上傳圖片，但仍可提交")
+
+            log_admin_action(st.session_state.username, f"提交付款申請 - 方案：{get_plan_name(plan_choice)}，金額：${final_price}")
+            st.session_state['payment_just_submitted'] = True
+            st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
+            st.success("✅ 提交成功！管理員將盡快審核。")
+            st.rerun()
+
 # ============================================================
-# 8. 後台所有模組（全部完整實作）
+# 8. 後台所有模組（完整實作）
 # ============================================================
 
 # ---------- 8.1 用戶管理 ----------
