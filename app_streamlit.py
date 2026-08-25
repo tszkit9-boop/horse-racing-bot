@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 最終完整版（自動升級 + 自動終止 + 新用戶自動記錄）
+賽馬預測系統 - 最終完整版（已修復退款功能）
+包含：自動升級、自動終止、新用戶自動記錄、所有後台功能
 """
 
 import streamlit as st
@@ -1692,24 +1693,53 @@ def _reject_payment(rec, proofs_data):
     st.warning(f"❌ 已拒絕 {rec.get('username')} 的申請")
     log_admin_action(st.session_state.username, f"拒絕付款申請：{rec.get('username')}")
 
+# ============================================================
+# 🔧 修復版退款函數（已加入詳細錯誤處理）
+# ============================================================
 def _refund_payment(rec, proofs_data):
-    users = load_users()
-    username = rec.get('username')
-    if username in users:
+    """退款：降級用戶（已修復）"""
+    try:
+        st.info("⏳ 開始處理退款...")
+        
+        # 1. 載入用戶資料
+        users = load_users()
+        username = rec.get('username')
+        if not username:
+            st.error("❌ 記錄中缺少 username")
+            return
+        
+        if username not in users:
+            st.error(f"❌ 用戶 {username} 不存在")
+            return
+        
+        # 2. 更新用戶資料（降級）
         users[username]['is_paid'] = False
         users[username]['group'] = 'free'
         users[username]['expiry_date'] = None
         users[username]['plan'] = None
         users[username]['predictions_limit'] = 2
-        save_users(users)
+        
+        # 3. 儲存用戶資料
+        if save_users(users):
+            st.success(f"✅ 用戶 {username} 已降級為免費")
+        else:
+            st.error("❌ 儲存 users.json 失敗")
+            return
+        
+        # 4. 更新付款記錄
+        rec['status'] = 'rejected'  # 改為 rejected 而不是 refunded
         rec['refunded'] = True
         rec['refunded_at'] = datetime.now().isoformat()
         rec['refunded_by'] = st.session_state.username
         save_payment_proofs(proofs_data)
+        
         st.success(f"✅ 已為 {username} 辦理退款，用戶已降級")
         log_admin_action(st.session_state.username, f"退款：{username}")
-    else:
-        st.error(f"❌ 用戶 {username} 不存在")
+        
+    except Exception as e:
+        st.error(f"❌ 退款過程中發生錯誤：{e}")
+        import traceback
+        st.code(traceback.format_exc())
 
 # ============================================================
 # 9. 後台頁面
