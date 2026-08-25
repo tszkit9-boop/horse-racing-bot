@@ -1939,16 +1939,23 @@ def main():
         st.info("今日沒有賽事")
 
     if predict_btn:
-        users = load_users()
-        user_data = users.get(st.session_state.username, {})
-        limit = user_data.get('predictions_limit', CONFIG['free_limit'])
-        used = user_data.get('free_usage', 0)
-        
-        if limit == -1:
-            pass
-        elif used >= limit:
-            show_paywall()
-            return
+    users = load_users()
+    user_data = users.get(st.session_state.username, {})
+    limit = user_data.get('predictions_limit', CONFIG['free_limit'])
+    used = user_data.get('free_usage', 0)
+    
+    # 如果係 admin (limit == -1) 或者仲有剩餘次數，就執行預測
+    if limit == -1 or used < limit:
+        date_str = date.strftime('%Y-%m-%d')
+        with st.spinner(f"執行預測 {date_str} 第 {race_no} 場..."):
+            result, pool = run_prediction(date_str, race_no)
+            if result is not None:
+                # ... 顯示結果 ...
+                # 記錄預測，扣一次數
+                pass
+    else:
+        # 用完免費次數 → 顯示付款牆
+        show_paywall()
 
         date_str = date.strftime('%Y-%m-%d')
         with st.spinner(f"執行預測 {date_str} 第 {race_no} 場..."):
