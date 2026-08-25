@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 最終完整版（含免責聲明・所有功能齊全）
+賽馬預測系統 - 最終完整版（含獨贏/連贏/三重彩/四重彩橫排顯示）
 """
 
 import streamlit as st
@@ -23,16 +23,16 @@ from PIL import Image
 # 🔐 系統設定（全部中文）
 # ============================================================
 CONFIG = {
-    "enable_registration": True,      # 開放註冊
-    "enable_payment": True,           # ✅ 啟用付款（想關閉就改 False）
-    "enable_admin": True,             # 啟用後台管理
-    "currency": "HKD",                # 貨幣單位
-    "free_limit": 2,                  # 免費用戶免費預測次數（想無限就改 99999）
-    "admin_password": "z54060437K",   # 管理員密碼
-    "price_day": 18,                  # 日費價格
-    "price_month": 128,               # 月費價格
-    "price_quarter": 328,             # 季費價格
-    "verification_expiry": 5,         # 驗證碼有效期（分鐘）
+    "enable_registration": True,
+    "enable_payment": True,
+    "enable_admin": True,
+    "currency": "HKD",
+    "free_limit": 2,
+    "admin_password": "z54060437K",
+    "price_day": 18,
+    "price_month": 128,
+    "price_quarter": 328,
+    "verification_expiry": 5,
     "module_user_management": True,
     "module_analytics": True,
     "module_finance": True,
@@ -112,13 +112,11 @@ def load_users():
         }
         save_users(users)
     else:
-        # 確保 admin 係無限
         if "admin" in users:
             users["admin"]["group"] = "super_admin"
             users["admin"]["predictions_limit"] = -1
             if users["admin"].get("note") != "系統超級管理員":
                 users["admin"]["note"] = "系統超級管理員（已自動修復）"
-        # 確保所有用戶有基本欄位
         for uid, u in users.items():
             if 'plan' not in u: u['plan'] = None
             if 'paid_date' not in u: u['paid_date'] = None
@@ -730,7 +728,7 @@ def show_prediction_history(username):
     st.dataframe(df, use_container_width=True)
 
 # ============================================================
-# 6. 登入/註冊（已加入服務條款）
+# 6. 登入/註冊（含服務條款）
 # ============================================================
 def login_page():
     st.title("🔐 登入 / 註冊")
@@ -768,7 +766,6 @@ def login_page():
                     st.session_state['reg_verify_expiry'] = datetime.now() + timedelta(minutes=CONFIG.get('verification_expiry', 5))
                     st.info(f"📧 你嘅驗證碼係：**{code}**（有效期 5 分鐘）")
             
-            # ----- 服務條款 -----
             st.divider()
             with st.expander("📜 服務條款（請仔細閱讀）"):
                 st.markdown("""
@@ -810,7 +807,6 @@ def login_page():
                 """)
             
             agree_terms = st.checkbox("✅ 我已閱讀並同意上述服務條款", key="agree_terms")
-            # ----- 服務條款結束 -----
             
             submitted = st.form_submit_button("註冊")
             
@@ -1362,7 +1358,6 @@ def admin_subscription():
         st.success(f"✅ 已設為提前 {new_remind} 天提醒")
         log_admin_action(st.session_state.username, f"設定提醒天數為 {new_remind}")
 
-    # ---------- 自動終止過期會員 ----------
     st.divider()
     st.subheader("⏰ 自動終止過期會員")
     
@@ -1390,7 +1385,6 @@ def admin_subscription():
         else:
             st.info("✅ 目前沒有過期會員")
 
-    # ---------- 手動續期 ----------
     st.subheader("✏️ 手動續期")
     username = st.selectbox("選擇用戶", list(users.keys()), key="renew_user_select")
     if username:
@@ -1546,7 +1540,7 @@ def admin_security():
             st.error("用戶不存在")
 
 # ============================================================
-# ---------- 8.11 付款審核（預設只顯示待審核） ----------
+# ---------- 8.11 付款審核 ----------
 # ============================================================
 def admin_payment_review():
     st.subheader("📤 付款審核")
@@ -1684,7 +1678,6 @@ def admin_payment_review():
                 st.text(f"[{log['time']}] {log['admin']} - {log['action']}")
         else:
             st.info("暫無日誌")
-
 
 # ---------- 輔助函數 ----------
 def _approve_payment(rec, proofs_data):
@@ -1842,7 +1835,7 @@ def admin_page():
         admin_security() if CONFIG["module_security"] else st.info("模組已關閉")
 
 # ============================================================
-# 10. 主頁面（已加入免責聲明 + Telegram）
+# 10. 主頁面（已加入免責聲明、獨贏/連贏/三重彩/四重彩顯示）
 # ============================================================
 def main():
     if 'logged_in' not in st.session_state:
@@ -1945,7 +1938,6 @@ def main():
                         del st.session_state[key]
                 st.rerun()
             
-            # ----- 側邊欄加入 Telegram 聯絡 -----
             st.divider()
             st.caption("💬 聯絡管理員")
             st.markdown("Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
@@ -1986,7 +1978,6 @@ def main():
         limit = user_data.get('predictions_limit', CONFIG['free_limit'])
         used = user_data.get('free_usage', 0)
         
-        # 檢查是否已達上限
         if CONFIG["enable_payment"] and limit != -1 and used >= limit:
             show_paywall()
         else:
@@ -1995,17 +1986,95 @@ def main():
                 result, pool = run_prediction(date_str, race_no)
                 if result is not None:
                     st.success(f"✅ {date_str} 第 {race_no} 場 預測完成")
-                    st.subheader("🏇 預測 TOP 5")
-                    display_df = result.head(5)[['馬匹名稱', '檔位', '預測勝率', '值博指數']].copy()
-                    display_df['預測勝率'] = display_df['預測勝率'].apply(lambda x: f"{x:.2%}")
-                    display_df['值博指數'] = display_df['值博指數'].apply(lambda x: f"{x:.4f}")
-                    st.dataframe(display_df, use_container_width=True)
-                    st.subheader("🎯 彩池推薦")
+                    
+                    # --- 提取前 4 名 ---
+                    top4 = result.head(4)
+                    top1 = top4.iloc[0]
+                    
+                    # --- 獨贏首選 ---
+                    st.markdown("---")
+                    st.markdown(f"""
+                    <div style="
+                        background: linear-gradient(135deg, #ff6f00, #ffab00);
+                        border-radius: 15px;
+                        padding: 20px 30px;
+                        text-align: center;
+                        box-shadow: 0 4px 15px rgba(255, 111, 0, 0.3);
+                    ">
+                        <span style="font-size: 18px; color: #fff; font-weight: bold;">🏆 獨贏首選</span><br>
+                        <span style="font-size: 42px; color: #fff; font-weight: 900; letter-spacing: 2px;">{top1['馬匹名稱']}</span><br>
+                        <span style="font-size: 20px; color: #fff;">檔位 {top1['檔位']}　｜　勝率 {top1['預測勝率']:.2%}　｜　值博指數 {top1['值博指數']:.4f}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.markdown("---")
+                    
+                    # --- 連贏推薦 (前2) ---
+                    st.subheader("🔗 連贏推薦")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.markdown(f"""
+                        <div style="border:1px solid #ddd;border-radius:10px;padding:12px;text-align:center;background-color:#e3f2fd;margin:5px;">
+                            <h4>🏇 {top4.iloc[0]['馬匹名稱']}</h4>
+                            <p>檔位：<b>{top4.iloc[0]['檔位']}</b>　勝率：<b style="color:#2e7d32;">{top4.iloc[0]['預測勝率']:.2%}</b></p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    with col2:
+                        st.markdown(f"""
+                        <div style="border:1px solid #ddd;border-radius:10px;padding:12px;text-align:center;background-color:#e3f2fd;margin:5px;">
+                            <h4>🏇 {top4.iloc[1]['馬匹名稱']}</h4>
+                            <p>檔位：<b>{top4.iloc[1]['檔位']}</b>　勝率：<b style="color:#2e7d32;">{top4.iloc[1]['預測勝率']:.2%}</b></p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    st.caption("💡 連贏：揀 2 隻馬，跑出前 2 名（不分順序）即中")
+                    
+                    # --- 三重彩推薦 (前4) ---
+                    st.subheader("🥉 三重彩推薦（4 隻複式）")
+                    cols = st.columns(4)
+                    for i in range(4):
+                        row = top4.iloc[i]
+                        with cols[i]:
+                            st.markdown(f"""
+                            <div style="border:1px solid #ddd;border-radius:10px;padding:10px;text-align:center;background-color:#fce4ec;margin:3px;">
+                                <h4>🏇 {row['馬匹名稱']}</h4>
+                                <p>檔位：<b>{row['檔位']}</b><br>勝率：<b style="color:#2e7d32;">{row['預測勝率']:.2%}</b></p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                    st.caption("💡 三重彩：揀 3 隻馬，順序估中冠亞季軍。以上 4 隻馬可做複式三重彩（4 選 3）")
+                    
+                    # --- 四重彩推薦 (前4) ---
+                    st.subheader("🏅 四重彩推薦（4 隻複式）")
+                    cols = st.columns(4)
+                    for i in range(4):
+                        row = top4.iloc[i]
+                        with cols[i]:
+                            st.markdown(f"""
+                            <div style="border:1px solid #ddd;border-radius:10px;padding:10px;text-align:center;background-color:#e8f5e9;margin:3px;">
+                                <h4>🏇 {row['馬匹名稱']}</h4>
+                                <p>檔位：<b>{row['檔位']}</b><br>勝率：<b style="color:#2e7d32;">{row['預測勝率']:.2%}</b></p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                    st.caption("💡 四重彩：揀 4 隻馬，順序估中冠亞季殿軍。以上 4 隻馬可做複式四重彩（4 選 4）")
+                    
+                    # --- 總結投注建議 ---
+                    st.divider()
+                    st.subheader("📋 總結投注建議")
+                    st.markdown(f"""
+                    <div style="border:2px solid #2e7d32;border-radius:10px;padding:15px;background-color:#f1f8e9;">
+                        <p>🏆 <b>獨贏</b>：{top4.iloc[0]['馬匹名稱']}</p>
+                        <p>🔗 <b>連贏</b>：{top4.iloc[0]['馬匹名稱']} + {top4.iloc[1]['馬匹名稱']}</p>
+                        <p>🥉 <b>三重彩</b>：{top4.iloc[0]['馬匹名稱']}、{top4.iloc[1]['馬匹名稱']}、{top4.iloc[2]['馬匹名稱']}、{top4.iloc[3]['馬匹名稱']}（複式 4 選 3）</p>
+                        <p>🏅 <b>四重彩</b>：{top4.iloc[0]['馬匹名稱']}、{top4.iloc[1]['馬匹名稱']}、{top4.iloc[2]['馬匹名稱']}、{top4.iloc[3]['馬匹名稱']}（複式 4 選 4）</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # --- 彩池推薦 ---
+                    st.subheader("🎯 彩池推薦（詳細）")
                     st.text(pool)
 
+                    # --- 記錄預測 ---
                     if CONFIG["enable_registration"] and st.session_state.logged_in:
-                        winner_name = result.iloc[0]['馬匹名稱'] if not result.empty else "未知"
-                        prob = result.iloc[0]['預測勝率'] if not result.empty else None
+                        winner_name = top4.iloc[0]['馬匹名稱']
+                        prob = top4.iloc[0]['預測勝率']
                         record_prediction(st.session_state.username, date_str, race_no, winner_name, prob)
                         users = load_users()
                         if st.session_state.username in users:
@@ -2017,8 +2086,6 @@ def main():
 
     # ----- 頁腳（已加入免責聲明） -----
     st.divider()
-    
-    # 免責聲明（黃色框）
     st.warning("⚠️ **免責聲明**：本系統提供之預測僅供參考，不構成投注建議。賽馬活動涉及風險，用戶應量力而為，本系統不對任何投注損失負責。用戶必須年滿18歲。使用本服務即表示同意以上條款。")
     
     col_f1, col_f2, col_f3 = st.columns(3)
