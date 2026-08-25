@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""
+"""show_paywall()
 賽馬預測系統 - 完整版（自動升級 + 自動終止 + 自動偵測新用戶）
 """
 
@@ -804,7 +804,7 @@ def login_page():
 # ============================================================
 # 🔧 付款牆（強化版 - 自動偵測新用戶，圖片非必須）
 # ============================================================
-def show_paywall():
+def def show_paywall():
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
     st.subheader("💳 選擇你嘅方案")
 
@@ -896,51 +896,55 @@ def show_paywall():
                         except:
                             pass
 
+            # 確保目錄存在
             os.makedirs(PAYMENT_PROOFS_DIR, exist_ok=True)
             
-            # 儲存圖片（如果有）
+            # 處理圖片（即使失敗都繼續）
             filename = None
             if uploaded_file is not None:
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                file_extension = uploaded_file.type.split('/')[1] if '/' in uploaded_file.type else 'png'
-                filename = f"{st.session_state.username}_{timestamp}.{file_extension}"
-                filepath = os.path.join(PAYMENT_PROOFS_DIR, filename)
                 try:
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    file_extension = uploaded_file.type.split('/')[1] if '/' in uploaded_file.type else 'png'
+                    filename = f"{st.session_state.username}_{timestamp}.{file_extension}"
+                    filepath = os.path.join(PAYMENT_PROOFS_DIR, filename)
                     with open(filepath, 'wb') as f:
                         f.write(uploaded_file.getbuffer())
                     st.success(f"✅ 圖片已儲存：{filename}")
                 except Exception as e:
-                    st.error(f"⚠️ 圖片儲存失敗：{e}，但會繼續提交")
+                    st.error(f"⚠️ 圖片儲存失敗（但會繼續提交）：{e}")
                     filename = None
             else:
-                st.warning("⚠️ 你未上傳圖片，但仍可提交（管理員可手動審核）")
+                st.warning("⚠️ 你未上傳圖片，但仍可提交")
 
-            # 建立記錄（自動攞當前用戶名）
-            proofs = load_payment_proofs()
-            new_proof = {
-                "id": len(proofs['proof_records']) + 1,
-                "username": st.session_state.username,  # ← 自動偵測當前用戶
-                "plan": plan_choice,
-                "plan_name": get_plan_name(plan_choice),
-                "original_price": original_price,
-                "final_price": final_price,
-                "discount_applied": discount_applied,
-                "discount_desc": discount_desc,
-                "promo_code": promo_code_used,
-                "filename": filename if filename else "無圖片",
-                "uploaded_at": datetime.now().isoformat(),
-                "status": "pending"
-            }
-            proofs['proof_records'].append(new_proof)
-            
-            if save_payment_proofs(proofs):
-                log_admin_action(st.session_state.username, f"提交付款申請 - 方案：{get_plan_name(plan_choice)}，金額：${final_price}")
-                st.session_state['payment_just_submitted'] = True
-                st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
-                st.success("✅ 提交成功！管理員將盡快審核。")
-                st.rerun()
-            else:
-                st.error("❌ 寫入付款記錄失敗，請檢查檔案權限")
+            # 強制寫入記錄
+            try:
+                proofs = load_payment_proofs()
+                new_proof = {
+                    "id": len(proofs['proof_records']) + 1,
+                    "username": st.session_state.username,
+                    "plan": plan_choice,
+                    "plan_name": get_plan_name(plan_choice),
+                    "original_price": original_price,
+                    "final_price": final_price,
+                    "discount_applied": discount_applied,
+                    "discount_desc": discount_desc,
+                    "promo_code": promo_code_used,
+                    "filename": filename if filename else "無圖片",
+                    "uploaded_at": datetime.now().isoformat(),
+                    "status": "pending"
+                }
+                proofs['proof_records'].append(new_proof)
+                
+                if save_payment_proofs(proofs):
+                    st.session_state['payment_just_submitted'] = True
+                    st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
+                    st.success("✅ 提交成功！管理員將盡快審核。")
+                    st.rerun()
+                else:
+                    st.error("❌ 寫入付款記錄失敗，請檢查檔案權限")
+                    st.stop()
+            except Exception as e:
+                st.error(f"❌ 提交過程中發生錯誤：{e}")
                 st.stop()
 
 # ============================================================
