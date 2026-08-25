@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整修復版（Admin 無限・付款提交成功・自動升級）
+賽馬預測系統 - 付款審核修復版（所有功能完整）
 """
 
 import streamlit as st
@@ -91,7 +91,6 @@ def save_json(file, data):
 def load_users():
     users = load_json(USER_DATA_FILE)
     if not users or "admin" not in users:
-        # 建立新 admin
         users = {
             "admin": {
                 "password": CONFIG["admin_password"],
@@ -105,11 +104,8 @@ def load_users():
                 "group": "super_admin",
                 "phone": "",
                 "plan": None,
-                "predictions_limit": -1,   # 無限
-                "history": [
-                    {"date": "2025-04-09", "race": 9, "horse": "浪漫勇士", "timestamp": "2025-04-09 14:30:00", "predicted_prob": 0.35},
-                    {"date": "2025-04-09", "race": 10, "horse": "金鎗六十", "timestamp": "2025-04-09 15:00:00", "predicted_prob": 0.42}
-                ]
+                "predictions_limit": -1,
+                "history": []
             }
         }
         save_users(users)
@@ -215,7 +211,7 @@ def get_plan_price(plan):
     return 0
 
 # ============================================================
-# 3. 模型載入
+# 3. 模型載入（若檔案不存在則跳過）
 # ============================================================
 @st.cache_resource
 def load_models():
@@ -702,7 +698,6 @@ def show_user_dashboard(username):
     col1.metric("👤 用戶", username)
     col2.metric("🏷️ 級別", level)
     col3.metric("📊 總預測次數", stats['total_predictions'])
-    # 顯示剩餘次數
     limit = user_data.get('predictions_limit', CONFIG['free_limit'])
     if limit == -1:
         col4.metric("📊 剩餘場次", "♾️ 無限")
@@ -818,7 +813,6 @@ def show_paywall():
         "quarter": f"📅 季費  ${CONFIG['price_quarter']} (90天)"
     }
 
-    # 如果已經提交成功，顯示成功訊息
     if st.session_state.get('payment_just_submitted', False):
         st.success("✅ 付款申請已成功提交！管理員將盡快審核。")
         st.info("📩 請同時 WhatsApp 通知管理員（可加快審核）")
@@ -860,10 +854,8 @@ def show_paywall():
         submitted = st.form_submit_button("📩 提交付款申請，等待管理員審核")
 
         if submitted:
-            # 顯示處理中
             st.info("⏳ 正在處理你嘅申請...")
             
-            # 驗證
             if not plan_choice:
                 st.error("❌ 請先選擇一個付費方案")
                 st.stop()
@@ -874,7 +866,6 @@ def show_paywall():
                 st.error("❌ 請先登入")
                 st.stop()
             
-            # 計算最終價格
             original_price = get_plan_price(plan_choice)
             final_price = original_price
             discount_applied = False
@@ -907,10 +898,8 @@ def show_paywall():
                         except:
                             pass
 
-            # 確保目錄存在
             os.makedirs(PAYMENT_PROOFS_DIR, exist_ok=True)
             
-            # 儲存圖片
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             file_extension = uploaded_file.type.split('/')[1] if '/' in uploaded_file.type else 'png'
             filename = f"{st.session_state.username}_{timestamp}.{file_extension}"
@@ -924,10 +913,8 @@ def show_paywall():
                 st.error(f"❌ 圖片儲存失敗：{e}")
                 st.stop()
 
-            # 載入付款記錄
             proofs = load_payment_proofs()
             
-            # 建立新記錄
             new_proof = {
                 "id": len(proofs['proof_records']) + 1,
                 "username": st.session_state.username,
@@ -944,7 +931,6 @@ def show_paywall():
             }
             proofs['proof_records'].append(new_proof)
             
-            # 儲存記錄
             if save_payment_proofs(proofs):
                 log_admin_action(st.session_state.username, f"提交付款申請 - 方案：{get_plan_name(plan_choice)}，金額：${final_price}")
                 st.session_state['payment_just_submitted'] = True
@@ -1089,7 +1075,6 @@ def admin_user_management():
                 users[username]['note'] = note
                 if new_password:
                     users[username]['password'] = new_password
-                # 自動設定無限次數
                 if new_group in ['super_admin', 'VIP']:
                     users[username]['predictions_limit'] = -1
                 else:
@@ -1211,7 +1196,7 @@ def admin_promo_codes():
                 else:
                     users[username_input]['is_paid'] = True
                     users[username_input]['group'] = 'paid'
-                    users[username_input]['predictions_limit'] = -1  # 付費用戶無限
+                    users[username_input]['predictions_limit'] = -1
                     promos[code_input]['used'] = True
                     promos[code_input]['used_by'] = username_input
                     save_users(users)
@@ -1232,7 +1217,6 @@ def admin_accuracy_monitor():
     try:
         results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
         results_df = standardize_columns_safe(results_df)
-        # 自動適應欄位名稱
         if 'race_date' not in results_df.columns or 'race_no' not in results_df.columns or '馬名' not in results_df.columns or 'finish_position' not in results_df.columns:
             if '日期' in results_df.columns:
                 results_df.rename(columns={'日期': 'race_date'}, inplace=True)
@@ -1477,7 +1461,9 @@ def admin_security():
         else:
             st.error("用戶不存在")
 
-# ---------- 8.11 付款審核（完整升級版） ----------
+# ============================================================
+# ---------- 8.11 付款審核（完整升級版 · 確保自動升級） ----------
+# ============================================================
 def admin_payment_review():
     st.subheader("📤 付款審核")
     
@@ -1514,7 +1500,6 @@ def admin_payment_review():
                     for rec in pending:
                         _approve_payment(rec, proofs_data)
                     st.success(f"✅ 已批量批准 {len(pending)} 條記錄")
-                    log_admin_action(st.session_state.username, f"批量批准了 {len(pending)} 條付款申請")
                     st.rerun()
     
     filtered = records.copy()
@@ -1532,11 +1517,12 @@ def admin_payment_review():
     for idx, rec in enumerate(filtered):
         original_idx = records.index(rec)
         status = rec.get('status', 'pending')
+        username = rec.get('username', '未知')
         
         with st.container():
             cols = st.columns([2, 2, 1.5, 1.5, 2])
             with cols[0]:
-                st.write(f"👤 **{rec.get('username', '未知')}**")
+                st.write(f"👤 **{username}**")
                 st.caption(f"ID: {rec.get('id', '')}")
             with cols[1]:
                 plan_name = rec.get('plan_name', '未知方案')
@@ -1570,7 +1556,7 @@ def admin_payment_review():
                 elif status == "approved":
                     st.success("✅ 已批准")
                     users = load_users()
-                    user_data = users.get(rec.get('username'), {})
+                    user_data = users.get(username, {})
                     expiry = user_data.get('expiry_date')
                     if expiry:
                         try:
@@ -1595,19 +1581,16 @@ def admin_payment_review():
                 if status == "pending":
                     col_a, col_r = st.columns(2)
                     with col_a:
-                        if st.button("✅ 批准", key=f"app_{original_idx}"):
+                        if st.button("✅ 批准", key=f"app_{original_idx}_{username}"):
                             _approve_payment(rec, proofs_data)
-                            log_admin_action(st.session_state.username, f"批准付款申請：{rec['username']} ({rec['plan_name']})")
                             st.rerun()
                     with col_r:
-                        if st.button("❌ 拒絕", key=f"rej_{original_idx}"):
+                        if st.button("❌ 拒絕", key=f"rej_{original_idx}_{username}"):
                             _reject_payment(rec, proofs_data)
-                            log_admin_action(st.session_state.username, f"拒絕付款申請：{rec['username']} ({rec['plan_name']})")
                             st.rerun()
                 elif status == "approved":
-                    if st.button("↩️ 退款", key=f"ref_{original_idx}"):
+                    if st.button("↩️ 退款", key=f"ref_{original_idx}_{username}"):
                         _refund_payment(rec, proofs_data)
-                        log_admin_action(st.session_state.username, f"退款：{rec['username']} ({rec['plan_name']})")
                         st.rerun()
                 else:
                     st.write("已處理")
@@ -1623,36 +1606,80 @@ def admin_payment_review():
         else:
             st.info("暫無日誌")
 
-# ---------- 輔助函數（付款審核） ----------
+
+# ---------- 輔助函數（加入詳細除錯） ----------
 def _approve_payment(rec, proofs_data):
-    rec['status'] = 'approved'
-    rec['approved_at'] = datetime.now().isoformat()
-    rec['approved_by'] = st.session_state.username
-    save_payment_proofs(proofs_data)
-    
-    users = load_users()
-    username = rec.get('username')
-    if username in users:
+    """批准付款：更新記錄狀態及用戶權限（強制升級）"""
+    try:
+        st.info("⏳ 開始處理批准...")
+        
+        # 1. 更新付款記錄
+        rec['status'] = 'approved'
+        rec['approved_at'] = datetime.now().isoformat()
+        rec['approved_by'] = st.session_state.username
+        save_payment_proofs(proofs_data)
+        st.success("✅ 付款記錄已更新")
+        
+        # 2. 獲取用戶名
+        username = rec.get('username')
+        if not username:
+            st.error("❌ 記錄中缺少 username")
+            return
+        
+        st.info(f"👤 正在升級用戶：{username}")
+        
+        # 3. 載入用戶數據
+        users = load_users()
+        if username not in users:
+            st.error(f"❌ 用戶 {username} 不存在於 users.json")
+            st.info("📌 請確保 users.json 檔案存在並且包含該用戶")
+            return
+        
+        # 4. 獲取方案並計算到期日
         plan = rec.get('plan', 'month')
         days = get_plan_days(plan)
+        if days == 0:
+            st.warning(f"⚠️ 方案 '{plan}' 無效，使用預設 30 天")
+            days = 30
+        
+        expiry = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+        st.info(f"📅 到期日設為：{expiry}（{plan}，{days}天）")
+        
+        # 5. 更新用戶資料（強制升級）
         users[username]['is_paid'] = True
         users[username]['group'] = 'VIP'
         users[username]['paid_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        users[username]['expiry_date'] = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+        users[username]['expiry_date'] = expiry
         users[username]['plan'] = plan
-        users[username]['predictions_limit'] = -1  # VIP 無限
-        save_users(users)
-        st.success(f"✅ {username} 已升級為 VIP，到期日：{users[username]['expiry_date']}")
-    else:
-        st.warning(f"⚠️ 用戶 {username} 不存在，無法升級")
+        users[username]['predictions_limit'] = -1  # 無限次數
+        
+        # 6. 儲存用戶資料
+        if save_users(users):
+            st.success(f"✅ {username} 已升級為 VIP！")
+            st.success(f"📅 到期日：{expiry}")
+            st.success(f"♾️ 預測次數：無限")
+            log_admin_action(st.session_state.username, f"批准付款並升級 {username} 為 VIP（{plan}）")
+        else:
+            st.error("❌ 儲存 users.json 失敗，請檢查寫入權限")
+            
+    except Exception as e:
+        st.error(f"❌ 升級過程中發生錯誤：{e}")
+        import traceback
+        st.code(traceback.format_exc())
+
 
 def _reject_payment(rec, proofs_data):
+    """拒絕付款：只更新記錄狀態"""
     rec['status'] = 'rejected'
     rec['approved_at'] = datetime.now().isoformat()
     rec['approved_by'] = st.session_state.username
     save_payment_proofs(proofs_data)
+    st.warning(f"❌ 已拒絕 {rec.get('username')} 的申請")
+    log_admin_action(st.session_state.username, f"拒絕付款申請：{rec.get('username')}")
+
 
 def _refund_payment(rec, proofs_data):
+    """退款：降級用戶"""
     users = load_users()
     username = rec.get('username')
     if username in users:
@@ -1660,13 +1687,14 @@ def _refund_payment(rec, proofs_data):
         users[username]['group'] = 'free'
         users[username]['expiry_date'] = None
         users[username]['plan'] = None
-        users[username]['predictions_limit'] = CONFIG["free_limit"]
+        users[username]['predictions_limit'] = 2
         save_users(users)
         rec['refunded'] = True
         rec['refunded_at'] = datetime.now().isoformat()
         rec['refunded_by'] = st.session_state.username
         save_payment_proofs(proofs_data)
         st.success(f"✅ 已為 {username} 辦理退款，用戶已降級")
+        log_admin_action(st.session_state.username, f"退款：{username}")
     else:
         st.error(f"❌ 用戶 {username} 不存在")
 
@@ -1882,22 +1910,16 @@ def main():
 
     # 執行預測
     if predict_btn:
-        # 檢查用戶是否有權限預測
         users = load_users()
         user_data = users.get(st.session_state.username, {})
         limit = user_data.get('predictions_limit', CONFIG['free_limit'])
         used = user_data.get('free_usage', 0)
         
         if limit == -1:
-            # 無限次數，直接預測
-            pass
+            pass  # 無限次數
         elif used >= limit:
-            # 已用盡，顯示付款牆
             show_paywall()
             return
-        else:
-            # 還有次數，可以預測（會扣一次）
-            pass
 
         date_str = date.strftime('%Y-%m-%d')
         with st.spinner(f"執行預測 {date_str} 第 {race_no} 場..."):
@@ -1916,7 +1938,6 @@ def main():
                     winner_name = result.iloc[0]['馬匹名稱'] if not result.empty else "未知"
                     prob = result.iloc[0]['預測勝率'] if not result.empty else None
                     record_prediction(st.session_state.username, date_str, race_no, winner_name, prob)
-                    # 扣除次數
                     users = load_users()
                     if st.session_state.username in users:
                         users[st.session_state.username]['free_usage'] = users[st.session_state.username].get('free_usage', 0) + 1
