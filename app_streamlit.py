@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整修正版（自動升級已修復）
+賽馬預測系統 - 完整版（自動升級 + 自動終止 + 自動偵測新用戶）
 """
 
 import streamlit as st
@@ -802,9 +802,9 @@ def login_page():
                             st.rerun()
 
 # ============================================================
-# 🔧 付款牆（修復版 - 顯示提交成功）
+# 🔧 付款牆（強化版 - 自動偵測新用戶，圖片非必須）
 # ============================================================
-defdef show_paywall():
+def show_paywall():
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
     st.subheader("💳 選擇你嘅方案")
 
@@ -857,7 +857,6 @@ defdef show_paywall():
         if submitted:
             st.info("⏳ 正在處理你嘅申請...")
             
-            # 驗證
             if not plan_choice:
                 st.error("❌ 請先選擇一個付費方案")
                 st.stop()
@@ -865,7 +864,6 @@ defdef show_paywall():
                 st.error("❌ 請先登入")
                 st.stop()
             
-            # 計算最終價格
             original_price = get_plan_price(plan_choice)
             final_price = original_price
             discount_applied = False
@@ -898,10 +896,9 @@ defdef show_paywall():
                         except:
                             pass
 
-            # 確保目錄存在
             os.makedirs(PAYMENT_PROOFS_DIR, exist_ok=True)
             
-            # 儲存圖片（如果有的話）
+            # 儲存圖片（如果有）
             filename = None
             if uploaded_file is not None:
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -918,11 +915,11 @@ defdef show_paywall():
             else:
                 st.warning("⚠️ 你未上傳圖片，但仍可提交（管理員可手動審核）")
 
-            # 建立記錄（強制寫入，即使冇圖片）
+            # 建立記錄（自動攞當前用戶名）
             proofs = load_payment_proofs()
             new_proof = {
                 "id": len(proofs['proof_records']) + 1,
-                "username": st.session_state.username,  # ← 自動攞當前用戶名
+                "username": st.session_state.username,  # ← 自動偵測當前用戶
                 "plan": plan_choice,
                 "plan_name": get_plan_name(plan_choice),
                 "original_price": original_price,
@@ -936,7 +933,6 @@ defdef show_paywall():
             }
             proofs['proof_records'].append(new_proof)
             
-            # 儲存記錄
             if save_payment_proofs(proofs):
                 log_admin_action(st.session_state.username, f"提交付款申請 - 方案：{get_plan_name(plan_choice)}，金額：${final_price}")
                 st.session_state['payment_just_submitted'] = True
@@ -1611,7 +1607,6 @@ def admin_payment_review():
                         pass
             with cols[4]:
                 if status == "pending":
-                    # 修正重點：簡化 key，避免 username 可能嘅問題
                     if st.button("✅ 批准", key=f"approve_{original_idx}"):
                         _approve_payment(rec, proofs_data)
                         st.rerun()
@@ -1687,7 +1682,6 @@ def _approve_payment(rec, proofs_data):
             st.success(f"✅ 5. {username} 已升級為 VIP！")
             st.success(f"📅 到期日：{expiry}")
             st.success(f"♾️ 預測次數：無限")
-            # 記錄操作
             log_admin_action(st.session_state.username, f"批准付款並升級 {username} 為 VIP（{plan}）")
             
             # 驗證寫入成功
