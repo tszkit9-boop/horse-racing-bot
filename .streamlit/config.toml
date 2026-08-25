@@ -1,0 +1,20 @@
+# 隱藏右上角三點選單同埋部分瀏覽器功能
+[client]
+# "minimal" = 隱藏右上角三點選單（最常用）；"viewer" = 連左邊收合箭嘴都隱藏，變成純淨模式
+toolbarMode = "minimal"
+# 防止喺瀏覽器顯示詳細錯誤代碼（保安起見）
+showErrorDetails = false
+
+# 關閉瀏覽器自動彈出同埋統計數據
+[browser]
+gatherUsageStats = false
+
+# 伺服器設定（可選，唔想用家見到後台訊息，可以加呢句）
+[server]
+# 唔會自動彈開瀏覽器
+headless = true
+
+# 主題設定（可選，想個頁面深色或者襯返你嘅顏色可以改呢度）
+[theme]
+base = "light"   # 或者 "dark"
+primaryColor = "#1f77b4"
