@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 最終完整版（已修復退款功能）
+賽馬預測系統 - 最終完整版（預設只顯示待審核）
 包含：自動升級、自動終止、新用戶自動記錄、所有後台功能
 """
 
@@ -1504,7 +1504,7 @@ def admin_security():
             st.error("用戶不存在")
 
 # ============================================================
-# ---------- 8.11 付款審核 ----------
+# ---------- 8.11 付款審核（已改為預設顯示「待審核」） ----------
 # ============================================================
 def admin_payment_review():
     st.subheader("📤 付款審核")
@@ -1529,9 +1529,11 @@ def admin_payment_review():
         with col_s1:
             search_term = st.text_input("搜尋用戶名稱", placeholder="輸入用戶名")
         with col_s2:
+            # ★★★ 重點：預設顯示「待審核」（index=1） ★★★
             status_filter = st.selectbox(
                 "狀態篩選",
                 ["全部", "pending", "approved", "rejected"],
+                index=1,  # ← 預設揀「待審核」（pending）
                 format_func=lambda x: {"pending": "待審核", "approved": "已批准", "rejected": "已拒絕", "全部": "全部"}.get(x, x)
             )
         with col_s3:
@@ -1542,6 +1544,7 @@ def admin_payment_review():
                     st.success(f"✅ 已批量批准 {len(pending)} 條記錄")
                     st.rerun()
     
+    # 過濾記錄
     filtered = records.copy()
     if search_term:
         filtered = [r for r in filtered if search_term.lower() in r.get('username', '').lower()]
@@ -1693,15 +1696,11 @@ def _reject_payment(rec, proofs_data):
     st.warning(f"❌ 已拒絕 {rec.get('username')} 的申請")
     log_admin_action(st.session_state.username, f"拒絕付款申請：{rec.get('username')}")
 
-# ============================================================
-# 🔧 修復版退款函數（已加入詳細錯誤處理）
-# ============================================================
 def _refund_payment(rec, proofs_data):
     """退款：降級用戶（已修復）"""
     try:
         st.info("⏳ 開始處理退款...")
         
-        # 1. 載入用戶資料
         users = load_users()
         username = rec.get('username')
         if not username:
@@ -1712,22 +1711,19 @@ def _refund_payment(rec, proofs_data):
             st.error(f"❌ 用戶 {username} 不存在")
             return
         
-        # 2. 更新用戶資料（降級）
         users[username]['is_paid'] = False
         users[username]['group'] = 'free'
         users[username]['expiry_date'] = None
         users[username]['plan'] = None
         users[username]['predictions_limit'] = 2
         
-        # 3. 儲存用戶資料
         if save_users(users):
             st.success(f"✅ 用戶 {username} 已降級為免費")
         else:
             st.error("❌ 儲存 users.json 失敗")
             return
         
-        # 4. 更新付款記錄
-        rec['status'] = 'rejected'  # 改為 rejected 而不是 refunded
+        rec['status'] = 'rejected'
         rec['refunded'] = True
         rec['refunded_at'] = datetime.now().isoformat()
         rec['refunded_by'] = st.session_state.username
