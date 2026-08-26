@@ -20,6 +20,28 @@ import random
 from PIL import Image
 
 # ============================================================
+# ✅ 必須放喺最頂，任何 st.xxx 之前（包括 set_page_config）
+# ============================================================
+USER_DATA_FILE = 'users.json'
+
+if st.query_params.get("raw") == "true":
+    try:
+        if os.path.exists(USER_DATA_FILE):
+            with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
+                content = f.read()
+            try:
+                data = json.loads(content)
+                st.json(data)
+            except json.JSONDecodeError as e:
+                st.error(f"users.json 格式錯誤: {e}")
+                st.code(content, language='json')
+        else:
+            st.error("users.json 不存在")
+    except Exception as e:
+        st.error(f"讀取 users.json 時發生錯誤: {e}")
+    st.stop()
+
+# ============================================================
 # 🔐 系統設定（動態載入）
 # ============================================================
 CONFIG_FILE = 'system_config.json'
@@ -96,7 +118,6 @@ st.set_page_config(
 # ============================================================
 # 2. 數據讀寫函數（擴充用戶欄位）
 # ============================================================
-USER_DATA_FILE = 'users.json'
 FINANCE_FILE = 'finance.json'
 LOG_FILE = 'admin_log.json'
 AUTOMATION_FILE = 'automation.json'
@@ -127,27 +148,6 @@ def save_json(file, data):
     except Exception as e:
         st.error(f"寫入 {file} 失敗：{e}")
         return False
-
-# ============================================================
-# ✅ 新增：專門俾 GitHub Actions 下載 users.json（加入錯誤處理）
-# ============================================================
-if st.query_params.get("raw") == "true":
-    try:
-        if os.path.exists(USER_DATA_FILE):
-            with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
-                content = f.read()
-            # 嘗試解析 JSON，如果失敗則返回錯誤訊息
-            try:
-                data = json.loads(content)
-                st.json(data)
-            except json.JSONDecodeError as e:
-                st.error(f"users.json 格式錯誤: {e}")
-                st.code(content, language='json')
-        else:
-            st.error("users.json 不存在")
-    except Exception as e:
-        st.error(f"讀取 users.json 時發生錯誤: {e}")
-    st.stop()
 
 def load_users():
     users = load_json(USER_DATA_FILE)
@@ -945,12 +945,10 @@ def login_page():
                         }
                         users[new_user] = new_user_data
                         
-                        # ===== 關鍵修復：寫入 users.json 並檢查 =====
                         if not save_users(users):
                             st.error("❌ 寫入 users.json 失敗，請檢查檔案權限或磁碟空間。")
                             st.stop()
                         
-                        # ---- 處理邀請獎勵 ----
                         if CONFIG.get("enable_invite_reward", True) and invited_by:
                             inviter = users.get(invited_by)
                             if inviter:
@@ -972,9 +970,7 @@ def login_page():
                         else:
                             st.success("✅ 註冊成功！")
                         
-                        # ===== 關鍵修復：強制更新 session 中的 users =====
                         st.session_state['users'] = load_users()
-                        # 自動登入新用戶，方便體驗
                         st.session_state.logged_in = True
                         st.session_state.username = new_user
                         st.session_state.role = 'free'
@@ -1440,218 +1436,8 @@ def admin_accuracy_monitor():
         st.error(f"自動比對失敗：{e}")
 
     df_records = pd.DataFrame(records)
-    if df_records.empty:
-        return
-    total = len(df_records)
-    hit = df_records[df_records['is_hit'] == True].shape[0] if 'is_hit' in df_records else 0
-    hit_rate = hit/total if total>0 else 0
-    roi = (hit * 400 - total * 100) / (total * 100) if total>0 else 0
-
-    col1, col2, col3 = st.columns(3)
-    col1.metric("總預測記錄", total)
-    col2.metric("命中次數", hit)
-    col3.metric("命中率", f"{hit_rate:.2%}")
-    st.metric("ROI (模擬)", f"{roi:.2%}")
-
-    if 'date' in df_records:
-        df_records['date'] = pd.to_datetime(df_records['date'])
-        daily = df_records.groupby(df_records['date'].dt.date).agg(
-            total=('is_hit', 'count'),
-            hit=('is_hit', lambda x: (x==True).sum())
-        ).reset_index()
-        daily['hit_rate'] = daily['hit'] / daily['total']
-        fig = px.line(daily, x='date', y='hit_rate', title='每日命中率趨勢')
-        st.plotly_chart(fig, use_container_width=True)
-
-    with st.expander("📋 查看所有記錄"):
-        st.dataframe(df_records, use_container_width=True)
-
-# ---------- 8.6 訂閱管理 ----------
-def admin_subscription():
-    st.subheader("⏰ 訂閱管理 & 到期提醒")
-    users = load_users()
-    paid_users = {u: data for u, data in users.items() if data.get('is_paid', False) or data.get('group') in ['VIP', 'super_admin']}
-    if not paid_users:
-        st.info("暫時沒有付費用戶")
-    else:
-        df_paid = pd.DataFrame.from_dict(paid_users, orient='index')
-        required_cols = ['is_paid', 'group', 'plan', 'paid_date', 'expiry_date']
-        for col in required_cols:
-            if col not in df_paid.columns:
-                df_paid[col] = None
-        df_paid['expiry_date'] = pd.to_datetime(df_paid['expiry_date'], errors='coerce')
-        today = datetime.now()
-        df_paid['days_left'] = (df_paid['expiry_date'] - today).dt.days
-        df_paid['status'] = df_paid['days_left'].apply(lambda x: '🟢 有效' if x > 7 else ('🟡 快到期' if x > 0 else '🔴 已過期') if pd.notna(x) else '⚪ 未設定')
-        display_cols = ['is_paid', 'group', 'plan', 'paid_date', 'expiry_date', 'days_left', 'status']
-        st.dataframe(df_paid[display_cols], use_container_width=True)
-
-    auto = load_json(AUTOMATION_FILE)
-    remind_days = auto.get('remind_days', 3)
-    new_remind = st.number_input("提前幾天提醒", min_value=1, value=remind_days, key="remind_days_sub")
-    if st.button("儲存提醒設定", key="save_remind_sub"):
-        auto['remind_days'] = new_remind
-        save_json(AUTOMATION_FILE, auto)
-        st.success(f"✅ 已設為提前 {new_remind} 天提醒")
-        log_admin_action(st.session_state.username, f"設定提醒天數為 {new_remind}")
-
-    st.divider()
-    st.subheader("⏰ 自動終止過期會員")
-    
-    if st.button("🔍 檢查並終止過期會員", key="check_expired"):
-        users = load_users()
-        today = datetime.now()
-        expired = []
-        for uid, u in users.items():
-            if u.get('group') == 'VIP' and u.get('expiry_date'):
-                try:
-                    exp = pd.to_datetime(u['expiry_date'])
-                    if exp < today:
-                        u['group'] = 'free'
-                        u['is_paid'] = False
-                        u['predictions_limit'] = CONFIG["free_limit"]
-                        u['plan'] = None
-                        u['note'] = (u.get('note', '') + f' [於 {today.strftime("%Y-%m-%d")} 自動降級]').strip()
-                        expired.append(uid)
-                except Exception as e:
-                    st.warning(f"⚠️ 檢查 {uid} 時出錯：{e}")
-        if expired:
-            save_users(users)
-            st.success(f"✅ 已將 {len(expired)} 個過期會員降級：{', '.join(expired)}")
-            log_admin_action(st.session_state.username, f"自動終止過期會員：{', '.join(expired)}")
-        else:
-            st.info("✅ 目前沒有過期會員")
-
-    st.subheader("✏️ 手動續期")
-    username = st.selectbox("選擇用戶", list(users.keys()), key="renew_user_select")
-    if username:
-        new_expiry = st.date_input("新的到期日", value=pd.to_datetime(datetime.now() + timedelta(days=30)), key="renew_date")
-        if st.button("確認續期", key="renew_confirm"):
-            users[username]['expiry_date'] = new_expiry.strftime('%Y-%m-%d %H:%M:%S')
-            save_users(users)
-            log_admin_action(st.session_state.username, f"續期用戶 {username} 至 {new_expiry}")
-            st.success(f"✅ {username} 已續期至 {new_expiry}")
-            st.rerun()
-
-# ---------- 8.7 系統監控 ----------
-def admin_monitoring():
-    st.subheader("📡 系統監控")
-    files = ['ALL_DATA_MERGED.csv', 'HKCJ_FULL_YEAR_DATA.csv', 'horse_name_mapping.csv',
-             'hk_racing_model.pkl', 'hk_catboost_model.cbm', 'hk_ranking_model.pkl']
-    for f in files:
-        if os.path.exists(f):
-            size = os.path.getsize(f)/1024
-            st.success(f"✅ {f} 存在 ({size:.1f} KB)")
-        else:
-            st.error(f"❌ {f} 不存在")
-    logs = load_logs()
-    if logs.get('logs'):
-        df_log = pd.DataFrame(logs['logs'][-20:])
-        st.dataframe(df_log, use_container_width=True)
-
-# ---------- 8.8 內容管理 ----------
-def admin_content():
-    st.subheader("📝 內容管理")
-    content = load_json(CONTENT_FILE)
-    
-    with st.expander("📢 發佈新公告", expanded=False):
-        col1, col2 = st.columns(2)
-        with col1:
-            title = st.text_input("公告標題", placeholder="例如：今日沙田日馬", key="ann_title")
-            content_text = st.text_area("公告內容", height=80, placeholder="輸入公告詳細內容...", key="ann_content")
-        with col2:
-            ann_type = st.selectbox("公告類型", ["一般", "重要", "緊急"], key="ann_type")
-            target_group = st.selectbox("顯示對象", ["全部用戶", "免費用戶", "付費用戶", "VIP"], key="ann_target")
-            start_date = st.date_input("開始日期", value=datetime.now().date(), key="ann_start")
-            end_date = st.date_input("結束日期（留空 = 永久）", value=None, key="ann_end")
-        if st.button("📤 發佈公告", type="primary", key="publish_ann"):
-            if not title or not content_text:
-                st.warning("請填寫標題同內容")
-            else:
-                if 'announcements' not in content:
-                    content['announcements'] = []
-                new_ann = {
-                    "id": len(content['announcements']) + 1,
-                    "title": title,
-                    "content": content_text,
-                    "type": ann_type,
-                    "target": target_group,
-                    "start_date": start_date.strftime('%Y-%m-%d'),
-                    "end_date": end_date.strftime('%Y-%m-%d') if end_date else None,
-                    "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    "status": "active"
-                }
-                content['announcements'].append(new_ann)
-                save_json(CONTENT_FILE, content)
-                log_admin_action(st.session_state.username, f"發佈公告：{title}")
-                st.success("✅ 公告已發佈！")
-                st.rerun()
-    
-    st.subheader("📋 現有公告")
-    announcements = content.get('announcements', [])
-    today = datetime.now().date()
-    for ann in announcements:
-        if ann.get('status') == 'active' and ann.get('end_date'):
-            end = datetime.strptime(ann['end_date'], '%Y-%m-%d').date()
-            if end < today:
-                ann['status'] = 'expired'
-    save_json(CONTENT_FILE, content)
-    content = load_json(CONTENT_FILE)
-    active_anns = [a for a in content.get('announcements', []) if a.get('status') == 'active']
-    
-    if active_anns:
-        for ann in active_anns:
-            type_icon = {"一般": "💡", "重要": "⚠️", "緊急": "🚨"}.get(ann.get('type', '一般'), "💡")
-            target_label = ann.get('target', '全部用戶')
-            end_display = "永久" if ann.get('end_date') is None else ann.get('end_date')
-            col1, col2, col3 = st.columns([5, 3, 1])
-            with col1:
-                st.markdown(f"**{type_icon} {ann.get('title', '無標題')}**")
-                st.caption(ann.get('content', ''))
-            with col2:
-                st.write(f"🎯 {target_label}")
-                st.write(f"📅 {ann.get('start_date', '')} → {end_display}")
-            with col3:
-                if st.button("🗑️ 刪除", key=f"del_ann_{ann.get('id')}"):
-                    ann['status'] = 'deleted'
-                    save_json(CONTENT_FILE, content)
-                    st.rerun()
-            st.divider()
-    else:
-        st.info("暫時冇生效中嘅公告")
-    
-    with st.expander("📋 公告歷史（已過期/已刪除）"):
-        inactive = [a for a in content.get('announcements', []) if a.get('status') in ['expired', 'deleted']]
-        if inactive:
-            df = pd.DataFrame(inactive)
-            st.dataframe(df[['id', 'title', 'type', 'target', 'start_date', 'end_date', 'status', 'created_at']], use_container_width=True)
-        else:
-            st.info("暫無歷史記錄")
-    
-    st.write("---")
-    st.write("上傳排位表")
-    uploaded = st.file_uploader("選擇 CSV 排位表", type=['csv'], key="upload_racecard")
-    if uploaded:
-        with open('HKCJ_FULL_YEAR_DATA.csv', 'wb') as f:
-            f.write(uploaded.getbuffer())
-        st.success("✅ 排位表已更新")
-
-# ---------- 8.9 自動化工具 ----------
-def admin_automation():
-    st.subheader("🤖 自動化工具")
-    auto = load_json(AUTOMATION_FILE)
-    days = st.number_input(
-        "提前幾天提醒",
-        min_value=1,
-        value=auto.get('remind_days', 3),
-        key="remind_days_auto"
-    )
-    if st.button("儲存設定", key="save_remind_auto"):
-        auto['remind_days'] = days
-        save_json(AUTOMATION_FILE, auto)
-        st.success("✅ 已儲存")
-
-# ---------- 8.10 安全與權限 ----------
+    if df_records.empty
+    # ---------- 8.10 安全與權限 ----------
 def admin_security():
     st.subheader("🔐 安全與權限")
     st.write("操作日誌")
@@ -2076,7 +1862,6 @@ def main():
     # ----- 四層保護：隱藏所有 Streamlit 平台 UI（包括 Manage app） -----
     st.markdown("""
     <style>
-        /* 基礎隱藏 */
         div[data-testid="stToolbar"] { display: none !important; }
         .stAppDeployButton { display: none !important; }
         #MainMenu { display: none !important; }
@@ -2085,8 +1870,6 @@ def main():
         button[kind="share"] { display: none !important; }
         button[kind="header"] { display: none !important; }
         a[href*="streamlit.io"] { display: none !important; }
-        
-        /* 針對 Manage app 特定 class */
         .st-emotion-cache-1r6slb0 { display: none !important; }
         .st-emotion-cache-1v3caq0 { display: none !important; }
         .st-emotion-cache-1v0mbdj { display: none !important; }
@@ -2094,413 +1877,14 @@ def main():
         .st-emotion-cache-1q8dd3e { display: none !important; }
         .st-emotion-cache-1v3fvcr { display: none !important; }
         .st-emotion-cache-1wmy9hl { display: none !important; }
-        
-        /* data-testid 隱藏 */
         [data-testid="stHeader"] { display: none !important; }
         [data-testid="stDecoration"] { display: none !important; }
         [data-testid="stHeader"] + div { padding-top: 0 !important; }
-        
-        /* 直接隱藏整個 header 同 footer */
         .stApp > header { display: none !important; }
         .stApp > footer { display: none !important; }
-        
-        /* 任何包含 Manage/Share 文字嘅元素 */
-        button:contains("Manage"), button:contains("Share"), 
-        a:contains("Manage"), a:contains("Share") { display: none !important; }
-        
-        /* 隱藏額外嘅空白 */
         .main > div:last-child { display: none !important; }
         .stApp > div:last-child { display: none !important; }
     </style>
     <script>
         function removeAllPlatformUI() {
-            // 用文字內容過濾
-            document.querySelectorAll('button, a, div, span').forEach(el => {
-                const txt = el.textContent || '';
-                if (txt.includes('Manage') || txt.includes('Share') || txt.includes('Settings')) {
-                    el.style.display = 'none';
-                    if (el.parentElement && el.parentElement.children.length === 1) {
-                        el.parentElement.style.display = 'none';
-                    }
-                }
-            });
-            // 針對特定 class
-            ['stAppDeployButton','stToolbar','stHeader','stDecoration'].forEach(cls => {
-                document.querySelectorAll('.'+cls).forEach(el => el.style.display='none');
-            });
-            // 針對 data-testid
-            ['stToolbar','stHeader','stDecoration'].forEach(id => {
-                document.querySelectorAll('[data-testid="'+id+'"]').forEach(el => el.style.display='none');
-            });
-            // 移除 streamlit.io 連結
-            document.querySelectorAll('a[href*="streamlit.io"]').forEach(el => {
-                el.style.display='none';
-                if (el.parentElement) el.parentElement.style.display='none';
-            });
-        }
-        // 立即執行
-        removeAllPlatformUI();
-        // 定期檢查
-        setInterval(removeAllPlatformUI, 300);
-        // DOM 變化監測
-        new MutationObserver(removeAllPlatformUI).observe(document.body, {childList:true, subtree:true});
-    </script>
-    """, unsafe_allow_html=True)
-
-    if 'logged_in' not in st.session_state:
-        st.session_state.logged_in = False
-    if 'username' not in st.session_state:
-        st.session_state.username = None
-    if 'role' not in st.session_state:
-        st.session_state.role = 'free'
-    if 'usage_count' not in st.session_state:
-        st.session_state.usage_count = 0
-    if 'show_admin' not in st.session_state:
-        st.session_state.show_admin = False
-    if 'show_history' not in st.session_state:
-        st.session_state.show_history = False
-    if 'admin_authenticated' not in st.session_state:
-        st.session_state.admin_authenticated = False
-
-    # 公告
-    content = load_json(CONTENT_FILE)
-    announcements = content.get('announcements', [])
-    today = datetime.now().date()
-    active_anns = []
-    for ann in announcements:
-        if ann.get('status') != 'active':
-            continue
-        start = datetime.strptime(ann['start_date'], '%Y-%m-%d').date()
-        if start > today:
-            continue
-        end = ann.get('end_date')
-        if end:
-            end_date = datetime.strptime(end, '%Y-%m-%d').date()
-            if end_date < today:
-                continue
-        target = ann.get('target', '全部用戶')
-        if target != '全部用戶':
-            if not st.session_state.get('logged_in', False):
-                continue
-            user = load_users().get(st.session_state.username, {})
-            group = user.get('group', 'free')
-            if target == '付費用戶' and group not in ['paid', 'VIP', 'super_admin']:
-                continue
-            if target == 'VIP' and group not in ['VIP', 'super_admin']:
-                continue
-            if target == '免費用戶' and group != 'free':
-                continue
-        active_anns.append(ann)
-
-    for ann in active_anns:
-        ann_type = ann.get('type', '一般')
-        if ann_type == '緊急':
-            st.error(f"🚨 {ann['title']}：{ann['content']}")
-        elif ann_type == '重要':
-            st.warning(f"⚠️ {ann['title']}：{ann['content']}")
-        else:
-            st.info(f"💡 {ann['title']}：{ann['content']}")
-
-    if CONFIG["enable_registration"] and not st.session_state.logged_in:
-        login_page()
-        return
-
-    if st.session_state.show_admin and CONFIG["enable_admin"]:
-        admin_page()
-        return
-
-    # ----- 每日免費重心推介（未登入都見到） -----
-    if CONFIG.get("enable_daily_free_tip", True):
-        try:
-            df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
-            df_sched = standardize_columns_safe(df_sched)
-            if 'race_date' in df_sched.columns:
-                df_sched['race_date'] = pd.to_datetime(df_sched['race_date'], errors='coerce')
-                df_sched = df_sched.dropna(subset=['race_date'])
-                today_dt = datetime.now().date()
-                day_races = df_sched[df_sched['race_date'].dt.date == today_dt]
-                if not day_races.empty:
-                    first_race = day_races.sort_values('race_no').iloc[0]
-                    race_date_str = first_race['race_date'].strftime('%Y-%m-%d')
-                    race_no = int(first_race['race_no'])
-                    result, pool = run_prediction(race_date_str, race_no)
-                    if result is not None and not result.empty:
-                        top1 = result.iloc[0]
-                        st.markdown("---")
-                        st.markdown("### 🌟 今日免費重心推介")
-                        st.markdown(f"""
-                        <div style="background: linear-gradient(135deg, #fff8e1, #ffecb3); border-radius: 16px; padding: 15px 20px; border: 2px solid #ffb300; box-shadow: 0 2px 8px rgba(255, 179, 0, 0.2);">
-                            <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
-                                <span style="font-size: 28px;">🏇</span>
-                                <div>
-                                    <span style="font-size: 18px; font-weight: bold;">{top1['馬匹名稱']}</span>
-                                    <span style="font-size: 14px; color: #555;">（第 {race_no} 場）</span><br>
-                                    <span style="font-size: 14px; color: #888;">勝率 <b style="color:#2e7d32;">{top1['預測勝率']:.2%}</b>　檔位 {top1['檔位']}</span>
-                                </div>
-                                <div style="margin-left: auto;">
-                                    <span style="background: #ff6f00; color: white; padding: 4px 14px; border-radius: 20px; font-size: 12px;">🎯 每日重心</span>
-                                </div>
-                            </div>
-                            <div style="margin-top: 8px; font-size: 13px; color: #888;">
-                                💡 未登入？<a href="#" onclick="alert('請先註冊/登入以查看完整預測')">立即註冊</a> 查看更多彩池推薦！
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        st.markdown("---")
-        except Exception as e:
-            pass
-
-    # 主標題
-    col1, col2 = st.columns([6, 1])
-    with col1:
-        st.title("🏇 賽馬預測系統")
-        st.markdown("AI 驅動・即時預測・彩池推薦")
-        st.caption(f"{datetime.now().strftime('%Y年%m月%d日')} · 36個特徵 · 三模型融合 · 六種彩池")
-    with col2:
-        if CONFIG["enable_admin"] and st.session_state.get("role") == "super_admin":
-            if st.button("🔐 後台", use_container_width=True, key="go_to_admin"):
-                st.session_state.show_admin = True
-                st.session_state.admin_authenticated = False
-                st.rerun()
-
-    if CONFIG["enable_registration"] and st.session_state.logged_in:
-        show_user_dashboard(st.session_state.username)
-    elif not CONFIG["enable_registration"]:
-        st.info("🔓 目前為公開模式，任何人皆可使用")
-
-    # ----- 預測控制項（搬咗嚟中間） -----
-    st.subheader("🎯 賽事預測")
-    col_date, col_race, col_btn = st.columns([3, 2, 1])
-    with col_date:
-        date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="predict_date")
-    with col_race:
-        race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race")
-    with col_btn:
-        st.write("")  # 對齊
-        predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn")
-
-    with st.sidebar:
-        st.header("🎯 控制面板")
-        if CONFIG["enable_registration"] and st.session_state.logged_in:
-            st.write(f"👤 用戶：{st.session_state.username}")
-            users = load_users()
-            user_data = users.get(st.session_state.username, {})
-            limit = user_data.get('predictions_limit', CONFIG['free_limit'])
-            if limit == -1:
-                st.success("♾️ 無限預測次數")
-            else:
-                used = user_data.get('free_usage', 0)
-                remain = max(0, limit - used)
-                st.info(f"📊 剩餘免費場次：{remain} 場")
-            if st.button("📋 我的預測記錄", key="show_history_btn"):
-                st.session_state.show_history = not st.session_state.show_history
-            if st.button("🚪 登出", key="logout_btn"):
-                for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history']:
-                    if key in st.session_state:
-                        del st.session_state[key]
-                st.rerun()
-            
-            st.divider()
-            st.caption("💬 聯絡管理員")
-            st.markdown("Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
-            st.markdown("[🔗 點擊連結搵我哋](https://t.me/bryhjdjbrbxibvrjskofndhiebdpaq)")
-
-    if CONFIG["enable_registration"] and st.session_state.logged_in and st.session_state.get('show_history', False):
-        st.subheader("📋 我的預測記錄")
-        show_prediction_history(st.session_state.username)
-        st.divider()
-
-    st.subheader("📅 今日賽程")
-    try:
-        df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
-        df_sched = standardize_columns_safe(df_sched)
-        if 'race_date' in df_sched.columns:
-            df_sched['race_date'] = pd.to_datetime(df_sched['race_date'], errors='coerce')
-            df_sched = df_sched.dropna(subset=['race_date'])
-            today = datetime.now().date()
-            day_races = df_sched[df_sched['race_date'].dt.date == today]
-            if day_races.empty:
-                st.info("今日沒有賽事")
-            else:
-                for course in day_races['race_course'].unique():
-                    races = day_races[day_races['race_course'] == course]['race_no'].unique()
-                    st.write(f"🏟️ **{course}**：第 {', '.join(map(str, sorted(races)))} 場")
-        else:
-            st.info("今日沒有賽事")
-    except:
-        st.info("今日沒有賽事")
-
-    if predict_btn:
-        users = load_users()
-        user_data = users.get(st.session_state.username, {})
-        limit = user_data.get('predictions_limit', CONFIG['free_limit'])
-        used = user_data.get('free_usage', 0)
-        user_group = user_data.get('group', 'free')
-        
-        if CONFIG.get("enable_vip_content", True):
-            is_vip = user_group in ['VIP', 'super_admin']
-        else:
-            is_vip = True
-        
-        if CONFIG["enable_payment"] and limit != -1 and used >= limit:
-            show_paywall()
-        else:
-            date_str = date.strftime('%Y-%m-%d')
-            with st.spinner(f"執行預測 {date_str} 第 {race_no} 場..."):
-                result, pool = run_prediction(date_str, race_no)
-                if result is not None:
-                    st.success(f"✅ {date_str} 第 {race_no} 場 預測完成")
-                    
-                    top4 = result.head(4)
-                    top1 = top4.iloc[0]
-                    
-                    st.markdown("---")
-                    st.markdown(f"""
-                    <div style="background: linear-gradient(135deg, #1a237e, #0d47a1, #1565c0); border-radius: 20px; padding: 25px 30px; text-align: center; box-shadow: 0 8px 32px rgba(21, 101, 192, 0.4); border: 2px solid rgba(255, 215, 0, 0.3); position: relative; overflow: hidden;">
-                        <div style="position: absolute; top: -30px; right: -30px; font-size: 100px; opacity: 0.1;">🏆</div>
-                        <div style="position: absolute; bottom: -20px; left: -20px; font-size: 80px; opacity: 0.08;">⭐</div>
-                        <span style="font-size: 16px; color: #ffd54f; font-weight: bold; letter-spacing: 3px; background: rgba(255,215,0,0.15); padding: 4px 16px; border-radius: 20px;">🏆 獨贏首選</span><br>
-                        <span style="font-size: 48px; color: #ffffff; font-weight: 900; letter-spacing: 3px; text-shadow: 0 2px 8px rgba(0,0,0,0.3); display: inline-block; margin-top: 8px;">{top1['馬匹名稱']}</span><br>
-                        <div style="display: flex; justify-content: center; gap: 30px; margin-top: 10px; flex-wrap: wrap;">
-                            <span style="font-size: 18px; color: #bbdefb;">檔位 <b style="color: #ffffff; font-size: 22px;">{top1['檔位']}</b></span>
-                            <span style="font-size: 18px; color: #bbdefb;">勝率 <b style="color: #69f0ae; font-size: 22px;">{top1['預測勝率']:.2%}</b></span>
-                            <span style="font-size: 18px; color: #bbdefb;">值博指數 <b style="color: #ffd54f; font-size: 22px;">{top1['值博指數']:.4f}</b></span>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🔗 連贏推薦</h3>", unsafe_allow_html=True)
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.markdown(f"""
-                        <div style="background: linear-gradient(135deg, #e3f2fd, #bbdefb); border-radius: 14px; padding: 16px 20px; text-align: center; box-shadow: 0 4px 12px rgba(13, 71, 161, 0.15); border-left: 5px solid #0d47a1;">
-                            <span style="font-size: 28px;">🏇</span>
-                            <h4 style="margin: 4px 0 2px 0; color: #0d47a1;">{top4.iloc[0]['馬匹名稱']}</h4>
-                            <div style="display: flex; justify-content: center; gap: 20px; font-size: 14px; color: #555;">
-                                <span>檔位 <b>{top4.iloc[0]['檔位']}</b></span>
-                                <span>勝率 <b style="color:#2e7d32;">{top4.iloc[0]['預測勝率']:.2%}</b></span>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    with col2:
-                        st.markdown(f"""
-                        <div style="background: linear-gradient(135deg, #e3f2fd, #bbdefb); border-radius: 14px; padding: 16px 20px; text-align: center; box-shadow: 0 4px 12px rgba(13, 71, 161, 0.15); border-left: 5px solid #0d47a1;">
-                            <span style="font-size: 28px;">🏇</span>
-                            <h4 style="margin: 4px 0 2px 0; color: #0d47a1;">{top4.iloc[1]['馬匹名稱']}</h4>
-                            <div style="display: flex; justify-content: center; gap: 20px; font-size: 14px; color: #555;">
-                                <span>檔位 <b>{top4.iloc[1]['檔位']}</b></span>
-                                <span>勝率 <b style="color:#2e7d32;">{top4.iloc[1]['預測勝率']:.2%}</b></span>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    st.caption("💡 連贏：揀 2 隻馬，跑出前 2 名（不分順序）即中")
-                    
-                    if is_vip:
-                        st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🥉 三重彩推薦（4 隻複式）</h3>", unsafe_allow_html=True)
-                        cols = st.columns(4)
-                        colors = ['#fce4ec', '#f3e5f5', '#e8eaf6', '#e0f7fa']
-                        for i in range(4):
-                            row = top4.iloc[i]
-                            with cols[i]:
-                                st.markdown(f"""
-                                <div style="background: {colors[i]}; border-radius: 12px; padding: 14px 10px; text-align: center; box-shadow: 0 3px 10px rgba(0,0,0,0.08); border: 1px solid rgba(0,0,0,0.05);">
-                                    <span style="font-size: 24px;">🏇</span>
-                                    <h5 style="margin: 2px 0; color: #333; font-size: 15px;">{row['馬匹名稱']}</h5>
-                                    <div style="font-size: 13px; color: #555;">檔位 <b>{row['檔位']}</b><br>勝率 <b style="color:#2e7d32;">{row['預測勝率']:.2%}</b></div>
-                                </div>
-                                """, unsafe_allow_html=True)
-                        st.caption("💡 三重彩：揀 3 隻馬，順序估中冠亞季軍。以上 4 隻馬可做複式三重彩（4 選 3）")
-                    else:
-                        st.markdown("""
-                        <div style="background: linear-gradient(135deg, #fff3e0, #ffe0b2); border-radius: 16px; padding: 30px 20px; text-align: center; border: 2px dashed #ff6f00; margin: 10px 0;">
-                            <span style="font-size: 48px;">🔒</span>
-                            <h3 style="color: #e65100; margin: 10px 0;">三重彩推薦</h3>
-                            <p style="color: #bf360c; font-size: 16px;">此內容僅限 <b>VIP 會員</b> 查看</p>
-                            <p style="color: #888; font-size: 14px;">升級 VIP 即可解鎖三重彩、四重彩等獨家彩池推薦</p>
-                            <div style="margin-top: 15px;"><span style="background: #ff6f00; color: white; padding: 8px 24px; border-radius: 20px; font-weight: bold; font-size: 14px;">💎 立即升級 VIP</span></div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    if is_vip:
-                        st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🏅 四重彩推薦（4 隻複式）</h3>", unsafe_allow_html=True)
-                        cols = st.columns(4)
-                        colors2 = ['#e8f5e9', '#e0f2f1', '#fff3e0', '#fbe9e7']
-                        for i in range(4):
-                            row = top4.iloc[i]
-                            with cols[i]:
-                                st.markdown(f"""
-                                <div style="background: {colors2[i]}; border-radius: 12px; padding: 14px 10px; text-align: center; box-shadow: 0 3px 10px rgba(0,0,0,0.08); border: 1px solid rgba(0,0,0,0.05);">
-                                    <span style="font-size: 24px;">🏇</span>
-                                    <h5 style="margin: 2px 0; color: #333; font-size: 15px;">{row['馬匹名稱']}</h5>
-                                    <div style="font-size: 13px; color: #555;">檔位 <b>{row['檔位']}</b><br>勝率 <b style="color:#2e7d32;">{row['預測勝率']:.2%}</b></div>
-                                </div>
-                                """, unsafe_allow_html=True)
-                        st.caption("💡 四重彩：揀 4 隻馬，順序估中冠亞季殿軍。以上 4 隻馬可做複式四重彩（4 選 4）")
-                    else:
-                        st.markdown("""
-                        <div style="background: linear-gradient(135deg, #e8f5e9, #c8e6c9); border-radius: 16px; padding: 20px 20px; text-align: center; border: 2px dashed #2e7d32; margin: 10px 0;">
-                            <span style="font-size: 36px;">🔒</span>
-                            <h4 style="color: #1b5e20; margin: 5px 0;">四重彩推薦</h4>
-                            <p style="color: #555; font-size: 14px;">升級 VIP 即可解鎖四重彩推薦</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    st.divider()
-                    st.markdown("""
-                    <h3 style='margin-bottom: 10px;'>📋 總結投注建議</h3>
-                    <div style="background: linear-gradient(135deg, #f1f8e9, #dcedc8); border-radius: 16px; padding: 20px 24px; border: 2px solid #2e7d32; box-shadow: 0 4px 16px rgba(46, 125, 50, 0.15);">
-                    """, unsafe_allow_html=True)
-                    
-                    if is_vip:
-                        st.markdown(f"""
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 30px; font-size: 15px;">
-                            <div>🏆 <b>獨贏</b>：<span style="color: #1a237e; font-weight: bold;">{top4.iloc[0]['馬匹名稱']}</span></div>
-                            <div>🔗 <b>連贏</b>：<span style="color: #0d47a1; font-weight: bold;">{top4.iloc[0]['馬匹名稱']} + {top4.iloc[1]['馬匹名稱']}</span></div>
-                            <div style="grid-column: span 2;">🥉 <b>三重彩</b>：<span style="color: #4a148c; font-weight: bold;">{top4.iloc[0]['馬匹名稱']}、{top4.iloc[1]['馬匹名稱']}、{top4.iloc[2]['馬匹名稱']}、{top4.iloc[3]['馬匹名稱']}</span>（複式 4 選 3）</div>
-                            <div style="grid-column: span 2;">🏅 <b>四重彩</b>：<span style="color: #1b5e20; font-weight: bold;">{top4.iloc[0]['馬匹名稱']}、{top4.iloc[1]['馬匹名稱']}、{top4.iloc[2]['馬匹名稱']}、{top4.iloc[3]['馬匹名稱']}</span>（複式 4 選 4）</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        st.markdown(f"""
-                        <div style="font-size: 15px;">
-                            <div>🏆 <b>獨贏</b>：<span style="color: #1a237e; font-weight: bold;">{top4.iloc[0]['馬匹名稱']}</span></div>
-                            <div>🔗 <b>連贏</b>：<span style="color: #0d47a1; font-weight: bold;">{top4.iloc[0]['馬匹名稱']} + {top4.iloc[1]['馬匹名稱']}</span></div>
-                            <div style="margin-top: 12px; padding: 12px; background: #fff3e0; border-radius: 10px; text-align: center; border: 1px dashed #ff6f00;">
-                                <span style="font-size: 20px;">🔒</span>
-                                <span style="color: #e65100; font-weight: bold;"> 三重彩及四重彩推薦僅限 VIP 會員查看</span>
-                                <br><span style="font-size: 13px; color: #888;">升級 VIP 即可解鎖完整投注建議</span>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    st.markdown("</div>", unsafe_allow_html=True)
-                    
-                    st.subheader("🎯 彩池推薦（詳細）")
-                    st.text(pool)
-
-                    if CONFIG["enable_registration"] and st.session_state.logged_in:
-                        winner_name = top4.iloc[0]['馬匹名稱']
-                        prob = top4.iloc[0]['預測勝率']
-                        record_prediction(st.session_state.username, date_str, race_no, winner_name, prob)
-                        users = load_users()
-                        if st.session_state.username in users:
-                            users[st.session_state.username]['free_usage'] = users[st.session_state.username].get('free_usage', 0) + 1
-                            users[st.session_state.username]['total_usage'] = users[st.session_state.username].get('total_usage', 0) + 1
-                            save_users(users)
-                        st.session_state.usage_count += 1
-                        st.info("📝 預測已記錄到你的歷史")
-
-    # ----- 頁腳 -----
-    st.divider()
-    st.warning("⚠️ **免責聲明**：本系統提供之預測僅供參考，不構成投注建議。賽馬活動涉及風險，用戶應量力而為，本系統不對任何投注損失負責。用戶必須年滿18歲。使用本服務即表示同意以上條款。")
-    
-    col_f1, col_f2, col_f3 = st.columns(3)
-    with col_f1:
-        st.caption(f"🕐 最後更新：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    with col_f2:
-        st.caption("🔐 數據來源：HKJC | 系統版本：v14.0-用戶體驗版")
-    with col_f3:
-        st.caption("💬 Telegram：@bryhjdjbrbxibvrjskofndhiebdpaq")
-
-if __name__ == '__main__':
-    main()
+            document.querySelectorAll
