@@ -1,0 +1,23 @@
+{
+    "admin": {
+        "username": "admin",
+        "password": "z54060437K",
+        "is_paid": false,
+        "paid_date": null,
+        "expiry_date": null,
+        "free_usage": 0,
+        "total_usage": 0,
+        "created_at": "2026-08-26 10:00:00",
+        "note": "系統超級管理員",
+        "group": "super_admin",
+        "phone": "",
+        "plan": null,
+        "predictions_limit": -1,
+        "history": [],
+        "terms_agreed": "2026-08-26T10:00:00",
+        "invite_code": "ADMIN001",
+        "invited_by": null,
+        "invite_rewards": 0,
+        "invite_count": 0
+    }
+}
