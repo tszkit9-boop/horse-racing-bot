@@ -1934,9 +1934,7 @@ def _refund_payment(rec, proofs_data):
     except Exception as e:
         st.error(f"❌ 退款錯誤：{e}")
         import traceback
-        st.code(traceback.format_exc())
-
-# ============================================================
+        st.code(traceback.format_exc())# ============================================================
 # ⚙️ 系統設定（僅超級管理員）
 # ============================================================
 def admin_system_settings():
