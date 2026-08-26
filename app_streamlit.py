@@ -40,7 +40,7 @@ electorAll(sel);
                 els[i].style.display = 'none';
                 els[i].remove();
             }
-       st.markdown("""
+     st.markdown("""
 <style>
     /* 隱藏所有平台 UI */
     div[data-testid="stToolbar"] { display: none !important; }
@@ -73,8 +73,8 @@ electorAll(sel);
         position: fixed !important;
         bottom: 0 !important;
         left: 0 !important;
-        width: 400px !important;      /* 加大闊度，確保遮到 */
-        height: 120px !important;     /* 加大高度 */
+        width: 500px !important;      /* 加大確保遮到 */
+        height: 150px !important;
         background-color: #ffffff !important;
         z-index: 9999999 !important;
         border: none !important;
@@ -84,7 +84,6 @@ electorAll(sel);
 </style>
 <div class="cover-bottom-left"></div>
 """, unsafe_allow_html=True)
-
 # ============================================================
 # 🔐 系統設定（動態載入）
 # ============================================================
