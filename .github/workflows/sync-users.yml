@@ -1,14 +1,9 @@
 name: 自動同步 users.json
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'app_streamlit.py'   # 當 app_streamlit.py 有變更時觸發
   schedule:
-    - cron: '*/5 * * * *'   # 保留每 5 分鐘一次作為後備
-  workflow_dispatch:        # 手動觸發
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
 
 jobs:
   sync:
@@ -19,7 +14,14 @@ jobs:
 
       - name: 下載最新 users.json
         run: |
-          curl -o users.json https://horse-racing-bot-picmquaqteh5dsgjpgn4du.streamlit.app/?raw=true || echo "下載失敗"
+          curl -L -o users.json https://horse-racing-bot-picmquaqteh5dsgjpgn4du.streamlit.app/
+          # 如果下載失敗，顯示錯誤
+          if [ ! -s users.json ]; then
+            echo "下載失敗或檔案空白"
+            exit 1
+          fi
+          # 顯示檔案頭幾行（除錯用）
+          head -n 5 users.json
 
       - name: 提交變更
         run: |
