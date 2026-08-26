@@ -128,21 +128,21 @@ st.markdown("""
         background-color: #f8f9fa !important;
     }
 
-    /* ===== 白色遮蓋層：遮住左下方 ===== */
-    .custom-cover {
+    /* ===== 🎯 白色遮蓋層：精準遮住左下角 Manage app ===== */
+    .manage-cover {
         position: fixed !important;
         bottom: 0 !important;
         left: 0 !important;
-        width: 350px !important;     /* 如果仲見到，可以加大 */
-        height: 100px !important;    /* 如果仲見到，可以加大 */
+        width: 200px !important;
+        height: 60px !important;
         background-color: #ffffff !important;
-        z-index: 999999 !important;
+        z-index: 9999999 !important;
         border: none !important;
         box-shadow: none !important;
         pointer-events: none !important;
     }
 </style>
-<div class="custom-cover"></div>
+<div class="manage-cover"></div>
 """, unsafe_allow_html=True)
 
 # ============================================================
