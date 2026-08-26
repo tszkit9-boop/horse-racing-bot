@@ -2037,27 +2037,30 @@ def main():
     st.markdown("""
     <style>
         /* 隱藏右上角選單 */
-        #MainMenu {visibility: hidden;}
+        #MainMenu {visibility: hidden !important;}
         /* 隱藏底部 footer */
-        footer {visibility: hidden;}
+        footer {visibility: hidden !important;}
         /* 隱藏頂部 header */
-        header {visibility: hidden;}
+        header {visibility: hidden !important;}
         /* 隱藏部署按鈕 */
         .stDeployButton {display: none !important;}
-        /* 隱藏所有與管理相關的 badge */
+        /* 隱藏任何 badges */
         .viewerBadge_container__1QSob {display: none !important;}
-        /* 隱藏額外元素 */
-        .css-1rs6os {visibility: hidden;}
-        .stApp > header {display: none;}
-        .stApp > footer {display: none;}
-        .stApp > .css-1v3fvcr {display: none;}
-        /* 隱藏右上角的 Manage app 連結 */
+        /* 隱藏右上角嘅 Manage app 連結（舊版） */
         .css-1dp5vir {display: none !important;}
         .css-1q8dd3e {display: none !important;}
-        /* 徹底隱藏任何可能出現的部署/管理元素 */
+        /* 隱藏最新版 Streamlit 嘅控制列 */
         [data-testid="stHeader"] {display: none !important;}
         [data-testid="stToolbar"] {display: none !important;}
         .st-emotion-cache-1v3fvcr {display: none !important;}
+        /* 隱藏右下角嘅「Manage app」按鈕（如有） */
+        .st-emotion-cache-1r6slb0 {display: none !important;}
+        .st-emotion-cache-1wmy9hl {display: none !important;}
+        /* 徹底隱藏所有可能嘅選單 */
+        .css-1rs6os {visibility: hidden !important;}
+        .stApp > header {display: none !important;}
+        .stApp > footer {display: none !important;}
+        .stApp > .css-1v3fvcr {display: none !important;}
     </style>
     """, unsafe_allow_html=True)
 
