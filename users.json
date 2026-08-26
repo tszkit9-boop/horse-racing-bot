@@ -1,0 +1,31 @@
+{
+  "admin": {
+    "username": "admin",
+    "password": "z54060437K",
+    "is_paid": false,
+    "paid_date": null,
+    "expiry_date": null,
+    "free_usage": 1,
+    "total_usage": 1,
+    "created_at": "2026-08-26 13:12:05",
+    "note": "系統超級管理員",
+    "group": "super_admin",
+    "phone": "",
+    "plan": null,
+    "predictions_limit": -1,
+    "history": [
+      {
+        "date": "2025-04-09",
+        "race": 9,
+        "horse": "自力更生",
+        "timestamp": "2026-08-26 13:12:18",
+        "predicted_prob": 0.011853279779300428
+      }
+    ],
+    "terms_agreed": "2026-08-26T13:12:05.102497",
+    "invite_code": "ADMIN001",
+    "invited_by": null,
+    "invite_rewards": 0,
+    "invite_count": 0
+  }
+}
