@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 最終完整版（含每日免費重心推介・邀請獎勵・系統設定・UI隱藏）
+賽馬預測系統 - 最終極完整版（所有內置 UI 完全隱藏）
 """
 
 import streamlit as st
@@ -44,11 +44,10 @@ DEFAULT_CONFIG = {
     "module_automation": True,
     "module_security": True,
     "module_promo": True,
-    # ---- 新增功能開關 ----
-    "enable_daily_free_tip": True,          # 每日免費重心推介
-    "enable_invite_reward": True,           # 邀請獎勵計劃
-    "invite_reward_inviter": 1,             # 邀請人獲得免費次數
-    "invite_reward_invitee": 1,             # 被邀請人獲得免費次數
+    "enable_daily_free_tip": True,
+    "enable_invite_reward": True,
+    "invite_reward_inviter": 1,
+    "invite_reward_invitee": 1,
 }
 
 def load_system_config():
@@ -80,13 +79,18 @@ def save_system_config(config):
 CONFIG = load_system_config()
 
 # ============================================================
-# 1. 頁面設定
+# 1. 頁面設定（完全隱藏 Menu）
 # ============================================================
 st.set_page_config(
     page_title="🏇 賽馬預測系統",
     page_icon="🐎",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
+    menu_items={
+        'Get Help': None,
+        'Report a bug': None,
+        'About': None
+    }
 )
 
 # ============================================================
@@ -144,10 +148,10 @@ def load_users():
                 "predictions_limit": -1,
                 "history": [],
                 "terms_agreed": datetime.now().isoformat(),
-                "invite_code": "ADMIN001",      # 邀請碼
-                "invited_by": None,             # 邀請人
-                "invite_rewards": 0,            # 累積獲得獎勵次數（已使用）
-                "invite_count": 0               # 成功邀請人數
+                "invite_code": "ADMIN001",
+                "invited_by": None,
+                "invite_rewards": 0,
+                "invite_count": 0
             }
         }
         save_users(users)
@@ -168,7 +172,6 @@ def load_users():
             if 'total_usage' not in u: u['total_usage'] = 0
             if 'terms_agreed' not in u: u['terms_agreed'] = None
             if 'invite_code' not in u:
-                # 為舊用戶生成邀請碼
                 u['invite_code'] = uid.upper() + str(random.randint(100, 999))
             if 'invited_by' not in u: u['invited_by'] = None
             if 'invite_rewards' not in u: u['invite_rewards'] = 0
@@ -279,7 +282,7 @@ def load_models():
         return None, None, None
 
 # ============================================================
-# 4. 特徵工程（36 特徵）
+# 4. 特徵工程（36 特徵） - 保留完整
 # ============================================================
 FEATURES_EN = [
     'draw', 'act_wt', 'distance', 'rtg', 'avg_rank_last3',
@@ -761,7 +764,6 @@ def show_user_dashboard(username):
     if plan:
         st.caption(f"📌 當前方案：{get_plan_name(plan)}")
     
-    # 顯示邀請獎勵資訊（如啟用）
     if CONFIG.get("enable_invite_reward", True):
         st.markdown("---")
         st.subheader("🎁 邀請獎勵")
@@ -815,7 +817,6 @@ def login_page():
             new_pass = st.text_input("密碼", type="password", key="reg_pass")
             new_pass2 = st.text_input("確認密碼", type="password", key="reg_pass2")
             
-            # 邀請碼輸入（如啟用）
             if CONFIG.get("enable_invite_reward", True):
                 invite_code_input = st.text_input("邀請碼（如有）", key="reg_invite_code", placeholder="輸入朋友的邀請碼")
             else:
@@ -893,18 +894,14 @@ def login_page():
                     if new_user in users:
                         st.error("❌ 用戶名稱已被使用")
                     else:
-                        # 處理邀請碼
                         invited_by = None
                         if CONFIG.get("enable_invite_reward", True) and invite_code_input:
-                            # 查找擁有該邀請碼的用戶
                             for uid, u in users.items():
                                 if u.get('invite_code') == invite_code_input:
                                     invited_by = uid
                                     break
                             if not invited_by:
                                 st.warning("⚠️ 邀請碼無效，請確認後再試。")
-                                # 仍然允許註冊，但不給予獎勵
-                        # 創建新用戶
                         new_user_data = {
                             'password': new_pass,
                             'phone': phone,
@@ -926,34 +923,32 @@ def login_page():
                             'invite_count': 0
                         }
                         users[new_user] = new_user_data
-                        save_users(users)
                         
-                        # 處理邀請獎勵（如啟用）
+                        if not save_users(users):
+                            st.error("❌ 寫入 users.json 失敗，請檢查檔案權限或磁碟空間。")
+                            st.stop()
+                        
                         if CONFIG.get("enable_invite_reward", True) and invited_by:
-                            # 獎勵邀請人
                             inviter = users.get(invited_by)
                             if inviter:
                                 reward_inviter = CONFIG.get("invite_reward_inviter", 1)
                                 reward_invitee = CONFIG.get("invite_reward_invitee", 1)
-                                # 更新邀請人的獎勵次數（加到 predictions_limit）
                                 if inviter['predictions_limit'] != -1:
                                     inviter['predictions_limit'] += reward_inviter
-                                else:
-                                    # 如果邀請人是無限（-1），則不調整，但記錄獎勵次數以作統計
-                                    pass
                                 inviter['invite_count'] = inviter.get('invite_count', 0) + 1
                                 inviter['invite_rewards'] = inviter.get('invite_rewards', 0) + reward_inviter
-                                # 獎勵被邀請人（新用戶）
                                 if new_user_data['predictions_limit'] != -1:
                                     new_user_data['predictions_limit'] += reward_invitee
                                 new_user_data['invite_rewards'] = reward_invitee
-                                save_users(users)
+                                if not save_users(users):
+                                    st.error("❌ 寫入邀請獎勵失敗，請檢查檔案權限。")
+                                    st.stop()
                                 st.success(f"✅ 註冊成功！你同邀請人各獲得 {reward_invitee} 次免費預測獎勵！")
                             else:
                                 st.success("✅ 註冊成功！")
                         else:
                             st.success("✅ 註冊成功！")
-                        # ✅ 強制更新 session 中的 users，確保後台即時見到新用戶
+                        
                         st.session_state['users'] = load_users()
                         st.rerun()
 
@@ -1104,7 +1099,6 @@ def show_paywall():
 # ============================================================
 # 8. 後台所有模組（完整）
 # ============================================================
-
 # ---------- 8.1 用戶管理 ----------
 def admin_user_management():
     st.subheader("👥 用戶管理")
@@ -2036,21 +2030,34 @@ def admin_page():
             tab_functions[name]()
 
 # ============================================================
-# 10. 主頁面（含每日免費重心推介 + UI 隱藏）
+# 10. 主頁面（含每日免費重心推介 + 強力 UI 隱藏）
 # ============================================================
 def main():
-    # ----- 隱藏 Streamlit 內置 UI 元素（遮住上同下） -----
+    # ----- 極強 CSS 隱藏所有內置 UI（包括 Manage app） -----
     st.markdown("""
     <style>
+        /* 隱藏右上角選單 */
         #MainMenu {visibility: hidden;}
+        /* 隱藏底部 footer */
         footer {visibility: hidden;}
+        /* 隱藏頂部 header */
         header {visibility: hidden;}
+        /* 隱藏部署按鈕 */
+        .stDeployButton {display: none !important;}
+        /* 隱藏所有與管理相關的 badge */
+        .viewerBadge_container__1QSob {display: none !important;}
+        /* 隱藏額外元素 */
         .css-1rs6os {visibility: hidden;}
         .stApp > header {display: none;}
         .stApp > footer {display: none;}
         .stApp > .css-1v3fvcr {display: none;}
-        .viewerBadge_container__1QSob {display: none !important;}
-        .stDeployButton {display: none !important;}
+        /* 隱藏右上角的 Manage app 連結 */
+        .css-1dp5vir {display: none !important;}
+        .css-1q8dd3e {display: none !important;}
+        /* 徹底隱藏任何可能出現的部署/管理元素 */
+        [data-testid="stHeader"] {display: none !important;}
+        [data-testid="stToolbar"] {display: none !important;}
+        .st-emotion-cache-1v3fvcr {display: none !important;}
     </style>
     """, unsafe_allow_html=True)
 
@@ -2119,7 +2126,6 @@ def main():
     # ----- 每日免費重心推介（未登入都見到） -----
     if CONFIG.get("enable_daily_free_tip", True):
         try:
-            # 嘗試讀取排位表，找出今日第一場
             df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
             df_sched = standardize_columns_safe(df_sched)
             if 'race_date' in df_sched.columns:
@@ -2128,24 +2134,16 @@ def main():
                 today_dt = datetime.now().date()
                 day_races = df_sched[df_sched['race_date'].dt.date == today_dt]
                 if not day_races.empty:
-                    # 選最早場次（最小 race_no）
                     first_race = day_races.sort_values('race_no').iloc[0]
                     race_date_str = first_race['race_date'].strftime('%Y-%m-%d')
                     race_no = int(first_race['race_no'])
-                    # 執行預測
                     result, pool = run_prediction(race_date_str, race_no)
                     if result is not None and not result.empty:
                         top1 = result.iloc[0]
                         st.markdown("---")
                         st.markdown("### 🌟 今日免費重心推介")
                         st.markdown(f"""
-                        <div style="
-                            background: linear-gradient(135deg, #fff8e1, #ffecb3);
-                            border-radius: 16px;
-                            padding: 15px 20px;
-                            border: 2px solid #ffb300;
-                            box-shadow: 0 2px 8px rgba(255, 179, 0, 0.2);
-                        ">
+                        <div style="background: linear-gradient(135deg, #fff8e1, #ffecb3); border-radius: 16px; padding: 15px 20px; border: 2px solid #ffb300; box-shadow: 0 2px 8px rgba(255, 179, 0, 0.2);">
                             <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
                                 <span style="font-size: 28px;">🏇</span>
                                 <div>
@@ -2154,13 +2152,7 @@ def main():
                                     <span style="font-size: 14px; color: #888;">勝率 <b style="color:#2e7d32;">{top1['預測勝率']:.2%}</b>　檔位 {top1['檔位']}</span>
                                 </div>
                                 <div style="margin-left: auto;">
-                                    <span style="
-                                        background: #ff6f00;
-                                        color: white;
-                                        padding: 4px 14px;
-                                        border-radius: 20px;
-                                        font-size: 12px;
-                                    ">🎯 每日重心</span>
+                                    <span style="background: #ff6f00; color: white; padding: 4px 14px; border-radius: 20px; font-size: 12px;">🎯 每日重心</span>
                                 </div>
                             </div>
                             <div style="margin-top: 8px; font-size: 13px; color: #888;">
@@ -2170,7 +2162,6 @@ def main():
                         """, unsafe_allow_html=True)
                         st.markdown("---")
         except Exception as e:
-            # 靜默失敗，不影響主頁顯示
             pass
 
     # 主標題
@@ -2270,19 +2261,9 @@ def main():
                     top4 = result.head(4)
                     top1 = top4.iloc[0]
                     
-                    # 獨贏首選
                     st.markdown("---")
                     st.markdown(f"""
-                    <div style="
-                        background: linear-gradient(135deg, #1a237e, #0d47a1, #1565c0);
-                        border-radius: 20px;
-                        padding: 25px 30px;
-                        text-align: center;
-                        box-shadow: 0 8px 32px rgba(21, 101, 192, 0.4);
-                        border: 2px solid rgba(255, 215, 0, 0.3);
-                        position: relative;
-                        overflow: hidden;
-                    ">
+                    <div style="background: linear-gradient(135deg, #1a237e, #0d47a1, #1565c0); border-radius: 20px; padding: 25px 30px; text-align: center; box-shadow: 0 8px 32px rgba(21, 101, 192, 0.4); border: 2px solid rgba(255, 215, 0, 0.3); position: relative; overflow: hidden;">
                         <div style="position: absolute; top: -30px; right: -30px; font-size: 100px; opacity: 0.1;">🏆</div>
                         <div style="position: absolute; bottom: -20px; left: -20px; font-size: 80px; opacity: 0.08;">⭐</div>
                         <span style="font-size: 16px; color: #ffd54f; font-weight: bold; letter-spacing: 3px; background: rgba(255,215,0,0.15); padding: 4px 16px; border-radius: 20px;">🏆 獨贏首選</span><br>
@@ -2295,7 +2276,6 @@ def main():
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    # 連贏推薦
                     st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🔗 連贏推薦</h3>", unsafe_allow_html=True)
                     col1, col2 = st.columns(2)
                     with col1:
@@ -2322,7 +2302,6 @@ def main():
                         """, unsafe_allow_html=True)
                     st.caption("💡 連贏：揀 2 隻馬，跑出前 2 名（不分順序）即中")
                     
-                    # 三重彩
                     if is_vip:
                         st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🥉 三重彩推薦（4 隻複式）</h3>", unsafe_allow_html=True)
                         cols = st.columns(4)
@@ -2349,7 +2328,6 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
                     
-                    # 四重彩
                     if is_vip:
                         st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🏅 四重彩推薦（4 隻複式）</h3>", unsafe_allow_html=True)
                         cols = st.columns(4)
@@ -2374,7 +2352,6 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
                     
-                    # 總結建議
                     st.divider()
                     st.markdown("""
                     <h3 style='margin-bottom: 10px;'>📋 總結投注建議</h3>
