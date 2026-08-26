@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版（users.json 自動更新已修復）
+賽馬預測系統 - 完整版（含強制重新載入 users.json 按鈕）
 """
 
 import streamlit as st
@@ -1103,7 +1103,7 @@ def show_paywall():
             except Exception as e:
                 st.error(f"❌ 提交過程中發生錯誤：{e}")
                 st.stop()
-                # ============================================================
+# ============================================================
 # 8. 後台所有模組（完整）
 # ============================================================
 
@@ -1966,6 +1966,16 @@ def admin_system_settings():
             st.rerun()
         else:
             st.error("❌ 儲存失敗，請檢查檔案權限。")
+    
+    # ----- 強制重新載入 users.json 按鈕 -----
+    st.divider()
+    st.subheader("🔄 強制更新用戶數據")
+    if st.button("🔄 強制重新載入 users.json", type="secondary"):
+        st.session_state['users'] = load_users()
+        user_count = len(st.session_state['users'])
+        st.success(f"✅ 已重新載入，目前共有 {user_count} 個用戶")
+        st.rerun()
+    st.caption("撳呢個掣會強制從 users.json 重新讀取所有用戶數據，更新後台顯示。")
 
 # ============================================================
 # 9. 後台頁面（動態分頁，超級管理員專屬設定）
