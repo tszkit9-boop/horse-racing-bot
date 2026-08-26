@@ -20,7 +20,7 @@ import random
 from PIL import Image
 
 # ============================================================
-# 🔒 隱藏 Streamlit 平台 UI（終極版）
+# 🔒 隱藏 Streamlit 平台 UI（終極 Apify 版）
 # ============================================================
 st.set_page_config(
     page_title="🏇 賽馬預測系統",
@@ -34,13 +34,18 @@ st.set_page_config(
     }
 )
 
-# ---------- 強制移除 Manage App（使用 MutationObserver 持續監視） ----------
+# ---------- 使用 iframe 注入強制移除腳本（繞過平台限制） ----------
 st.components.v1.html("""
+<!DOCTYPE html>
+<html>
+<head>
 <script>
-(function() {
-    function removeManageApp() {
-        // 所有可能選擇器
-        const selectors = [
+function removeAll() {
+    // 操作父層（如果同源）
+    try {
+        var parentDoc = window.parent.document;
+        // 移除所有可能嘅 Manage app 元素
+        var selectors = [
             '[data-testid="stManageApp"]',
             'button[title="Manage app"]',
             'a[href*="?manage"]',
@@ -49,30 +54,45 @@ st.components.v1.html("""
             'button:contains("Manage")',
             'a:contains("Manage")'
         ];
-        selectors.forEach(sel => {
-            document.querySelectorAll(sel).forEach(el => {
-                el.style.display = 'none';
-                el.remove();
-            });
+        selectors.forEach(function(sel) {
+            var els = parentDoc.querySelectorAll(sel);
+            for (var i = 0; i < els.length; i++) {
+                els[i].style.display = 'none';
+                els[i].remove();
+            }
         });
         // 清空 toolbar
-        const toolbar = document.querySelector('[data-testid="stToolbar"]');
+        var toolbar = parentDoc.querySelector('[data-testid="stToolbar"]');
         if (toolbar) toolbar.innerHTML = '';
-        // 移除所有包含 Manage 文字嘅元素
-        document.querySelectorAll('*').forEach(el => {
+        // 暴力移除任何包含 Manage 文字嘅元素
+        var all = parentDoc.querySelectorAll('*');
+        for (var i = 0; i < all.length; i++) {
+            var el = all[i];
             if (el.textContent && el.textContent.includes('Manage') && el.children.length === 0) {
                 el.style.display = 'none';
             }
-        });
-    }
-    removeManageApp();
-    setInterval(removeManageApp, 500);
-    new MutationObserver(removeManageApp).observe(document.body, { childList: true, subtree: true });
-})();
+        }
+    } catch(e) {}
+}
+// 立即執行
+removeAll();
+// 每 200ms 執行一次
+setInterval(removeAll, 200);
+// 監聽 DOM 變化
+var observer = new MutationObserver(removeAll);
+observer.observe(document.body, { childList: true, subtree: true });
+// 同時監聽父層
+try {
+    var parentObserver = new MutationObserver(removeAll);
+    parentObserver.observe(window.parent.document.body, { childList: true, subtree: true });
+} catch(e) {}
 </script>
+</head>
+<body></body>
+</html>
 """, height=0)
 
-# ---------- CSS 輔助 ----------
+# ---------- CSS 輔助（同時保留） ----------
 st.markdown("""
 <style>
     /* 隱藏所有平台 UI */
@@ -167,6 +187,9 @@ def save_system_config(config):
 
 CONFIG = load_system_config()
 
+# ============================================================
+# 其餘你原本嘅程式碼（由 load_users() 開始，完全保留）
+# ============================================================
 # ============================================================
 # 其餘你原本嘅程式碼（由 load_users() 開始，完全保留）
 # ============================================================
