@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 最終完整版（預測控制置中）
+賽馬預測系統 - 完整版（含所有後台模組・UI 隱藏・users.json 自動更新）
 """
 
 import streamlit as st
@@ -789,7 +789,7 @@ def show_prediction_history(username):
     st.dataframe(df, use_container_width=True)
 
 # ============================================================
-# 6. 登入/註冊（含邀請碼輸入）
+# 6. 登入/註冊（含邀請碼輸入） - 已修復 users.json 自動更新
 # ============================================================
 def login_page():
     st.title("🔐 登入 / 註冊")
@@ -924,10 +924,12 @@ def login_page():
                         }
                         users[new_user] = new_user_data
                         
+                        # ---- 寫入 users.json 並檢查 ----
                         if not save_users(users):
                             st.error("❌ 寫入 users.json 失敗，請檢查檔案權限或磁碟空間。")
                             st.stop()
                         
+                        # ---- 處理邀請獎勵 ----
                         if CONFIG.get("enable_invite_reward", True) and invited_by:
                             inviter = users.get(invited_by)
                             if inviter:
@@ -949,8 +951,13 @@ def login_page():
                         else:
                             st.success("✅ 註冊成功！")
                         
-                        # 強制更新 session 中的 users，確保後台即時見到新用戶
+                        # ---- 強制更新 session，確保後台及用戶儀表板即時見到新用戶 ----
                         st.session_state['users'] = load_users()
+                        # 可選擇自動登入，方便體驗
+                        st.session_state.logged_in = True
+                        st.session_state.username = new_user
+                        st.session_state.role = 'free'
+                        st.session_state.usage_count = 0
                         st.rerun()
 
 # ============================================================
@@ -1096,8 +1103,7 @@ def show_paywall():
             except Exception as e:
                 st.error(f"❌ 提交過程中發生錯誤：{e}")
                 st.stop()
-
-# ============================================================
+                # ============================================================
 # 8. 後台所有模組（完整）
 # ============================================================
 
