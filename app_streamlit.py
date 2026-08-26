@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版（含強制重新載入 users.json 按鈕）
+賽馬預測系統 - 完整版（含 ?raw=true 端點 + 強力 UI 隱藏）
 """
 
 import streamlit as st
@@ -92,6 +92,18 @@ st.set_page_config(
         'About': None
     }
 )
+
+# ============================================================
+# ✅ 新增：專門俾 GitHub Actions 下載 users.json
+# ============================================================
+if st.query_params.get("raw") == "true":
+    if os.path.exists(USER_DATA_FILE):
+        with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        st.json(data)
+    else:
+        st.error("users.json 不存在")
+    st.stop()
 
 # ============================================================
 # 2. 數據讀寫函數（擴充用戶欄位）
@@ -1103,6 +1115,7 @@ def show_paywall():
             except Exception as e:
                 st.error(f"❌ 提交過程中發生錯誤：{e}")
                 st.stop()
+
 # ============================================================
 # 8. 後台所有模組（完整）
 # ============================================================
@@ -2054,6 +2067,7 @@ def main():
     # ----- 四層保護：隱藏所有 Streamlit 平台 UI（包括 Manage app） -----
     st.markdown("""
     <style>
+        /* 基礎隱藏 */
         div[data-testid="stToolbar"] { display: none !important; }
         .stAppDeployButton { display: none !important; }
         #MainMenu { display: none !important; }
@@ -2062,18 +2076,36 @@ def main():
         button[kind="share"] { display: none !important; }
         button[kind="header"] { display: none !important; }
         a[href*="streamlit.io"] { display: none !important; }
+        
+        /* 針對 Manage app 特定 class */
         .st-emotion-cache-1r6slb0 { display: none !important; }
         .st-emotion-cache-1v3caq0 { display: none !important; }
         .st-emotion-cache-1v0mbdj { display: none !important; }
         .st-emotion-cache-1dp5vir { display: none !important; }
         .st-emotion-cache-1q8dd3e { display: none !important; }
+        .st-emotion-cache-1v3fvcr { display: none !important; }
+        .st-emotion-cache-1wmy9hl { display: none !important; }
+        
+        /* data-testid 隱藏 */
         [data-testid="stHeader"] { display: none !important; }
         [data-testid="stDecoration"] { display: none !important; }
+        [data-testid="stHeader"] + div { padding-top: 0 !important; }
+        
+        /* 直接隱藏整個 header 同 footer */
         .stApp > header { display: none !important; }
-        .stApp > header + div { padding-top: 0 !important; }
+        .stApp > footer { display: none !important; }
+        
+        /* 任何包含 Manage/Share 文字嘅元素 */
+        button:contains("Manage"), button:contains("Share"), 
+        a:contains("Manage"), a:contains("Share") { display: none !important; }
+        
+        /* 隱藏額外嘅空白 */
+        .main > div:last-child { display: none !important; }
+        .stApp > div:last-child { display: none !important; }
     </style>
     <script>
         function removeAllPlatformUI() {
+            // 用文字內容過濾
             document.querySelectorAll('button, a, div, span').forEach(el => {
                 const txt = el.textContent || '';
                 if (txt.includes('Manage') || txt.includes('Share') || txt.includes('Settings')) {
@@ -2083,19 +2115,25 @@ def main():
                     }
                 }
             });
+            // 針對特定 class
             ['stAppDeployButton','stToolbar','stHeader','stDecoration'].forEach(cls => {
                 document.querySelectorAll('.'+cls).forEach(el => el.style.display='none');
             });
+            // 針對 data-testid
             ['stToolbar','stHeader','stDecoration'].forEach(id => {
                 document.querySelectorAll('[data-testid="'+id+'"]').forEach(el => el.style.display='none');
             });
+            // 移除 streamlit.io 連結
             document.querySelectorAll('a[href*="streamlit.io"]').forEach(el => {
                 el.style.display='none';
                 if (el.parentElement) el.parentElement.style.display='none';
             });
         }
+        // 立即執行
         removeAllPlatformUI();
+        // 定期檢查
         setInterval(removeAllPlatformUI, 300);
+        // DOM 變化監測
         new MutationObserver(removeAllPlatformUI).observe(document.body, {childList:true, subtree:true});
     </script>
     """, unsafe_allow_html=True)
