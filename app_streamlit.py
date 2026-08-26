@@ -2030,10 +2030,10 @@ def admin_page():
             tab_functions[name]()
 
 # ============================================================
-# 10. 主頁面（含每日免費重心推介 + 強力 UI 隱藏）
+# 10. 主頁面（含每日免費重心推介 + 終極 UI 隱藏）
 # ============================================================
 def main():
-    # ----- 極強 CSS 隱藏所有內置 UI（包括 Manage app） -----
+    # ----- 終極強化 CSS 隱藏所有內置 UI（包括 Manage app 同 footer） -----
     st.markdown("""
     <style>
         /* 隱藏右上角選單 */
@@ -2046,21 +2046,37 @@ def main():
         .stDeployButton {display: none !important;}
         /* 隱藏任何 badges */
         .viewerBadge_container__1QSob {display: none !important;}
-        /* 隱藏右上角嘅 Manage app 連結（舊版） */
+        /* 隱藏右上角嘅 Manage app 連結 */
         .css-1dp5vir {display: none !important;}
         .css-1q8dd3e {display: none !important;}
-        /* 隱藏最新版 Streamlit 嘅控制列 */
+        /* 隱藏新版 data-testid 元素 */
         [data-testid="stHeader"] {display: none !important;}
         [data-testid="stToolbar"] {display: none !important;}
+        [data-testid="stDecoration"] {display: none !important;}
+        /* 隱藏 emotion 生成嘅類（專注底部） */
         .st-emotion-cache-1v3fvcr {display: none !important;}
-        /* 隱藏右下角嘅「Manage app」按鈕（如有） */
         .st-emotion-cache-1r6slb0 {display: none !important;}
         .st-emotion-cache-1wmy9hl {display: none !important;}
-        /* 徹底隱藏所有可能嘅選單 */
-        .css-1rs6os {visibility: hidden !important;}
+        .st-emotion-cache-1dp5vir {display: none !important;}
+        .st-emotion-cache-1q8dd3e {display: none !important;}
+        .st-emotion-cache-1gv3huu {display: none !important;}
+        .st-emotion-cache-1y4p8pa {display: none !important;}
+        .st-emotion-cache-1wivap2 {display: none !important;}
+        /* 屬性選擇器隱藏任何包含 Manage 或 Deploy 嘅元素 */
+        [class*="Manage"] {display: none !important;}
+        [class*="manage"] {display: none !important;}
+        [class*="Deploy"] {display: none !important;}
+        /* 直接隱藏整個 header 同 footer */
         .stApp > header {display: none !important;}
         .stApp > footer {display: none !important;}
         .stApp > .css-1v3fvcr {display: none !important;}
+        /* 隱藏右上角頭像 */
+        .css-1rs6os {visibility: hidden !important;}
+        /* 隱藏最後一個 div（可能係底部空白） */
+        .main > div:last-child {display: none !important;}
+        .stApp > div:last-child {display: none !important;}
+        /* 隱藏 iframe */
+        iframe {display: none !important;}
     </style>
     """, unsafe_allow_html=True)
 
