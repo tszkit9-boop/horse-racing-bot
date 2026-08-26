@@ -94,18 +94,6 @@ st.set_page_config(
 )
 
 # ============================================================
-# ✅ 新增：專門俾 GitHub Actions 下載 users.json
-# ============================================================
-if st.query_params.get("raw") == "true":
-    if os.path.exists(USER_DATA_FILE):
-        with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        st.json(data)
-    else:
-        st.error("users.json 不存在")
-    st.stop()
-
-# ============================================================
 # 2. 數據讀寫函數（擴充用戶欄位）
 # ============================================================
 USER_DATA_FILE = 'users.json'
@@ -139,6 +127,18 @@ def save_json(file, data):
     except Exception as e:
         st.error(f"寫入 {file} 失敗：{e}")
         return False
+
+# ============================================================
+# ✅ 新增：專門俾 GitHub Actions 下載 users.json（放在定義後）
+# ============================================================
+if st.query_params.get("raw") == "true":
+    if os.path.exists(USER_DATA_FILE):
+        with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        st.json(data)
+    else:
+        st.error("users.json 不存在")
+    st.stop()
 
 def load_users():
     users = load_json(USER_DATA_FILE)
