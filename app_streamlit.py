@@ -2506,7 +2506,7 @@ def admin_accuracy_monitor():
         st.plotly_chart(fig, use_container_width=True)
 
     with st.expander("📋 查看所有記錄"):
-        st.dataframe(df_records, use_container_width=True)
+        return
 
 # ---------- 8.6 訂閱管理 ----------
 def admin_subscription():
@@ -3105,7 +3105,30 @@ def adjust_model_weights():
     config['cat_weight'] = new_cat
     config['last_weight_update'] = datetime.now().isoformat()
     config['last_hit_rate'] = hit_rate
-    save_system_config(config)
+    save_system_config(config)    # ============================================================
+    # 🔧 Admin 專用：比對賽果 + 調整權重
+    # ============================================================
+    st.divider()
+    st.subheader("🔧 管理員操作")
+    
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        if st.button("🔄 比對賽果 + 更新統計", key="admin_update_analysis", use_container_width=True):
+            with st.spinner("正在比對賽果..."):
+                updated, msg = update_accuracy_with_results()
+                if updated > 0:
+                    st.success(f"✅ {msg}")
+                    st.rerun()
+                else:
+                    st.info(f"📭 {msg}")
+    with col_btn2:
+        if st.button("⚖️ 自動調整權重", key="admin_adjust_weights", use_container_width=True):
+            with st.spinner("正在計算最佳權重..."):
+                result = adjust_model_weights()
+                st.success(f"✅ 權重已調整：XGBoost = {result['xgb_weight']}, CatBoost = {result['cat_weight']}（命中率 {result['hit_rate']:.2%}，共 {result['total']} 場）")
+                st.rerun()
+    
+    st.caption("🔒 此操作僅限管理員使用，會影響系統預測權重")
 
     return {
         'xgb_weight': new_xgb,
@@ -3372,20 +3395,6 @@ def main():
         # 功能按鈕
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
-            if st.button("🔄 比對賽果 + 更新統計", key="update_analysis_btn", use_container_width=True):
-                with st.spinner("正在比對賽果..."):
-                    updated, msg = update_accuracy_with_results()
-                    if updated > 0:
-                        st.success(f"✅ {msg}")
-                        st.rerun()
-                    else:
-                        st.info(f"📭 {msg}")
-        with col_btn2:
-            if st.button("⚖️ 自動調整權重", key="adjust_weights_btn", use_container_width=True):
-                with st.spinner("正在計算最佳權重..."):
-                    result = adjust_model_weights()
-                    st.success(f"✅ 權重已調整：XGBoost = {result['xgb_weight']}, CatBoost = {result['cat_weight']}（命中率 {result['hit_rate']:.2%}，共 {result['total']} 場）")
-                    st.rerun()
         
         # 特徵重要性圖表
         with st.expander("📊 特徵重要性分析（CatBoost）"):
