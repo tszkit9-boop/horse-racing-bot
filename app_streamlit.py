@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 最終完整版（含每日免費重心推介・邀請獎勵・系統設定・四層UI隱藏）
+賽馬預測系統 - 最終完整版（預測控制置中）
 """
 
 import streamlit as st
@@ -2032,7 +2032,7 @@ def admin_page():
             tab_functions[name]()
 
 # ============================================================
-# 10. 主頁面（含每日免費重心推介 + 四層 UI 隱藏）
+# 10. 主頁面（預測控制置中 + 四層 UI 隱藏）
 # ============================================================
 def main():
     # ----- 四層保護：隱藏所有 Streamlit 平台 UI（包括 Manage app） -----
@@ -2205,6 +2205,17 @@ def main():
     elif not CONFIG["enable_registration"]:
         st.info("🔓 目前為公開模式，任何人皆可使用")
 
+    # ----- 預測控制項（搬咗嚟中間） -----
+    st.subheader("🎯 賽事預測")
+    col_date, col_race, col_btn = st.columns([3, 2, 1])
+    with col_date:
+        date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="predict_date")
+    with col_race:
+        race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race")
+    with col_btn:
+        st.write("")  # 對齊
+        predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn")
+
     with st.sidebar:
         st.header("🎯 控制面板")
         if CONFIG["enable_registration"] and st.session_state.logged_in:
@@ -2230,10 +2241,6 @@ def main():
             st.caption("💬 聯絡管理員")
             st.markdown("Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
             st.markdown("[🔗 點擊連結搵我哋](https://t.me/bryhjdjbrbxibvrjskofndhiebdpaq)")
-        
-        date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="predict_date")
-        race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race")
-        predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn")
 
     if CONFIG["enable_registration"] and st.session_state.logged_in and st.session_state.get('show_history', False):
         st.subheader("📋 我的預測記錄")
