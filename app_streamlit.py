@@ -36,9 +36,11 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    div[data-testid="stToolbar"] { display: none !important; }
-    div[data-testid="stToolbar"] button[title="Manage app"] { display: none !important; }
+    /* 強制隱藏所有 Streamlit 工具列及 Manage app */
+    [data-testid="stToolbar"] { display: none !important; }
+    [data-testid="stToolbar"] * { display: none !important; }
     [data-testid="stManageApp"] { display: none !important; }
+    [data-testid="stManageApp"] * { display: none !important; }
     .stAppDeployButton { display: none !important; }
     #MainMenu { display: none !important; }
     footer { display: none !important; }
@@ -49,6 +51,11 @@ st.markdown("""
     [data-testid="stHeader"] { display: none !important; }
     [data-testid="stDecoration"] { display: none !important; }
     .stApp > header { display: none !important; }
+    /* 再補多一刀針對所有可能嘅 Manage 連結 */
+    a[href*="?manage"] { display: none !important; }
+    button[data-testid="baseButton-header"] { display: none !important; }
+
+    /* 側邊欄保留 */
     section[data-testid="stSidebar"] {
         display: block !important;
         visibility: visible !important;
