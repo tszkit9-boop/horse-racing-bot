@@ -63,7 +63,6 @@ st.markdown("""
     new MutationObserver(removeAllPlatformUI).observe(document.body, { childList: true, subtree: true });
 </script>
 """, unsafe_allow_html=True)
-
 # ============================================================
 # 🔐 系統設定（動態載入）
 # ============================================================
