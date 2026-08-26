@@ -34,36 +34,94 @@ st.set_page_config(
     }
 )
 
+# ============================================================
+# 🔒 完整隱藏（包括 Manage app + 移除黑色底）
+# ============================================================
 st.markdown("""
 <style>
+    /* ===== 隱藏所有 Streamlit 平台 UI ===== */
     div[data-testid="stToolbar"] { display: none !important; }
-    div[data-testid="stToolbar"] button[title="Manage app"] { display: none !important; }
-    [data-testid="stManageApp"] { display: none !important; }
     .stAppDeployButton { display: none !important; }
     #MainMenu { display: none !important; }
     footer { display: none !important; }
     header { display: none !important; }
     button[kind="share"] { display: none !important; }
+    button[kind="header"] { display: none !important; }
     a[href*="streamlit.io"] { display: none !important; }
     .st-emotion-cache-1r6slb0 { display: none !important; }
+    .st-emotion-cache-1v3caq0 { display: none !important; }
+    .st-emotion-cache-1v0mbdj { display: none !important; }
     [data-testid="stHeader"] { display: none !important; }
     [data-testid="stDecoration"] { display: none !important; }
     .stApp > header { display: none !important; }
+    .stApp > header + div { padding-top: 0 !important; }
+    
+    /* ===== 移除頂部黑色背景 ===== */
+    .stApp > header {
+        background: transparent !important;
+        box-shadow: none !important;
+    }
+    div[data-testid="stHeader"] {
+        background: transparent !important;
+    }
+    h1, .stTitle {
+        background: transparent !important;
+        color: #1a1a2e !important;
+    }
     section[data-testid="stSidebar"] {
-        display: block !important;
-        visibility: visible !important;
-        opacity: 1 !important;
-        width: 280px !important;
+        background-color: #f8f9fa !important;
     }
-    section[data-testid="stSidebar"] * {
-        display: block !important;
-        visibility: visible !important;
-        opacity: 1 !important;
-    }
-    .stApp > header + div {
-        padding-top: 0 !important;
-    }
+    
+    /* ===== 暴力隱藏任何含有 Manage / Share 嘅元素 ===== */
+    div:has(> button:contains("Manage")) { display: none !important; }
+    div:has(> button:contains("Share")) { display: none !important; }
+    div:has(> a:contains("Manage")) { display: none !important; }
+    div:has(> a:contains("Share")) { display: none !important; }
 </style>
+
+<script>
+    // 暴力移除所有平台 UI
+    function removeAllPlatformUI() {
+        // 1. 移除文字包含 Manage / Share / Settings 嘅元素
+        document.querySelectorAll('button, a, div, span').forEach(el => {
+            if (el.textContent && (
+                el.textContent.includes('Manage') || 
+                el.textContent.includes('Share') || 
+                el.textContent.includes('Settings')
+            )) {
+                el.style.display = 'none';
+                if (el.parentElement && el.parentElement.children.length === 1) {
+                    el.parentElement.style.display = 'none';
+                }
+            }
+        });
+        
+        // 2. 移除特定 data-testid
+        ['stToolbar', 'stHeader', 'stDecoration', 'stManageApp'].forEach(id => {
+            document.querySelectorAll('[data-testid="' + id + '"]').forEach(el => {
+                el.style.display = 'none';
+            });
+        });
+        
+        // 3. 移除所有 streamlit.io 連結
+        document.querySelectorAll('a[href*="streamlit.io"]').forEach(el => {
+            el.style.display = 'none';
+            if (el.parentElement) el.parentElement.style.display = 'none';
+        });
+    }
+    
+    // 立即執行
+    removeAllPlatformUI();
+    
+    // 每 300ms 再檢查一次（防止被還原）
+    setInterval(removeAllPlatformUI, 300);
+    
+    // MutationObserver：偵測 DOM 變化，自動重新移除
+    new MutationObserver(removeAllPlatformUI).observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+</script>
 """, unsafe_allow_html=True)
 
 # ============================================================
@@ -122,6 +180,10 @@ def save_system_config(config):
         return False
 
 CONFIG = load_system_config()
+
+# ============================================================
+# 其餘你原本嘅程式碼（由 load_users() 開始，完全保留）
+# ============================================================
 
 # ============================================================
 # 2. 數據讀寫函數
