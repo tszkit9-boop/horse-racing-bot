@@ -32,6 +32,11 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
+          # 如果 accuracy.json 唔存在，建立一個空嘅
+          if [ ! -f accuracy.json ]; then
+            echo '{}' > accuracy.json
+          fi
           git add accuracy.json
+          # 只有當有變更時先 commit
           git diff --staged --quiet || git commit -m "🤖 自動更新準確度數據 [skip ci]"
           git push
