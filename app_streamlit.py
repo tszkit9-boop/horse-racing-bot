@@ -325,6 +325,8 @@ FEATURES_EN = [
     'jockey_win_rate_5', 'jockey_win_rate_10', 'draw_win_rate',
     'days_since_injury', 'injury_30d', 'injury_60d', 'injury_90d',
     'total_injuries', 'injury_severity'
+    'odds_change',          
+    'odds_change_pct'
 ]
 
 EXPECTED_FEATURES = [
@@ -337,7 +339,9 @@ EXPECTED_FEATURES = [
     '前速指標', '後勁指標', '最近試閘名次', '最近試閘時間',
     '騎師近5場勝率', '騎師近10場勝率', '檔位勝率', '最近傷患日數',
     '過去30日內有傷患', '過去60日內有傷患', '過去90日內有傷患',
-    '傷患總次數', '傷患嚴重程度'
+    '傷患總次數', '傷患嚴重程度',
+    'odds_change',          # ⬅️ 加呢行
+    'odds_change_pct'       # ⬅️ 加呢行
 ]
 
 NAME_MAPPING = {
@@ -373,6 +377,9 @@ NAME_MAPPING = {
     'injury_90d': '過去90日內有傷患',
     'total_injuries': '傷患總次數',
     'injury_severity': '傷患嚴重程度'
+    'odds_change': '賠率變化',
+    'odds_change_pct': '賠率變化百分比',
+}
 }
 
 def standardize_columns_safe(df):
@@ -598,7 +605,7 @@ def generate_pool_recommendations(df, top_n=6):
         rec += f"  {horse_names[i]} > {horse_names[j]} > {horse_names[k]} > {horse_names[l]}\n"
     return rec
 
-def run_prediction(date_str, race_no):
+def (date_str, race_no):
     xgb_model, cat_model, rank_model = load_models()
     if xgb_model is None:
         return None, None
@@ -1597,7 +1604,7 @@ def generate_pool_recommendations(df, top_n=6):
         rec += f"  {horse_names[i]} > {horse_names[j]} > {horse_names[k]} > {horse_names[l]}\n"
     return rec
 
-def run_prediction(date_str, race_no):
+def (date_str, race_no):
     xgb_model, cat_model, rank_model = load_models()
     if xgb_model is None:
         return None, None
@@ -1673,6 +1680,22 @@ def run_prediction(date_str, race_no):
         race_sel['win_odds'] = race_sel['win_odds'].replace(0, 4.0).fillna(4.0)
     race_sel['win_odds'] = pd.to_numeric(race_sel['win_odds'], errors='coerce').fillna(4.0)
     race_sel['odds_rank_in_race'] = race_sel['win_odds'].rank(ascending=True)
+# ========== 🆕 新增：計算賠率變化 ==========
+    # 如果你嘅 CSV 有 'opening_odds' 欄位就用，冇就用模擬值
+    if 'opening_odds' in race_sel.columns:
+        race_sel['odds_change'] = race_sel['win_odds'] - race_sel['opening_odds']
+        race_sel['odds_change_pct'] = race_sel['odds_change'] / race_sel['opening_odds']
+    else:
+        # 如果冇開盤賠率，用模擬值（最後賠率 ± 隨機誤差）
+        # 呢個只係臨時方案，最好真係有真實開盤賠率
+        np.random.seed(42)
+        random_noise = np.random.uniform(-0.5, 0.5, len(race_sel))
+        race_sel['odds_change'] = random_noise
+        race_sel['odds_change_pct'] = random_noise / race_sel['win_odds']
+    
+    # 填補空值
+    race_sel['odds_change'] = race_sel['odds_change'].fillna(0)
+    race_sel['odds_change_pct'] = race_sel['odds_change_pct'].fillna(0)
 
     for f in FEATURES_EN:
         if f not in race_sel.columns:
@@ -3204,7 +3227,7 @@ def main():
                     first_race = day_races.sort_values('race_no').iloc[0]
                     race_date_str = first_race['race_date'].strftime('%Y-%m-%d')
                     race_no = int(first_race['race_no'])
-                    result, pool = run_prediction(race_date_str, race_no)
+                    result, pool = (race_date_str, race_no)
                     if result is not None and not result.empty:
                         top1 = result.iloc[0]
                         st.markdown("---")
@@ -3453,7 +3476,7 @@ def main():
         else:
             date_str = date.strftime('%Y-%m-%d')
             with st.spinner(f"執行預測 {date_str} 第 {race_no} 場..."):
-                result, pool = run_prediction(date_str, race_no)
+                result, pool = (date_str, race_no)
                 if result is not None:
                     st.success(f"✅ {date_str} 第 {race_no} 場 預測完成")
                     
