@@ -3,7 +3,7 @@ name: 自動同步 users.json
 on:
   schedule:
     - cron: '*/5 * * * *'
-  workflow_dispatch:
+  workflow_dispatch:          # ← 呢行係手動觸發嘅關鍵
 
 jobs:
   sync:
@@ -14,14 +14,11 @@ jobs:
 
       - name: 下載最新 users.json
         run: |
-          curl -L -o users.json https://horse-racing-bot-picmquaqteh5dsgjpgn4du.streamlit.app/
-          # 如果下載失敗，顯示錯誤
+          curl -L -o users.json "https://horse-racing-bot.streamlit.app/?raw=true"
           if [ ! -s users.json ]; then
             echo "下載失敗或檔案空白"
             exit 1
           fi
-          # 顯示檔案頭幾行（除錯用）
-          head -n 5 users.json
 
       - name: 提交變更
         run: |
