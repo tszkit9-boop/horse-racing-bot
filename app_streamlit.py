@@ -2506,7 +2506,32 @@ def admin_accuracy_monitor():
         st.plotly_chart(fig, use_container_width=True)
 
     with st.expander("📋 查看所有記錄"):
-        return
+        st.dataframe(df_records, use_container_width=True)
+
+    # ============================================================
+    # 🔧 Admin 專用：比對賽果 + 調整權重
+    # ============================================================
+    st.divider()
+    st.subheader("🔧 管理員操作")
+    
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        if st.button("🔄 比對賽果 + 更新統計", key="admin_update_analysis", use_container_width=True):
+            with st.spinner("正在比對賽果..."):
+                updated, msg = update_accuracy_with_results()
+                if updated > 0:
+                    st.success(f"✅ {msg}")
+                    st.rerun()
+                else:
+                    st.info(f"📭 {msg}")
+    with col_btn2:
+        if st.button("⚖️ 自動調整權重", key="admin_adjust_weights", use_container_width=True):
+            with st.spinner("正在計算最佳權重..."):
+                result = adjust_model_weights()
+                st.success(f"✅ 權重已調整：XGBoost = {result['xgb_weight']}, CatBoost = {result['cat_weight']}（命中率 {result['hit_rate']:.2%}，共 {result['total']} 場）")
+                st.rerun()
+    
+    st.caption("🔒 此操作僅限管理員使用，會影響系統預測權重")
 
 # ---------- 8.6 訂閱管理 ----------
 def admin_subscription():
@@ -3027,116 +3052,7 @@ def admin_system_settings():
             time.sleep(1)
             st.rerun()
         else:
-            st.error("❌ 儲存失敗，請檢查檔案權限。")# ============================================================
-# 🧠 AI 自我學習輔助函數
-# ============================================================
-def update_accuracy_with_results():
-    """自動比對預測記錄與真實賽果"""
-    acc = load_accuracy()
-    records = acc.get('records', [])
-    if not records:
-        return 0, "沒有預測記錄"
-    try:
-        results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
-        results_df = standardize_columns_safe(results_df)
-        required = ['race_date', 'race_no', 'horse_name', 'finish_position']
-        for col in required:
-            if col not in results_df.columns:
-                return 0, f"缺少必要欄位：{col}"
-        results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
-        results_df = results_df.dropna(subset=['race_date'])
-        updated = 0
-        for rec in records:
-            if rec.get('actual_result') is not None:
-                continue
-            date_str = rec.get('date')
-            race_no = rec.get('race')
-            horse = rec.get('horse')
-            if not date_str or not race_no or not horse:
-                continue
-            matched = results_df[
-                (results_df['race_date'].dt.strftime('%Y-%m-%d') == date_str) &
-                (results_df['race_no'] == race_no) &
-                (results_df['horse_name'] == horse)
-            ]
-            if not matched.empty:
-                pos = matched.iloc[0]['finish_position']
-                rec['actual_result'] = int(pos) if pd.notna(pos) else None
-                rec['is_hit'] = (rec['actual_result'] == 1) if rec['actual_result'] is not None else None
-                updated += 1
-        if updated > 0:
-            save_accuracy(acc)
-        return updated, f"成功比對 {updated} 條記錄"
-    except Exception as e:
-        return 0, f"比對失敗：{str(e)}"
-
-def adjust_model_weights():
-    """根據歷史命中率自動調整 XGBoost 和 CatBoost 的融合權重"""
-    acc = load_accuracy()
-    records = acc.get('records', [])
-    total = len([r for r in records if r.get('is_hit') is not None])
-    hit = sum(1 for r in records if r.get('is_hit') is True)
-    hit_rate = hit / total if total > 0 else 0
-
-    config = load_system_config()
-    current_xgb = config.get('xgb_weight', 25)
-    current_cat = config.get('cat_weight', 1)
-
-    if hit_rate >= 0.6:
-        new_xgb = min(40, current_xgb + 3)
-        new_cat = max(1, current_cat - 1)
-    elif hit_rate >= 0.5:
-        new_xgb = min(35, current_xgb + 1)
-        new_cat = max(1, current_cat)
-    elif hit_rate >= 0.4:
-        new_xgb = max(15, current_xgb - 2)
-        new_cat = min(10, current_cat + 2)
-    elif hit_rate >= 0.3:
-        new_xgb = max(10, current_xgb - 5)
-        new_cat = min(15, current_cat + 5)
-    else:
-        new_xgb = max(5, current_xgb - 8)
-        new_cat = min(20, current_cat + 8)
-
-    new_xgb = max(1, min(50, new_xgb))
-    new_cat = max(1, min(30, new_cat))
-
-    config['xgb_weight'] = new_xgb
-    config['cat_weight'] = new_cat
-    config['last_weight_update'] = datetime.now().isoformat()
-    config['last_hit_rate'] = hit_rate
-    save_system_config(config)    # ============================================================
-    # 🔧 Admin 專用：比對賽果 + 調整權重
-    # ============================================================
-    st.divider()
-    st.subheader("🔧 管理員操作")
-    
-    col_btn1, col_btn2 = st.columns(2)
-    with col_btn1:
-        if st.button("🔄 比對賽果 + 更新統計", key="admin_update_analysis", use_container_width=True):
-            with st.spinner("正在比對賽果..."):
-                updated, msg = update_accuracy_with_results()
-                if updated > 0:
-                    st.success(f"✅ {msg}")
-                    st.rerun()
-                else:
-                    st.info(f"📭 {msg}")
-    with col_btn2:
-        if st.button("⚖️ 自動調整權重", key="admin_adjust_weights", use_container_width=True):
-            with st.spinner("正在計算最佳權重..."):
-                result = adjust_model_weights()
-                st.success(f"✅ 權重已調整：XGBoost = {result['xgb_weight']}, CatBoost = {result['cat_weight']}（命中率 {result['hit_rate']:.2%}，共 {result['total']} 場）")
-                st.rerun()
-    
-    st.caption("🔒 此操作僅限管理員使用，會影響系統預測權重")
-
-    return {
-        'xgb_weight': new_xgb,
-        'cat_weight': new_cat,
-        'hit_rate': hit_rate,
-        'total': total,
-        'hit': hit
-    }
+            st.error("❌ 儲存失敗，請檢查檔案權限。")
 
 # ============================================================
 # 9. 後台頁面（動態分頁）
@@ -3389,12 +3305,8 @@ def main():
             hit_seq = [1 if r.get('is_hit') is True else 0 for r in recent]
             st.caption("📊 最近 10 場命中情況： " + "".join(["✅" if h else "❌" for h in hit_seq]))
         
-        # 顯示 fusion 權重
+        # 顯示 fusion 權重（只顯示，冇按鈕）
         st.caption(f"⚙️ 當前模型融合權重：XGBoost **{xgb_w}** : CatBoost **{cat_w}**")
-        
-        # 功能按鈕
-        col_btn1, col_btn2 = st.columns(2)
-        with col_btn1:
         
         # 特徵重要性圖表
         with st.expander("📊 特徵重要性分析（CatBoost）"):
