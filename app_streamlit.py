@@ -926,7 +926,11 @@ def login_page():
                             'invite_count': 0
                         }
                         users[new_user] = new_user_data
-                        save_users(users)
+                        
+                        # 儲存用戶，並檢查是否成功
+                        if not save_users(users):
+                            st.error("❌ 寫入 users.json 失敗，請檢查檔案權限或磁碟空間。")
+                            st.stop()
                         
                         # 處理邀請獎勵（如啟用）
                         if CONFIG.get("enable_invite_reward", True) and invited_by:
@@ -947,13 +951,16 @@ def login_page():
                                 if new_user_data['predictions_limit'] != -1:
                                     new_user_data['predictions_limit'] += reward_invitee
                                 new_user_data['invite_rewards'] = reward_invitee
-                                save_users(users)
+                                if not save_users(users):
+                                    st.error("❌ 寫入邀請獎勵失敗，請檢查檔案權限。")
+                                    st.stop()
                                 st.success(f"✅ 註冊成功！你同邀請人各獲得 {reward_invitee} 次免費預測獎勵！")
                             else:
                                 st.success("✅ 註冊成功！")
                         else:
                             st.success("✅ 註冊成功！")
-                        # ✅ 新增：強制更新 session 中的 users，確保後台即時見到新用戶
+                        
+                        # 強制更新 session 中的 users，確保後台即時見到新用戶
                         st.session_state['users'] = load_users()
                         st.rerun()
 
@@ -1964,6 +1971,23 @@ def admin_system_settings():
             st.rerun()
         else:
             st.error("❌ 儲存失敗，請檢查檔案權限。")
+    
+    # ----- 新增：下載 users.json 驗證功能 -----
+    st.divider()
+    st.subheader("📥 下載雲端 users.json 驗證")
+    if os.path.exists(USER_DATA_FILE):
+        with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
+            data = f.read()
+        st.download_button(
+            label="點擊下載 users.json（最新雲端版本）",
+            data=data,
+            file_name="users.json",
+            mime="application/json",
+            use_container_width=True
+        )
+        st.caption("下載後用記事本打開，檢查內有冇新用戶。")
+    else:
+        st.warning("users.json 檔案尚未建立")
 
 # ============================================================
 # 9. 後台頁面（動態分頁，超級管理員專屬設定）
