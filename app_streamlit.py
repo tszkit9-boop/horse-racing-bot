@@ -35,65 +35,12 @@ st.set_page_config(
 )
 
 # ---------- 使用 iframe 注入強制移除腳本（繞過平台限制） ----------
-st.components.v1.html("""
-<!DOCTYPE html>
-<html>
-<head>
-<script>
-function removeAll() {
-    // 操作父層（如果同源）
-    try {
-        var parentDoc = window.parent.document;
-        // 移除所有可能嘅 Manage app 元素
-        var selectors = [
-            '[data-testid="stManageApp"]',
-            'button[title="Manage app"]',
-            'a[href*="?manage"]',
-            '[data-testid="stToolbar"] button:last-child',
-            '.stAppDeployButton + div',
-            'button:contains("Manage")',
-            'a:contains("Manage")'
-        ];
-        selectors.forEach(function(sel) {
-            var els = parentDoc.querySelectorAll(sel);
+electorAll(sel);
             for (var i = 0; i < els.length; i++) {
                 els[i].style.display = 'none';
                 els[i].remove();
             }
-        });
-        // 清空 toolbar
-        var toolbar = parentDoc.querySelector('[data-testid="stToolbar"]');
-        if (toolbar) toolbar.innerHTML = '';
-        // 暴力移除任何包含 Manage 文字嘅元素
-        var all = parentDoc.querySelectorAll('*');
-        for (var i = 0; i < all.length; i++) {
-            var el = all[i];
-            if (el.textContent && el.textContent.includes('Manage') && el.children.length === 0) {
-                el.style.display = 'none';
-            }
-        }
-    } catch(e) {}
-}
-// 立即執行
-removeAll();
-// 每 200ms 執行一次
-setInterval(removeAll, 200);
-// 監聽 DOM 變化
-var observer = new MutationObserver(removeAll);
-observer.observe(document.body, { childList: true, subtree: true });
-// 同時監聽父層
-try {
-    var parentObserver = new MutationObserver(removeAll);
-    parentObserver.observe(window.parent.document.body, { childList: true, subtree: true });
-} catch(e) {}
-</script>
-</head>
-<body></body>
-</html>
-""", height=0)
-
-# ---------- CSS 輔助（同時保留） ----------
-st.markdown("""
+       st.markdown("""
 <style>
     /* 隱藏所有平台 UI */
     div[data-testid="stToolbar"] { display: none !important; }
@@ -107,18 +54,11 @@ st.markdown("""
     [data-testid="stDecoration"] { display: none !important; }
     .stApp > header { display: none !important; }
     .stApp > header + div { padding-top: 0 !important; }
-    
-    /* 強制隱藏 Manage app */
-    [data-testid="stManageApp"] { display: none !important; }
-    button[title="Manage app"] { display: none !important; }
-    
+
     /* 移除黑色底 */
     .stApp > header {
         background: transparent !important;
         box-shadow: none !important;
-    }
-    div[data-testid="stHeader"] {
-        background: transparent !important;
     }
     h1, .stTitle {
         background: transparent !important;
@@ -128,13 +68,13 @@ st.markdown("""
         background-color: #f8f9fa !important;
     }
 
-    /* ===== 🎯 白色遮蓋層：精準遮住左下角 Manage app ===== */
-    .manage-cover {
+    /* ===== 🎯 白色遮蓋層：遮住左下角 (包括 Manage app) ===== */
+    .cover-bottom-left {
         position: fixed !important;
         bottom: 0 !important;
         left: 0 !important;
-        width: 200px !important;
-        height: 60px !important;
+        width: 400px !important;      /* 加大闊度，確保遮到 */
+        height: 120px !important;     /* 加大高度 */
         background-color: #ffffff !important;
         z-index: 9999999 !important;
         border: none !important;
@@ -142,7 +82,7 @@ st.markdown("""
         pointer-events: none !important;
     }
 </style>
-<div class="manage-cover"></div>
+<div class="cover-bottom-left"></div>
 """, unsafe_allow_html=True)
 
 # ============================================================
