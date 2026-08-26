@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 預測控制置中版
+賽馬預測系統 - 最終完整版（含每日免費重心推介・邀請獎勵・系統設定）
 """
 
 import streamlit as st
@@ -20,51 +20,6 @@ import random
 from PIL import Image
 
 # ============================================================
-# 🔒 隱藏 Streamlit 平台 UI
-# ============================================================
-st.set_page_config(
-    page_title="🏇 賽馬預測系統",
-    page_icon="🐎",
-    layout="wide",
-    initial_sidebar_state="expanded",
-    menu_items={
-        'Get Help': None,
-        'Report a bug': None,
-        'About': None,
-    }
-)
-
-st.markdown("""
-<style>
-    div[data-testid="stToolbar"] { display: none !important; }
-    .stAppDeployButton { display: none !important; }
-    #MainMenu { display: none !important; }
-    footer { display: none !important; }
-    header { display: none !important; }
-    button[kind="share"] { display: none !important; }
-    a[href*="streamlit.io"] { display: none !important; }
-    .st-emotion-cache-1r6slb0 { display: none !important; }
-    [data-testid="stHeader"] { display: none !important; }
-    [data-testid="stDecoration"] { display: none !important; }
-    .stApp > header { display: none !important; }
-    section[data-testid="stSidebar"] {
-        display: block !important;
-        visibility: visible !important;
-        opacity: 1 !important;
-        width: 280px !important;
-    }
-    section[data-testid="stSidebar"] * {
-        display: block !important;
-        visibility: visible !important;
-        opacity: 1 !important;
-    }
-    .stApp > header + div {
-        padding-top: 0 !important;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# ============================================================
 # 🔐 系統設定（動態載入）
 # ============================================================
 CONFIG_FILE = 'system_config.json'
@@ -81,10 +36,6 @@ DEFAULT_CONFIG = {
     "price_quarter": 328,
     "verification_expiry": 5,
     "enable_vip_content": True,
-    "enable_daily_free_tip": True,
-    "enable_invite_reward": True,
-    "invite_reward_inviter": 1,
-    "invite_reward_invitee": 1,
     "module_user_management": True,
     "module_analytics": True,
     "module_finance": True,
@@ -93,6 +44,11 @@ DEFAULT_CONFIG = {
     "module_automation": True,
     "module_security": True,
     "module_promo": True,
+    # ---- 新增功能開關 ----
+    "enable_daily_free_tip": True,          # 每日免費重心推介
+    "enable_invite_reward": True,           # 邀請獎勵計劃
+    "invite_reward_inviter": 1,             # 邀請人獲得免費次數
+    "invite_reward_invitee": 1,             # 被邀請人獲得免費次數
 }
 
 def load_system_config():
@@ -104,7 +60,8 @@ def load_system_config():
                 if key not in config:
                     config[key] = value
             return config
-        except:
+        except Exception as e:
+            st.error(f"讀取設定檔失敗：{e}")
             return DEFAULT_CONFIG.copy()
     else:
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
@@ -116,13 +73,24 @@ def save_system_config(config):
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
         return True
-    except:
+    except Exception as e:
+        st.error(f"儲存設定失敗：{e}")
         return False
 
 CONFIG = load_system_config()
 
 # ============================================================
-# 2. 數據讀寫函數
+# 1. 頁面設定
+# ============================================================
+st.set_page_config(
+    page_title="🏇 賽馬預測系統",
+    page_icon="🐎",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# ============================================================
+# 2. 數據讀寫函數（擴充用戶欄位）
 # ============================================================
 USER_DATA_FILE = 'users.json'
 FINANCE_FILE = 'finance.json'
@@ -142,7 +110,8 @@ def load_json(file):
         try:
             with open(file, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except:
+        except Exception as e:
+            st.error(f"讀取 {file} 失敗：{e}")
             return {}
     return {}
 
@@ -151,7 +120,8 @@ def save_json(file, data):
         with open(file, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         return True
-    except:
+    except Exception as e:
+        st.error(f"寫入 {file} 失敗：{e}")
         return False
 
 def load_users():
@@ -174,10 +144,10 @@ def load_users():
                 "predictions_limit": -1,
                 "history": [],
                 "terms_agreed": datetime.now().isoformat(),
-                "invite_code": "ADMIN001",
-                "invited_by": None,
-                "invite_rewards": 0,
-                "invite_count": 0
+                "invite_code": "ADMIN001",      # 邀請碼
+                "invited_by": None,             # 邀請人
+                "invite_rewards": 0,            # 累積獲得獎勵次數（已使用）
+                "invite_count": 0               # 成功邀請人數
             }
         }
         save_users(users)
@@ -198,6 +168,7 @@ def load_users():
             if 'total_usage' not in u: u['total_usage'] = 0
             if 'terms_agreed' not in u: u['terms_agreed'] = None
             if 'invite_code' not in u:
+                # 為舊用戶生成邀請碼
                 u['invite_code'] = uid.upper() + str(random.randint(100, 999))
             if 'invited_by' not in u: u['invited_by'] = None
             if 'invite_rewards' not in u: u['invite_rewards'] = 0
@@ -303,8 +274,8 @@ def load_models():
             rank_obj = pickle.load(f)
             rank_model = rank_obj[0] if isinstance(rank_obj, tuple) else rank_obj
         return xgb_model, cat_model, rank_model
-    except:
-        st.error("❌ 模型載入失敗")
+    except Exception as e:
+        st.error(f"❌ 模型載入失敗：{e}")
         return None, None, None
 
 # ============================================================
@@ -605,8 +576,8 @@ def run_prediction(date_str, race_no):
 
     try:
         df = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
-    except:
-        st.error("讀取排位表失敗")
+    except Exception as e:
+        st.error(f"讀取排位表失敗：{e}")
         return None, None
 
     df = standardize_columns_safe(df)
@@ -706,7 +677,7 @@ def run_prediction(date_str, race_no):
     return result, pool_rec
 
 # ============================================================
-# 5. 用戶功能
+# 5. 用戶功能（包含邀請獎勵）
 # ============================================================
 def record_prediction(username, date_str, race_no, horse_name, predicted_prob=None):
     users = load_users()
@@ -790,43 +761,15 @@ def show_user_dashboard(username):
     if plan:
         st.caption(f"📌 當前方案：{get_plan_name(plan)}")
     
+    # 顯示邀請獎勵資訊（如啟用）
     if CONFIG.get("enable_invite_reward", True):
         st.markdown("---")
         st.subheader("🎁 邀請獎勵")
-        col_inv1, col_inv2, col_inv3 = st.columns(3)
-        with col_inv1:
-            st.caption(f"你的邀請碼：**{invite_code}**")
-        with col_inv2:
-            st.caption(f"已成功邀請 **{invite_count}** 位朋友")
-        with col_inv3:
-            st.caption(f"已獲得獎勵次數：**{invite_rewards}** 次（已自動加到你的預測額度）")
-    
-    st.markdown("---")
-    st.subheader("📊 預測統計")
-    today = datetime.now().strftime('%Y-%m-%d')
-    history = user_data.get('history', [])
-    today_count = sum(1 for h in history if h.get('date') == today)
-    
-    col_p1, col_p2, col_p3, col_p4 = st.columns(4)
-    with col_p1:
-        st.metric("📈 總預測", stats['total_predictions'])
-    with col_p2:
-        st.metric("📅 今日已用", today_count)
-    with col_p3:
-        if limit == -1:
-            st.metric("🔮 剩餘次數", "♾️ 無限")
-        else:
-            remain = max(0, limit - user_data.get('free_usage', 0))
-            st.metric("🔮 剩餘次數", remain)
-    with col_p4:
-        if st.button("🚀 去預測", use_container_width=True, key="quick_predict"):
-            st.session_state.page = "預測"
-            st.rerun()
-    
-    if today_count > 0:
-        st.caption(f"📝 今日已進行 {today_count} 次預測")
-    else:
-        st.caption("📝 今日尚未進行預測")
+        st.caption(f"你的邀請碼：**{invite_code}**")
+        st.caption(f"已成功邀請 **{invite_count}** 位朋友")
+        st.caption(f"已獲得獎勵次數：**{invite_rewards}** 次（已自動加到你的預測額度）")
+        share_link = f"https://your-system.com?ref={invite_code}"
+        st.caption(f"分享連結：{share_link}")
 
 def show_prediction_history(username):
     if not username:
@@ -844,7 +787,7 @@ def show_prediction_history(username):
     st.dataframe(df, use_container_width=True)
 
 # ============================================================
-# 6. 登入/註冊
+# 6. 登入/註冊（含邀請碼輸入）
 # ============================================================
 def login_page():
     st.title("🔐 登入 / 註冊")
@@ -872,6 +815,7 @@ def login_page():
             new_pass = st.text_input("密碼", type="password", key="reg_pass")
             new_pass2 = st.text_input("確認密碼", type="password", key="reg_pass2")
             
+            # 邀請碼輸入（如啟用）
             if CONFIG.get("enable_invite_reward", True):
                 invite_code_input = st.text_input("邀請碼（如有）", key="reg_invite_code", placeholder="輸入朋友的邀請碼")
             else:
@@ -949,15 +893,18 @@ def login_page():
                     if new_user in users:
                         st.error("❌ 用戶名稱已被使用")
                     else:
+                        # 處理邀請碼
                         invited_by = None
                         if CONFIG.get("enable_invite_reward", True) and invite_code_input:
+                            # 查找擁有該邀請碼的用戶
                             for uid, u in users.items():
                                 if u.get('invite_code') == invite_code_input:
                                     invited_by = uid
                                     break
                             if not invited_by:
                                 st.warning("⚠️ 邀請碼無效，請確認後再試。")
-                        
+                                # 仍然允許註冊，但不給予獎勵
+                        # 創建新用戶
                         new_user_data = {
                             'password': new_pass,
                             'phone': phone,
@@ -981,15 +928,22 @@ def login_page():
                         users[new_user] = new_user_data
                         save_users(users)
                         
+                        # 處理邀請獎勵（如啟用）
                         if CONFIG.get("enable_invite_reward", True) and invited_by:
+                            # 獎勵邀請人
                             inviter = users.get(invited_by)
                             if inviter:
                                 reward_inviter = CONFIG.get("invite_reward_inviter", 1)
                                 reward_invitee = CONFIG.get("invite_reward_invitee", 1)
+                                # 更新邀請人的獎勵次數（加到 predictions_limit）
                                 if inviter['predictions_limit'] != -1:
                                     inviter['predictions_limit'] += reward_inviter
+                                else:
+                                    # 如果邀請人是無限（-1），則不調整，但記錄獎勵次數以作統計
+                                    pass
                                 inviter['invite_count'] = inviter.get('invite_count', 0) + 1
                                 inviter['invite_rewards'] = inviter.get('invite_rewards', 0) + reward_inviter
+                                # 獎勵被邀請人（新用戶）
                                 if new_user_data['predictions_limit'] != -1:
                                     new_user_data['predictions_limit'] += reward_invitee
                                 new_user_data['invite_rewards'] = reward_invitee
@@ -999,6 +953,8 @@ def login_page():
                                 st.success("✅ 註冊成功！")
                         else:
                             st.success("✅ 註冊成功！")
+                        # ✅ 新增：強制更新 session 中的 users，確保後台即時見到新用戶
+                        st.session_state['users'] = load_users()
                         st.rerun()
 
 # ============================================================
@@ -1146,7 +1102,7 @@ def show_paywall():
                 st.stop()
 
 # ============================================================
-# 8. 後台所有模組（完整實作）
+# 8. 後台所有模組（完整）
 # ============================================================
 
 # ---------- 8.1 用戶管理 ----------
@@ -1696,7 +1652,9 @@ def admin_security():
         else:
             st.error("用戶不存在")
 
+# ============================================================
 # ---------- 8.11 付款審核 ----------
+# ============================================================
 def admin_payment_review():
     st.subheader("📤 付款審核")
     
@@ -1918,7 +1876,7 @@ def _refund_payment(rec, proofs_data):
         st.code(traceback.format_exc())
 
 # ============================================================
-# ⚙️ 系統設定（僅超級管理員）
+# ---------- ⚙️ 系統設定（僅超級管理員） ----------
 # ============================================================
 def admin_system_settings():
     users = load_users()
@@ -2008,7 +1966,7 @@ def admin_system_settings():
             st.error("❌ 儲存失敗，請檢查檔案權限。")
 
 # ============================================================
-# 9. 後台頁面（動態分頁）
+# 9. 後台頁面（動態分頁，超級管理員專屬設定）
 # ============================================================
 def admin_page():
     if 'admin_authenticated' not in st.session_state:
@@ -2078,7 +2036,7 @@ def admin_page():
             tab_functions[name]()
 
 # ============================================================
-# 10. 主頁面（預測控制移去中間）
+# 10. 主頁面（含每日免費重心推介）
 # ============================================================
 def main():
     if 'logged_in' not in st.session_state:
@@ -2143,9 +2101,10 @@ def main():
         admin_page()
         return
 
-    # ----- 每日免費重心推介 -----
+    # ----- 每日免費重心推介（未登入都見到） -----
     if CONFIG.get("enable_daily_free_tip", True):
         try:
+            # 嘗試讀取排位表，找出今日第一場
             df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
             df_sched = standardize_columns_safe(df_sched)
             if 'race_date' in df_sched.columns:
@@ -2154,9 +2113,11 @@ def main():
                 today_dt = datetime.now().date()
                 day_races = df_sched[df_sched['race_date'].dt.date == today_dt]
                 if not day_races.empty:
+                    # 選最早場次（最小 race_no）
                     first_race = day_races.sort_values('race_no').iloc[0]
                     race_date_str = first_race['race_date'].strftime('%Y-%m-%d')
                     race_no = int(first_race['race_no'])
+                    # 執行預測
                     result, pool = run_prediction(race_date_str, race_no)
                     if result is not None and not result.empty:
                         top1 = result.iloc[0]
@@ -2193,10 +2154,11 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
                         st.markdown("---")
-        except:
+        except Exception as e:
+            # 靜默失敗，不影響主頁顯示
             pass
 
-    # ----- 主標題 -----
+    # 主標題
     col1, col2 = st.columns([6, 1])
     with col1:
         st.title("🏇 賽馬預測系統")
@@ -2209,26 +2171,13 @@ def main():
                 st.session_state.admin_authenticated = False
                 st.rerun()
 
-    # ----- 用戶儀表板（包含預測統計） -----
     if CONFIG["enable_registration"] and st.session_state.logged_in:
         show_user_dashboard(st.session_state.username)
     elif not CONFIG["enable_registration"]:
         st.info("🔓 目前為公開模式，任何人皆可使用")
 
-    # ----- 預測控制（移到中間） -----
-    st.markdown("---")
-    st.subheader("🎯 賽事預測控制")
-    col_date, col_race, col_btn = st.columns([2, 2, 1])
-    with col_date:
-        date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="predict_date_mid")
-    with col_race:
-        race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race_mid")
-    with col_btn:
-        predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
-
-    # ----- 側邊欄（淨係保留用戶資訊、聯絡方式、導航） -----
     with st.sidebar:
-        st.header("🎯 用戶資訊")
+        st.header("🎯 控制面板")
         if CONFIG["enable_registration"] and st.session_state.logged_in:
             st.write(f"👤 用戶：{st.session_state.username}")
             users = load_users()
@@ -2240,9 +2189,9 @@ def main():
                 used = user_data.get('free_usage', 0)
                 remain = max(0, limit - used)
                 st.info(f"📊 剩餘免費場次：{remain} 場")
-            if st.button("📋 我的預測記錄", key="show_history_btn_side"):
+            if st.button("📋 我的預測記錄", key="show_history_btn"):
                 st.session_state.show_history = not st.session_state.show_history
-            if st.button("🚪 登出", key="logout_btn_side"):
+            if st.button("🚪 登出", key="logout_btn"):
                 for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history']:
                     if key in st.session_state:
                         del st.session_state[key]
@@ -2252,25 +2201,16 @@ def main():
             st.caption("💬 聯絡管理員")
             st.markdown("Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
             st.markdown("[🔗 點擊連結搵我哋](https://t.me/bryhjdjbrbxibvrjskofndhiebdpaq)")
-            
-            st.divider()
-            st.subheader("📌 導航")
-            is_super_admin = user_data.get('group') == 'super_admin'
-            pages = ["主頁面", "預測", "賽程", "馬匹查詢", "騎師查詢", "對比", "趨勢", "用戶儀表板", "預測歷史"]
-            if is_super_admin:
-                pages.append("後台管理")
-            selected = st.selectbox("前往", pages, index=0, key="nav_select_side")
-            if selected != st.session_state.get('page', '主頁面'):
-                st.session_state.page = selected
-                st.rerun()
+        
+        date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="predict_date")
+        race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race")
+        predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn")
 
-    # ----- 顯示歷史記錄 -----
     if CONFIG["enable_registration"] and st.session_state.logged_in and st.session_state.get('show_history', False):
         st.subheader("📋 我的預測記錄")
         show_prediction_history(st.session_state.username)
         st.divider()
 
-    # ----- 今日賽程 -----
     st.subheader("📅 今日賽程")
     try:
         df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
@@ -2291,7 +2231,6 @@ def main():
     except:
         st.info("今日沒有賽事")
 
-    # ----- 執行預測 -----
     if predict_btn:
         users = load_users()
         user_data = users.get(st.session_state.username, {})
@@ -2316,6 +2255,7 @@ def main():
                     top4 = result.head(4)
                     top1 = top4.iloc[0]
                     
+                    # 獨贏首選
                     st.markdown("---")
                     st.markdown(f"""
                     <div style="
@@ -2340,6 +2280,7 @@ def main():
                     </div>
                     """, unsafe_allow_html=True)
                     
+                    # 連贏推薦
                     st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🔗 連贏推薦</h3>", unsafe_allow_html=True)
                     col1, col2 = st.columns(2)
                     with col1:
@@ -2366,6 +2307,7 @@ def main():
                         """, unsafe_allow_html=True)
                     st.caption("💡 連贏：揀 2 隻馬，跑出前 2 名（不分順序）即中")
                     
+                    # 三重彩
                     if is_vip:
                         st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🥉 三重彩推薦（4 隻複式）</h3>", unsafe_allow_html=True)
                         cols = st.columns(4)
@@ -2392,6 +2334,7 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
                     
+                    # 四重彩
                     if is_vip:
                         st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🏅 四重彩推薦（4 隻複式）</h3>", unsafe_allow_html=True)
                         cols = st.columns(4)
@@ -2416,6 +2359,7 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
                     
+                    # 總結建議
                     st.divider()
                     st.markdown("""
                     <h3 style='margin-bottom: 10px;'>📋 總結投注建議</h3>
