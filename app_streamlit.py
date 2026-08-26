@@ -717,8 +717,7 @@ def show_prediction_history(username):
         return
     df = pd.DataFrame(history[-20:][::-1])
     st.dataframe(df, use_container_width=True)
-
-def login_page():
+    def login_page():
     st.title("🔐 登入 / 註冊")
     tab1, tab2 = st.tabs(["登入", "註冊"])
     with tab1:
