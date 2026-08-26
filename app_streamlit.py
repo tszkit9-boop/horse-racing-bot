@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 預測控制置中版
+賽馬預測系統 - 完整修正版（已修復 NameError）
 """
 
 import streamlit as st
@@ -20,7 +20,7 @@ import random
 from PIL import Image
 
 # ============================================================
-# 🔒 隱藏 Streamlit 平台 UI（終極 Apify 版）
+# 🔒 隱藏 Streamlit 平台 UI
 # ============================================================
 st.set_page_config(
     page_title="🏇 賽馬預測系統",
@@ -34,15 +34,8 @@ st.set_page_config(
     }
 )
 
-# ---------- 使用 iframe 注入強制移除腳本（繞過平台限制） ----------
-electorAll(sel);
-            for (var i = 0; i < els.length; i++) {
-                els[i].style.display = 'none';
-                els[i].remove();
-            }
-     st.markdown("""
+st.markdown("""
 <style>
-    /* 隱藏所有平台 UI */
     div[data-testid="stToolbar"] { display: none !important; }
     .stAppDeployButton { display: none !important; }
     #MainMenu { display: none !important; }
@@ -50,40 +43,27 @@ electorAll(sel);
     header { display: none !important; }
     button[kind="share"] { display: none !important; }
     a[href*="streamlit.io"] { display: none !important; }
+    .st-emotion-cache-1r6slb0 { display: none !important; }
     [data-testid="stHeader"] { display: none !important; }
     [data-testid="stDecoration"] { display: none !important; }
     .stApp > header { display: none !important; }
-    .stApp > header + div { padding-top: 0 !important; }
-
-    /* 移除黑色底 */
-    .stApp > header {
-        background: transparent !important;
-        box-shadow: none !important;
-    }
-    h1, .stTitle {
-        background: transparent !important;
-        color: #1a1a2e !important;
-    }
     section[data-testid="stSidebar"] {
-        background-color: #f8f9fa !important;
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        width: 300px !important;
     }
-
-    /* ===== 🎯 白色遮蓋層：遮住左下角 (包括 Manage app) ===== */
-    .cover-bottom-left {
-        position: fixed !important;
-        bottom: 0 !important;
-        left: 0 !important;
-        width: 500px !important;      /* 加大確保遮到 */
-        height: 150px !important;
-        background-color: #ffffff !important;
-        z-index: 9999999 !important;
-        border: none !important;
-        box-shadow: none !important;
-        pointer-events: none !important;
+    section[data-testid="stSidebar"] * {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+    }
+    .stApp > header + div {
+        padding-top: 0 !important;
     }
 </style>
-<div class="cover-bottom-left"></div>
 """, unsafe_allow_html=True)
+
 # ============================================================
 # 🔐 系統設定（動態載入）
 # ============================================================
@@ -140,17 +120,6 @@ def save_system_config(config):
         return False
 
 CONFIG = load_system_config()
-
-# ============================================================
-# 其餘你原本嘅程式碼（由 load_users() 開始，完全保留）
-# ============================================================
-# ============================================================
-# 其餘你原本嘅程式碼（由 load_users() 開始，完全保留）
-# ============================================================
-
-# ============================================================
-# 其餘你原本嘅程式碼（由 load_users() 開始，完全保留）
-# ============================================================
 
 # ============================================================
 # 2. 數據讀寫函數
@@ -1323,23 +1292,6 @@ def admin_user_management():
                 log_admin_action(st.session_state.username, f"編輯用戶 {username}")
                 st.success("✅ 已更新")
                 st.rerun()
-    
-    # 📥 下載 users.json
-    st.divider()
-    st.subheader("📥 數據匯出")
-    if st.button("📥 下載 users.json", key="download_users_json"):
-        try:
-            with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
-                data = f.read()
-            st.download_button(
-                label="✅ 點擊下載 users.json",
-                data=data,
-                file_name="users.json",
-                mime="application/json",
-                key="download_users_btn"
-            )
-        except Exception as e:
-            st.error(f"讀取檔案失敗：{e}")
 
 # ---------- 8.2 數據分析 ----------
 def admin_analytics():
@@ -2126,7 +2078,7 @@ def admin_page():
             tab_functions[name]()
 
 # ============================================================
-# 10. 主頁面（預測控制移去中間）
+# 10. 主頁面（已修正 NameError）
 # ============================================================
 def main():
     if 'logged_in' not in st.session_state:
@@ -2244,8 +2196,8 @@ def main():
         except:
             pass
 
-    # ----- 主標題 -----
-    col1, col2, col3 = st.columns([5, 1, 1])
+    # 主標題
+    col1, col2 = st.columns([6, 1])
     with col1:
         st.title("🏇 賽馬預測系統")
         st.markdown("AI 驅動・即時預測・彩池推薦")
@@ -2256,34 +2208,15 @@ def main():
                 st.session_state.show_admin = True
                 st.session_state.admin_authenticated = False
                 st.rerun()
-    with col3:
-        if st.session_state.get('logged_in', False):
-            if st.button("🚪 登出", use_container_width=True, key="logout_main"):
-                for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history']:
-                    if key in st.session_state:
-                        del st.session_state[key]
-                st.rerun()
 
-    # ----- 用戶儀表板（包含預測統計） -----
     if CONFIG["enable_registration"] and st.session_state.logged_in:
         show_user_dashboard(st.session_state.username)
     elif not CONFIG["enable_registration"]:
         st.info("🔓 目前為公開模式，任何人皆可使用")
 
-    # ----- 預測控制（移到中間） -----
-    st.markdown("---")
-    st.subheader("🎯 賽事預測控制")
-    col_date, col_race, col_btn = st.columns([2, 2, 1])
-    with col_date:
-        date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="predict_date_mid")
-    with col_race:
-        race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race_mid")
-    with col_btn:
-        predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
-
-    # ----- 側邊欄（淨係保留用戶資訊、聯絡方式、導航） -----
+    # ----- 側邊欄（定義 is_super_admin） -----
     with st.sidebar:
-        st.header("🎯 用戶資訊")
+        st.header("🎯 控制面板")
         if CONFIG["enable_registration"] and st.session_state.logged_in:
             st.write(f"👤 用戶：{st.session_state.username}")
             users = load_users()
@@ -2295,9 +2228,9 @@ def main():
                 used = user_data.get('free_usage', 0)
                 remain = max(0, limit - used)
                 st.info(f"📊 剩餘免費場次：{remain} 場")
-            if st.button("📋 我的預測記錄", key="show_history_btn_side"):
+            if st.button("📋 我的預測記錄", key="show_history_btn"):
                 st.session_state.show_history = not st.session_state.show_history
-            if st.button("🚪 登出", key="logout_btn_side"):
+            if st.button("🚪 登出", key="logout_btn"):
                 for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history']:
                     if key in st.session_state:
                         del st.session_state[key]
@@ -2308,24 +2241,29 @@ def main():
             st.markdown("Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
             st.markdown("[🔗 點擊連結搵我哋](https://t.me/bryhjdjbrbxibvrjskofndhiebdpaq)")
             
+            # ----- 導航選項 -----
             st.divider()
             st.subheader("📌 導航")
+            # ✅ 修正：定義 is_super_admin
             is_super_admin = user_data.get('group') == 'super_admin'
             pages = ["主頁面", "預測", "賽程", "馬匹查詢", "騎師查詢", "對比", "趨勢", "用戶儀表板", "預測歷史"]
             if is_super_admin:
                 pages.append("後台管理")
-            selected = st.selectbox("前往", pages, index=0, key="nav_select_side")
+            selected = st.selectbox("前往", pages, index=0, key="nav_select")
             if selected != st.session_state.get('page', '主頁面'):
                 st.session_state.page = selected
                 st.rerun()
+        
+        # 日期和場次選擇
+        date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="predict_date")
+        race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race")
+        predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn")
 
-    # ----- 顯示歷史記錄 -----
     if CONFIG["enable_registration"] and st.session_state.logged_in and st.session_state.get('show_history', False):
         st.subheader("📋 我的預測記錄")
         show_prediction_history(st.session_state.username)
         st.divider()
 
-    # ----- 今日賽程 -----
     st.subheader("📅 今日賽程")
     try:
         df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
