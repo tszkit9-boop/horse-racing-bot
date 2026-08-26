@@ -20,7 +20,7 @@ import random
 from PIL import Image
 
 # ============================================================
-# 🔒 隱藏 Streamlit 平台 UI
+# 🔒 隱藏 Streamlit 平台 UI（終極版）
 # ============================================================
 st.set_page_config(
     page_title="🏇 賽馬預測系統",
@@ -34,29 +34,65 @@ st.set_page_config(
     }
 )
 
-# ============================================================
-# 🔒 完整隱藏（包括 Manage app + 移除黑色底）
-# ============================================================
+# ---------- 強制移除 Manage App（使用 MutationObserver 持續監視） ----------
+st.components.v1.html("""
+<script>
+(function() {
+    function removeManageApp() {
+        // 所有可能選擇器
+        const selectors = [
+            '[data-testid="stManageApp"]',
+            'button[title="Manage app"]',
+            'a[href*="?manage"]',
+            '[data-testid="stToolbar"] button:last-child',
+            '.stAppDeployButton + div',
+            'button:contains("Manage")',
+            'a:contains("Manage")'
+        ];
+        selectors.forEach(sel => {
+            document.querySelectorAll(sel).forEach(el => {
+                el.style.display = 'none';
+                el.remove();
+            });
+        });
+        // 清空 toolbar
+        const toolbar = document.querySelector('[data-testid="stToolbar"]');
+        if (toolbar) toolbar.innerHTML = '';
+        // 移除所有包含 Manage 文字嘅元素
+        document.querySelectorAll('*').forEach(el => {
+            if (el.textContent && el.textContent.includes('Manage') && el.children.length === 0) {
+                el.style.display = 'none';
+            }
+        });
+    }
+    removeManageApp();
+    setInterval(removeManageApp, 500);
+    new MutationObserver(removeManageApp).observe(document.body, { childList: true, subtree: true });
+})();
+</script>
+""", height=0)
+
+# ---------- CSS 輔助 ----------
 st.markdown("""
 <style>
-    /* ===== 隱藏所有 Streamlit 平台 UI ===== */
+    /* 隱藏所有平台 UI */
     div[data-testid="stToolbar"] { display: none !important; }
     .stAppDeployButton { display: none !important; }
     #MainMenu { display: none !important; }
     footer { display: none !important; }
     header { display: none !important; }
     button[kind="share"] { display: none !important; }
-    button[kind="header"] { display: none !important; }
     a[href*="streamlit.io"] { display: none !important; }
-    .st-emotion-cache-1r6slb0 { display: none !important; }
-    .st-emotion-cache-1v3caq0 { display: none !important; }
-    .st-emotion-cache-1v0mbdj { display: none !important; }
     [data-testid="stHeader"] { display: none !important; }
     [data-testid="stDecoration"] { display: none !important; }
     .stApp > header { display: none !important; }
     .stApp > header + div { padding-top: 0 !important; }
     
-    /* ===== 移除頂部黑色背景 ===== */
+    /* 強制隱藏 Manage app */
+    [data-testid="stManageApp"] { display: none !important; }
+    button[title="Manage app"] { display: none !important; }
+    
+    /* 移除黑色底 */
     .stApp > header {
         background: transparent !important;
         box-shadow: none !important;
@@ -71,57 +107,7 @@ st.markdown("""
     section[data-testid="stSidebar"] {
         background-color: #f8f9fa !important;
     }
-    
-    /* ===== 暴力隱藏任何含有 Manage / Share 嘅元素 ===== */
-    div:has(> button:contains("Manage")) { display: none !important; }
-    div:has(> button:contains("Share")) { display: none !important; }
-    div:has(> a:contains("Manage")) { display: none !important; }
-    div:has(> a:contains("Share")) { display: none !important; }
 </style>
-
-<script>
-    // 暴力移除所有平台 UI
-    function removeAllPlatformUI() {
-        // 1. 移除文字包含 Manage / Share / Settings 嘅元素
-        document.querySelectorAll('button, a, div, span').forEach(el => {
-            if (el.textContent && (
-                el.textContent.includes('Manage') || 
-                el.textContent.includes('Share') || 
-                el.textContent.includes('Settings')
-            )) {
-                el.style.display = 'none';
-                if (el.parentElement && el.parentElement.children.length === 1) {
-                    el.parentElement.style.display = 'none';
-                }
-            }
-        });
-        
-        // 2. 移除特定 data-testid
-        ['stToolbar', 'stHeader', 'stDecoration', 'stManageApp'].forEach(id => {
-            document.querySelectorAll('[data-testid="' + id + '"]').forEach(el => {
-                el.style.display = 'none';
-            });
-        });
-        
-        // 3. 移除所有 streamlit.io 連結
-        document.querySelectorAll('a[href*="streamlit.io"]').forEach(el => {
-            el.style.display = 'none';
-            if (el.parentElement) el.parentElement.style.display = 'none';
-        });
-    }
-    
-    // 立即執行
-    removeAllPlatformUI();
-    
-    // 每 300ms 再檢查一次（防止被還原）
-    setInterval(removeAllPlatformUI, 300);
-    
-    // MutationObserver：偵測 DOM 變化，自動重新移除
-    new MutationObserver(removeAllPlatformUI).observe(document.body, {
-        childList: true,
-        subtree: true
-    });
-</script>
 """, unsafe_allow_html=True)
 
 # ============================================================
@@ -180,6 +166,10 @@ def save_system_config(config):
         return False
 
 CONFIG = load_system_config()
+
+# ============================================================
+# 其餘你原本嘅程式碼（由 load_users() 開始，完全保留）
+# ============================================================
 
 # ============================================================
 # 其餘你原本嘅程式碼（由 load_users() 開始，完全保留）
