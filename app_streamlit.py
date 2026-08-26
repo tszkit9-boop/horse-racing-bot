@@ -2197,7 +2197,8 @@ def main():
             pass
 
     # 主標題
-    col1, col2 = st.columns([6, 1])
+        # 主標題
+    col1, col2, col3 = st.columns([5, 1, 1])
     with col1:
         st.title("🏇 賽馬預測系統")
         st.markdown("AI 驅動・即時預測・彩池推薦")
@@ -2208,7 +2209,13 @@ def main():
                 st.session_state.show_admin = True
                 st.session_state.admin_authenticated = False
                 st.rerun()
-
+    with col3:
+        if st.session_state.get('logged_in', False):
+            if st.button("🚪 登出", use_container_width=True, key="logout_main"):
+                for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history']:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.rerun()
     if CONFIG["enable_registration"] and st.session_state.logged_in:
         show_user_dashboard(st.session_state.username)
     elif not CONFIG["enable_registration"]:
