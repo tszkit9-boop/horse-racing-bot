@@ -3,7 +3,66 @@
 """
 賽馬預測系統 - 預測控制置中版
 """
+import streamlit as st
+import pandas as pd
+import numpy as np
+import pickle
+import os
+import json
+from datetime import datetime, timedelta
+import warnings
+warnings.filterwarnings('ignore')
+from catboost import CatBoostClassifier
+import plotly.express as px
+import plotly.graph_objects as go
+import random
+from PIL import Image
 
+# ============================================================
+# 🚀 強制移除 Manage App 按鈕（必須喺 set_page_config 之後）
+# ============================================================
+st.set_page_config(
+    page_title="🏇 賽馬預測系統",
+    page_icon="🐎",
+    layout="wide",
+    initial_sidebar_state="expanded",
+    menu_items={
+        'Get Help': None,
+        'Report a bug': None,
+        'About': None,
+    }
+)
+
+# ⬇️⬇️⬇️ 加入呢段 JavaScript（一定要放喺 set_page_config 後面） ⬇️⬇️⬇️
+st.components.v1.html("""
+<script>
+(function() {
+    function removeManageApp() {
+        const selectors = [
+            '[data-testid="stManageApp"]',
+            'button[title="Manage app"]',
+            '[data-testid="stToolbar"]'
+        ];
+        selectors.forEach(sel => {
+            document.querySelectorAll(sel).forEach(el => {
+                if (sel === '[data-testid="stToolbar"]') {
+                    el.innerHTML = '';
+                } else {
+                    el.remove();
+                }
+            });
+        });
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', removeManageApp);
+    } else {
+        removeManageApp();
+    }
+    setTimeout(removeManageApp, 1000);
+    setTimeout(removeManageApp, 3000);
+})();
+</script>
+""", height=0)
 import streamlit as st
 import pandas as pd
 import numpy as np
