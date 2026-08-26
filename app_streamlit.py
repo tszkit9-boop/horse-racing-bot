@@ -2537,7 +2537,33 @@ def main():
                         for i in range(4):
                             row = top4.iloc[i]
                             with cols[i]:
-                                st.markdown(f"""
+                                st.markdown(f"""<h3 style='margin-bottom: 10px;'>📋 總結投注建議</h3>
+                    <div style="background: linear-gradient(135deg, #f1f8e9, #dcedc8); border-radius: 16px; padding: 20px 24px; border: 2px solid #2e7d32; box-shadow: 0 4px 16px rgba(46, 125, 50, 0.15);">
+                    """, unsafe_allow_html=True)
+                    
+                    if is_vip:
+                        st.markdown(f"""
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 30px; font-size: 15px;">
+                            <div>🏆 <b>獨贏</b>：<span style="color: #1a237e; font-weight: bold;">{top4.iloc[0]['馬匹名稱']}</span></div>
+                            <div>🔗 <b>連贏</b>：<span style="color: #0d47a1; font-weight: bold;">{top4.iloc[0]['馬匹名稱']} + {top4.iloc[1]['馬匹名稱']}</span></div>
+                            <div style="grid-column: span 2;">🥉 <b>三重彩</b>：<span style="color: #4a148c; font-weight: bold;">{top4.iloc[0]['馬匹名稱']}、{top4.iloc[1]['馬匹名稱']}、{top4.iloc[2]['馬匹名稱']}、{top4.iloc[3]['馬匹名稱']}</span>（複式 4 選 3）</div>
+                            <div style="grid-column: span 2;">🏅 <b>四重彩</b>：<span style="color: #1b5e20; font-weight: bold;">{top4.iloc[0]['馬匹名稱']}、{top4.iloc[1]['馬匹名稱']}、{top4.iloc[2]['馬匹名稱']}、{top4.iloc[3]['馬匹名稱']}</span>（複式 4 選 4）</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"""
+                        <div style="font-size: 15px;">
+                            <div>🏆 <b>獨贏</b>：<span style="color: #1a237e; font-weight: bold;">{top4.iloc[0]['馬匹名稱']}</span></div>
+                            <div>🔗 <b>連贏</b>：<span style="color: #0d47a1; font-weight: bold;">{top4.iloc[0]['馬匹名稱']} + {top4.iloc[1]['馬匹名稱']}</span></div>
+                            <div style="margin-top: 12px; padding: 12px; background: #fff3e0; border-radius: 10px; text-align: center; border: 1px dashed #ff6f00;">
+                                <span style="font-size: 20px;">🔒</span>
+                                <span style="color: #e65100; font-weight: bold;"> 三重彩及四重彩推薦僅限 VIP 會員查看</span>
+                                <br><span style="font-size: 13px; color: #888;">升級 VIP 即可解鎖完整投注建議</span>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    st.markdown("</div>", unsafe_allow_html=True)
                                 <div style="background: {colors2[i]}; border-radius: 12px; padding: 14px 10px; text-align: center; box-shadow: 0 3px 10px rgba(0,0,0,0.08); border: 1px solid rgba(0,0,0,0.05);">
                                     <span style="font-size: 24px;">🏇</span>
                                     <h5 style="margin: 2px 0; color: #333; font-size: 15px;">{row['馬匹名稱']}</h5>
