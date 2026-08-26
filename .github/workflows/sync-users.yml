@@ -1,7 +1,32 @@
-- name: 下載最新 users.json
-  run: |
-    curl -L -o users.json "https://horse-racing-bot-picmquaqteh5dsgjpgn4du.streamlit.app/?raw=true"
-    if [ ! -s users.json ]; then
-      echo "下載失敗或檔案空白"
-      exit 1
-    fi
+name: 自動同步 users.json
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 檢出 repository
+        uses: actions/checkout@v4
+
+      - name: 下載最新 users.json
+        run: |
+          curl -L -o users.json https://horse-racing-bot-picmquaqteh5dsgjpgn4du.streamlit.app/
+          # 如果下載失敗，顯示錯誤
+          if [ ! -s users.json ]; then
+            echo "下載失敗或檔案空白"
+            exit 1
+          fi
+          # 顯示檔案頭幾行（除錯用）
+          head -n 5 users.json
+
+      - name: 提交變更
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add users.json
+          git diff --staged --quiet || git commit -m "自動同步 users.json $(date '+%Y-%m-%d %H:%M:%S')"
+          git push
