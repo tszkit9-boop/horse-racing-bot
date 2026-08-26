@@ -717,7 +717,8 @@ def show_prediction_history(username):
         return
     df = pd.DataFrame(history[-20:][::-1])
     st.dataframe(df, use_container_width=True)
-    def login_page():
+
+def login_page():
     st.title("🔐 登入 / 註冊")
     tab1, tab2 = st.tabs(["登入", "註冊"])
     with tab1:
@@ -1463,8 +1464,7 @@ def admin_automation():
     if st.button("儲存設定", key="save_remind_auto"):
         auto['remind_days'] = days
         save_json(AUTOMATION_FILE, auto)
-        st.success("✅ 已儲存")
-        Vdef admin_security():
+        st.success("✅ 已儲存")def admin_security():
     st.subheader("🔐 安全與權限")
     st.write("操作日誌")
     logs = load_logs()
