@@ -1,9 +1,7 @@
-# 如果 URL 帶有 ?raw=true 參數，直接輸出 users.json 並結束
-if st.query_params.get("raw") == "true":
-    if os.path.exists(USER_DATA_FILE):
-        with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        st.json(data)
-    else:
-        st.error("users.json 不存在")
-    st.stop()
+- name: 下載最新 users.json
+  run: |
+    curl -L -o users.json "https://horse-racing-bot-picmquaqteh5dsgjpgn4du.streamlit.app/?raw=true"
+    if [ ! -s users.json ]; then
+      echo "下載失敗或檔案空白"
+      exit 1
+    fi
