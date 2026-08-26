@@ -129,15 +129,24 @@ def save_json(file, data):
         return False
 
 # ============================================================
-# ✅ 新增：專門俾 GitHub Actions 下載 users.json（放在定義後）
+# ✅ 新增：專門俾 GitHub Actions 下載 users.json（加入錯誤處理）
 # ============================================================
 if st.query_params.get("raw") == "true":
-    if os.path.exists(USER_DATA_FILE):
-        with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        st.json(data)
-    else:
-        st.error("users.json 不存在")
+    try:
+        if os.path.exists(USER_DATA_FILE):
+            with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
+                content = f.read()
+            # 嘗試解析 JSON，如果失敗則返回錯誤訊息
+            try:
+                data = json.loads(content)
+                st.json(data)
+            except json.JSONDecodeError as e:
+                st.error(f"users.json 格式錯誤: {e}")
+                st.code(content, language='json')
+        else:
+            st.error("users.json 不存在")
+    except Exception as e:
+        st.error(f"讀取 users.json 時發生錯誤: {e}")
     st.stop()
 
 def load_users():
