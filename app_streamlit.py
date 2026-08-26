@@ -7,23 +7,71 @@
 # -*- coding: utf-8 -*-
 """
 賽馬預測系統 - 預測控制置中版
-"""
+st.markdown("""
+<style>
+    /* ========== 隱藏 Streamlit 平台 UI ========== */
+    div[data-testid="stToolbar"] { display: none !important; }
+    .stAppDeployButton { display: none !important; }
+    #MainMenu { display: none !important; }
+    footer { display: none !important; }
+    header { display: none !important; }
+    button[kind="share"] { display: none !important; }
+    button[kind="header"] { display: none !important; }
+    a[href*="streamlit.io"] { display: none !important; }
+    
+    /* ========== 移除頂部黑色背景 ========== */
+    .stApp > header {
+        background: transparent !important;
+        box-shadow: none !important;
+    }
+    div[data-testid="stHeader"] {
+        background: transparent !important;
+    }
+    h1, .stTitle {
+        background: transparent !important;
+        color: #1a1a2e !important;
+    }
+    
+    /* ========== 側邊欄改為白色 ========== */
+    section[data-testid="stSidebar"] {
+        background-color: #f8f9fa !important;
+    }
+    
+    /* ========== 其他隱藏 ========== */
+    .st-emotion-cache-1r6slb0 { display: none !important; }
+    .st-emotion-cache-1v3caq0 { display: none !important; }
+    .st-emotion-cache-1v0mbdj { display: none !important; }
+    [data-testid="stDecoration"] { display: none !important; }
+    .stApp > header + div { padding-top: 0 !important; }
+</style>
 
-import streamlit as st
-import pandas as pd
-import numpy as np
-import pickle
-import os
-import json
-from datetime import datetime, timedelta
-import warnings
-warnings.filterwarnings('ignore')
-from catboost import CatBoostClassifier
-import plotly.express as px
-import plotly.graph_objects as go
-import random
-from PIL import Image
-
+<script>
+    function removeAllPlatformUI() {
+        document.querySelectorAll('button, a, div, span').forEach(el => {
+            if (el.textContent && (
+                el.textContent.includes('Manage') || 
+                el.textContent.includes('Share') || 
+                el.textContent.includes('Settings')
+            )) {
+                el.style.display = 'none';
+                if (el.parentElement && el.parentElement.children.length === 1) {
+                    el.parentElement.style.display = 'none';
+                }
+            }
+        });
+        document.querySelectorAll('[data-testid="stToolbar"],[data-testid="stHeader"],[data-testid="stDecoration"]').forEach(el => {
+            el.style.display = 'none';
+        });
+        document.querySelectorAll('a[href*="streamlit.io"]').forEach(el => {
+            el.style.display = 'none';
+            if (el.parentElement) el.parentElement.style.display = 'none';
+        });
+    }
+    removeAllPlatformUI();
+    setInterval(removeAllPlatformUI, 300);
+    new MutationObserver(removeAllPlatformUI).observe(document.body, { childList: true, subtree: true });
+</script>
+""", unsafe_allow_html=True)
 # ============================================================
 # 🔒 隱藏 Streamlit 平台 UI
 # ============================================================
