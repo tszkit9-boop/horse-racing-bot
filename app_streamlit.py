@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 最終極完整版（所有內置 UI 完全隱藏）
+賽馬預測系統 - 最終完整版（含每日免費重心推介・邀請獎勵・系統設定・四層UI隱藏）
 """
 
 import streamlit as st
@@ -79,7 +79,7 @@ def save_system_config(config):
 CONFIG = load_system_config()
 
 # ============================================================
-# 1. 頁面設定（完全隱藏 Menu）
+# 1. 頁面設定
 # ============================================================
 st.set_page_config(
     page_title="🏇 賽馬預測系統",
@@ -282,7 +282,7 @@ def load_models():
         return None, None, None
 
 # ============================================================
-# 4. 特徵工程（36 特徵） - 保留完整
+# 4. 特徵工程（36 特徵）
 # ============================================================
 FEATURES_EN = [
     'draw', 'act_wt', 'distance', 'rtg', 'avg_rank_last3',
@@ -949,6 +949,7 @@ def login_page():
                         else:
                             st.success("✅ 註冊成功！")
                         
+                        # 強制更新 session 中的 users，確保後台即時見到新用戶
                         st.session_state['users'] = load_users()
                         st.rerun()
 
@@ -1099,6 +1100,7 @@ def show_paywall():
 # ============================================================
 # 8. 後台所有模組（完整）
 # ============================================================
+
 # ---------- 8.1 用戶管理 ----------
 def admin_user_management():
     st.subheader("👥 用戶管理")
@@ -2030,54 +2032,56 @@ def admin_page():
             tab_functions[name]()
 
 # ============================================================
-# 10. 主頁面（含每日免費重心推介 + 終極 UI 隱藏）
+# 10. 主頁面（含每日免費重心推介 + 四層 UI 隱藏）
 # ============================================================
 def main():
-    # ----- 終極強化 CSS 隱藏所有內置 UI（包括 Manage app 同 footer） -----
+    # ----- 四層保護：隱藏所有 Streamlit 平台 UI（包括 Manage app） -----
     st.markdown("""
     <style>
-        /* 隱藏右上角選單 */
-        #MainMenu {visibility: hidden !important;}
-        /* 隱藏底部 footer */
-        footer {visibility: hidden !important;}
-        /* 隱藏頂部 header */
-        header {visibility: hidden !important;}
-        /* 隱藏部署按鈕 */
-        .stDeployButton {display: none !important;}
-        /* 隱藏任何 badges */
-        .viewerBadge_container__1QSob {display: none !important;}
-        /* 隱藏右上角嘅 Manage app 連結 */
-        .css-1dp5vir {display: none !important;}
-        .css-1q8dd3e {display: none !important;}
-        /* 隱藏新版 data-testid 元素 */
-        [data-testid="stHeader"] {display: none !important;}
-        [data-testid="stToolbar"] {display: none !important;}
-        [data-testid="stDecoration"] {display: none !important;}
-        /* 隱藏 emotion 生成嘅類（專注底部） */
-        .st-emotion-cache-1v3fvcr {display: none !important;}
-        .st-emotion-cache-1r6slb0 {display: none !important;}
-        .st-emotion-cache-1wmy9hl {display: none !important;}
-        .st-emotion-cache-1dp5vir {display: none !important;}
-        .st-emotion-cache-1q8dd3e {display: none !important;}
-        .st-emotion-cache-1gv3huu {display: none !important;}
-        .st-emotion-cache-1y4p8pa {display: none !important;}
-        .st-emotion-cache-1wivap2 {display: none !important;}
-        /* 屬性選擇器隱藏任何包含 Manage 或 Deploy 嘅元素 */
-        [class*="Manage"] {display: none !important;}
-        [class*="manage"] {display: none !important;}
-        [class*="Deploy"] {display: none !important;}
-        /* 直接隱藏整個 header 同 footer */
-        .stApp > header {display: none !important;}
-        .stApp > footer {display: none !important;}
-        .stApp > .css-1v3fvcr {display: none !important;}
-        /* 隱藏右上角頭像 */
-        .css-1rs6os {visibility: hidden !important;}
-        /* 隱藏最後一個 div（可能係底部空白） */
-        .main > div:last-child {display: none !important;}
-        .stApp > div:last-child {display: none !important;}
-        /* 隱藏 iframe */
-        iframe {display: none !important;}
+        div[data-testid="stToolbar"] { display: none !important; }
+        .stAppDeployButton { display: none !important; }
+        #MainMenu { display: none !important; }
+        footer { display: none !important; }
+        header { display: none !important; }
+        button[kind="share"] { display: none !important; }
+        button[kind="header"] { display: none !important; }
+        a[href*="streamlit.io"] { display: none !important; }
+        .st-emotion-cache-1r6slb0 { display: none !important; }
+        .st-emotion-cache-1v3caq0 { display: none !important; }
+        .st-emotion-cache-1v0mbdj { display: none !important; }
+        .st-emotion-cache-1dp5vir { display: none !important; }
+        .st-emotion-cache-1q8dd3e { display: none !important; }
+        [data-testid="stHeader"] { display: none !important; }
+        [data-testid="stDecoration"] { display: none !important; }
+        .stApp > header { display: none !important; }
+        .stApp > header + div { padding-top: 0 !important; }
     </style>
+    <script>
+        function removeAllPlatformUI() {
+            document.querySelectorAll('button, a, div, span').forEach(el => {
+                const txt = el.textContent || '';
+                if (txt.includes('Manage') || txt.includes('Share') || txt.includes('Settings')) {
+                    el.style.display = 'none';
+                    if (el.parentElement && el.parentElement.children.length === 1) {
+                        el.parentElement.style.display = 'none';
+                    }
+                }
+            });
+            ['stAppDeployButton','stToolbar','stHeader','stDecoration'].forEach(cls => {
+                document.querySelectorAll('.'+cls).forEach(el => el.style.display='none');
+            });
+            ['stToolbar','stHeader','stDecoration'].forEach(id => {
+                document.querySelectorAll('[data-testid="'+id+'"]').forEach(el => el.style.display='none');
+            });
+            document.querySelectorAll('a[href*="streamlit.io"]').forEach(el => {
+                el.style.display='none';
+                if (el.parentElement) el.parentElement.style.display='none';
+            });
+        }
+        removeAllPlatformUI();
+        setInterval(removeAllPlatformUI, 300);
+        new MutationObserver(removeAllPlatformUI).observe(document.body, {childList:true, subtree:true});
+    </script>
     """, unsafe_allow_html=True)
 
     if 'logged_in' not in st.session_state:
