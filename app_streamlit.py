@@ -1171,7 +1171,8 @@ def show_paywall():
         submitted = st.form_submit_button("📩 提交付款申請，等待管理員審核")
 
         if submitted:
-            st.write("🔍 **提交按鈕已被撳下**")  # 呢行一定要出現！
+            # 🟢 強制顯示提交成功
+            st.write("🔍 **提交按鈕已被撳下！**")
 
             if not plan_choice:
                 st.error("❌ 請先選擇一個付費方案")
@@ -1211,15 +1212,13 @@ def show_paywall():
                 except Exception as e:
                     st.warning(f"優惠碼處理出錯：{e}")
 
-            # 🚀 直接寫入 users.json（顯示每一步）
-            st.write("---")
             st.write("🔍 **開始寫入付款申請**")
             st.write(f"👤 用戶：{username}")
             st.write(f"📌 方案：{plan_choice}")
             st.write(f"💰 金額：${final_price}")
 
             file_path = 'users.json'
-            st.write(f"📁 檔案路徑：{os.path.abspath(file_path)}")
+            st.write(f"📁 檔案絕對路徑：{os.path.abspath(file_path)}")
 
             try:
                 # 檢查檔案是否可寫
@@ -1227,7 +1226,7 @@ def show_paywall():
                     st.error(f"❌ 檔案 {file_path} 不可寫")
                     st.stop()
 
-                # 讀取
+                # 讀取 users.json
                 with open(file_path, 'r', encoding='utf-8') as f:
                     users = json.load(f)
                 st.write(f"✅ 讀取 users.json 成功，用戶數量：{len(users)}")
@@ -1236,12 +1235,10 @@ def show_paywall():
                     st.error(f"❌ 用戶 {username} 不存在於 users.json")
                     st.stop()
 
-                # 確保 payment_requests 存在
                 if 'payment_requests' not in users[username]:
                     users[username]['payment_requests'] = []
                     st.write("ℹ️ 該用戶本來冇 payment_requests，已建立空陣列")
 
-                # 建立新記錄
                 new_id = len(users[username]['payment_requests']) + 1
                 new_request = {
                     "id": new_id,
@@ -1255,11 +1252,9 @@ def show_paywall():
                 }
                 st.write("📝 準備寫入嘅記錄：", new_request)
 
-                # 加入
                 users[username]['payment_requests'].append(new_request)
                 st.write("📝 加入後該用戶嘅 payment_requests：", users[username]['payment_requests'])
 
-                # 寫入
                 with open(file_path, 'w', encoding='utf-8') as f:
                     json.dump(users, f, ensure_ascii=False, indent=2)
                 st.success("✅ 寫入 users.json 完成！")
