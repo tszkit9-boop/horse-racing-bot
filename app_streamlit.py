@@ -1265,11 +1265,17 @@ def show_paywall():
                 check_requests = check_users.get(username, {}).get('payment_requests', [])
                 st.write("🔍 驗證讀取到嘅 payment_requests：", check_requests)
 
+                # 顯示 users.json 中所有用戶嘅 payment_requests（方便對比）
+                st.write("📄 所有用戶嘅 payment_requests：")
+                for u, data in check_users.items():
+                    st.write(f"  - {u}: {data.get('payment_requests', [])}")
+
                 if check_requests:
                     st.success("✅ 驗證成功！記錄已存在！")
+                    # 唔自動 rerun，等用戶手動撳返回
                     st.session_state['payment_just_submitted'] = True
                     st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
-                    st.rerun()
+                    st.info("📌 請撳下面嘅「返回主頁」按鈕繼續。")
                 else:
                     st.error("❌ 驗證失敗，記錄不存在！")
                     st.stop()
