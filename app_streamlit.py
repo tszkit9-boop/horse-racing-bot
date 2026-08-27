@@ -324,7 +324,7 @@ def get_plan_price(plan):
 # ============================================================
 def show_paywall():
     import json
-    file_path = 'payment_requests.json'
+    file_path = os.path.join(os.getcwd(), 'payment_requests.json')
 
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
     st.subheader("💳 選擇你嘅方案")
