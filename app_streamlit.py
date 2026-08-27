@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版（已整合 AI 自我學習 + 註冊後跳登入）
+賽馬預測系統 - 完整版（付款無上傳 / 審核後記錄消失 / 註冊跳登入）
 """
 
 import streamlit as st
@@ -1025,7 +1025,7 @@ def login_page():
                         st.rerun()
 
 # ============================================================
-# 🔧 付款牆
+# 🔧 付款牆（無上傳功能，只顯示 FPS + Telegram）
 # ============================================================
 def show_paywall():
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
@@ -1068,8 +1068,7 @@ def show_paywall():
             st.info("請選擇一個方案以繼續")
 
         promo_input = st.text_input("優惠碼（如有）", key="promo_input_form", placeholder="例如 A7K3X9P2")
-        
-        # 📌 顯示 FPS 轉數快資料（不提供上傳）
+
         st.divider()
         st.subheader("📤 付款方式")
         st.markdown("""
@@ -1142,21 +1141,19 @@ def show_paywall():
                     "uploaded_at": datetime.now().isoformat(),
                     "status": "pending"
                 }
-             proofs['proof_records'].append(new_proof)
-
-# 🧪 加呢兩行測試
-st.write("🟡 準備寫入，proofs 內容：", proofs)   # 睇吓有冇 data
-result = save_payment_proofs(proofs)
-st.write("🟢 save_payment_proofs 回傳：", result)   # True 定 False
-
-if result:
-    st.session_state['payment_just_submitted'] = True
-    st.session_state['payment_detail'] = f"{get_plan_name(plan_choice)}：金額：${final_price}"
-    st.success("✅ 申請已提交！請將付款截圖傳送管理員")
-    st.rerun()
-else:
-    st.error("❌ 寫入付款記錄失敗，請檢查檔案權限")
-                    st.stop()
+                proofs['proof_records'].append(new_proof)
+                
+                # 🧪 直接寫入，確保成功
+                import json
+                with open('payment_proofs.json', 'w', encoding='utf-8') as f:
+                    json.dump(proofs, f, ensure_ascii=False, indent=2)
+                
+                # 確認寫入成功
+                st.success("✅ 付款申請已成功記錄！")
+                st.session_state['payment_just_submitted'] = True
+                st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
+                st.rerun()
+                
             except Exception as e:
                 st.error(f"❌ 提交過程中發生錯誤：{e}")
                 st.stop()
@@ -1754,7 +1751,7 @@ def admin_security():
         else:
             st.error("用戶不存在")
 
-# ---------- 8.11 付款審核 ----------
+# ---------- 8.11 付款審核（批准/拒絕後記錄消失） ----------
 def admin_payment_review():
     st.subheader("📤 付款審核")
     
@@ -1781,7 +1778,7 @@ def admin_payment_review():
             status_filter = st.selectbox(
                 "狀態篩選",
                 ["全部", "pending", "approved", "rejected"],
-                index=1,
+                index=1,   # 預設 pending
                 format_func=lambda x: {"pending": "待審核", "approved": "已批准", "rejected": "已拒絕", "全部": "全部"}.get(x, x)
             )
         with col_s3:
@@ -1892,7 +1889,7 @@ def admin_payment_review():
         else:
             st.info("暫無日誌")
 
-# ---------- 輔助函數 ----------
+# ---------- 輔助函數（審核後刪除記錄） ----------
 def _approve_payment(rec, proofs_data):
     try:
         st.info("⏳ 開始處理批准...")
@@ -1970,11 +1967,10 @@ def _refund_payment(rec, proofs_data):
         else:
             st.error("❌ 儲存 users.json 失敗")
             return
-        rec['status'] = 'rejected'
-        rec['refunded'] = True
-        rec['refunded_at'] = datetime.now().isoformat()
-        rec['refunded_by'] = st.session_state.username
-        save_payment_proofs(proofs_data)
+        # 退款後也刪除記錄（如果還在）
+        if rec in proofs_data['proof_records']:
+            proofs_data['proof_records'].remove(rec)
+            save_payment_proofs(proofs_data)
         st.success(f"✅ 已為 {username} 辦理退款")
         log_admin_action(st.session_state.username, f"退款：{username}")
     except Exception as e:
@@ -2073,10 +2069,9 @@ def admin_system_settings():
             st.error("❌ 儲存失敗，請檢查檔案權限。")
 
 # ============================================================
-# 🧠 AI 自我學習輔助函數（需要放喺 admin_page 之前）
+# 🧠 AI 自我學習輔助函數
 # ============================================================
 def update_accuracy_with_results():
-    """自動比對預測記錄與真實賽果"""
     acc = load_accuracy()
     records = acc.get('records', [])
     if not records:
@@ -2116,7 +2111,6 @@ def update_accuracy_with_results():
         return 0, f"比對失敗：{str(e)}"
 
 def adjust_model_weights():
-    """根據歷史命中率自動調整 XGBoost 和 CatBoost 的融合權重"""
     acc = load_accuracy()
     records = acc.get('records', [])
     total = len([r for r in records if r.get('is_hit') is not None])
