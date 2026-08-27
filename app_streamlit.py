@@ -18,16 +18,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import random
 from PIL import Image
-# 🧪 強制寫入測試（用完可以刪除）
-import os
-import json
-try:
-    test_data = {"test": "hello"}
-    with open('test_write.json', 'w', encoding='utf-8') as f:
-        json.dump(test_data, f)
-    print("✅ test_write.json 寫入成功")
-except Exception as e:
-    print(f"❌ 寫入失敗：{e}")
+
 # ============================================================
 # 🔒 隱藏 Streamlit 平台 UI
 # ============================================================
@@ -333,7 +324,7 @@ def get_plan_price(plan):
 # ============================================================
 def show_paywall():
     import json
-    from datetime import datetime
+    file_path = 'payment_requests.json'
 
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
     st.subheader("💳 選擇你嘅方案")
