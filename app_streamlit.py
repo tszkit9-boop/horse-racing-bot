@@ -1115,6 +1115,7 @@ def login_page():
 # 10. 付款牆
 # ============================================================
 def show_paywall():
+    import json
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
     st.subheader("💳 選擇你嘅方案")
 
@@ -1177,6 +1178,11 @@ def show_paywall():
                 st.error("❌ 請先登入")
                 st.stop()
 
+            # 🟢 除錯：顯示開始寫入
+            st.write("🔍 **開始寫入付款申請...**")
+            st.write(f"用戶：{st.session_state.username}")
+            st.write(f"方案：{plan_choice}")
+
             original_price = get_plan_price(plan_choice)
             final_price = original_price
             discount_desc = ""
@@ -1204,23 +1210,58 @@ def show_paywall():
                                     discount_desc = "全免！"
                                 final_price = round(final_price, 2)
                                 promo_code_used = promo_input
-                except:
-                    pass
+                except Exception as e:
+                    st.warning(f"優惠碼處理出錯：{e}")
 
-            success, msg = submit_payment_request(
-                st.session_state.username,
-                plan_choice,
-                final_price,
-                discount_desc,
-                promo_code_used
-            )
-            if success:
-                st.success("✅ " + msg)
+            st.write(f"最終金額：${final_price}")
+
+            # 🔥 直接寫入 users.json
+            users = load_users()
+            st.write("讀取 users.json 成功，用戶數量：", len(users))
+
+            if st.session_state.username not in users:
+                st.error("❌ 用戶不存在於 users.json！")
+                st.stop()
+
+            # 建立申請記錄
+            request = {
+                "id": len(users[st.session_state.username].get('payment_requests', [])) + 1,
+                "plan": plan_choice,
+                "plan_name": get_plan_name(plan_choice),
+                "final_price": final_price,
+                "discount_desc": discount_desc,
+                "promo_code": promo_code_used,
+                "submitted_at": datetime.now().isoformat(),
+                "status": "pending"
+            }
+            st.write("準備寫入嘅記錄：", request)
+
+            # 加入 payment_requests
+            if 'payment_requests' not in users[st.session_state.username]:
+                users[st.session_state.username]['payment_requests'] = []
+            users[st.session_state.username]['payment_requests'].append(request)
+
+            # 儲存
+            try:
+                save_users(users)
+                st.success("✅ users.json 寫入成功！")
+
+                # 讀返出嚟驗證
+                check_users = load_users()
+                check_requests = check_users.get(st.session_state.username, {}).get('payment_requests', [])
+                st.write("驗證：寫入後讀取到嘅 payment_requests：", check_requests)
+
+                if check_requests:
+                    st.success("✅ 驗證成功，記錄已存在！")
+                else:
+                    st.error("❌ 驗證失敗，記錄不存在！")
+
                 st.session_state['payment_just_submitted'] = True
                 st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
                 st.rerun()
-            else:
-                st.error("❌ " + msg)
+            except Exception as e:
+                st.error(f"❌ 儲存 users.json 失敗：{e}")
+                st.stop()
 
 # ============================================================
 # 11. AI 自我學習
