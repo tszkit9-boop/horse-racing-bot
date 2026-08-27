@@ -915,6 +915,34 @@ def login_page():
                 st.error("❌ 用戶名稱或密碼錯誤")
     
     # ========== 註冊版面 ==========
+  def login_page():
+    st.title("🔐 登入 / 註冊")
+    
+    if "login_tab" not in st.session_state:
+        st.session_state.login_tab = "登入"
+    
+    tab_choice = st.radio(
+        "選擇功能",
+        ["登入", "註冊"],
+        index=0 if st.session_state.login_tab == "登入" else 1,
+        key="login_tab",
+        horizontal=True
+    )
+    
+    if tab_choice == "登入":
+        username = st.text_input("用戶名稱", key="login_user")
+        password = st.text_input("密碼", type="password", key="login_pass")
+        if st.button("登入", key="login_button"):
+            users = load_users()
+            if username in users and users[username].get('password') == password:
+                st.session_state.logged_in = True
+                st.session_state.username = username
+                st.session_state.role = users[username].get('group', 'free')
+                st.session_state.usage_count = users[username].get('free_usage', 0)
+                st.rerun()
+            else:
+                st.error("❌ 用戶名稱或密碼錯誤")
+    
     else:
         st.subheader("📝 註冊新帳號")
         with st.form("register_form"):
@@ -1051,10 +1079,8 @@ def login_page():
                         else:
                             st.success("✅ 註冊成功！")
                         
-                        # ⬇️ 關鍵：註冊成功後，切換到「登入」分頁
                         st.session_state.login_tab = "登入"
                         st.rerun()
-
 # ============================================================
 # 🔧 付款牆
 # ============================================================
