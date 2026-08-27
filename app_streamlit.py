@@ -1112,6 +1112,7 @@ def login_page():
 # 付款牆（存入 users.json + 詳細除錯）
 # ============================================================
 def show_paywall():
+    import json
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
     st.subheader("💳 選擇你嘅方案")
 
@@ -1213,12 +1214,16 @@ def show_paywall():
             st.write(f"💰 最終金額：${final_price}")
 
             # 🔥 讀取 users.json
+            import os
             users = load_users()
             st.write(f"📂 讀取 users.json 成功，用戶數量：{len(users)}")
 
             if st.session_state.username not in users:
                 st.error("❌ 用戶不存在於 users.json！")
                 st.stop()
+
+            # 顯示寫入前嘅 payment_requests
+            st.write("🔍 寫入前，該用戶嘅 payment_requests：", users[st.session_state.username].get('payment_requests', []))
 
             # 建立申請記錄
             request = {
@@ -1238,15 +1243,26 @@ def show_paywall():
                 users[st.session_state.username]['payment_requests'] = []
             users[st.session_state.username]['payment_requests'].append(request)
 
+            # 顯示寫入後嘅內容（未儲存前）
+            st.write("🔍 寫入後（未儲存）該用戶嘅 payment_requests：", users[st.session_state.username]['payment_requests'])
+
             # 儲存
             try:
                 save_users(users)
-                st.success("✅ users.json 寫入成功！")
+                st.success("✅ save_users() 執行完畢")
 
                 # 讀返出嚟驗證
                 check_users = load_users()
                 check_requests = check_users.get(st.session_state.username, {}).get('payment_requests', [])
                 st.write("🔍 驗證：寫入後讀取到嘅 payment_requests：", check_requests)
+
+                # 顯示 users.json 完整內容（只顯示當前用戶部分）
+                try:
+                    with open('users.json', 'r', encoding='utf-8') as f:
+                        full_content = json.load(f)
+                    st.write("📄 users.json 完整內容：", full_content)
+                except Exception as e:
+                    st.warning(f"無法讀取 users.json 完整內容：{e}")
 
                 if check_requests:
                     st.success("✅ 驗證成功，記錄已存在！")
