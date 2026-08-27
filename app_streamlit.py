@@ -1142,15 +1142,20 @@ def show_paywall():
                     "uploaded_at": datetime.now().isoformat(),
                     "status": "pending"
                 }
-                proofs['proof_records'].append(new_proof)
-                
-                if save_payment_proofs(proofs):
-                    st.session_state['payment_just_submitted'] = True
-                    st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
-                    st.success("✅ 申請已提交！請將付款截圖傳送俾管理員。")
-                    st.rerun()
-                else:
-                    st.error("❌ 寫入付款記錄失敗，請檢查檔案權限")
+             proofs['proof_records'].append(new_proof)
+
+# 🧪 加呢兩行測試
+st.write("🟡 準備寫入，proofs 內容：", proofs)   # 睇吓有冇 data
+result = save_payment_proofs(proofs)
+st.write("🟢 save_payment_proofs 回傳：", result)   # True 定 False
+
+if result:
+    st.session_state['payment_just_submitted'] = True
+    st.session_state['payment_detail'] = f"{get_plan_name(plan_choice)}：金額：${final_price}"
+    st.success("✅ 申請已提交！請將付款截圖傳送管理員")
+    st.rerun()
+else:
+    st.error("❌ 寫入付款記錄失敗，請檢查檔案權限")
                     st.stop()
             except Exception as e:
                 st.error(f"❌ 提交過程中發生錯誤：{e}")
