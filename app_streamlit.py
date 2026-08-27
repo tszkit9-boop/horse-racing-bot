@@ -1384,9 +1384,25 @@ def admin_user_management():
         st.info("暫無用戶")
         return
     
+    # 顯示用戶列表（改良顯示）
     st.write("現有用戶列表：")
-    df = pd.DataFrame.from_dict(users, orient='index')
-    st.dataframe(df, use_container_width=True)
+    # 建立一個新嘅 DataFrame 只顯示重要欄位，並將 password 遮蓋
+    display_data = []
+    for username, data in users.items():
+        display_data.append({
+            "用戶名": username,
+            "密碼": "****" if data.get('password') else "無",
+            "群組": data.get('group', 'free'),
+            "付費": "✅" if data.get('is_paid') else "❌",
+            "到期日": data.get('expiry_date', '無') or '無',
+            "方案": data.get('plan', '無') or '無',
+            "總預測": data.get('total_usage', 0),
+            "剩餘次數": "無限" if data.get('predictions_limit') == -1 else data.get('predictions_limit', 0),
+            "創建時間": data.get('created_at', ''),
+            "備註": data.get('note', '')
+        })
+    df_display = pd.DataFrame(display_data)
+    st.dataframe(df_display, use_container_width=True)
     
     st.divider()
     st.subheader("🗑️ 刪除用戶")
