@@ -1128,8 +1128,13 @@ def show_paywall():
                 except:
                     pass
 
-            # 準備新記錄
-            proofs = load_payment_proofs()
+            # 讀取現有記錄
+            try:
+                with open('payment_proofs.json', 'r', encoding='utf-8') as f:
+                    proofs = json.load(f)
+            except:
+                proofs = {"proof_records": []}
+
             new_id = len(proofs['proof_records']) + 1
             new_proof = {
                 "id": new_id,
@@ -1147,31 +1152,24 @@ def show_paywall():
             }
             proofs['proof_records'].append(new_proof)
 
-            # 🔥 直接寫入檔案，並檢查
+            # 寫入檔案
             try:
                 file_path = 'payment_proofs.json'
-                # 顯示路徑，方便除錯
-                st.write(f"📁 嘗試寫入檔案：`{os.path.abspath(file_path)}`")
-                
                 with open(file_path, 'w', encoding='utf-8') as f:
                     json.dump(proofs, f, ensure_ascii=False, indent=2)
                 
                 # 驗證寫入
                 with open(file_path, 'r', encoding='utf-8') as f:
-                    check_data = json.load(f)
-                
-                if check_data == proofs:
-                    st.success("✅ 付款申請已成功記錄！")
+                    check = json.load(f)
+                if check == proofs:
+                    st.success("✅ 付款申請已成功記錄！請等待管理員審核。")
                     st.session_state['payment_just_submitted'] = True
                     st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
                     st.rerun()
                 else:
-                    st.error("❌ 寫入後驗證失敗，內容不符")
-                    st.json(check_data)
-                    st.json(proofs)
-                    st.stop()
+                    st.error("❌ 寫入後驗證失敗，請檢查檔案權限")
             except Exception as e:
-                st.error(f"❌ 寫入檔案失敗：{e}")
+                st.error(f"❌ 寫入付款記錄失敗：{e}")
                 st.stop()
 
 # ============================================================
@@ -1908,34 +1906,28 @@ def admin_payment_review():
 # ---------- 輔助函數（審核後刪除記錄） ----------
 def _approve_payment(rec, proofs_data):
     try:
-        st.info("⏳ 開始處理批准...")
         username = rec.get('username')
         if not username:
             st.error("❌ 記錄中缺少 username")
             return
-        
         users = load_users()
         if username not in users:
             st.error(f"❌ 用戶 {username} 不存在")
             return
-        
         plan = rec.get('plan', 'month')
         days = get_plan_days(plan)
         if days == 0:
             days = 30
         expiry = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
-        
         users[username]['is_paid'] = True
         users[username]['group'] = 'VIP'
         users[username]['paid_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         users[username]['expiry_date'] = expiry
         users[username]['plan'] = plan
         users[username]['predictions_limit'] = -1
-        
         if save_users(users):
             st.success(f"✅ {username} 已升級為 VIP！到期日：{expiry}")
             log_admin_action(st.session_state.username, f"批准付款並升級 {username} 為 VIP（{plan}）")
-            
             # 🗑️ 從記錄中刪除該申請（令佢消失）
             if rec in proofs_data['proof_records']:
                 proofs_data['proof_records'].remove(rec)
@@ -1951,7 +1943,6 @@ def _approve_payment(rec, proofs_data):
 def _reject_payment(rec, proofs_data):
     try:
         username = rec.get('username', '未知')
-        # 🗑️ 直接刪除記錄（拒絕後消失）
         if rec in proofs_data['proof_records']:
             proofs_data['proof_records'].remove(rec)
             save_payment_proofs(proofs_data)
