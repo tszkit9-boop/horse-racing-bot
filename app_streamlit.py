@@ -1913,7 +1913,7 @@ def admin_security():
             st.rerun()
 
 # ============================================================
-# 🏠 主頁面（保留舊版順序 + 日期修正，後台菜單完整 12 項）
+# 🏠 主頁面（後台改為頁面上方橫向 Tab）
 # ============================================================
 def main():
     if 'logged_in' not in st.session_state:
@@ -1929,46 +1929,45 @@ def main():
         login_page()
         return
 
+    # ---------- 後台模式（頁面上方橫向 Tab） ----------
     if st.session_state.get('page') == "admin" and st.session_state.role in ['super_admin', 'admin']:
-        st.sidebar.title("⚙️ 後台管理")
-        admin_menu = st.sidebar.radio(
-            "選擇功能",
-            [
-                "用戶管理", "數據分析", "財務", "信息流", 
-                "預測監控", "訂閱管理", "付款審核", "監控", 
-                "內容", "自動化", "安全", "系統設定", "返回主頁"
-            ]
-        )
-        if admin_menu == "用戶管理":
+        st.markdown("## ⚙️ 後台管理")
+        tabs = st.tabs([
+            "用戶管理", "數據分析", "財務", "信息流", 
+            "預測監控", "訂閱管理", "付款審核", "監控", 
+            "內容", "自動化", "安全", "系統設定", "返回主頁"
+        ])
+        
+        with tabs[0]:
             admin_user_management()
-        elif admin_menu == "數據分析":
+        with tabs[1]:
             admin_analytics()
-        elif admin_menu == "財務":
+        with tabs[2]:
             admin_finance()
-        elif admin_menu == "信息流":
+        with tabs[3]:
             admin_content()
-        elif admin_menu == "預測監控":
+        with tabs[4]:
             admin_accuracy_monitor()
-        elif admin_menu == "訂閱管理":
+        with tabs[5]:
             admin_subscription()
-        elif admin_menu == "付款審核":
+        with tabs[6]:
             admin_payment_review()
-        elif admin_menu == "監控":
+        with tabs[7]:
             admin_monitoring()
-        elif admin_menu == "內容":
+        with tabs[8]:
             admin_content()
-        elif admin_menu == "自動化":
+        with tabs[9]:
             admin_automation()
-        elif admin_menu == "安全":
+        with tabs[10]:
             admin_security()
-        elif admin_menu == "系統設定":
+        with tabs[11]:
             admin_system_config()
-        else:
+        with tabs[12]:
             st.session_state.page = "main"
             st.rerun()
         return
 
-    # ---------- 主頁面內容 ----------
+    # ---------- 主頁面 ----------
     col_title, col_btn = st.columns([4, 1])
     with col_title:
         st.title("🏇 賽馬預測系統")
