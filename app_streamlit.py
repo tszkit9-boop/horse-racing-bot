@@ -324,7 +324,7 @@ def get_plan_price(plan):
 # ============================================================
 def show_paywall():
     import json
-    file_path = os.path.join(os.getcwd(), 'payment_requests.json')
+    from datetime import datetime
 
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
     st.subheader("💳 選擇你嘅方案")
@@ -419,9 +419,15 @@ def show_paywall():
                 except Exception as e:
                     st.warning(f"優惠碼處理出錯：{e}")
 
-            # 🟢 寫入獨立檔案 payment_requests.json
+            # 🟢 直接用你手動寫入嘅方式寫入 payment_requests.json
             try:
-                data = load_payment_requests()
+                # 讀取現有記錄
+                try:
+                    with open('payment_requests.json', 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                except:
+                    data = {"requests": []}
+
                 new_id = len(data.get('requests', [])) + 1
                 new_request = {
                     "id": new_id,
@@ -435,7 +441,10 @@ def show_paywall():
                     "status": "pending"
                 }
                 data['requests'].append(new_request)
-                save_payment_requests(data)
+
+                # 寫入（同你手動寫入一模一樣）
+                with open('payment_requests.json', 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
 
                 st.success("✅ 付款申請已成功提交！")
                 st.session_state['payment_just_submitted'] = True
