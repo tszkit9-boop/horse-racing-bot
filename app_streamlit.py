@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版（預測放喺模型自我學習上面，所有功能齊全）
+賽馬預測系統 - 完整版（預測唔使上傳 CSV，自動讀取系統數據）
 """
 
 import streamlit as st
@@ -1362,7 +1362,7 @@ def adjust_model_weights():
     }
 
 # ============================================================
-# 後台管理（所有模組完整，但為了節省空間，只保留必要函數）
+# 後台管理（完整模組）
 # ============================================================
 
 def admin_user_management():
@@ -2096,7 +2096,7 @@ def admin_page():
             tab_functions[name]()
 
 # ============================================================
-# 主頁面（所有功能齊全，預測放喺模型自我學習上面）
+# 主頁面（所有功能齊全，預測放喺模型自我學習上面，唔使上傳 CSV）
 # ============================================================
 def main():
     if 'logged_in' not in st.session_state:
@@ -2279,7 +2279,7 @@ def main():
         show_paywall()
 
     # ============================================================
-    # 🎯 賽事預測控制（放喺模型自我學習上面）
+    # 🎯 賽事預測控制（唔使上傳 CSV，直接使用系統數據）
     # ============================================================
     st.markdown("---")
     st.subheader("🎯 賽事預測控制")
@@ -2297,30 +2297,32 @@ def main():
         with col_btn:
             predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
         
-        uploaded_file = st.file_uploader("上傳排位表 (CSV)", type="csv", key="predict_upload")
-        
-        if predict_btn and uploaded_file is not None:
-            df = pd.read_csv(uploaded_file)
-            st.write("預覽數據", df.head())
-            with st.spinner("預測中..."):
-                date_str = date.strftime('%Y-%m-%d')
-                result, pool = run_prediction(date_str, race_no)
-                if result is not None:
-                    st.success("✅ 預測完成！")
-                    top4 = result.head(4)
-                    st.dataframe(top4)
-                    fig = px.bar(top4, x='馬匹名稱', y='預測勝率', title="勝出概率")
-                    st.plotly_chart(fig)
-                    if not is_vip_or_paid and st.session_state.get('logged_in'):
-                        users = load_users()
-                        if st.session_state.username in users:
-                            users[st.session_state.username]['free_usage'] = users[st.session_state.username].get('free_usage', 0) + 1
-                            save_users(users)
-                            st.info(f"已使用 1 次預測，剩餘 {get_remaining_predictions(st.session_state.username)} 次")
-                else:
-                    st.error("預測失敗，請檢查數據")
-        elif predict_btn and uploaded_file is None:
-            st.warning("請先上傳排位表 CSV 檔案")
+        # 移除強制上傳 CSV，直接使用系統數據
+        if predict_btn:
+            date_str = date.strftime('%Y-%m-%d')
+            with st.spinner("⏳ 預測中，請稍候..."):
+                try:
+                    result, pool = run_prediction(date_str, race_no)
+                    if result is not None:
+                        st.success("✅ 預測完成！")
+                        top4 = result.head(4)
+                        st.dataframe(top4)
+                        fig = px.bar(top4, x='馬匹名稱', y='預測勝率', title="勝出概率")
+                        st.plotly_chart(fig)
+                        # 顯示彩池推薦
+                        with st.expander("🎯 彩池推薦（詳細）"):
+                            st.text(pool)
+                        # 扣減使用次數（非VIP）
+                        if not is_vip_or_paid and st.session_state.get('logged_in'):
+                            users = load_users()
+                            if st.session_state.username in users:
+                                users[st.session_state.username]['free_usage'] = users[st.session_state.username].get('free_usage', 0) + 1
+                                save_users(users)
+                                st.info(f"已使用 1 次預測，剩餘 {get_remaining_predictions(st.session_state.username)} 次")
+                    else:
+                        st.error("❌ 預測失敗，可能該日期/場次冇數據，請選擇其他日期或場次。")
+                except Exception as e:
+                    st.error(f"❌ 預測過程中發生錯誤：{e}")
     else:
         st.warning("你已用完免費預測次數，請付款升級")
         if st.button("💳 去付款"):
