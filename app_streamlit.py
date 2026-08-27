@@ -1113,7 +1113,6 @@ def login_page():
 # ============================================================
 def show_paywall():
     import json
-    import os
     from datetime import datetime
 
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
@@ -1209,27 +1208,27 @@ def show_paywall():
                 except Exception as e:
                     st.warning(f"優惠碼處理出錯：{e}")
 
-            # 🚀 直接讀寫 users.json（繞過所有函數）
+            # 🚀 直接讀寫 users.json
             st.write("---")
-            st.write("🔍 **開始直接寫入 users.json**")
+            st.write("🔍 **開始寫入付款申請**")
             st.write(f"👤 用戶：{username}")
             st.write(f"📌 方案：{plan_choice}")
             st.write(f"💰 金額：${final_price}")
 
             try:
                 # 讀取 users.json
-                file_path = 'users.json'
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open('users.json', 'r', encoding='utf-8') as f:
                     users = json.load(f)
                 st.write(f"✅ 讀取 users.json 成功，用戶數量：{len(users)}")
 
                 if username not in users:
-                    st.error(f"❌ 用戶 {username} 不存在")
+                    st.error(f"❌ 用戶 {username} 不存在於 users.json")
                     st.stop()
 
                 # 確保 payment_requests 存在
                 if 'payment_requests' not in users[username]:
                     users[username]['payment_requests'] = []
+                    st.write("ℹ️ 該用戶本來冇 payment_requests，已建立空陣列")
 
                 # 建立新記錄
                 new_id = len(users[username]['payment_requests']) + 1
@@ -1247,14 +1246,15 @@ def show_paywall():
 
                 # 加入
                 users[username]['payment_requests'].append(new_request)
+                st.write("📝 加入後該用戶嘅 payment_requests：", users[username]['payment_requests'])
 
-                # 直接寫入
-                with open(file_path, 'w', encoding='utf-8') as f:
+                # 寫入
+                with open('users.json', 'w', encoding='utf-8') as f:
                     json.dump(users, f, ensure_ascii=False, indent=2)
-                st.success("✅ 寫入 users.json 成功！")
+                st.success("✅ 寫入 users.json 完成！")
 
                 # 驗證
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open('users.json', 'r', encoding='utf-8') as f:
                     check_users = json.load(f)
                 check_requests = check_users.get(username, {}).get('payment_requests', [])
                 st.write("🔍 驗證讀取到嘅 payment_requests：", check_requests)
