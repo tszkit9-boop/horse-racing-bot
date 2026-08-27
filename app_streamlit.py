@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 最終完整版（付款記錄用 st.session_state 儲存）
-所有功能齊全，付款一定成功
+賽馬預測系統 - 完整版（付款牆水平選擇日/月/季，免費兩次後顯示）
 """
 
 import streamlit as st
@@ -370,13 +369,14 @@ def reject_payment_request(username, request_id, admin_username):
     return False, "找不到該申請"
 
 # ============================================================
-# 付款牆
+# 付款牆（水平選擇日/月/季）
 # ============================================================
 def show_paywall():
     st.write("🔵 **show_paywall() 已被執行**")
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
     st.subheader("💳 選擇你嘅方案")
 
+    # 方案選項（水平 radio）
     plan_options = {
         "day": f"☀️ 日費  ${CONFIG['price_day']}   (1天)",
         "month": f"📆 月費  ${CONFIG['price_month']}  (30天)",
@@ -399,9 +399,9 @@ def show_paywall():
     with st.form(key="payment_form"):
         plan_choice = st.radio(
             "請選擇付費方案：",
-            options=[""] + list(plan_options.keys()),
-            format_func=lambda x: plan_options.get(x, "請選擇方案"),
-            index=0,
+            options=list(plan_options.keys()),
+            format_func=lambda x: plan_options[x],
+            horizontal=True,
             key="plan_radio_in_form"
         )
 
@@ -1337,7 +1337,6 @@ def adjust_model_weights():
 
 # ============================================================
 # 後台管理（所有模組完整實作）
-# 由於字數限制，此處保留所有函數名稱，實際功能齊全
 # ============================================================
 
 def admin_user_management():
@@ -2196,33 +2195,46 @@ def main():
     elif not CONFIG["enable_registration"]:
         st.info("🔓 目前為公開模式，任何人皆可使用")
 
-    # 付款功能測試（直接提交測試記錄）
+    # 付款功能測試（只有超級管理員可見）
     st.markdown("---")
     st.subheader("🧪 付款功能測試")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🚀 顯示付款牆（傳統）", type="secondary"):
-            st.session_state['test_payment'] = True
-            st.rerun()
-    
-    with col2:
-        if st.button("⚡ 直接提交測試付款", type="primary"):
-            username = st.session_state.username if st.session_state.get('logged_in') else "testuser"
-            success, msg = submit_payment_request(
-                username=username,
-                plan="day",
-                final_price=18,
-                discount_desc="",
-                promo_code_used=None
+    if st.session_state.get('role') == 'super_admin':
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🚀 顯示付款牆（傳統）", type="secondary"):
+                st.session_state['test_payment'] = True
+                st.rerun()
+        
+        with col2:
+            test_plan = st.radio(
+                "選擇測試方案",
+                options=["day", "month", "quarter"],
+                format_func=lambda x: {"day": "☀️ 日費 $18", "month": "📆 月費 $128", "quarter": "📅 季費 $328"}[x],
+                key="test_plan_select",
+                horizontal=True
             )
-            if success:
-                st.success(f"✅ 測試記錄已寫入！用戶：{username}，方案：日費 $18")
-                st.info("請去側邊欄 → 後台審核 查看")
-                st.write("📋 當前付款記錄總數：", len(st.session_state.payment_requests['requests']))
-                st.json(st.session_state.payment_requests['requests'])
-            else:
-                st.error(f"❌ 寫入失敗：{msg}")
+            plan_price = {"day": 18, "month": 128, "quarter": 328}
+            test_price = plan_price[test_plan]
+            
+            if st.button(f"⚡ 直接提交測試付款（{get_plan_name(test_plan)} ${test_price}）", type="primary"):
+                username = st.session_state.username if st.session_state.get('logged_in') else "testuser"
+                success, msg = submit_payment_request(
+                    username=username,
+                    plan=test_plan,
+                    final_price=test_price,
+                    discount_desc="",
+                    promo_code_used=None
+                )
+                if success:
+                    st.success(f"✅ 測試記錄已寫入！用戶：{username}，方案：{get_plan_name(test_plan)} ${test_price}")
+                    st.info("請去側邊欄 → 後台審核 查看")
+                    st.write("📋 當前付款記錄總數：", len(st.session_state.payment_requests['requests']))
+                    st.json(st.session_state.payment_requests['requests'])
+                else:
+                    st.error(f"❌ 寫入失敗：{msg}")
+    else:
+        st.info("🔒 付款測試功能只限管理員使用")
 
     if st.session_state.get('test_payment', False):
         st.session_state['test_payment'] = False
