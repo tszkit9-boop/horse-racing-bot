@@ -2118,7 +2118,7 @@ def main():
             st.info(f"💡 {ann['title']}：{ann['content']}")
 
     if CONFIG["enable_registration"] and not st.session_state.logged_in:
-        login_page()
+                login_register_page()
         return
 
     if st.session_state.show_admin and CONFIG["enable_admin"]:
