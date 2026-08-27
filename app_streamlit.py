@@ -1910,28 +1910,38 @@ def admin_payment_review():
 def _approve_payment(rec, proofs_data):
     try:
         st.info("⏳ 開始處理批准...")
+        
+        # 從記錄中讀取 plan
+        plan = rec.get('plan', 'month')  # 預設月費
+        username = rec.get('username')
+        
+        if not username:
+            st.error("❌ 記錄中缺少 username")
+            return
+        
+        # Debug: 顯示 plan 值（方便檢查）
+        st.write(f"📌 用戶：{username}，選擇嘅 plan：{plan}")
+        
+        # 更新付款記錄狀態
         rec['status'] = 'approved'
         rec['approved_at'] = datetime.now().isoformat()
         rec['approved_by'] = st.session_state.username
         save_payment_proofs(proofs_data)
         st.success("✅ 付款記錄已更新")
         
-        username = rec.get('username')
-        if not username:
-            st.error("❌ 記錄中缺少 username")
-            return
-        
+        # 載入用戶數據
         users = load_users()
         if username not in users:
             st.error(f"❌ 用戶 {username} 不存在")
             return
         
-        plan = rec.get('plan', 'month')
+        # 根據 plan 計算到期日
         days = get_plan_days(plan)
         if days == 0:
-            days = 30
+            days = 30  # 安全措施
         expiry = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
         
+        # 升級用戶
         users[username]['is_paid'] = True
         users[username]['group'] = 'VIP'
         users[username]['paid_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -1940,52 +1950,14 @@ def _approve_payment(rec, proofs_data):
         users[username]['predictions_limit'] = -1
         
         if save_users(users):
-            st.success(f"✅ {username} 已升級為 VIP！")
+            plan_name = get_plan_name(plan)
+            st.success(f"✅ {username} 已升級為 VIP！（{plan_name}）")
             st.success(f"📅 到期日：{expiry}")
-            log_admin_action(st.session_state.username, f"批准付款並升級 {username} 為 VIP（{plan}）")
+            log_admin_action(st.session_state.username, f"批准付款並升級 {username} 為 VIP（{plan_name}）")
         else:
             st.error("❌ 儲存 users.json 失敗")
     except Exception as e:
         st.error(f"❌ 錯誤：{e}")
-
-def _reject_payment(rec, proofs_data):
-    rec['status'] = 'rejected'
-    rec['approved_at'] = datetime.now().isoformat()
-    rec['approved_by'] = st.session_state.username
-    save_payment_proofs(proofs_data)
-    st.warning(f"❌ 已拒絕 {rec.get('username')} 的申請")
-    log_admin_action(st.session_state.username, f"拒絕付款申請：{rec.get('username')}")
-
-def _refund_payment(rec, proofs_data):
-    try:
-        st.info("⏳ 開始處理退款...")
-        users = load_users()
-        username = rec.get('username')
-        if not username:
-            st.error("❌ 記錄中缺少 username")
-            return
-        if username not in users:
-            st.error(f"❌ 用戶 {username} 不存在")
-            return
-        users[username]['is_paid'] = False
-        users[username]['group'] = 'free'
-        users[username]['expiry_date'] = None
-        users[username]['plan'] = None
-        users[username]['predictions_limit'] = CONFIG["free_limit"]
-        if save_users(users):
-            st.success(f"✅ 用戶 {username} 已降級為免費")
-        else:
-            st.error("❌ 儲存 users.json 失敗")
-            return
-        rec['status'] = 'rejected'
-        rec['refunded'] = True
-        rec['refunded_at'] = datetime.now().isoformat()
-        rec['refunded_by'] = st.session_state.username
-        save_payment_proofs(proofs_data)
-        st.success(f"✅ 已為 {username} 辦理退款")
-        log_admin_action(st.session_state.username, f"退款：{username}")
-    except Exception as e:
-        st.error(f"❌ 退款錯誤：{e}")
         import traceback
         st.code(traceback.format_exc())
 
