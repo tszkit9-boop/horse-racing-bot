@@ -1208,7 +1208,7 @@ def show_paywall():
                 except Exception as e:
                     st.warning(f"優惠碼處理出錯：{e}")
 
-            # 🚀 直接讀寫 users.json
+            # 🚀 直接讀寫 users.json（繞過所有函數）
             st.write("---")
             st.write("🔍 **開始寫入付款申請**")
             st.write(f"👤 用戶：{username}")
@@ -1216,7 +1216,6 @@ def show_paywall():
             st.write(f"💰 金額：${final_price}")
 
             try:
-                # 讀取 users.json
                 with open('users.json', 'r', encoding='utf-8') as f:
                     users = json.load(f)
                 st.write(f"✅ 讀取 users.json 成功，用戶數量：{len(users)}")
@@ -1225,12 +1224,10 @@ def show_paywall():
                     st.error(f"❌ 用戶 {username} 不存在於 users.json")
                     st.stop()
 
-                # 確保 payment_requests 存在
                 if 'payment_requests' not in users[username]:
                     users[username]['payment_requests'] = []
                     st.write("ℹ️ 該用戶本來冇 payment_requests，已建立空陣列")
 
-                # 建立新記錄
                 new_id = len(users[username]['payment_requests']) + 1
                 new_request = {
                     "id": new_id,
@@ -1244,11 +1241,9 @@ def show_paywall():
                 }
                 st.write("📝 準備寫入嘅記錄：", new_request)
 
-                # 加入
                 users[username]['payment_requests'].append(new_request)
                 st.write("📝 加入後該用戶嘅 payment_requests：", users[username]['payment_requests'])
 
-                # 寫入
                 with open('users.json', 'w', encoding='utf-8') as f:
                     json.dump(users, f, ensure_ascii=False, indent=2)
                 st.success("✅ 寫入 users.json 完成！")
