@@ -1100,11 +1100,12 @@ def show_paywall():
         if submitted:
             st.info("⏳ 正在處理你嘅申請...")
             
-            # 🔍 除錯：顯示當前狀態
-            st.write("🔍 除錯：開始處理提交")
-            st.write(f"plan_choice = {plan_choice}")
-            st.write(f"logged_in = {st.session_state.get('logged_in', False)}")
-            st.write(f"username = {st.session_state.get('username', 'None')}")
+            # 🟢 除錯開始
+            st.write("---")
+            st.subheader("🔍 除錯資訊（請將以下內容 cap 圖俾我）")
+            
+            st.write(f"✅ 用戶名：{st.session_state.get('username')}")
+            st.write(f"✅ 選擇方案：{plan_choice}")
             
             if not plan_choice:
                 st.error("❌ 請先選擇一個付費方案")
@@ -1145,12 +1146,11 @@ def show_paywall():
                 except Exception as e:
                     st.warning(f"優惠碼處理出錯：{e}")
 
-            # 🔍 除錯：顯示最終金額
-            st.write(f"🔍 最終金額：{final_price}")
+            st.write(f"✅ 最終金額：${final_price}")
 
             # 讀取現有記錄
             proofs = load_payment_proofs()
-            st.write("🔍 讀取到嘅記錄數量：", len(proofs.get('proof_records', [])))
+            st.write(f"✅ 讀取到嘅記錄數量：{len(proofs.get('proof_records', []))}")
 
             new_id = len(proofs['proof_records']) + 1
             new_proof = {
@@ -1168,15 +1168,13 @@ def show_paywall():
                 "status": "pending"
             }
             proofs['proof_records'].append(new_proof)
+            st.write("✅ 新記錄準備好：", new_proof)
 
-            # 🔍 顯示將要寫入嘅內容
-            st.write("🔍 將要寫入嘅記錄：", new_proof)
-
-            # 🔥 寫入檔案
+            # 寫入檔案
             try:
                 file_path = 'payment_proofs.json'
                 abs_path = os.path.abspath(file_path)
-                st.write(f"📁 嘗試寫入檔案：`{abs_path}`")
+                st.write(f"📁 寫入檔案路徑：`{abs_path}`")
                 
                 with open(file_path, 'w', encoding='utf-8') as f:
                     json.dump(proofs, f, ensure_ascii=False, indent=2)
@@ -1185,22 +1183,23 @@ def show_paywall():
                 # 驗證
                 with open(file_path, 'r', encoding='utf-8') as f:
                     check = json.load(f)
-                st.write("🔍 驗證讀取到嘅內容：", check)
+                st.write("✅ 驗證讀取到嘅內容：", check)
 
                 if check == proofs:
                     st.success("✅ 驗證成功，記錄已保存！")
                     st.session_state['payment_just_submitted'] = True
                     st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
-                    # 唔自動 rerun，等用戶自己撳返回
-                    st.info("請撳下面嘅「返回主頁」按鈕繼續。")
+                    st.info("📌 請撳下面嘅「返回主頁」按鈕繼續。")
                 else:
                     st.error("❌ 驗證失敗，寫入嘅內容同讀取嘅內容不符！")
-                    st.stop()
             except Exception as e:
                 st.error(f"❌ 寫入失敗：{e}")
                 import traceback
                 st.code(traceback.format_exc())
-                st.stop()
+            
+            # 唔會自動 rerun，等用戶 cap 圖
+            st.write("---")
+            st.warning("⚠️ 請將以上所有「🔍 除錯資訊」cap 圖俾我，然後再撳「返回主頁」")
 
 # ============================================================
 # 8. 後台所有模組（完整實作）
