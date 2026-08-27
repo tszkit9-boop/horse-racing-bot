@@ -1020,8 +1020,8 @@ def show_paywall():
     }
 
     if st.session_state.get('payment_just_submitted', False):
-        st.success("✅ 付款申請已成功提交！管理員將盡快審核。")
-        st.info("📩 提交後請 Telegram 通知管理員（可加快審核）")
+        st.success("✅ 付款申請已成功提交！")
+        st.info("📩 請將過數截圖透過 Telegram 發送俾管理員以加快審核")
         st.markdown("💬 Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
         if 'payment_detail' in st.session_state:
             st.write(st.session_state['payment_detail'])
@@ -1049,12 +1049,109 @@ def show_paywall():
         else:
             st.info("請選擇一個方案以繼續")
 
+        # ============================================================
+        # 💳 過數資料（淨係轉數快 FPS）
+        # ============================================================
+        st.markdown("---")
+        st.markdown("### 💳 過數資料")
+        st.info("""
+        **請用轉數快（FPS）轉帳至以下戶口：**
+        - 📱 FPS 識別碼：`12345678`
+        - 👤 戶口名稱：`SHTSN SYSTEM`
+        - 💬 備註：**請務必填寫你的用戶名稱**，以便核對
+        """)
+        st.caption("💡 轉帳後請截圖，然後透過 Telegram 發送俾管理員")
+
         promo_input = st.text_input("優惠碼（如有）", key="promo_input_form", placeholder="例如 A7K3X9P2")
-        uploaded_file = st.file_uploader(
-            "上傳過數證明（FPS / PayMe / 銀行轉帳截圖）",
-            type=['png', 'jpg', 'jpeg'],
-            key="proof_upload_form"
-        )
+
+        # ============================================================
+        # 📩 聯絡管理員（取代上傳證明）
+        # ============================================================
+        st.markdown("---")
+        st.markdown("### 📩 完成轉帳後")
+        st.markdown("""
+        **請將轉帳截圖透過以下方式發送俾管理員：**
+        - 💬 Telegram：**[@bryhjdjbrbxibvrjskofndhiebdpaq](https://t.me/bryhjdjbrbxibvrjskofndhiebdpaq)**
+        - 📝 請同時註明你的 **用戶名稱** 同 **選擇嘅方案**
+        """)
+        st.caption("⏳ 管理員收到截圖後會盡快審核並為你升級")
+
+        submitted = st.form_submit_button("📩 提交付款申請，等待管理員審核")
+
+        if submitted:
+            st.info("⏳ 正在處理你嘅申請...")
+            
+            if not plan_choice:
+                st.error("❌ 請先選擇一個付費方案")
+                st.stop()
+            if not st.session_state.get('logged_in', False):
+                st.error("❌ 請先登入")
+                st.stop()
+            
+            original_price = get_plan_price(plan_choice)
+            final_price = original_price
+            discount_applied = False
+            discount_desc = ""
+            promo_code_used = None
+            
+            if promo_input:
+                try:
+                    promos = load_promos()
+                    promo_data = promos.get(promo_input)
+                    if promo_data and not promo_data.get('used', False):
+                        expiry = promo_data.get('expiry')
+                        if expiry:
+                            expiry_date = datetime.fromisoformat(expiry)
+                            if expiry_date >= datetime.now():
+                                discount_type = promo_data.get('discount_type', 'percentage')
+                                discount_value = promo_data.get('discount_value', 0)
+                                if discount_type == 'percentage':
+                                    final_price = original_price * (1 - discount_value / 100)
+                                    discount_desc = f"{discount_value}% 折扣"
+                                elif discount_type == 'fixed':
+                                    final_price = max(0, original_price - discount_value)
+                                    discount_desc = f"減 ${discount_value}"
+                                elif discount_type == 'free':
+                                    final_price = 0
+                                    discount_desc = "全免！"
+                                final_price = round(final_price, 2)
+                                discount_applied = True
+                                promo_code_used = promo_input
+                except:
+                    pass
+
+            try:
+                proofs = load_payment_proofs()
+                new_proof = {
+                    "id": len(proofs['proof_records']) + 1,
+                    "username": st.session_state.username,
+                    "plan": plan_choice,
+                    "plan_name": get_plan_name(plan_choice),
+                    "original_price": original_price,
+                    "final_price": final_price,
+                    "discount_applied": discount_applied,
+                    "discount_desc": discount_desc,
+                    "promo_code": promo_code_used,
+                    "filename": "請用戶透過 Telegram 發送截圖",
+                    "uploaded_at": datetime.now().isoformat(),
+                    "status": "pending"
+                }
+                proofs['proof_records'].append(new_proof)
+                
+                if save_payment_proofs(proofs):
+                    st.session_state['payment_just_submitted'] = True
+                    st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
+                    st.success("✅ 提交成功！請將截圖發送到 Telegram 俾管理員。")
+                    st.rerun()
+                else:
+                    st.error("❌ 寫入付款記錄失敗，請檢查檔案權限")
+                    st.stop()
+            except Exception as e:
+                st.error(f"❌ 提交過程中發生錯誤：{e}")
+                st.stop()
+            except Exception as e:
+                st.error(f"❌ 提交過程中發生錯誤：{e}")
+                st.stop()
         if uploaded_file is not None:
             st.image(uploaded_file, caption="你上傳嘅證明", width=300)
 
