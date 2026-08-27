@@ -853,9 +853,22 @@ def show_prediction_history(username):
 # ============================================================
 def login_page():
     st.title("🔐 登入 / 註冊")
-    tab1, tab2 = st.tabs(["登入", "註冊"])
     
-    with tab1:
+    # 用 session_state 記住當前選中嘅分頁（預設「登入」）
+    if "login_tab" not in st.session_state:
+        st.session_state.login_tab = "登入"
+    
+    # 用 radio 水平顯示兩個選項
+    tab_choice = st.radio(
+        "選擇功能",
+        ["登入", "註冊"],
+        index=0 if st.session_state.login_tab == "登入" else 1,
+        key="login_tab",
+        horizontal=True
+    )
+    
+    # ========== 登入版面 ==========
+    if tab_choice == "登入":
         username = st.text_input("用戶名稱", key="login_user")
         password = st.text_input("密碼", type="password", key="login_pass")
         if st.button("登入", key="login_button"):
@@ -869,7 +882,8 @@ def login_page():
             else:
                 st.error("❌ 用戶名稱或密碼錯誤")
     
-    with tab2:
+    # ========== 註冊版面 ==========
+    else:
         st.subheader("📝 註冊新帳號")
         with st.form("register_form"):
             new_user = st.text_input("用戶名稱（最少 3 個字）", key="reg_user")
@@ -1004,6 +1018,9 @@ def login_page():
                                 st.success("✅ 註冊成功！")
                         else:
                             st.success("✅ 註冊成功！")
+                        
+                        # ⬇️⬇️⬇️ 關鍵：註冊成功後，將分頁切換到「登入」⬇️⬇️⬇️
+                        st.session_state.login_tab = "登入"
                         st.rerun()
 
 # ============================================================
