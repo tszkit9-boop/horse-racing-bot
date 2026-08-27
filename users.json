@@ -29,19 +29,51 @@
     "invite_count": 0
   },
   "arkit": {
-    "password": "123456",
+    "password": "z54060437K",
+    "phone": "",
+    "is_paid": false,
+    "paid_date": null,
+    "expiry_date": null,
+    "free_usage": 1,
+    "total_usage": 1,
+    "created_at": "2026-08-26 14:09:25",
+    "note": "",
     "group": "free",
-    "payment_requests": [
-        {
-            "id": 1,
-            "plan": "day",
-            "plan_name": "日費",
-            "final_price": 18,
-            "discount_desc": "",
-            "promo_code": null,
-            "submitted_at": "2026-08-27T12:00:00.000000",
-            "status": "pending"
-        }
-    ]
-}
+    "plan": null,
+    "predictions_limit": 2,
+    "history": [
+      {
+        "date": "2025-04-09",
+        "race": 9,
+        "horse": "自力更生",
+        "timestamp": "2026-08-26 14:10:03",
+        "predicted_prob": 0.011853279779300428
+      }
+    ],
+    "terms_agreed": "2026-08-26T14:09:25.706364",
+    "invite_code": "ARKIT166",
+    "invited_by": null,
+    "invite_rewards": 0,
+    "invite_count": 0
+  },
+  "Sing2": {
+    "password": "abcd1234",
+    "phone": "60567072",
+    "is_paid": false,
+    "paid_date": null,
+    "expiry_date": null,
+    "free_usage": 0,
+    "total_usage": 0,
+    "created_at": "2026-08-27 11:01:26",
+    "note": "",
+    "group": "free",
+    "plan": null,
+    "predictions_limit": 2,
+    "history": [],
+    "terms_agreed": "2026-08-27T11:01:26.362425",
+    "invite_code": "SING2135",
+    "invited_by": null,
+    "invite_rewards": 0,
+    "invite_count": 0
+  }
 }
