@@ -715,23 +715,42 @@ def run_prediction(date_str, race_no):
 # ============================================================
 def login_page():
     st.title("🔐 登入 / 註冊")
-    tab1, tab2 = st.tabs(["登入", "註冊"])
     
-    with tab1:
-        username = st.text_input("用戶名稱", key="login_user")
-        password = st.text_input("密碼", type="password", key="login_pass")
-        if st.button("登入", key="login_button"):
-            users = load_users()
-            if username in users and users[username].get('password') == password:
-                st.session_state.logged_in = True
-                st.session_state.username = username
-                st.session_state.role = users[username].get('group', 'free')
-                st.session_state.usage_count = users[username].get('free_usage', 0)
-                st.rerun()
-            else:
-                st.error("❌ 用戶名稱或密碼錯誤")
+    # 載入系統設定
+    config = load_system_config()
     
-    with tab2:
+    # 兩個並排按鈕切換模式（取代 tabs）
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🔑 登入", use_container_width=True):
+            st.session_state.page_mode = "login"
+    with col2:
+        if st.button("📝 註冊", use_container_width=True):
+            st.session_state.page_mode = "register"
+    
+    # 預設模式
+    mode = st.session_state.get("page_mode", "login")
+    
+    # ---------- 登入區塊 ----------
+    if mode == "login":
+        with st.form("login_form"):
+            username = st.text_input("用戶名稱", key="login_user")
+            password = st.text_input("密碼", type="password", key="login_pass")
+            submitted = st.form_submit_button("登入")
+            if submitted:
+                users = load_users()
+                # 注意：原版直接比對明文密碼，建議改為 hash，但保留原樣
+                if username in users and users[username].get('password') == password:
+                    st.session_state.logged_in = True
+                    st.session_state.username = username
+                    st.session_state.role = users[username].get('group', 'free')
+                    st.session_state.usage_count = users[username].get('free_usage', 0)
+                    st.rerun()
+                else:
+                    st.error("❌ 用戶名稱或密碼錯誤")
+    
+    # ---------- 註冊區塊 ----------
+    elif mode == "register":
         st.subheader("📝 註冊新帳號")
         with st.form("register_form"):
             new_user = st.text_input("用戶名稱（最少 3 個字）", key="reg_user")
@@ -739,7 +758,7 @@ def login_page():
             new_pass = st.text_input("密碼", type="password", key="reg_pass")
             new_pass2 = st.text_input("確認密碼", type="password", key="reg_pass2")
             
-            if CONFIG.get("enable_invite_reward", True):
+            if config.get("enable_invite_reward", True):
                 invite_code_input = st.text_input("邀請碼（如有）", key="reg_invite_code", placeholder="輸入朋友的邀請碼")
             else:
                 invite_code_input = None
@@ -751,7 +770,7 @@ def login_page():
                 if st.form_submit_button("📨 獲取驗證碼", type="secondary"):
                     code = generate_verification_code()
                     st.session_state['reg_verify_code'] = code
-                    st.session_state['reg_verify_expiry'] = datetime.now() + timedelta(minutes=CONFIG.get('verification_expiry', 5))
+                    st.session_state['reg_verify_expiry'] = datetime.now() + timedelta(minutes=config.get('verification_expiry', 5))
                     st.info(f"📧 你嘅驗證碼係：**{code}**（有效期 5 分鐘）")
             
             st.divider()
@@ -817,7 +836,7 @@ def login_page():
                         st.error("❌ 用戶名稱已被使用")
                     else:
                         invited_by = None
-                        if CONFIG.get("enable_invite_reward", True) and invite_code_input:
+                        if config.get("enable_invite_reward", True) and invite_code_input:
                             for uid, u in users.items():
                                 if u.get('invite_code') == invite_code_input:
                                     invited_by = uid
@@ -837,7 +856,7 @@ def login_page():
                             'note': '',
                             'group': 'free',
                             'plan': None,
-                            'predictions_limit': CONFIG["free_limit"],
+                            'predictions_limit': config.get("free_limit", 2),
                             'history': [],
                             'terms_agreed': datetime.now().isoformat(),
                             'invite_code': new_user.upper() + str(random.randint(100, 999)),
@@ -848,11 +867,11 @@ def login_page():
                         users[new_user] = new_user_data
                         save_users(users)
                         
-                        if CONFIG.get("enable_invite_reward", True) and invited_by:
+                        if config.get("enable_invite_reward", True) and invited_by:
                             inviter = users.get(invited_by)
                             if inviter:
-                                reward_inviter = CONFIG.get("invite_reward_inviter", 1)
-                                reward_invitee = CONFIG.get("invite_reward_invitee", 1)
+                                reward_inviter = config.get("invite_reward_inviter", 1)
+                                reward_invitee = config.get("invite_reward_invitee", 1)
                                 if inviter['predictions_limit'] != -1:
                                     inviter['predictions_limit'] += reward_inviter
                                 inviter['invite_count'] = inviter.get('invite_count', 0) + 1
@@ -867,8 +886,6 @@ def login_page():
                         else:
                             st.success("✅ 註冊成功！")
                         st.rerun()
-    else:
-        st.info("註冊功能已關閉，請聯絡管理員")
 # ============================================================
 # 🔧 付款牆
 # ============================================================
