@@ -376,7 +376,7 @@ def show_paywall():
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
     st.subheader("💳 選擇你嘅方案")
 
-    # 方案選項（水平 radio）
+    # 方案選項（水平 radio，同測試版完全一致）
     plan_options = {
         "day": f"☀️ 日費  ${CONFIG['price_day']}   (1天)",
         "month": f"📆 月費  ${CONFIG['price_month']}  (30天)",
@@ -397,6 +397,7 @@ def show_paywall():
         st.stop()
 
     with st.form(key="payment_form"):
+        # 水平選擇方案（同測試版完全一樣）
         plan_choice = st.radio(
             "請選擇付費方案：",
             options=list(plan_options.keys()),
@@ -414,10 +415,15 @@ def show_paywall():
         promo_input = st.text_input("優惠碼（如有）", key="promo_input_form")
 
         st.divider()
+        st.subheader("📤 付款方式")
         st.markdown("""
-        **📤 付款方式：FPS 轉數快 `12345678`（SHTSN SYSTEM）**  
-        💬 過數後請將截圖發送 Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**
+        **請使用以下方式過數：**
+        - 🏦 **FPS 轉數快**：`12345678`
+        - 📛 **戶口名稱**：`SHTSN SYSTEM`
+        - 💰 **金額**：請根據你選擇的方案支付
         """)
+        st.info("💬 過數後，請將 **付款截圖** 透過 Telegram 發送俾管理員：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
+        st.caption("管理員確認收款後，會喺後台批准你嘅申請，系統會自動升級你嘅帳戶。")
 
         submitted = st.form_submit_button("📩 提交付款申請，等待管理員審核")
 
