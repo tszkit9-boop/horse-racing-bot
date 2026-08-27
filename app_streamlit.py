@@ -1891,12 +1891,6 @@ def admin_payment_review():
 def _approve_payment(rec, proofs_data):
     try:
         st.info("⏳ 開始處理批准...")
-        rec['status'] = 'approved'
-        rec['approved_at'] = datetime.now().isoformat()
-        rec['approved_by'] = st.session_state.username
-        save_payment_proofs(proofs_data)
-        st.success("✅ 付款記錄已更新")
-        
         username = rec.get('username')
         if not username:
             st.error("❌ 記錄中缺少 username")
@@ -1921,21 +1915,34 @@ def _approve_payment(rec, proofs_data):
         users[username]['predictions_limit'] = -1
         
         if save_users(users):
-            st.success(f"✅ {username} 已升級為 VIP！")
-            st.success(f"📅 到期日：{expiry}")
+            st.success(f"✅ {username} 已升級為 VIP！到期日：{expiry}")
             log_admin_action(st.session_state.username, f"批准付款並升級 {username} 為 VIP（{plan}）")
+            
+            # 🗑️ 從記錄中刪除該申請（令佢消失）
+            if rec in proofs_data['proof_records']:
+                proofs_data['proof_records'].remove(rec)
+                save_payment_proofs(proofs_data)
+                st.success("✅ 付款申請已處理並移除。")
+            else:
+                st.warning("⚠️ 記錄已不存在")
         else:
             st.error("❌ 儲存 users.json 失敗")
     except Exception as e:
         st.error(f"❌ 錯誤：{e}")
 
 def _reject_payment(rec, proofs_data):
-    rec['status'] = 'rejected'
-    rec['approved_at'] = datetime.now().isoformat()
-    rec['approved_by'] = st.session_state.username
-    save_payment_proofs(proofs_data)
-    st.warning(f"❌ 已拒絕 {rec.get('username')} 的申請")
-    log_admin_action(st.session_state.username, f"拒絕付款申請：{rec.get('username')}")
+    try:
+        username = rec.get('username', '未知')
+        # 🗑️ 直接刪除記錄（拒絕後消失）
+        if rec in proofs_data['proof_records']:
+            proofs_data['proof_records'].remove(rec)
+            save_payment_proofs(proofs_data)
+            st.warning(f"❌ 已拒絕 {username} 的申請，記錄已移除")
+            log_admin_action(st.session_state.username, f"拒絕付款申請：{username}")
+        else:
+            st.warning("⚠️ 記錄已不存在")
+    except Exception as e:
+        st.error(f"❌ 錯誤：{e}")
 
 def _refund_payment(rec, proofs_data):
     try:
