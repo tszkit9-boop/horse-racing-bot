@@ -1092,7 +1092,7 @@ def adjust_model_weights():
     }
 
 # ============================================================
-# 後台管理（所有模組完整實作 — 包含所有缺漏函數）
+# 後台管理（所有模組完整實作）
 # ============================================================
 
 def admin_user_management():
@@ -1427,7 +1427,6 @@ def admin_accuracy_monitor():
     with st.expander("📋 查看所有記錄"):
         st.dataframe(df_records, use_container_width=True)
 
-# ------------------- 訂閱管理（原本缺漏） -------------------
 def admin_subscription():
     st.subheader("⏰ 訂閱管理 & 到期提醒")
     users = load_users()
@@ -1493,7 +1492,6 @@ def admin_subscription():
             st.success(f"✅ {username} 已續期至 {new_expiry}")
             st.rerun()
 
-# ------------------- 監控（原本缺漏） -------------------
 def admin_monitoring():
     st.subheader("📡 系統監控")
     files = ['ALL_DATA_MERGED.csv', 'HKCJ_FULL_YEAR_DATA.csv', 'horse_name_mapping.csv',
@@ -1509,7 +1507,6 @@ def admin_monitoring():
         df_log = pd.DataFrame(logs['logs'][-20:])
         st.dataframe(df_log, use_container_width=True)
 
-# ------------------- 內容管理（原本已存在，但保留） -------------------
 def admin_content():
     st.subheader("📝 內容管理")
     content = load_json(CONTENT_FILE)
@@ -1596,7 +1593,6 @@ def admin_content():
             f.write(uploaded.getbuffer())
         st.success("✅ 排位表已更新")
 
-# ------------------- 自動化（原本缺漏） -------------------
 def admin_automation():
     st.subheader("🤖 自動化工具")
     auto = load_json(AUTOMATION_FILE)
@@ -1611,7 +1607,6 @@ def admin_automation():
         save_json(AUTOMATION_FILE, auto)
         st.success("✅ 已儲存")
 
-# ------------------- 安全（原本缺漏） -------------------
 def admin_security():
     st.subheader("🔐 安全與權限")
     st.write("操作日誌")
@@ -1636,18 +1631,9 @@ def admin_security():
         else:
             st.error("用戶不存在")
 
-# ------------------- 付款審核（需要 load_payment_proofs） -------------------
 def admin_payment_review():
     st.subheader("📤 付款審核")
-    
-    # 確保 load_payment_proofs 存在（如果不存在，則建立）
-    try:
-        proofs_data = load_payment_proofs()
-    except NameError:
-        # 如果未定義，則在此定義（但建議在第一部分定義）
-        st.error("❌ load_payment_proofs 未定義，請確保第一部分包含此函數")
-        return
-
+    proofs_data = load_payment_proofs()
     records = proofs_data.get('proof_records', [])
     
     pending = [r for r in records if r.get('status') == 'pending']
@@ -1781,7 +1767,6 @@ def admin_payment_review():
         else:
             st.info("暫無日誌")
 
-# ------------------- 輔助函數（付款審核用） -------------------
 def _approve_payment(rec, proofs_data):
     try:
         st.info("⏳ 開始處理批准...")
@@ -1864,7 +1849,6 @@ def _refund_payment(rec, proofs_data):
         import traceback
         st.code(traceback.format_exc())
 
-# ------------------- 系統設定（僅超級管理員） -------------------
 def admin_system_settings():
     users = load_users()
     admin_username = st.session_state.get('username', 'admin')
@@ -1953,7 +1937,7 @@ def admin_system_settings():
             st.error("❌ 儲存失敗，請檢查檔案權限。")
 
 # ============================================================
-# 10. 主頁面（後台整合為上方 Tab，已加入登出按鈕）
+# 10. 主頁面（後台整合為上方 Tab，已加入密碼驗證）
 # ============================================================
 def main():
     if 'logged_in' not in st.session_state:
@@ -2035,8 +2019,28 @@ def main():
                     st.rerun()
             else:
                 if st.button("⚙️ 後台", use_container_width=True, key="go_to_admin_btn"):
+                    # 要求輸入管理員密碼
+                    st.session_state.admin_pwd_required = True
+
+    # ----- 處理後台密碼驗證 -----
+    if st.session_state.get('admin_pwd_required', False) and not st.session_state.show_admin:
+        st.markdown("### 🔐 請輸入管理員密碼")
+        admin_pwd = st.text_input("管理員密碼", type="password", key="admin_pwd_input")
+        col_pwd1, col_pwd2 = st.columns(2)
+        with col_pwd1:
+            if st.button("確認", key="admin_pwd_confirm"):
+                if admin_pwd == CONFIG.get("admin_password", "z54060437K"):
                     st.session_state.show_admin = True
+                    st.session_state.admin_pwd_required = False
                     st.rerun()
+                else:
+                    st.error("❌ 密碼錯誤")
+        with col_pwd2:
+            if st.button("取消", key="admin_pwd_cancel"):
+                st.session_state.admin_pwd_required = False
+                st.rerun()
+        # 顯示密碼輸入後，暫停執行，以免顯示其他內容
+        st.stop()
 
     # ----- 如果進入後台模式，直接顯示橫向標籤（取代原有內容） -----
     if st.session_state.show_admin:
@@ -2142,7 +2146,7 @@ def main():
     with col_btn:
         predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
 
-    # 側邊欄（保留用戶資訊、聯絡方式、導航，以及側邊登出按鈕，以備不時之需）
+    # 側邊欄（保留用戶資訊、聯絡方式、導航）
     with st.sidebar:
         st.header("🎯 用戶資訊")
         if CONFIG["enable_registration"] and st.session_state.logged_in:
