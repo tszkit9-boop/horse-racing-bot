@@ -1333,7 +1333,7 @@ def adjust_model_weights():
     }
 
 # ============================================================
-# 後台管理（所有模組完整實作 — 包含新增嘅訂閱管理、監控、系統設定）
+# 後台管理（所有模組完整實作）
 # ============================================================
 
 def admin_user_management():
@@ -1384,9 +1384,30 @@ def admin_user_management():
         st.info("暫無用戶")
         return
     
-    st.write("現有用戶列表：")
-    df = pd.DataFrame.from_dict(users, orient='index')
-    st.dataframe(df, use_container_width=True)
+    # 改良顯示：只顯示重要欄位，並隱藏密碼同複雜結構
+    display_data = []
+    for username, data in users.items():
+        limit = data.get('predictions_limit', CONFIG['free_limit'])
+        if limit == -1:
+            remaining = "無限"
+        else:
+            used = data.get('free_usage', 0)
+            remaining = max(0, limit - used)
+        
+        display_data.append({
+            "用戶名": username,
+            "密碼": "****",
+            "群組": data.get('group', 'free'),
+            "付費": "✅" if data.get('is_paid') else "❌",
+            "到期日": data.get('expiry_date', '無') or '無',
+            "方案": data.get('plan', '無') or '無',
+            "總預測": data.get('total_usage', 0),
+            "剩餘次數": remaining,
+            "創建時間": data.get('created_at', ''),
+            "備註": data.get('note', '')
+        })
+    df_display = pd.DataFrame(display_data)
+    st.dataframe(df_display, use_container_width=True)
     
     st.divider()
     st.subheader("🗑️ 刪除用戶")
@@ -1697,7 +1718,7 @@ def admin_accuracy_monitor():
         st.success(f"調整完成！XGBoost={result['xgb_weight']}, CatBoost={result['cat_weight']}, 命中率={result['hit_rate']:.2%}")
         st.rerun()
 
-# ------------------- 新增：訂閱管理 -------------------
+# ------------------- 訂閱管理 -------------------
 def admin_subscription():
     st.subheader("📅 訂閱管理")
     users = load_users()
@@ -1759,7 +1780,7 @@ def admin_subscription():
         save_json(AUTOMATION_FILE, automation)
         st.success("✅ 提醒設定已儲存")
 
-# ------------------- 新增：監控 -------------------
+# ------------------- 監控 -------------------
 def admin_monitoring():
     st.subheader("📊 系統監控")
     st.write("檢查系統檔案狀態")
@@ -1805,9 +1826,8 @@ def admin_monitoring():
     except Exception as e:
         st.warning(f"無法讀取部分數據：{e}")
 
-# ------------------- 新增：系統設定 -------------------
+# ------------------- 系統設定（僅 super_admin） -------------------
 def admin_system_config():
-    # 僅 super_admin 可見
     if st.session_state.role != 'super_admin':
         st.error("❌ 只有超級管理員可以修改系統設定")
         return
@@ -1829,7 +1849,6 @@ def admin_system_config():
             new_verification_expiry = st.number_input("驗證碼有效期 (分鐘)", min_value=1, value=config.get('verification_expiry', 5), step=1)
             new_admin_password = st.text_input("管理員密碼", value=config.get('admin_password', 'z54060437K'), type="password")
         
-        # 開關
         enable_reg = st.checkbox("啟用註冊", value=config.get('enable_registration', True))
         enable_pay = st.checkbox("啟用付款", value=config.get('enable_payment', True))
         enable_vip = st.checkbox("啟用 VIP 內容", value=config.get('enable_vip_content', True))
@@ -1868,7 +1887,7 @@ def admin_system_config():
             st.success("✅ 設定已儲存")
             st.rerun()
 
-# ------------------- 原有：自動化、安全 -------------------
+# ------------------- 自動化、安全 -------------------
 def admin_automation():
     st.subheader("🤖 自動化設定")
     automation = load_json(AUTOMATION_FILE)
@@ -1894,7 +1913,7 @@ def admin_security():
             st.rerun()
 
 # ============================================================
-# 🏠 主頁面（保留舊版順序 + 日期修正，後台菜單更新為12項）
+# 🏠 主頁面（保留舊版順序 + 日期修正，後台菜單完整 12 項）
 # ============================================================
 def main():
     if 'logged_in' not in st.session_state:
@@ -1912,7 +1931,6 @@ def main():
 
     if st.session_state.get('page') == "admin" and st.session_state.role in ['super_admin', 'admin']:
         st.sidebar.title("⚙️ 後台管理")
-        # 完整 12 項菜單（與截圖一致）
         admin_menu = st.sidebar.radio(
             "選擇功能",
             [
