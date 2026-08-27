@@ -1791,7 +1791,7 @@ def admin_payment_review():
         with col_s1:
             search_term = st.text_input("搜尋用戶名稱", placeholder="輸入用戶名")
         with col_s2:
-            status_filter = "pending"(
+            status_filter = "st.selectbox"(
                 "狀態篩選",
                 ["全部", "pending", "approved", "rejected"],
                 index=1,   # 預設 pending
