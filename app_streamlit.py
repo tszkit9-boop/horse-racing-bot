@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版（付款記錄用 st.session_state 儲存，保證成功）
+賽馬預測系統 - 完整版（付款記錄用 st.session_state，保證成功）
 """
 
 import streamlit as st
@@ -148,7 +148,7 @@ def save_json(file_path, data):
         return False
 
 # ============================================================
-# 檔案路徑常數（付款記錄用 session_state，不寫檔案）
+# 檔案路徑常數（付款記錄用 session_state）
 # ============================================================
 USER_DATA_FILE = 'users.json'
 FINANCE_FILE = 'finance.json'
@@ -1247,7 +1247,9 @@ def login_page():
                             st.success("✅ 註冊成功！")
                         
                         st.session_state.page_mode = "login"
-                        st.rerun()# ============================================================
+                        st.rerun()
+
+# ============================================================
 # AI 自我學習
 # ============================================================
 def update_accuracy_with_results():
