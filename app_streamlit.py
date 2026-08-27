@@ -2572,6 +2572,11 @@ def main():
         st.caption("🔐 數據來源：HKJC | 系統版本：v14.0-用戶體驗版")
     with col_f3:
         st.caption("💬 Telegram：@bryhjdjbrbxibvrjskofndhiebdpaq")
-
+# 🧪 強制寫入測試（用完可以刪除）
+import json
+test_data = {"proof_records": [{"id": 999, "username": "test", "status": "pending", "plan": "day"}]}
+with open('payment_proofs.json', 'w', encoding='utf-8') as f:
+    json.dump(test_data, f, ensure_ascii=False, indent=2)
+print("✅ 測試寫入完成")
 if __name__ == '__main__':
     main()
