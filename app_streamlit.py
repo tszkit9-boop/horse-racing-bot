@@ -1384,30 +1384,9 @@ def admin_user_management():
         st.info("暫無用戶")
         return
     
-    # 改良顯示：只顯示重要欄位，並隱藏密碼同複雜結構
-    display_data = []
-    for username, data in users.items():
-        limit = data.get('predictions_limit', CONFIG['free_limit'])
-        if limit == -1:
-            remaining = "無限"
-        else:
-            used = data.get('free_usage', 0)
-            remaining = max(0, limit - used)
-        
-        display_data.append({
-            "用戶名": username,
-            "密碼": "****",
-            "群組": data.get('group', 'free'),
-            "付費": "✅" if data.get('is_paid') else "❌",
-            "到期日": data.get('expiry_date', '無') or '無',
-            "方案": data.get('plan', '無') or '無',
-            "總預測": data.get('total_usage', 0),
-            "剩餘次數": remaining,
-            "創建時間": data.get('created_at', ''),
-            "備註": data.get('note', '')
-        })
-    df_display = pd.DataFrame(display_data)
-    st.dataframe(df_display, use_container_width=True)
+    st.write("現有用戶列表：")
+    df = pd.DataFrame.from_dict(users, orient='index')
+    st.dataframe(df, use_container_width=True)
     
     st.divider()
     st.subheader("🗑️ 刪除用戶")
@@ -1499,22 +1478,6 @@ def admin_user_management():
                 log_admin_action(st.session_state.username, f"編輯用戶 {username}")
                 st.success("✅ 已更新")
                 st.rerun()
-    
-    st.divider()
-    st.subheader("📥 數據匯出")
-    if st.button("📥 下載 users.json", key="download_users_json"):
-        try:
-            with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
-                data = f.read()
-            st.download_button(
-                label="✅ 點擊下載 users.json",
-                data=data,
-                file_name="users.json",
-                mime="application/json",
-                key="download_users_btn"
-            )
-        except Exception as e:
-            st.error(f"讀取檔案失敗：{e}")
 
 def admin_analytics():
     st.subheader("📊 數據分析 & 用戶增長")
@@ -1572,19 +1535,6 @@ def admin_finance():
             log_admin_action(st.session_state.username, f"新增收入 {amount} - {desc}")
             st.success("✅ 已記錄")
             st.rerun()
-
-def admin_content():
-    st.subheader("📢 內容管理（信息流／公告）")
-    content = load_json(CONTENT_FILE)
-    if not content:
-        content = {}
-    announcement = st.text_area("公告內容（支援 Markdown）", value=content.get('announcement', ''), height=200)
-    if st.button("儲存公告"):
-        content['announcement'] = announcement
-        content['last_updated'] = datetime.now().isoformat()
-        save_json(CONTENT_FILE, content)
-        log_admin_action(st.session_state.username, "更新公告")
-        st.success("✅ 公告已儲存")
 
 def admin_promo_codes():
     st.subheader("🎟️ 優惠碼管理")
@@ -1658,414 +1608,581 @@ def admin_accuracy_monitor():
     try:
         results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
         results_df = standardize_columns_safe(results_df)
-        if 'race_date' in results_df.columns and 'race_no' in results_df.columns and 'horse_name' in results_df.columns and 'finish_position' in results_df.columns:
+        if 'race_date' not in results_df.columns or 'race_no' not in results_df.columns or '馬名' not in results_df.columns or 'finish_position' not in results_df.columns:
+            if '日期' in results_df.columns:
+                results_df.rename(columns={'日期': 'race_date'}, inplace=True)
+            if '場次' in results_df.columns:
+                results_df.rename(columns={'場次': 'race_no'}, inplace=True)
+            if '馬名' not in results_df.columns and 'horse_name' in results_df.columns:
+                results_df.rename(columns={'horse_name': '馬名'}, inplace=True)
+            if 'finish_position' not in results_df.columns and '名次' in results_df.columns:
+                results_df.rename(columns={'名次': 'finish_position'}, inplace=True)
+        
+        if 'race_date' in results_df.columns and 'race_no' in results_df.columns and '馬名' in results_df.columns and 'finish_position' in results_df.columns:
             results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
             results_df = results_df.dropna(subset=['race_date'])
-            updated = 0
             for rec in records:
                 if rec.get('actual_result') is not None:
                     continue
-                date_str = rec.get('date')
-                race_no = rec.get('race')
-                horse = rec.get('horse')
-                if not date_str or not race_no or not horse:
-                    continue
-                matched = results_df[
-                    (results_df['race_date'].dt.strftime('%Y-%m-%d') == date_str) &
-                    (results_df['race_no'] == race_no) &
-                    (results_df['horse_name'] == horse)
-                ]
+                date_str = rec['date']
+                race_no = rec['race']
+                horse = rec['horse']
+                matched = results_df[(results_df['race_date'].dt.strftime('%Y-%m-%d') == date_str) & 
+                                     (results_df['race_no'] == race_no) & 
+                                     (results_df['馬名'] == horse)]
                 if not matched.empty:
                     pos = matched.iloc[0]['finish_position']
                     rec['actual_result'] = int(pos) if pd.notna(pos) else None
                     rec['is_hit'] = (rec['actual_result'] == 1) if rec['actual_result'] is not None else None
-                    updated += 1
-            if updated > 0:
-                save_accuracy(acc)
-                st.success(f"已自動比對 {updated} 條新記錄")
+            save_accuracy(acc)
+            st.success("✅ 已自動比對賽果")
+        else:
+            st.warning("ALL_DATA_MERGED.csv 缺少必要欄位，請確保包含：race_date, race_no, 馬名, finish_position")
     except Exception as e:
-        st.warning(f"自動比對失敗：{e}")
+        st.error(f"自動比對失敗：{e}")
 
-    total = len([r for r in records if r.get('is_hit') is not None])
-    hit = sum(1 for r in records if r.get('is_hit') is True)
-    hit_rate = hit / total if total > 0 else 0
+    df_records = pd.DataFrame(records)
+    if df_records.empty:
+        return
+    total = len(df_records)
+    hit = df_records[df_records['is_hit'] == True].shape[0] if 'is_hit' in df_records else 0
+    hit_rate = hit/total if total>0 else 0
+    roi = (hit * 400 - total * 100) / (total * 100) if total>0 else 0
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("總預測記錄", len(records))
-    col2.metric("已比對", total)
-    col3.metric("命中率", f"{hit_rate:.2%}" if total>0 else "N/A")
+    col1.metric("總預測記錄", total)
+    col2.metric("命中次數", hit)
+    col3.metric("命中率", f"{hit_rate:.2%}")
+    st.metric("ROI (模擬)", f"{roi:.2%}")
 
-    if total > 0:
-        df_records = pd.DataFrame(records)
-        df_hit = df_records[df_records['is_hit'].notna()]
-        if not df_hit.empty:
-            df_hit['date'] = pd.to_datetime(df_hit['date'])
-            daily = df_hit.groupby(df_hit['date'].dt.date).agg(
-                total=('is_hit', 'count'),
-                hit=('is_hit', lambda x: (x==True).sum())
-            ).reset_index()
-            daily['hit_rate'] = daily['hit'] / daily['total']
-            fig = px.line(daily, x='date', y='hit_rate', title='整體命中率趨勢')
-            st.plotly_chart(fig, use_container_width=True)
+    if 'date' in df_records:
+        df_records['date'] = pd.to_datetime(df_records['date'])
+        daily = df_records.groupby(df_records['date'].dt.date).agg(
+            total=('is_hit', 'count'),
+            hit=('is_hit', lambda x: (x==True).sum())
+        ).reset_index()
+        daily['hit_rate'] = daily['hit'] / daily['total']
+        fig = px.line(daily, x='date', y='hit_rate', title='每日命中率趨勢')
+        st.plotly_chart(fig, use_container_width=True)
 
-    if st.button("🔄 強制比對賽果"):
-        updated, msg = update_accuracy_with_results()
-        st.success(msg)
-        st.rerun()
+    with st.expander("📋 查看所有記錄"):
+        st.dataframe(df_records, use_container_width=True)
 
-    if st.button("⚙️ 調整模型權重（根據命中率）"):
-        result = adjust_model_weights()
-        st.success(f"調整完成！XGBoost={result['xgb_weight']}, CatBoost={result['cat_weight']}, 命中率={result['hit_rate']:.2%}")
-        st.rerun()
-
-# ------------------- 訂閱管理 -------------------
 def admin_subscription():
-    st.subheader("📅 訂閱管理")
+    st.subheader("⏰ 訂閱管理 & 到期提醒")
     users = load_users()
-    vip_users = {u: data for u, data in users.items() if data.get('group') == 'VIP' or data.get('is_paid')}
-    if not vip_users:
-        st.info("暫時沒有 VIP 或付費用戶")
-        return
-    
-    st.write("VIP / 付費用戶列表")
-    data = []
-    for username, info in vip_users.items():
-        expiry = info.get('expiry_date', '無')
-        plan = info.get('plan', '無')
-        days_left = "N/A"
-        if expiry and expiry != '無':
-            try:
-                exp = datetime.fromisoformat(expiry)
-                days_left = (exp - datetime.now()).days
-                if days_left < 0:
-                    days_left = "已過期"
-            except:
-                days_left = "格式錯誤"
-        data.append({
-            "用戶名": username,
-            "方案": plan,
-            "到期日": expiry,
-            "剩餘天數": days_left,
-            "付費狀態": "✅" if info.get('is_paid') else "❌"
-        })
-    df = pd.DataFrame(data)
-    st.dataframe(df, use_container_width=True)
-
-    st.divider()
-    st.subheader("🔄 手動續期")
-    username = st.selectbox("選擇用戶", list(vip_users.keys()), key="renew_user")
-    if username:
-        days = st.number_input("續期天數", min_value=1, value=30, step=1)
-        if st.button("續期"):
-            users = load_users()
-            if username in users:
-                new_expiry = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
-                users[username]['expiry_date'] = new_expiry
-                users[username]['is_paid'] = True
-                users[username]['group'] = 'VIP'
-                users[username]['predictions_limit'] = -1
-                save_users(users)
-                log_admin_action(st.session_state.username, f"手動續期 {username} +{days}天")
-                st.success(f"✅ {username} 已續期至 {new_expiry}")
-                st.rerun()
-
-    st.divider()
-    st.subheader("⏰ 到期提醒設定")
-    automation = load_json(AUTOMATION_FILE)
-    if not automation:
-        automation = {}
-    reminder_days = st.number_input("提前提醒天數", min_value=1, value=automation.get('reminder_days', 3), step=1)
-    if st.button("儲存提醒設定"):
-        automation['reminder_days'] = reminder_days
-        save_json(AUTOMATION_FILE, automation)
-        st.success("✅ 提醒設定已儲存")
-
-# ------------------- 監控 -------------------
-def admin_monitoring():
-    st.subheader("📊 系統監控")
-    st.write("檢查系統檔案狀態")
-    files_to_check = [
-        'users.json', 'system_config.json', 'finance.json', 
-        'promo_codes.json', 'admin_log.json', 'accuracy.json',
-        'content.json', 'automation.json',
-        'hk_racing_model.pkl', 'hk_catboost_model.cbm', 'hk_ranking_model.pkl',
-        'HKCJ_FULL_YEAR_DATA.csv', 'ALL_DATA_MERGED.csv'
-    ]
-    status = []
-    for f in files_to_check:
-        exists = os.path.exists(f)
-        size = os.path.getsize(f) if exists else 0
-        status.append({
-            "檔案": f,
-            "存在": "✅" if exists else "❌",
-            "大小 (bytes)": size if exists else 0
-        })
-    df_status = pd.DataFrame(status)
-    st.dataframe(df_status, use_container_width=True)
-
-    st.divider()
-    st.subheader("📋 近期操作日誌（最近20條）")
-    logs = load_logs()
-    logs_list = logs.get('logs', [])
-    if logs_list:
-        df_logs = pd.DataFrame(logs_list[-20:][::-1])
-        st.dataframe(df_logs, use_container_width=True)
+    paid_users = {u: data for u, data in users.items() if data.get('is_paid', False) or data.get('group') in ['VIP', 'super_admin']}
+    if not paid_users:
+        st.info("暫時沒有付費用戶")
     else:
-        st.info("暫無日誌")
+        df_paid = pd.DataFrame.from_dict(paid_users, orient='index')
+        required_cols = ['is_paid', 'group', 'plan', 'paid_date', 'expiry_date']
+        for col in required_cols:
+            if col not in df_paid.columns:
+                df_paid[col] = None
+        df_paid['expiry_date'] = pd.to_datetime(df_paid['expiry_date'], errors='coerce')
+        today = datetime.now()
+        df_paid['days_left'] = (df_paid['expiry_date'] - today).dt.days
+        df_paid['status'] = df_paid['days_left'].apply(lambda x: '🟢 有效' if x > 7 else ('🟡 快到期' if x > 0 else '🔴 已過期') if pd.notna(x) else '⚪ 未設定')
+        display_cols = ['is_paid', 'group', 'plan', 'paid_date', 'expiry_date', 'days_left', 'status']
+        st.dataframe(df_paid[display_cols], use_container_width=True)
+
+    auto = load_json(AUTOMATION_FILE)
+    remind_days = auto.get('remind_days', 3)
+    new_remind = st.number_input("提前幾天提醒", min_value=1, value=remind_days, key="remind_days_sub")
+    if st.button("儲存提醒設定", key="save_remind_sub"):
+        auto['remind_days'] = new_remind
+        save_json(AUTOMATION_FILE, auto)
+        st.success(f"✅ 已設為提前 {new_remind} 天提醒")
+        log_admin_action(st.session_state.username, f"設定提醒天數為 {new_remind}")
 
     st.divider()
-    st.subheader("📈 系統效能簡報")
-    try:
+    st.subheader("⏰ 自動終止過期會員")
+    
+    if st.button("🔍 檢查並終止過期會員", key="check_expired"):
         users = load_users()
-        total_users = len(users)
-        st.metric("總用戶數", total_users)
-        acc = load_accuracy()
-        records = acc.get('records', [])
-        total_records = len(records)
-        st.metric("總預測記錄", total_records)
-    except Exception as e:
-        st.warning(f"無法讀取部分數據：{e}")
+        today = datetime.now()
+        expired = []
+        for uid, u in users.items():
+            if u.get('group') == 'VIP' and u.get('expiry_date'):
+                try:
+                    exp = pd.to_datetime(u['expiry_date'])
+                    if exp < today:
+                        u['group'] = 'free'
+                        u['is_paid'] = False
+                        u['predictions_limit'] = CONFIG["free_limit"]
+                        u['plan'] = None
+                        u['note'] = (u.get('note', '') + f' [於 {today.strftime("%Y-%m-%d")} 自動降級]').strip()
+                        expired.append(uid)
+                except Exception as e:
+                    st.warning(f"⚠️ 檢查 {uid} 時出錯：{e}")
+        if expired:
+            save_users(users)
+            st.success(f"✅ 已將 {len(expired)} 個過期會員降級：{', '.join(expired)}")
+            log_admin_action(st.session_state.username, f"自動終止過期會員：{', '.join(expired)}")
+        else:
+            st.info("✅ 目前沒有過期會員")
 
-# ------------------- 系統設定（僅 super_admin） -------------------
-def admin_system_config():
-    if st.session_state.role != 'super_admin':
-        st.error("❌ 只有超級管理員可以修改系統設定")
-        return
+    st.subheader("✏️ 手動續期")
+    username = st.selectbox("選擇用戶", list(users.keys()), key="renew_user_select")
+    if username:
+        new_expiry = st.date_input("新的到期日", value=pd.to_datetime(datetime.now() + timedelta(days=30)), key="renew_date")
+        if st.button("確認續期", key="renew_confirm"):
+            users[username]['expiry_date'] = new_expiry.strftime('%Y-%m-%d %H:%M:%S')
+            save_users(users)
+            log_admin_action(st.session_state.username, f"續期用戶 {username} 至 {new_expiry}")
+            st.success(f"✅ {username} 已續期至 {new_expiry}")
+            st.rerun()
 
-    st.subheader("⚙️ 系統設定")
-    config = load_system_config()
-    st.warning("⚠️ 修改設定會即時生效，請謹慎操作")
+def admin_monitoring():
+    st.subheader("📡 系統監控")
+    files = ['ALL_DATA_MERGED.csv', 'HKCJ_FULL_YEAR_DATA.csv', 'horse_name_mapping.csv',
+             'hk_racing_model.pkl', 'hk_catboost_model.cbm', 'hk_ranking_model.pkl']
+    for f in files:
+        if os.path.exists(f):
+            size = os.path.getsize(f)/1024
+            st.success(f"✅ {f} 存在 ({size:.1f} KB)")
+        else:
+            st.error(f"❌ {f} 不存在")
+    logs = load_logs()
+    if logs.get('logs'):
+        df_log = pd.DataFrame(logs['logs'][-20:])
+        st.dataframe(df_log, use_container_width=True)
 
-    with st.form("system_config_form"):
+def admin_content():
+    st.subheader("📝 內容管理")
+    content = load_json(CONTENT_FILE)
+    
+    with st.expander("📢 發佈新公告", expanded=False):
         col1, col2 = st.columns(2)
         with col1:
-            new_free_limit = st.number_input("免費用戶每日預測次數", min_value=0, value=config.get('free_limit', 2), step=1)
-            new_price_day = st.number_input("日費價格 (HKD)", min_value=0, value=config.get('price_day', 18), step=1)
-            new_price_month = st.number_input("月費價格 (HKD)", min_value=0, value=config.get('price_month', 128), step=1)
-            new_price_quarter = st.number_input("季費價格 (HKD)", min_value=0, value=config.get('price_quarter', 328), step=1)
+            title = st.text_input("公告標題", placeholder="例如：今日沙田日馬", key="ann_title")
+            content_text = st.text_area("公告內容", height=80, placeholder="輸入公告詳細內容...", key="ann_content")
         with col2:
-            new_xgb_weight = st.number_input("XGBoost 權重", min_value=1, max_value=50, value=config.get('xgb_weight', 25), step=1)
-            new_cat_weight = st.number_input("CatBoost 權重", min_value=1, max_value=30, value=config.get('cat_weight', 1), step=1)
-            new_verification_expiry = st.number_input("驗證碼有效期 (分鐘)", min_value=1, value=config.get('verification_expiry', 5), step=1)
-            new_admin_password = st.text_input("管理員密碼", value=config.get('admin_password', 'z54060437K'), type="password")
-        
-        enable_reg = st.checkbox("啟用註冊", value=config.get('enable_registration', True))
-        enable_pay = st.checkbox("啟用付款", value=config.get('enable_payment', True))
-        enable_vip = st.checkbox("啟用 VIP 內容", value=config.get('enable_vip_content', True))
-        enable_daily = st.checkbox("啟用每日免費重心推介", value=config.get('enable_daily_free_tip', True))
-        enable_invite = st.checkbox("啟用邀請獎勵", value=config.get('enable_invite_reward', True))
-        if enable_invite:
-            col1, col2 = st.columns(2)
+            ann_type = st.selectbox("公告類型", ["一般", "重要", "緊急"], key="ann_type")
+            target_group = st.selectbox("顯示對象", ["全部用戶", "免費用戶", "付費用戶", "VIP"], key="ann_target")
+            start_date = st.date_input("開始日期", value=datetime.now().date(), key="ann_start")
+            end_date = st.date_input("結束日期（留空 = 永久）", value=None, key="ann_end")
+        if st.button("📤 發佈公告", type="primary", key="publish_ann"):
+            if not title or not content_text:
+                st.warning("請填寫標題同內容")
+            else:
+                if 'announcements' not in content:
+                    content['announcements'] = []
+                new_ann = {
+                    "id": len(content['announcements']) + 1,
+                    "title": title,
+                    "content": content_text,
+                    "type": ann_type,
+                    "target": target_group,
+                    "start_date": start_date.strftime('%Y-%m-%d'),
+                    "end_date": end_date.strftime('%Y-%m-%d') if end_date else None,
+                    "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    "status": "active"
+                }
+                content['announcements'].append(new_ann)
+                save_json(CONTENT_FILE, content)
+                log_admin_action(st.session_state.username, f"發佈公告：{title}")
+                st.success("✅ 公告已發佈！")
+                st.rerun()
+    
+    st.subheader("📋 現有公告")
+    announcements = content.get('announcements', [])
+    today = datetime.now().date()
+    for ann in announcements:
+        if ann.get('status') == 'active' and ann.get('end_date'):
+            end = datetime.strptime(ann['end_date'], '%Y-%m-%d').date()
+            if end < today:
+                ann['status'] = 'expired'
+    save_json(CONTENT_FILE, content)
+    content = load_json(CONTENT_FILE)
+    active_anns = [a for a in content.get('announcements', []) if a.get('status') == 'active']
+    
+    if active_anns:
+        for ann in active_anns:
+            type_icon = {"一般": "💡", "重要": "⚠️", "緊急": "🚨"}.get(ann.get('type', '一般'), "💡")
+            target_label = ann.get('target', '全部用戶')
+            end_display = "永久" if ann.get('end_date') is None else ann.get('end_date')
+            col1, col2, col3 = st.columns([5, 3, 1])
             with col1:
-                inviter_reward = st.number_input("邀請人獎勵次數", min_value=0, value=config.get('invite_reward_inviter', 1), step=1)
+                st.markdown(f"**{type_icon} {ann.get('title', '無標題')}**")
+                st.caption(ann.get('content', ''))
             with col2:
-                invitee_reward = st.number_input("被邀請人獎勵次數", min_value=0, value=config.get('invite_reward_invitee', 1), step=1)
+                st.write(f"🎯 {target_label}")
+                st.write(f"📅 {ann.get('start_date', '')} → {end_display}")
+            with col3:
+                if st.button("🗑️ 刪除", key=f"del_ann_{ann.get('id')}"):
+                    ann['status'] = 'deleted'
+                    save_json(CONTENT_FILE, content)
+                    st.rerun()
+            st.divider()
+    else:
+        st.info("暫時冇生效中嘅公告")
+    
+    with st.expander("📋 公告歷史（已過期/已刪除）"):
+        inactive = [a for a in content.get('announcements', []) if a.get('status') in ['expired', 'deleted']]
+        if inactive:
+            df = pd.DataFrame(inactive)
+            st.dataframe(df[['id', 'title', 'type', 'target', 'start_date', 'end_date', 'status', 'created_at']], use_container_width=True)
         else:
-            inviter_reward = config.get('invite_reward_inviter', 1)
-            invitee_reward = config.get('invite_reward_invitee', 1)
+            st.info("暫無歷史記錄")
+    
+    st.write("---")
+    st.write("上傳排位表")
+    uploaded = st.file_uploader("選擇 CSV 排位表", type=['csv'], key="upload_racecard")
+    if uploaded:
+        with open('HKCJ_FULL_YEAR_DATA.csv', 'wb') as f:
+            f.write(uploaded.getbuffer())
+        st.success("✅ 排位表已更新")
 
-        if st.form_submit_button("💾 儲存設定"):
-            config['free_limit'] = new_free_limit
-            config['price_day'] = new_price_day
-            config['price_month'] = new_price_month
-            config['price_quarter'] = new_price_quarter
-            config['xgb_weight'] = new_xgb_weight
-            config['cat_weight'] = new_cat_weight
-            config['verification_expiry'] = new_verification_expiry
-            if new_admin_password:
-                config['admin_password'] = new_admin_password
-            config['enable_registration'] = enable_reg
-            config['enable_payment'] = enable_pay
-            config['enable_vip_content'] = enable_vip
-            config['enable_daily_free_tip'] = enable_daily
-            config['enable_invite_reward'] = enable_invite
-            if enable_invite:
-                config['invite_reward_inviter'] = inviter_reward
-                config['invite_reward_invitee'] = invitee_reward
-            save_system_config(config)
-            log_admin_action(st.session_state.username, "更新系統設定")
-            st.success("✅ 設定已儲存")
-            st.rerun()
-
-# ------------------- 自動化、安全 -------------------
 def admin_automation():
-    st.subheader("🤖 自動化設定")
-    automation = load_json(AUTOMATION_FILE)
-    if not automation:
-        automation = {}
-    reminder_days = st.number_input("到期提醒（天數）", min_value=1, value=automation.get('reminder_days', 3), step=1)
-    if st.button("儲存設定"):
-        automation['reminder_days'] = reminder_days
-        save_json(AUTOMATION_FILE, automation)
-        st.success("✅ 設定已儲存")
+    st.subheader("🤖 自動化工具")
+    auto = load_json(AUTOMATION_FILE)
+    days = st.number_input(
+        "提前幾天提醒",
+        min_value=1,
+        value=auto.get('remind_days', 3),
+        key="remind_days_auto"
+    )
+    if st.button("儲存設定", key="save_remind_auto"):
+        auto['remind_days'] = days
+        save_json(AUTOMATION_FILE, auto)
+        st.success("✅ 已儲存")
 
 def admin_security():
-    st.subheader("🔐 安全與日誌")
+    st.subheader("🔐 安全與權限")
+    st.write("操作日誌")
     logs = load_logs()
-    logs_list = logs.get('logs', [])
-    st.write(f"總日誌數：{len(logs_list)}")
-    if logs_list:
-        df_logs = pd.DataFrame(logs_list[-50:][::-1])
-        st.dataframe(df_logs, use_container_width=True)
-        if st.button("清空日誌"):
-            save_logs({"logs": []})
-            st.success("日誌已清空")
+    if logs.get('logs'):
+        df_log = pd.DataFrame(logs['logs'][-20:])
+        st.dataframe(df_log, use_container_width=True)
+    st.write("多管理員管理")
+    users = load_users()
+    admin_list = [u for u, d in users.items() if d.get('group') == 'super_admin']
+    st.write("現有超級管理員：", ", ".join(admin_list) if admin_list else "無")
+    new_admin = st.text_input("新增超級管理員用戶名", key="new_admin_name")
+    if st.button("設為超級管理員", key="add_admin"):
+        if new_admin in users:
+            users[new_admin]['group'] = 'super_admin'
+            users[new_admin]['is_admin'] = True
+            users[new_admin]['predictions_limit'] = -1
+            save_users(users)
+            log_admin_action(st.session_state.username, f"新增超級管理員 {new_admin}")
+            st.success(f"✅ {new_admin} 已設為超級管理員")
             st.rerun()
+        else:
+            st.error("用戶不存在")
+
+def admin_payment_review():
+    st.subheader("📤 付款審核")
+    
+    proofs_data = load_payment_proofs()
+    records = proofs_data.get('proof_records', [])
+    
+    pending = [r for r in records if r.get('status') == 'pending']
+    approved = [r for r in records if r.get('status') == 'approved']
+    rejected = [r for r in records if r.get('status') == 'rejected']
+    total_income = sum(r.get('final_price', 0) for r in approved)
+    
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("⏳ 待審核", len(pending))
+    col2.metric("✅ 已批准", len(approved))
+    col3.metric("❌ 已拒絕", len(rejected))
+    col4.metric("💰 總收入", f"${total_income:.2f}")
+    st.divider()
+    
+    with st.expander("🔍 篩選與搜尋", expanded=True):
+        col_s1, col_s2, col_s3 = st.columns([2, 2, 1])
+        with col_s1:
+            search_term = st.text_input("搜尋用戶名稱", placeholder="輸入用戶名")
+        with col_s2:
+            status_filter = st.selectbox(
+                "狀態篩選",
+                ["全部", "pending", "approved", "rejected"],
+                index=1,
+                format_func=lambda x: {"pending": "待審核", "approved": "已批准", "rejected": "已拒絕", "全部": "全部"}.get(x, x)
+            )
+        with col_s3:
+            if status_filter in ["pending", "全部"] and len(pending) > 0:
+                if st.button("📦 批量批准全部待審"):
+                    for rec in pending:
+                        _approve_payment(rec, proofs_data)
+                    st.success(f"✅ 已批量批准 {len(pending)} 條記錄")
+                    st.rerun()
+    
+    filtered = records.copy()
+    if search_term:
+        filtered = [r for r in filtered if search_term.lower() in r.get('username', '').lower()]
+    if status_filter != "全部":
+        filtered = [r for r in filtered if r.get('status') == status_filter]
+    
+    if not filtered:
+        st.info("📭 沒有符合條件的記錄")
+        return
+    
+    st.subheader(f"📋 共 {len(filtered)} 條記錄")
+    
+    for idx, rec in enumerate(filtered):
+        original_idx = records.index(rec)
+        status = rec.get('status', 'pending')
+        username = rec.get('username', '未知')
+        
+        with st.container():
+            cols = st.columns([2, 2, 1.5, 1.5, 2])
+            with cols[0]:
+                st.write(f"👤 **{username}**")
+                st.caption(f"ID: {rec.get('id', '')}")
+            with cols[1]:
+                plan_name = rec.get('plan_name', '未知方案')
+                price = rec.get('final_price', 0)
+                st.write(f"📌 {plan_name}")
+                st.write(f"💰 ${price:.2f}")
+                if rec.get('discount_applied'):
+                    st.caption(f"折扣: {rec.get('discount_desc', '')}")
+            with cols[2]:
+                uploaded_at = rec.get('uploaded_at', '')
+                if uploaded_at:
+                    try:
+                        dt = datetime.fromisoformat(uploaded_at)
+                        st.caption(f"📅 {dt.strftime('%Y-%m-%d %H:%M')}")
+                    except:
+                        st.caption(uploaded_at)
+                filename = rec.get('filename')
+                if filename:
+                    filepath = os.path.join(PAYMENT_PROOFS_DIR, filename)
+                    if os.path.exists(filepath):
+                        try:
+                            image = Image.open(filepath)
+                            st.image(image, width=120)
+                        except:
+                            st.caption("圖片無法載入")
+                    else:
+                        st.caption("圖片檔案缺失")
+            with cols[3]:
+                if status == "pending":
+                    st.warning("⏳ 待審核")
+                elif status == "approved":
+                    st.success("✅ 已批准")
+                    users = load_users()
+                    user_data = users.get(username, {})
+                    expiry = user_data.get('expiry_date')
+                    if expiry:
+                        try:
+                            exp_dt = pd.to_datetime(expiry)
+                            days_left = (exp_dt - datetime.now()).days
+                            st.caption(f"到期: {exp_dt.strftime('%Y-%m-%d')} ({days_left}天)")
+                        except:
+                            pass
+                elif status == "rejected":
+                    st.error("❌ 已拒絕")
+                else:
+                    st.info(status)
+                if rec.get('approved_by'):
+                    st.caption(f"操作人: {rec['approved_by']}")
+                if rec.get('approved_at'):
+                    try:
+                        dt = datetime.fromisoformat(rec['approved_at'])
+                        st.caption(f"操作時間: {dt.strftime('%Y-%m-%d %H:%M')}")
+                    except:
+                        pass
+            with cols[4]:
+                if status == "pending":
+                    if st.button("✅ 批准", key=f"approve_{original_idx}"):
+                        _approve_payment(rec, proofs_data)
+                        st.rerun()
+                    if st.button("❌ 拒絕", key=f"reject_{original_idx}"):
+                        _reject_payment(rec, proofs_data)
+                        st.rerun()
+                elif status == "approved":
+                    if st.button("↩️ 退款", key=f"refund_{original_idx}"):
+                        _refund_payment(rec, proofs_data)
+                        st.rerun()
+                else:
+                    st.write("已處理")
+            st.divider()
+    
+    with st.expander("📜 操作日誌 (最近20條)"):
+        logs = load_logs()
+        log_entries = logs.get('logs', [])[-20:]
+        if log_entries:
+            for log in reversed(log_entries):
+                st.text(f"[{log['time']}] {log['admin']} - {log['action']}")
+        else:
+            st.info("暫無日誌")
+
+def _approve_payment(rec, proofs_data):
+    try:
+        st.info("⏳ 開始處理批准...")
+        rec['status'] = 'approved'
+        rec['approved_at'] = datetime.now().isoformat()
+        rec['approved_by'] = st.session_state.username
+        save_payment_proofs(proofs_data)
+        st.success("✅ 付款記錄已更新")
+        
+        username = rec.get('username')
+        if not username:
+            st.error("❌ 記錄中缺少 username")
+            return
+        
+        users = load_users()
+        if username not in users:
+            st.error(f"❌ 用戶 {username} 不存在")
+            return
+        
+        plan = rec.get('plan', 'month')
+        days = get_plan_days(plan)
+        if days == 0:
+            days = 30
+        expiry = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+        
+        users[username]['is_paid'] = True
+        users[username]['group'] = 'VIP'
+        users[username]['paid_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        users[username]['expiry_date'] = expiry
+        users[username]['plan'] = plan
+        users[username]['predictions_limit'] = -1
+        
+        if save_users(users):
+            st.success(f"✅ {username} 已升級為 VIP！")
+            st.success(f"📅 到期日：{expiry}")
+            log_admin_action(st.session_state.username, f"批准付款並升級 {username} 為 VIP（{plan}）")
+        else:
+            st.error("❌ 儲存 users.json 失敗")
+    except Exception as e:
+        st.error(f"❌ 錯誤：{e}")
+
+def _reject_payment(rec, proofs_data):
+    rec['status'] = 'rejected'
+    rec['approved_at'] = datetime.now().isoformat()
+    rec['approved_by'] = st.session_state.username
+    save_payment_proofs(proofs_data)
+    st.warning(f"❌ 已拒絕 {rec.get('username')} 的申請")
+    log_admin_action(st.session_state.username, f"拒絕付款申請：{rec.get('username')}")
+
+def _refund_payment(rec, proofs_data):
+    try:
+        st.info("⏳ 開始處理退款...")
+        users = load_users()
+        username = rec.get('username')
+        if not username:
+            st.error("❌ 記錄中缺少 username")
+            return
+        if username not in users:
+            st.error(f"❌ 用戶 {username} 不存在")
+            return
+        users[username]['is_paid'] = False
+        users[username]['group'] = 'free'
+        users[username]['expiry_date'] = None
+        users[username]['plan'] = None
+        users[username]['predictions_limit'] = CONFIG["free_limit"]
+        if save_users(users):
+            st.success(f"✅ 用戶 {username} 已降級為免費")
+        else:
+            st.error("❌ 儲存 users.json 失敗")
+            return
+        rec['status'] = 'rejected'
+        rec['refunded'] = True
+        rec['refunded_at'] = datetime.now().isoformat()
+        rec['refunded_by'] = st.session_state.username
+        save_payment_proofs(proofs_data)
+        st.success(f"✅ 已為 {username} 辦理退款")
+        log_admin_action(st.session_state.username, f"退款：{username}")
+    except Exception as e:
+        st.error(f"❌ 退款錯誤：{e}")
+        import traceback
+        st.code(traceback.format_exc())
+
+def admin_system_settings():
+    users = load_users()
+    admin_username = st.session_state.get('username', 'admin')
+    user_group = users.get(admin_username, {}).get('group', 'free')
+    if user_group != 'super_admin':
+        st.error("⛔ 只有超級管理員可以修改系統設定")
+        return
+    
+    st.subheader("⚙️ 系統設定")
+    st.info("修改設定後，撳「儲存設定」會自動重新整理頁面，新設定即時生效。")
+    
+    config = load_system_config()
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### 🔐 基本設定")
+        enable_registration = st.checkbox("開放註冊", value=config.get("enable_registration", True))
+        enable_payment = st.checkbox("啟用付款功能", value=config.get("enable_payment", True))
+        enable_admin = st.checkbox("啟用後台管理", value=config.get("enable_admin", True))
+        enable_vip_content = st.checkbox("🔒 三重彩/四重彩 VIP 專屬", value=config.get("enable_vip_content", True))
+        
+        st.markdown("#### 💰 價格設定")
+        price_day = st.number_input("日費價格 (HKD)", min_value=0, value=config.get("price_day", 18), step=1)
+        price_month = st.number_input("月費價格 (HKD)", min_value=0, value=config.get("price_month", 128), step=1)
+        price_quarter = st.number_input("季費價格 (HKD)", min_value=0, value=config.get("price_quarter", 328), step=1)
+        
+        st.markdown("#### 🎁 邀請獎勵設定")
+        enable_invite_reward = st.checkbox("啟用邀請獎勵", value=config.get("enable_invite_reward", True))
+        invite_reward_inviter = st.number_input("邀請人獲得免費次數", min_value=0, value=config.get("invite_reward_inviter", 1), step=1)
+        invite_reward_invitee = st.number_input("被邀請人獲得免費次數", min_value=0, value=config.get("invite_reward_invitee", 1), step=1)
+    
+    with col2:
+        st.markdown("#### 📊 預設限制")
+        free_limit = st.number_input("免費預測次數", min_value=0, value=config.get("free_limit", 2), step=1)
+        verification_expiry = st.number_input("驗證碼有效期 (分鐘)", min_value=1, value=config.get("verification_expiry", 5), step=1)
+        currency = st.text_input("貨幣單位", value=config.get("currency", "HKD"))
+        admin_password = st.text_input("管理員密碼", value=config.get("admin_password", "z54060437K"), type="password")
+        
+        st.markdown("#### 🧩 後台模組開關")
+        module_user_management = st.checkbox("用戶管理模組", value=config.get("module_user_management", True))
+        module_analytics = st.checkbox("數據分析模組", value=config.get("module_analytics", True))
+        module_finance = st.checkbox("財務管理模組", value=config.get("module_finance", True))
+        module_monitoring = st.checkbox("系統監控模組", value=config.get("module_monitoring", True))
+        module_content = st.checkbox("內容管理模組", value=config.get("module_content", True))
+        module_automation = st.checkbox("自動化工具模組", value=config.get("module_automation", True))
+        module_security = st.checkbox("安全與權限模組", value=config.get("module_security", True))
+        module_promo = st.checkbox("優惠碼模組", value=config.get("module_promo", True))
+        
+        st.markdown("#### 📢 每日免費重心推介")
+        enable_daily_free_tip = st.checkbox("啟用每日免費重心推介", value=config.get("enable_daily_free_tip", True))
+    
+    st.divider()
+    if st.button("💾 儲存設定", type="primary"):
+        new_config = {
+            "enable_registration": enable_registration,
+            "enable_payment": enable_payment,
+            "enable_admin": enable_admin,
+            "currency": currency,
+            "free_limit": free_limit,
+            "admin_password": admin_password,
+            "price_day": price_day,
+            "price_month": price_month,
+            "price_quarter": price_quarter,
+            "verification_expiry": verification_expiry,
+            "enable_vip_content": enable_vip_content,
+            "module_user_management": module_user_management,
+            "module_analytics": module_analytics,
+            "module_finance": module_finance,
+            "module_monitoring": module_monitoring,
+            "module_content": module_content,
+            "module_automation": module_automation,
+            "module_security": module_security,
+            "module_promo": module_promo,
+            "enable_daily_free_tip": enable_daily_free_tip,
+            "enable_invite_reward": enable_invite_reward,
+            "invite_reward_inviter": invite_reward_inviter,
+            "invite_reward_invitee": invite_reward_invitee,
+        }
+        if save_system_config(new_config):
+            st.success("✅ 設定已儲存！頁面將會重新整理以套用新設定。")
+            import time
+            time.sleep(1)
+            st.rerun()
+        else:
+            st.error("❌ 儲存失敗，請檢查檔案權限。")
 
 # ============================================================
-# 🏠 主頁面（後台改為頁面上方橫向 Tab）
+# 10. 主頁面（預測控制移去中間，後台整合為上方 Tab）
 # ============================================================
 def main():
-    if 'logged_in' not in st.session_state:
-        st.session_state.logged_in = False
-    if 'username' not in st.session_state:
-        st.session_state.username = None
-    if 'role' not in st.session_state:
-        st.session_state.role = 'free'
-    if 'page' not in st.session_state:
-        st.session_state.page = "main"
-
-    if not st.session_state.logged_in:
-        login_page()
-        return
-
-    # ---------- 後台模式（頁面上方橫向 Tab） ----------
-    if st.session_state.get('page') == "admin" and st.session_state.role in ['super_admin', 'admin']:
-        st.markdown("## ⚙️ 後台管理")
-        tabs = st.tabs([
-            "用戶管理", "數據分析", "財務", "信息流", 
-            "預測監控", "訂閱管理", "付款審核", "監控", 
-            "內容", "自動化", "安全", "系統設定", "返回主頁"
-        ])
-        
-        with tabs[0]:
-            admin_user_management()
-        with tabs[1]:
-            admin_analytics()
-        with tabs[2]:
-            admin_finance()
-        with tabs[3]:
-            admin_content()
-        with tabs[4]:
-            admin_accuracy_monitor()
-        with tabs[5]:
-            admin_subscription()
-        with tabs[6]:
-            admin_payment_review()
-        with tabs[7]:
-            admin_monitoring()
-        with tabs[8]:
-            admin_content()
-        with tabs[9]:
-            admin_automation()
-        with tabs[10]:
-            admin_security()
-        with tabs[11]:
-            admin_system_config()
-        with tabs[12]:
-            st.session_state.page = "main"
-            st.rerun()
-        return
-
-    # ---------- 主頁面 ----------
-    col_title, col_btn = st.columns([4, 1])
-    with col_title:
-        st.title("🏇 賽馬預測系統")
-    with col_btn:
-        if st.button("🚪 登出"):
-            st.session_state.logged_in = False
-            st.session_state.username = None
-            st.session_state.role = 'free'
-            st.rerun()
-        if st.session_state.role in ['super_admin', 'admin']:
-            if st.button("⚙️ 後台"):
-                st.session_state.page = "admin"
-                st.rerun()
-
-    content = load_json(CONTENT_FILE)
-    if content and content.get('announcement'):
-        st.markdown("### 📢 公告")
-        st.markdown(content['announcement'])
-
-    show_user_dashboard(st.session_state.username)
-
-    st.subheader("🧠 模型自我學習 & 表現分析")
-    acc = load_accuracy()
-    records = acc.get('records', [])
-    if not records:
-        st.info("暫時未有預測記錄，未能進行自我學習分析。請先執行預測。")
-    else:
-        total = len([r for r in records if r.get('is_hit') is not None])
-        hit = sum(1 for r in records if r.get('is_hit') is True)
-        hit_rate = hit / total if total > 0 else 0
-        col1, col2, col3 = st.columns(3)
-        col1.metric("已比對預測", total)
-        col2.metric("命中次數", hit)
-        col3.metric("整體命中率", f"{hit_rate:.2%}" if total>0 else "N/A")
-        config = load_system_config()
-        st.caption(f"當前模型權重：XGBoost = {config.get('xgb_weight', 25)}，CatBoost = {config.get('cat_weight', 1)}")
-        if st.button("手動調整權重（按命中率）"):
-            result = adjust_model_weights()
-            st.success(f"調整完成！XGB={result['xgb_weight']}, Cat={result['cat_weight']}, 命中率={result['hit_rate']:.2%}")
-            st.rerun()
-
-    st.subheader("🎯 賽事預測")
-    try:
-        df_check = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
-        df_check = standardize_columns_safe(df_check)
-        if 'race_date' in df_check.columns:
-            df_check['race_date'] = pd.to_datetime(df_check['race_date'], errors='coerce')
-            latest_date = df_check['race_date'].max()
-            if pd.notna(latest_date):
-                default_date = latest_date.date()
-            else:
-                default_date = datetime.now().date()
-        else:
-            default_date = datetime.now().date()
-    except:
-        default_date = datetime.now().date()
-
-    date_input = st.date_input("選擇日期", value=default_date)
-    race_no = st.number_input("場次", min_value=1, step=1, value=1)
-    if st.button("執行預測"):
-        with st.spinner("預測中..."):
-            result, rec = run_prediction(date_input.strftime('%Y-%m-%d'), race_no)
-            if result is not None:
-                st.dataframe(result, use_container_width=True)
-                st.text_area("投注組合建議", rec, height=300)
-                if st.session_state.username:
-                    top_horse = result.iloc[0]['馬匹名稱']
-                    record_prediction(st.session_state.username, date_input.strftime('%Y-%m-%d'), race_no, top_horse, result.iloc[0]['預測勝率'])
-            else:
-                st.error("預測失敗，請檢查數據")
-
-    st.subheader("📅 今日賽程")
-    try:
-        df_schedule = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
-        df_schedule = standardize_columns_safe(df_schedule)
-        if 'race_date' in df_schedule.columns:
-            df_schedule['race_date'] = pd.to_datetime(df_schedule['race_date'], errors='coerce')
-            today = datetime.now().date()
-            today_races = df_schedule[df_schedule['race_date'].dt.date == today]
-            if not today_races.empty:
-                st.dataframe(today_races[['race_no', 'distance', 'going', 'horse_name', 'jockey', 'trainer']].head(20), use_container_width=True)
-            else:
-                st.info("今日沒有賽事")
-        else:
-            st.warning("排位表缺少日期欄位")
-    except Exception as e:
-        st.warning(f"無法讀取今日賽程：{e}")
-
-    show_paywall()
-
-    st.divider()
-    st.caption("**免責聲明：** 本系統提供之預測僅供參考，不構成投注建議。賽馬活動涉及風險，用戶應量力而為，本系統不對任何投注損失負責。用戶必須年滿18歲。使用本服務即表示同意以上條款。")
-
-# ============================================================
-# 執行主程式
-# ============================================================
-if __name__ == "__main__":
-    def main():
     if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
     if 'username' not in st.session_state:
@@ -2492,3 +2609,6 @@ if __name__ == "__main__":
         st.caption("🔐 數據來源：HKJC | 系統版本：v14.0-用戶體驗版")
     with col_f3:
         st.caption("💬 Telegram：@bryhjdjbrbxibvrjskofndhiebdpaq")
+
+if __name__ == '__main__':
+    main()
