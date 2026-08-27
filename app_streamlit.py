@@ -243,17 +243,28 @@ def save_accuracy(acc):
     return save_json(ACCURACY_FILE, acc)
 
 def load_payment_proofs():
-    proofs = load_json(PAYMENT_PROOFS_FILE)
-    if not proofs:
-        proofs = {"proof_records": []}
-        save_payment_proofs(proofs)
-    elif "proof_records" not in proofs:
-        proofs["proof_records"] = []
-        save_payment_proofs(proofs)
-    return proofs
+    import json
+    try:
+        with open('payment_proofs.json', 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        if 'proof_records' not in data:
+            data['proof_records'] = []
+        return data
+    except FileNotFoundError:
+        return {"proof_records": []}
+    except Exception as e:
+        st.error(f"讀取 payment_proofs.json 失敗：{e}")
+        return {"proof_records": []}
 
 def save_payment_proofs(proofs):
-    return save_json(PAYMENT_PROOFS_FILE, proofs)
+    import json
+    try:
+        with open('payment_proofs.json', 'w', encoding='utf-8') as f:
+            json.dump(proofs, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        st.error(f"❌ 寫入 payment_proofs.json 失敗：{e}")
+        return False
 
 def log_admin_action(admin, action):
     logs = load_logs()
@@ -1028,7 +1039,6 @@ def login_page():
 # 🔧 付款牆（無上傳功能，只顯示 FPS + Telegram）
 # ============================================================
 def show_paywall():
-    import os
     import json
     from datetime import datetime, timedelta
 
@@ -1128,13 +1138,8 @@ def show_paywall():
                 except:
                     pass
 
-            # 讀取現有記錄
-            try:
-                with open('payment_proofs.json', 'r', encoding='utf-8') as f:
-                    proofs = json.load(f)
-            except:
-                proofs = {"proof_records": []}
-
+            # 🟢 讀取現有記錄
+            proofs = load_payment_proofs()
             new_id = len(proofs['proof_records']) + 1
             new_proof = {
                 "id": new_id,
@@ -1152,22 +1157,23 @@ def show_paywall():
             }
             proofs['proof_records'].append(new_proof)
 
-            # 寫入檔案
+            # 🟢 直接寫入，並驗證
             try:
-                file_path = 'payment_proofs.json'
-                with open(file_path, 'w', encoding='utf-8') as f:
+                with open('payment_proofs.json', 'w', encoding='utf-8') as f:
                     json.dump(proofs, f, ensure_ascii=False, indent=2)
                 
                 # 驗證寫入
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open('payment_proofs.json', 'r', encoding='utf-8') as f:
                     check = json.load(f)
+                
                 if check == proofs:
-                    st.success("✅ 付款申請已成功記錄！請等待管理員審核。")
+                    st.success("✅ 付款申請已成功記錄！")
                     st.session_state['payment_just_submitted'] = True
                     st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
                     st.rerun()
                 else:
                     st.error("❌ 寫入後驗證失敗，請檢查檔案權限")
+                    st.stop()
             except Exception as e:
                 st.error(f"❌ 寫入付款記錄失敗：{e}")
                 st.stop()
