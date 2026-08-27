@@ -851,172 +851,67 @@ def show_prediction_history(username):
 # ============================================================
 # 6. 登入/註冊
 # ============================================================
-def login_page():
-    st.title("🔐 登入 / 註冊")
+def login_register_page():
+    st.title("🏇 賽馬預測系統")
+    st.subheader("登入 / 註冊")
     
-    if "login_tab" not in st.session_state:
-        st.session_state.login_tab = "登入"
+    config = load_system_config()
+    enable_reg = config.get("enable_registration", True)
     
-    tab_choice = st.radio(
-        "選擇功能",
-        ["登入", "註冊"],
-        index=0 if st.session_state.login_tab == "登入" else 1,
-        key="login_tab",
-        horizontal=True
-    )
+    # 兩個並排按鈕，簡單直接
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🔑 登入", use_container_width=True):
+            st.session_state.page = "login"
+    with col2:
+        if enable_reg:
+            if st.button("📝 註冊", use_container_width=True):
+                st.session_state.page = "register"
+        else:
+            st.button("📝 註冊 (已關閉)", disabled=True, use_container_width=True)
     
-    if tab_choice == "登入":
-        username = st.text_input("用戶名稱", key="login_user")
-        password = st.text_input("密碼", type="password", key="login_pass")
-        if st.button("登入", key="login_button"):
-            users = load_users()
-            if username in users and users[username].get('password') == password:
-                st.session_state.logged_in = True
-                st.session_state.username = username
-                st.session_state.role = users[username].get('group', 'free')
-                st.session_state.usage_count = users[username].get('free_usage', 0)
-                st.rerun()
-            else:
-                st.error("❌ 用戶名稱或密碼錯誤")
+    mode = st.session_state.get("page", "login")   # 預設顯示登入
     
-    else:
-        st.subheader("📝 註冊新帳號")
-        with st.form("register_form"):
-            new_user = st.text_input("用戶名稱（最少 3 個字）", key="reg_user")
-            phone = st.text_input("手機號碼（可選）", key="reg_phone")
-            new_pass = st.text_input("密碼", type="password", key="reg_pass")
-            new_pass2 = st.text_input("確認密碼", type="password", key="reg_pass2")
-            
-            if CONFIG.get("enable_invite_reward", True):
-                invite_code_input = st.text_input("邀請碼（如有）", key="reg_invite_code", placeholder="輸入朋友的邀請碼")
-            else:
-                invite_code_input = None
-            
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                verify_code_input = st.text_input("驗證碼", key="reg_verify", placeholder="輸入 6 位數字", max_chars=6)
-            with col2:
-                if st.form_submit_button("📨 獲取驗證碼", type="secondary"):
-                    code = generate_verification_code()
-                    st.session_state['reg_verify_code'] = code
-                    st.session_state['reg_verify_expiry'] = datetime.now() + timedelta(minutes=CONFIG.get('verification_expiry', 5))
-                    st.info(f"📧 你嘅驗證碼係：**{code}**（有效期 5 分鐘）")
-            
-            st.divider()
-            with st.expander("📜 服務條款（請仔細閱讀）"):
-                st.markdown("""
-                **SHTSN 賽馬預測系統 服務條款**
-
-                **1. 服務說明**
-                本系統提供賽馬預測數據及分析，僅供參考及娛樂用途，並非投注建議。用戶應自行判斷，所有投注決定及後果由用戶自行承擔。
-
-                **2. 用戶責任**
-                - 用戶必須年滿 18 歲。
-                - 用戶需確保所提供嘅資料真實、準確、完整。
-                - 用戶不得將本系統用於任何非法或不當用途。
-
-                **3. 免責聲明**
-                - 預測結果僅為演算法分析，不構成任何形式嘅投資建議或保證。
-                - 本系統不保證預測準確度，亦不對用戶因使用本系統而產生嘅任何損失負責。
-                - 用戶明白賽馬活動存在風險，應量力而為。
-
-                **4. 付款與退款**
-                - 用戶付款後即表示同意購買所選方案。
-                - 付款後不設退款，除非系統因技術問題未能提供服務。
-                - 管理員保留最終審核及拒絕退款嘅權利。
-
-                **5. 帳戶安全**
-                - 用戶需自行保管帳號及密碼，任何經由帳戶進行嘅活動均視為用戶本人所為。
-                - 如發現帳戶被盜用，應立即通知管理員。
-
-                **6. 終止服務**
-                - 管理員保留隨時終止或暫停用戶帳戶嘅權利，如用戶違反條款或進行不當行為。
-                - 終止後，用戶將無法使用系統服務，已付費用將不獲退還。
-
-                **7. 條款修訂**
-                本系統有權隨時修訂服務條款，修訂後會於系統內公告。用戶繼續使用即表示同意最新條款。
-
-                **8. 聯絡我們**
-                如有任何疑問，可透過 Telegram 聯絡管理員：@bryhjdjbrbxibvrjskofndhiebdpaq
-
-                **最後更新日期：2026 年 8 月 25 日**
-                """)
-            
-            agree_terms = st.checkbox("✅ 我已閱讀並同意上述服務條款", key="agree_terms")
-            
-            submitted = st.form_submit_button("註冊")
-            
+    if mode == "login":
+        with st.form("login_form"):
+            username = st.text_input("用戶名")
+            password = st.text_input("密碼", type="password")
+            submitted = st.form_submit_button("登入")
             if submitted:
-                if len(new_user) < 3:
-                    st.error("❌ 用戶名稱至少 3 個字")
-                elif new_pass != new_pass2:
-                    st.error("❌ 密碼不一致")
-                elif len(new_pass) < 4:
-                    st.error("❌ 密碼至少 4 個字")
-                elif 'reg_verify_code' not in st.session_state or \
-                     verify_code_input != st.session_state['reg_verify_code'] or \
-                     datetime.now() > st.session_state.get('reg_verify_expiry', datetime.now()):
-                    st.error("❌ 驗證碼無效或已過期，請重新獲取")
-                elif not agree_terms:
-                    st.error("❌ 請先閱讀並同意服務條款，方可註冊")
+                user = authenticate(username, password)
+                if user:
+                    st.session_state.logged_in = True
+                    st.session_state.username = username
+                    st.session_state.role = user['role']
+                    st.session_state.page = "main"
+                    st.success("登入成功")
+                    st.rerun()
                 else:
-                    users = load_users()
-                    if new_user in users:
-                        st.error("❌ 用戶名稱已被使用")
-                    else:
-                        invited_by = None
-                        if CONFIG.get("enable_invite_reward", True) and invite_code_input:
-                            for uid, u in users.items():
-                                if u.get('invite_code') == invite_code_input:
-                                    invited_by = uid
-                                    break
-                            if not invited_by:
-                                st.warning("⚠️ 邀請碼無效，請確認後再試。")
-                        
-                        new_user_data = {
-                            'password': new_pass,
-                            'phone': phone,
-                            'is_paid': False,
-                            'paid_date': None,
-                            'expiry_date': None,
-                            'free_usage': 0,
-                            'total_usage': 0,
-                            'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                            'note': '',
-                            'group': 'free',
-                            'plan': None,
-                            'predictions_limit': CONFIG["free_limit"],
-                            'history': [],
-                            'terms_agreed': datetime.now().isoformat(),
-                            'invite_code': new_user.upper() + str(random.randint(100, 999)),
-                            'invited_by': invited_by,
-                            'invite_rewards': 0,
-                            'invite_count': 0
-                        }
-                        users[new_user] = new_user_data
-                        save_users(users)
-                        
-                        if CONFIG.get("enable_invite_reward", True) and invited_by:
-                            inviter = users.get(invited_by)
-                            if inviter:
-                                reward_inviter = CONFIG.get("invite_reward_inviter", 1)
-                                reward_invitee = CONFIG.get("invite_reward_invitee", 1)
-                                if inviter['predictions_limit'] != -1:
-                                    inviter['predictions_limit'] += reward_inviter
-                                inviter['invite_count'] = inviter.get('invite_count', 0) + 1
-                                inviter['invite_rewards'] = inviter.get('invite_rewards', 0) + reward_inviter
-                                if new_user_data['predictions_limit'] != -1:
-                                    new_user_data['predictions_limit'] += reward_invitee
-                                new_user_data['invite_rewards'] = reward_invitee
-                                save_users(users)
-                                st.success(f"✅ 註冊成功！你同邀請人各獲得 {reward_invitee} 次免費預測獎勵！")
-                            else:
-                                st.success("✅ 註冊成功！")
-                        else:
-                            st.success("✅ 註冊成功！")
-                        
-                        st.session_state.login_tab = "登入"
+                    st.error("用戶名或密碼錯誤")
+    
+    elif mode == "register" and enable_reg:
+        with st.form("register_form"):
+            new_username = st.text_input("選擇用戶名")
+            new_password = st.text_input("設定密碼", type="password")
+            confirm = st.text_input("確認密碼", type="password")
+            invite = st.text_input("邀請碼 (選填)")
+            submitted = st.form_submit_button("註冊")
+            if submitted:
+                if new_password != confirm:
+                    st.error("密碼不一致")
+                elif len(new_password) < 6:
+                    st.error("密碼至少6個字符")
+                else:
+                    success, msg = register_user(new_username, new_password, invite)
+                    if success:
+                        st.success(msg)
+                        # 自動切換到登入
+                        st.session_state.page = "login"
                         st.rerun()
+                    else:
+                        st.error(msg)
+    else:
+        st.info("註冊功能已關閉，請聯絡管理員")
 # ============================================================
 # 🔧 付款牆
 # ============================================================
