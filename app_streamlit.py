@@ -739,7 +739,6 @@ def login_page():
             submitted = st.form_submit_button("登入")
             if submitted:
                 users = load_users()
-                # 注意：原版直接比對明文密碼，建議改為 hash，但保留原樣
                 if username in users and users[username].get('password') == password:
                     st.session_state.logged_in = True
                     st.session_state.username = username
