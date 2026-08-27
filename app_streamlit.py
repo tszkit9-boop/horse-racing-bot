@@ -1762,7 +1762,7 @@ def admin_payment_review():
             status_filter = st.selectbox(
                 "狀態篩選",
                 ["全部", "pending", "approved", "rejected"],
-                index=1,   # 預設顯示「待審核」
+                index=1,
                 format_func=lambda x: {"pending": "待審核", "approved": "已批准", "rejected": "已拒絕", "全部": "全部"}.get(x, x)
             )
         with col_s3:
@@ -1787,7 +1787,7 @@ def admin_payment_review():
     
     st.subheader(f"📋 共 {len(filtered)} 條記錄")
     
-    # 清除所有已處理記錄（保留待審核）
+    # 清除已處理記錄按鈕
     col_clear1, col_clear2 = st.columns(2)
     with col_clear1:
         if st.button("🗑️ 清除所有已處理記錄（批准 + 拒絕）", key="clear_processed"):
@@ -1797,26 +1797,20 @@ def admin_payment_review():
             save_payment_proofs(proofs_data)
             st.success("✅ 已清除所有已處理記錄")
             st.rerun()
-    with col_clear2:
-        if st.button("🧹 清除所有待審核記錄（小心！會刪除全部未審）", key="clear_all_pending"):
-            proofs_data = load_payment_proofs()
-            records = proofs_data.get('proof_records', [])
-            # 保留所有非 pending 記錄
-            proofs_data['proof_records'] = [r for r in records if r.get('status') != 'pending']
-            save_payment_proofs(proofs_data)
-            st.success("✅ 已清除所有待審核記錄")
-            st.rerun()
     
     for idx, rec in enumerate(filtered):
         original_idx = records.index(rec)
         status = rec.get('status', 'pending')
         username = rec.get('username', '未知')
+        plan = rec.get('plan', '未設定')  # 顯示原始 plan 值
         
         with st.container():
-            cols = st.columns([2, 2, 1.5, 1.5, 2])
+            cols = st.columns([2, 1.5, 1.5, 1.5, 2])
             with cols[0]:
                 st.write(f"👤 **{username}**")
                 st.caption(f"ID: {rec.get('id', '')}")
+                # 顯示原始 plan 值（除錯用）
+                st.caption(f"📌 原始 plan：`{plan}`")
             with cols[1]:
                 plan_name = rec.get('plan_name', '未知方案')
                 price = rec.get('final_price', 0)
@@ -1846,8 +1840,20 @@ def admin_payment_review():
                 else:
                     st.caption("📩 用戶將透過 Telegram 發送截圖")
             with cols[3]:
+                # 顯示當前狀態
                 if status == "pending":
                     st.warning("⏳ 待審核")
+                    # 如果 plan 唔係 quarter，顯示修正按鈕
+                    if plan != 'quarter':
+                        if st.button("🔧 修正為季費", key=f"fix_quarter_{original_idx}"):
+                            # 修正記錄中的 plan 同 plan_name
+                            rec['plan'] = 'quarter'
+                            rec['plan_name'] = '季費'
+                            rec['original_price'] = CONFIG['price_quarter']
+                            rec['final_price'] = CONFIG['price_quarter']  # 如果有折扣要保留，但簡單起見直接改
+                            save_payment_proofs(proofs_data)
+                            st.success("✅ 已修正為季費！請重新批准。")
+                            st.rerun()
                 elif status == "approved":
                     st.success("✅ 已批准")
                     users = load_users()
@@ -1873,17 +1879,13 @@ def admin_payment_review():
                     except:
                         pass
             with cols[4]:
-                # 加一個「刪除」按鈕（任何狀態都可以刪）
-                if st.button("🗑️ 刪除", key=f"delete_{original_idx}"):
-                    # 從 records 中移除
-                    records.pop(original_idx)
-                    proofs_data['proof_records'] = records
-                    save_payment_proofs(proofs_data)
-                    st.success(f"✅ 已刪除 {username} 嘅付款記錄")
-                    st.rerun()
-                
+                # 操作按鈕
                 if status == "pending":
                     if st.button("✅ 批准", key=f"approve_{original_idx}"):
+                        # 批准前再次確保 plan 正確（如果係季費但 plan 係 month，可以順便修正）
+                        if rec.get('plan_name') == '季費' and rec.get('plan') != 'quarter':
+                            rec['plan'] = 'quarter'
+                            save_payment_proofs(proofs_data)
                         _approve_payment(rec, proofs_data)
                         st.rerun()
                     if st.button("❌ 拒絕", key=f"reject_{original_idx}"):
@@ -1895,6 +1897,14 @@ def admin_payment_review():
                         st.rerun()
                 else:
                     st.write("已處理")
+                
+                # 刪除按鈕（任何狀態都可以）
+                if st.button("🗑️ 刪除", key=f"delete_{original_idx}"):
+                    records.pop(original_idx)
+                    proofs_data['proof_records'] = records
+                    save_payment_proofs(proofs_data)
+                    st.success(f"✅ 已刪除 {username} 嘅付款記錄")
+                    st.rerun()
             st.divider()
     
     with st.expander("📜 操作日誌 (最近20條)"):
