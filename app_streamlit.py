@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版（付款記錄用 st.session_state，保證成功）
+賽馬預測系統 - 最終完整版（付款記錄用 st.session_state）
 """
 
 import streamlit as st
@@ -460,7 +460,6 @@ def show_paywall():
                 except Exception as e:
                     st.warning(f"優惠碼處理出錯：{e}")
 
-            # 提交申請
             success, msg = submit_payment_request(username, plan_choice, final_price, discount_desc, promo_code_used)
             if success:
                 st.success(msg)
@@ -2195,7 +2194,7 @@ def main():
     elif not CONFIG["enable_registration"]:
         st.info("🔓 目前為公開模式，任何人皆可使用")
 
-    # 🟢 測試付款按鈕
+    # 測試付款按鈕
     st.markdown("---")
     st.subheader("🧪 付款功能測試")
     if st.button("🚀 測試付款（跳過免費次數檢查）", type="primary"):
