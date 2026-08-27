@@ -3,7 +3,16 @@
 """
 賽馬預測系統 - 完整版（付款申請存入 users.json + 詳細除錯）
 """
-
+# 🧪 強制寫入測試（用完記得刪除）
+import json
+import os
+try:
+    test_data = {"test_write": "success", "time": str(datetime.now())}
+    with open('test_write.json', 'w', encoding='utf-8') as f:
+        json.dump(test_data, f)
+    print("✅ 測試寫入成功：test_write.json")
+except Exception as e:
+    print(f"❌ 測試寫入失敗：{e}")
 import streamlit as st
 import pandas as pd
 import numpy as np
