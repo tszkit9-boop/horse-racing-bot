@@ -1167,7 +1167,6 @@ def show_paywall():
         submitted = st.form_submit_button("📩 提交付款申請，等待管理員審核")
 
         if submitted:
-            # 基本檢查
             if not plan_choice:
                 st.error("❌ 請先選擇一個付費方案")
                 st.stop()
@@ -1176,9 +1175,6 @@ def show_paywall():
                 st.stop()
 
             username = st.session_state.username
-            st.write(f"🔍 用戶：{username}，方案：{plan_choice}")
-
-            # 計算金額
             original_price = get_plan_price(plan_choice)
             final_price = original_price
             discount_desc = ""
@@ -1209,20 +1205,16 @@ def show_paywall():
                 except Exception as e:
                     st.warning(f"優惠碼處理出錯：{e}")
 
-            # 🟢 直接寫入 users.json
+            # 🟢 直接寫入 users.json（最簡潔方式）
             try:
                 users = load_users()
-                st.write(f"🔍 讀取到用戶數量：{len(users)}")
-
                 if username not in users:
-                    st.error(f"❌ 用戶 {username} 不存在於 users.json！")
+                    st.error(f"❌ 用戶 {username} 不存在")
                     st.stop()
 
-                # 確保 payment_requests 存在
                 if 'payment_requests' not in users[username]:
                     users[username]['payment_requests'] = []
 
-                # 建立新記錄
                 new_id = len(users[username]['payment_requests']) + 1
                 new_request = {
                     "id": new_id,
@@ -1235,19 +1227,14 @@ def show_paywall():
                     "status": "pending"
                 }
 
-                st.write("📝 準備寫入：", new_request)
-
-                # 加入並儲存
                 users[username]['payment_requests'].append(new_request)
                 save_users(users)
 
                 # ✅ 驗證
                 check_users = load_users()
                 check_requests = check_users.get(username, {}).get('payment_requests', [])
-                st.write("🔍 驗證讀取到：", check_requests)
-
                 if check_requests:
-                    st.success("✅ 付款申請已成功記錄！")
+                    st.success("✅ 付款申請已成功提交！")
                     st.session_state['payment_just_submitted'] = True
                     st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
                     st.rerun()
