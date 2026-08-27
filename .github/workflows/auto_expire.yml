@@ -1,0 +1,39 @@
+name: 每日自動終止過期會員
+
+on:
+  schedule:
+    # 香港時間每日 00:00（UTC 時間 16:00）
+    - cron: '0 16 * * *'
+  # 手動觸發（方便測試）
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  expire-members:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Run expire script
+        id: expire
+        run: |
+          python scripts/auto_expire.py
+
+      - name: Commit and push if changed
+        if: steps.expire.outputs.changed == 'true'
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add users.json
+          git commit -m "🤖 自動終止過期會員：${{ steps.expire.outputs.users }}"
+          git push
