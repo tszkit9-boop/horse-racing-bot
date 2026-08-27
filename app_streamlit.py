@@ -1762,7 +1762,7 @@ def admin_payment_review():
             status_filter = st.selectbox(
                 "狀態篩選",
                 ["全部", "pending", "approved", "rejected"],
-                index=1,
+                index=0,
                 format_func=lambda x: {"pending": "待審核", "approved": "已批准", "rejected": "已拒絕", "全部": "全部"}.get(x, x)
             )
         with col_s3:
