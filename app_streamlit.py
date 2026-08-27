@@ -1068,13 +1068,18 @@ def show_paywall():
             st.info("請選擇一個方案以繼續")
 
         promo_input = st.text_input("優惠碼（如有）", key="promo_input_form", placeholder="例如 A7K3X9P2")
-        uploaded_file = st.file_uploader(
-            "上傳過數證明（FPS / PayMe / 銀行轉帳截圖）",
-            type=['png', 'jpg', 'jpeg'],
-            key="proof_upload_form"
-        )
-        if uploaded_file is not None:
-            st.image(uploaded_file, caption="你上傳嘅證明", width=300)
+        
+        # 📌 顯示 FPS 轉數快資料（不提供上傳）
+        st.divider()
+        st.subheader("📤 付款方式")
+        st.markdown("""
+        **請使用以下方式過數：**
+        - 🏦 **FPS 轉數快**：`12345678`
+        - 📛 **戶口名稱**：`SHTSN SYSTEM`
+        - 💰 **金額**：請根據你選擇的方案支付
+        """)
+        st.info("💬 過數後，請將 **付款截圖** 透過 Telegram 發送俾管理員：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
+        st.caption("管理員確認收款後，會喺後台批准你嘅申請，系統會自動升級你嘅帳戶。")
 
         submitted = st.form_submit_button("📩 提交付款申請，等待管理員審核")
 
@@ -1120,24 +1125,7 @@ def show_paywall():
                 except:
                     pass
 
-            os.makedirs(PAYMENT_PROOFS_DIR, exist_ok=True)
-            
-            filename = None
-            if uploaded_file is not None:
-                try:
-                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                    file_extension = uploaded_file.type.split('/')[1] if '/' in uploaded_file.type else 'png'
-                    filename = f"{st.session_state.username}_{timestamp}.{file_extension}"
-                    filepath = os.path.join(PAYMENT_PROOFS_DIR, filename)
-                    with open(filepath, 'wb') as f:
-                        f.write(uploaded_file.getbuffer())
-                    st.success(f"✅ 圖片已儲存：{filename}")
-                except Exception as e:
-                    st.error(f"⚠️ 圖片儲存失敗（但會繼續提交）：{e}")
-                    filename = None
-            else:
-                st.warning("⚠️ 你未上傳圖片，但仍可提交")
-
+            # 🗑️ 移除圖片儲存邏輯，直接記錄申請（無圖片）
             try:
                 proofs = load_payment_proofs()
                 new_proof = {
@@ -1150,7 +1138,7 @@ def show_paywall():
                     "discount_applied": discount_applied,
                     "discount_desc": discount_desc,
                     "promo_code": promo_code_used,
-                    "filename": filename if filename else "無圖片",
+                    "filename": "無圖片（請自行 Telegram 發送截圖）",
                     "uploaded_at": datetime.now().isoformat(),
                     "status": "pending"
                 }
@@ -1159,7 +1147,7 @@ def show_paywall():
                 if save_payment_proofs(proofs):
                     st.session_state['payment_just_submitted'] = True
                     st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
-                    st.success("✅ 提交成功！管理員將盡快審核。")
+                    st.success("✅ 申請已提交！請將付款截圖傳送俾管理員。")
                     st.rerun()
                 else:
                     st.error("❌ 寫入付款記錄失敗，請檢查檔案權限")
