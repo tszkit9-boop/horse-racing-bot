@@ -1742,11 +1742,6 @@ def admin_payment_review():
     proofs_data = load_payment_proofs()
     records = proofs_data.get('proof_records', [])
     
-    # Debug: 顯示所有記錄嘅 status 俾 admin 睇（可以之後刪除）
-    if st.checkbox("🔍 顯示除錯資料（睇吓所有記錄嘅 status）", key="debug_show"):
-        status_list = [r.get('status', '無 status') for r in records]
-        st.write(f"所有記錄嘅 status：{status_list}")
-    
     pending = [r for r in records if r.get('status') == 'pending']
     approved = [r for r in records if r.get('status') == 'approved']
     rejected = [r for r in records if r.get('status') == 'rejected']
@@ -1778,7 +1773,6 @@ def admin_payment_review():
                     st.success(f"✅ 已批量批准 {len(pending)} 條記錄")
                     st.rerun()
     
-    # 過濾記錄
     filtered = records.copy()
     if search_term:
         filtered = [r for r in filtered if search_term.lower() in r.get('username', '').lower()]
@@ -1787,14 +1781,13 @@ def admin_payment_review():
     
     if not filtered:
         st.info("📭 沒有符合條件的記錄")
-        # 如果有記錄但 filter 後冇，提示用戶轉 filter
         if records:
             st.caption(f"💡 共有 {len(records)} 條記錄，但篩選條件 ({status_filter}) 下冇匹配。請嘗試轉為「全部」")
         return
     
     st.subheader(f"📋 共 {len(filtered)} 條記錄")
     
-    # 🗑️ 清除已處理記錄（可選功能）
+    # 清除所有已處理記錄（保留待審核）
     col_clear1, col_clear2 = st.columns(2)
     with col_clear1:
         if st.button("🗑️ 清除所有已處理記錄（批准 + 拒絕）", key="clear_processed"):
@@ -1803,6 +1796,15 @@ def admin_payment_review():
             proofs_data['proof_records'] = [r for r in records if r.get('status') == 'pending']
             save_payment_proofs(proofs_data)
             st.success("✅ 已清除所有已處理記錄")
+            st.rerun()
+    with col_clear2:
+        if st.button("🧹 清除所有待審核記錄（小心！會刪除全部未審）", key="clear_all_pending"):
+            proofs_data = load_payment_proofs()
+            records = proofs_data.get('proof_records', [])
+            # 保留所有非 pending 記錄
+            proofs_data['proof_records'] = [r for r in records if r.get('status') != 'pending']
+            save_payment_proofs(proofs_data)
+            st.success("✅ 已清除所有待審核記錄")
             st.rerun()
     
     for idx, rec in enumerate(filtered):
@@ -1871,6 +1873,15 @@ def admin_payment_review():
                     except:
                         pass
             with cols[4]:
+                # 加一個「刪除」按鈕（任何狀態都可以刪）
+                if st.button("🗑️ 刪除", key=f"delete_{original_idx}"):
+                    # 從 records 中移除
+                    records.pop(original_idx)
+                    proofs_data['proof_records'] = records
+                    save_payment_proofs(proofs_data)
+                    st.success(f"✅ 已刪除 {username} 嘅付款記錄")
+                    st.rerun()
+                
                 if status == "pending":
                     if st.button("✅ 批准", key=f"approve_{original_idx}"):
                         _approve_payment(rec, proofs_data)
