@@ -1116,6 +1116,20 @@ def login_page():
 # ============================================================
 def show_paywall():
     import json
+    import os
+    from datetime import datetime
+
+    # 用絕對路徑
+    file_path = os.path.abspath('payment_proofs.json')
+    st.write(f"📁 目標檔案路徑：`{file_path}`")
+
+    # 檢查目錄是否可寫
+    dir_path = os.path.dirname(file_path)
+    if os.access(dir_path, os.W_OK):
+        st.write("✅ 目錄可寫")
+    else:
+        st.error(f"❌ 目錄不可寫：{dir_path}")
+
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
     st.subheader("💳 選擇你嘅方案")
 
@@ -1178,10 +1192,10 @@ def show_paywall():
                 st.error("❌ 請先登入")
                 st.stop()
 
-            # 🟢 除錯：顯示開始寫入
-            st.write("🔍 **開始寫入付款申請...**")
-            st.write(f"用戶：{st.session_state.username}")
-            st.write(f"方案：{plan_choice}")
+            # 開始除錯
+            st.write("🔍 **開始寫入 payment_proofs.json**")
+            st.write(f"👤 用戶：{st.session_state.username}")
+            st.write(f"📌 方案：{plan_choice}")
 
             original_price = get_plan_price(plan_choice)
             final_price = original_price
@@ -1213,54 +1227,61 @@ def show_paywall():
                 except Exception as e:
                     st.warning(f"優惠碼處理出錯：{e}")
 
-            st.write(f"最終金額：${final_price}")
+            st.write(f"💰 最終金額：${final_price}")
 
-            # 🔥 直接寫入 users.json
-            users = load_users()
-            st.write("讀取 users.json 成功，用戶數量：", len(users))
+            # 讀取現有 payment_proofs.json
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                st.write("✅ 讀取現有 payment_proofs.json 成功")
+            except FileNotFoundError:
+                data = {"proof_records": []}
+                st.write("📭 payment_proofs.json 不存在，將建立新檔案")
+            except Exception as e:
+                st.error(f"❌ 讀取 payment_proofs.json 失敗：{e}")
+                data = {"proof_records": []}
 
-            if st.session_state.username not in users:
-                st.error("❌ 用戶不存在於 users.json！")
-                st.stop()
-
-            # 建立申請記錄
-            request = {
-                "id": len(users[st.session_state.username].get('payment_requests', [])) + 1,
+            new_id = len(data.get('proof_records', [])) + 1
+            new_proof = {
+                "id": new_id,
+                "username": st.session_state.username,
                 "plan": plan_choice,
                 "plan_name": get_plan_name(plan_choice),
+                "original_price": original_price,
                 "final_price": final_price,
                 "discount_desc": discount_desc,
                 "promo_code": promo_code_used,
                 "submitted_at": datetime.now().isoformat(),
                 "status": "pending"
             }
-            st.write("準備寫入嘅記錄：", request)
+            data['proof_records'].append(new_proof)
 
-            # 加入 payment_requests
-            if 'payment_requests' not in users[st.session_state.username]:
-                users[st.session_state.username]['payment_requests'] = []
-            users[st.session_state.username]['payment_requests'].append(request)
+            st.write("📝 準備寫入嘅記錄：", new_proof)
 
-            # 儲存
+            # 寫入檔案
             try:
-                save_users(users)
-                st.success("✅ users.json 寫入成功！")
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                st.success("✅ 寫入 payment_proofs.json 成功！")
 
-                # 讀返出嚟驗證
-                check_users = load_users()
-                check_requests = check_users.get(st.session_state.username, {}).get('payment_requests', [])
-                st.write("驗證：寫入後讀取到嘅 payment_requests：", check_requests)
+                # 驗證
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    check = json.load(f)
+                st.write("🔍 驗證讀取返嚟嘅內容：", check)
 
-                if check_requests:
-                    st.success("✅ 驗證成功，記錄已存在！")
+                # 檢查新記錄是否存在
+                found = any(r.get('id') == new_id for r in check.get('proof_records', []))
+                if found:
+                    st.success("✅ 驗證成功，新記錄已存在！")
                 else:
-                    st.error("❌ 驗證失敗，記錄不存在！")
+                    st.error("❌ 驗證失敗，新記錄唔見咗！")
+                    st.stop()
 
                 st.session_state['payment_just_submitted'] = True
                 st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
                 st.rerun()
             except Exception as e:
-                st.error(f"❌ 儲存 users.json 失敗：{e}")
+                st.error(f"❌ 寫入 payment_proofs.json 失敗：{e}")
                 st.stop()
 
 # ============================================================
