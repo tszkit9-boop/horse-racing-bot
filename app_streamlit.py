@@ -337,15 +337,6 @@ def show_paywall():
 
         promo_input = st.text_input("優惠碼（如有）", key="promo_input_form")
 
-        # 上傳付款證明圖片（新版）
-        uploaded_file = st.file_uploader(
-            "上傳過數證明（FPS / PayMe / 銀行轉帳截圖）",
-            type=['png', 'jpg', 'jpeg'],
-            key="proof_upload_form"
-        )
-        if uploaded_file is not None:
-            st.image(uploaded_file, caption="你上傳嘅證明", width=300)
-
         st.divider()
         st.markdown("""
         **📤 付款方式：FPS 轉數快 `12345678`（SHTSN SYSTEM）**  
@@ -368,7 +359,6 @@ def show_paywall():
             discount_desc = ""
             promo_code_used = None
 
-            # 處理優惠碼
             if promo_input:
                 try:
                     promos = load_promos()
@@ -394,51 +384,14 @@ def show_paywall():
                 except Exception as e:
                     st.warning(f"優惠碼處理出錯：{e}")
 
-            # 儲存圖片
-            filename = None
-            if uploaded_file is not None:
-                try:
-                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                    file_extension = uploaded_file.type.split('/')[1] if '/' in uploaded_file.type else 'png'
-                    filename = f"{st.session_state.username}_{timestamp}.{file_extension}"
-                    filepath = os.path.join(PAYMENT_PROOFS_DIR, filename)
-                    with open(filepath, 'wb') as f:
-                        f.write(uploaded_file.getbuffer())
-                except Exception as e:
-                    st.warning(f"圖片儲存失敗（但會繼續提交）：{e}")
-                    filename = None
+            success, msg = submit_payment_request(username, plan_choice, final_price, discount_desc, promo_code_used)
+            if success:
+                st.success(msg)
+                st.session_state['payment_just_submitted'] = True
+                st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
+                st.rerun()
             else:
-                st.warning("⚠️ 你未上傳圖片，但仍可提交")
-
-            # 儲存付款申請到 payment_proofs.json
-            try:
-                proofs = load_payment_proofs()
-                new_proof = {
-                    "id": len(proofs['proof_records']) + 1,
-                    "username": st.session_state.username,
-                    "plan": plan_choice,
-                    "plan_name": get_plan_name(plan_choice),
-                    "original_price": original_price,
-                    "final_price": final_price,
-                    "discount_applied": bool(promo_code_used),
-                    "discount_desc": discount_desc,
-                    "promo_code": promo_code_used,
-                    "filename": filename if filename else "無圖片",
-                    "uploaded_at": datetime.now().isoformat(),
-                    "status": "pending"
-                }
-                proofs['proof_records'].append(new_proof)
-                if save_payment_proofs(proofs):
-                    st.session_state['payment_just_submitted'] = True
-                    st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
-                    st.success("✅ 提交成功！管理員將盡快審核。")
-                    st.rerun()
-                else:
-                    st.error("❌ 寫入付款記錄失敗，請檢查檔案權限")
-                    st.stop()
-            except Exception as e:
-                st.error(f"❌ 提交過程中發生錯誤：{e}")
-                st.stop()
+                st.error(msg)
 
 # ============================================================
 # 3. 模型載入
