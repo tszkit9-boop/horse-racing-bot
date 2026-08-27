@@ -324,6 +324,7 @@ def get_plan_price(plan):
 # ============================================================
 def show_paywall():
     import json
+    import os
     from datetime import datetime
 
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
@@ -335,6 +336,7 @@ def show_paywall():
         "quarter": f"📅 季費  ${CONFIG['price_quarter']} (90天)"
     }
 
+    # 如果已經提交成功，顯示成功訊息
     if st.session_state.get('payment_just_submitted', False):
         st.success("✅ 付款申請已成功提交！管理員將盡快審核。")
         st.info("📩 提交後請 Telegram 通知管理員（可加快審核）")
@@ -358,76 +360,66 @@ def show_paywall():
         )
 
         if plan_choice:
-            plan_name = get_plan_name(plan_choice)
-            plan_days = get_plan_days(plan_choice)
             original_price = get_plan_price(plan_choice)
-            st.info(f"📌 你已選擇 **{plan_name}**（原價 ${original_price}，有效期 {plan_days} 天）")
+            st.info(f"💰 價格：${original_price}")
         else:
-            st.info("請選擇一個方案以繼續")
+            st.info("請選擇一個方案")
 
-        promo_input = st.text_input("優惠碼（如有）", key="promo_input_form", placeholder="例如 A7K3X9P2")
+        promo_input = st.text_input("優惠碼（如有）", key="promo_input_form")
 
         st.divider()
-        st.subheader("📤 付款方式")
         st.markdown("""
-        **請使用以下方式過數：**
-        - 🏦 **FPS 轉數快**：`12345678`
-        - 📛 **戶口名稱**：`SHTSN SYSTEM`
-        - 💰 **金額**：請根據你選擇的方案支付
+        **📤 付款方式：FPS 轉數快 `12345678`（SHTSN SYSTEM）**  
+        💬 過數後請將截圖發送 Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**
         """)
-        st.info("💬 過數後，請將 **付款截圖** 透過 Telegram 發送俾管理員：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
-        st.caption("管理員確認收款後，會喺後台批准你嘅申請，系統會自動升級你嘅帳戶。")
 
         submitted = st.form_submit_button("📩 提交付款申請，等待管理員審核")
 
         if submitted:
-            if not plan_choice:
-                st.error("❌ 請先選擇一個付費方案")
-                st.stop()
-            if not st.session_state.get('logged_in', False):
-                st.error("❌ 請先登入")
-                st.stop()
-
-            username = st.session_state.username
-            original_price = get_plan_price(plan_choice)
-            final_price = original_price
-            discount_desc = ""
-            promo_code_used = None
-
-            if promo_input:
-                try:
-                    promos = load_promos()
-                    promo_data = promos.get(promo_input)
-                    if promo_data and not promo_data.get('used', False):
-                        expiry = promo_data.get('expiry')
-                        if expiry:
-                            expiry_date = datetime.fromisoformat(expiry)
-                            if expiry_date >= datetime.now():
-                                discount_type = promo_data.get('discount_type', 'percentage')
-                                discount_value = promo_data.get('discount_value', 0)
-                                if discount_type == 'percentage':
-                                    final_price = original_price * (1 - discount_value / 100)
-                                    discount_desc = f"{discount_value}% 折扣"
-                                elif discount_type == 'fixed':
-                                    final_price = max(0, original_price - discount_value)
-                                    discount_desc = f"減 ${discount_value}"
-                                elif discount_type == 'free':
-                                    final_price = 0
-                                    discount_desc = "全免！"
-                                final_price = round(final_price, 2)
-                                promo_code_used = promo_input
-                except Exception as e:
-                    st.warning(f"優惠碼處理出錯：{e}")
-
-            # 🟢 直接用你手動寫入嘅方式寫入 payment_requests.json
+            # 開始 try 區塊，捕捉所有錯誤
             try:
-                # 讀取現有記錄
-                try:
-                    with open('payment_requests.json', 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                except:
-                    data = {"requests": []}
+                st.write("🔍 **提交按鈕已撳下**")
 
+                if not plan_choice:
+                    st.error("❌ 請選擇方案")
+                    st.stop()
+                if not st.session_state.get('logged_in'):
+                    st.error("❌ 請先登入")
+                    st.stop()
+
+                username = st.session_state.username
+                st.write(f"👤 用戶：{username}")
+                st.write(f"📌 方案：{plan_choice}")
+
+                # 計算最終金額（簡單起見，忽略優惠碼）
+                final_price = get_plan_price(plan_choice)
+                st.write(f"💰 金額：${final_price}")
+
+                # 檔案路徑
+                file_path = 'payment_requests.json'
+                abs_path = os.path.abspath(file_path)
+                st.write(f"📁 寫入路徑：{abs_path}")
+
+                # 檢查目錄是否可寫
+                dir_path = os.path.dirname(abs_path)
+                if os.access(dir_path, os.W_OK):
+                    st.write("✅ 目錄可寫")
+                else:
+                    st.error(f"❌ 目錄不可寫：{dir_path}")
+
+                # 讀取現有內容
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    st.write("✅ 讀取現有檔案成功")
+                except FileNotFoundError:
+                    data = {"requests": []}
+                    st.write("📭 檔案不存在，將建立新檔案")
+                except Exception as e:
+                    st.error(f"讀取檔案時發生錯誤：{e}")
+                    raise  # 重新拋出以便被外層捕獲
+
+                # 建立新記錄
                 new_id = len(data.get('requests', [])) + 1
                 new_request = {
                     "id": new_id,
@@ -435,24 +427,31 @@ def show_paywall():
                     "plan": plan_choice,
                     "plan_name": get_plan_name(plan_choice),
                     "final_price": final_price,
-                    "discount_desc": discount_desc,
-                    "promo_code": promo_code_used,
                     "submitted_at": datetime.now().isoformat(),
                     "status": "pending"
                 }
                 data['requests'].append(new_request)
+                st.write("📝 準備寫入：", new_request)
 
-                # 寫入（同你手動寫入一模一樣）
-                with open('payment_requests.json', 'w', encoding='utf-8') as f:
+                # 寫入
+                with open(file_path, 'w', encoding='utf-8') as f:
                     json.dump(data, f, ensure_ascii=False, indent=2)
+                st.success("✅ 寫入成功！")
 
-                st.success("✅ 付款申請已成功提交！")
+                # 驗證
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    check = json.load(f)
+                st.write("🔍 驗證讀取：", check)
+
+                # 如果所有步驟成功，設置 session state 並重新整理
                 st.session_state['payment_just_submitted'] = True
                 st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
                 st.rerun()
 
             except Exception as e:
-                st.error(f"❌ 寫入失敗：{e}")
+                # 顯示完整錯誤，唔會閃退
+                st.error("❌ 提交過程中發生錯誤：")
+                st.exception(e)  # 顯示完整 traceback
                 st.stop()
 
 # ============================================================
