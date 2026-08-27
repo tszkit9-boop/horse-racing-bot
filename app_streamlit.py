@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版（付款寫入已修復、審核後自動刪除）
+賽馬預測系統 - 完整版（付款寫入 /tmp，審核後自動刪除）
 """
 
 import streamlit as st
@@ -152,31 +152,29 @@ PROMO_FILE = 'promo_codes.json'
 LOG_FILE = 'admin_log.json'
 ACCURACY_FILE = 'accuracy.json'
 PAYMENT_PROOFS_FILE = 'payment_proofs.json'
+PAYMENT_FILE = '/tmp/payment_proofs.json'          # ✅ 使用 /tmp 目錄
 CONTENT_FILE = 'content.json'
 AUTOMATION_FILE = 'automation.json'
 PAYMENT_PROOFS_DIR = 'payment_proofs'
 
 # ============================================================
-# 3. 付款記錄讀寫（直接操作 JSON，確保可靠）
+# 3. 付款記錄讀寫（直接操作 /tmp，確保寫入）
 # ============================================================
 def load_payment_proofs():
     import json
     try:
-        with open(PAYMENT_PROOFS_FILE, 'r', encoding='utf-8') as f:
+        with open(PAYMENT_FILE, 'r', encoding='utf-8') as f:
             data = json.load(f)
         if 'proof_records' not in data:
             data['proof_records'] = []
         return data
-    except FileNotFoundError:
-        return {"proof_records": []}
-    except Exception as e:
-        st.error(f"讀取付款記錄失敗：{e}")
+    except:
         return {"proof_records": []}
 
 def save_payment_proofs(data):
     import json
     try:
-        with open(PAYMENT_PROOFS_FILE, 'w', encoding='utf-8') as f:
+        with open(PAYMENT_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         return True
     except Exception as e:
@@ -1038,12 +1036,15 @@ def login_page():
                         st.rerun()
 
 # ============================================================
-# 9. 付款牆（無上傳，直接寫入 JSON）
+# 9. 付款牆（寫入 /tmp，確保成功）
 # ============================================================
 def show_paywall():
     import json
     import os
-    from datetime import datetime, timedelta
+    from datetime import datetime
+
+    # 使用 /tmp 目錄確保寫入權限
+    PAYMENT_FILE = '/tmp/payment_proofs.json'
 
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
     st.subheader("💳 選擇你嘅方案")
@@ -1101,20 +1102,20 @@ def show_paywall():
 
         if submitted:
             st.info("⏳ 正在處理你嘅申請...")
-            
+
             if not plan_choice:
                 st.error("❌ 請先選擇一個付費方案")
                 st.stop()
             if not st.session_state.get('logged_in', False):
                 st.error("❌ 請先登入")
                 st.stop()
-            
+
             original_price = get_plan_price(plan_choice)
             final_price = original_price
             discount_applied = False
             discount_desc = ""
             promo_code_used = None
-            
+
             if promo_input:
                 try:
                     promos = load_promos()
@@ -1141,8 +1142,13 @@ def show_paywall():
                 except:
                     pass
 
-            # 讀取現有記錄
-            proofs = load_payment_proofs()
+            # 讀取 /tmp 目錄下嘅記錄
+            try:
+                with open(PAYMENT_FILE, 'r', encoding='utf-8') as f:
+                    proofs = json.load(f)
+            except:
+                proofs = {"proof_records": []}
+
             new_id = len(proofs['proof_records']) + 1
             new_proof = {
                 "id": new_id,
@@ -1160,9 +1166,9 @@ def show_paywall():
             }
             proofs['proof_records'].append(new_proof)
 
-            # 🔥 直接寫入檔案
+            # 🔥 寫入 /tmp 目錄
             try:
-                with open('payment_proofs.json', 'w', encoding='utf-8') as f:
+                with open(PAYMENT_FILE, 'w', encoding='utf-8') as f:
                     json.dump(proofs, f, ensure_ascii=False, indent=2)
                 st.success("✅ 付款申請已成功記錄！")
                 st.session_state['payment_just_submitted'] = True
@@ -2572,11 +2578,6 @@ def main():
         st.caption("🔐 數據來源：HKJC | 系統版本：v14.0-用戶體驗版")
     with col_f3:
         st.caption("💬 Telegram：@bryhjdjbrbxibvrjskofndhiebdpaq")
-# 🧪 強制寫入測試（用完可以刪除）
-import json
-test_data = {"proof_records": [{"id": 999, "username": "test", "status": "pending", "plan": "day"}]}
-with open('payment_proofs.json', 'w', encoding='utf-8') as f:
-    json.dump(test_data, f, ensure_ascii=False, indent=2)
-print("✅ 測試寫入完成")
+
 if __name__ == '__main__':
     main()
