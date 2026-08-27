@@ -297,15 +297,16 @@ def get_plan_price(plan):
 # 🔧 付款牆（完整版，包含上傳圖片功能）
 # ============================================================
 def show_paywall():
-    st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
     st.subheader("💳 選擇你嘅方案")
 
+    # 方案選項（水平 radio）
     plan_options = {
         "day": f"☀️ 日費  ${CONFIG['price_day']}   (1天)",
         "month": f"📆 月費  ${CONFIG['price_month']}  (30天)",
         "quarter": f"📅 季費  ${CONFIG['price_quarter']} (90天)"
     }
 
+    # 如果已經提交成功，顯示成功訊息
     if st.session_state.get('payment_just_submitted', False):
         st.success("✅ 付款申請已成功提交！管理員將盡快審核。")
         st.info("📩 提交後請 Telegram 通知管理員（可加快審核）")
@@ -322,21 +323,21 @@ def show_paywall():
     with st.form(key="payment_form"):
         plan_choice = st.radio(
             "請選擇付費方案：",
-            options=[""] + list(plan_options.keys()),
-            format_func=lambda x: plan_options.get(x, "請選擇方案"),
-            index=0,
+            options=list(plan_options.keys()),
+            format_func=lambda x: plan_options[x],
+            horizontal=True,
             key="plan_radio_in_form"
         )
 
         if plan_choice:
-            plan_name = get_plan_name(plan_choice)
-            plan_days = get_plan_days(plan_choice)
             original_price = get_plan_price(plan_choice)
-            st.info(f"📌 你已選擇 **{plan_name}**（原價 ${original_price}，有效期 {plan_days} 天）")
+            st.info(f"💰 價格：${original_price}")
         else:
-            st.info("請選擇一個方案以繼續")
+            st.info("請選擇一個方案")
 
-        promo_input = st.text_input("優惠碼（如有）", key="promo_input_form", placeholder="例如 A7K3X9P2")
+        promo_input = st.text_input("優惠碼（如有）", key="promo_input_form")
+
+        # 上傳付款證明圖片（新版）
         uploaded_file = st.file_uploader(
             "上傳過數證明（FPS / PayMe / 銀行轉帳截圖）",
             type=['png', 'jpg', 'jpeg'],
@@ -345,24 +346,29 @@ def show_paywall():
         if uploaded_file is not None:
             st.image(uploaded_file, caption="你上傳嘅證明", width=300)
 
+        st.divider()
+        st.markdown("""
+        **📤 付款方式：FPS 轉數快 `12345678`（SHTSN SYSTEM）**  
+        💬 過數後請將截圖發送 Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**
+        """)
+
         submitted = st.form_submit_button("📩 提交付款申請，等待管理員審核")
 
         if submitted:
-            st.info("⏳ 正在處理你嘅申請...")
-            
             if not plan_choice:
-                st.error("❌ 請先選擇一個付費方案")
-                st.stop()
-            if not st.session_state.get('logged_in', False):
+                st.error("❌ 請選擇方案")
+                return
+            if not st.session_state.get('logged_in'):
                 st.error("❌ 請先登入")
-                st.stop()
-            
+                return
+
+            username = st.session_state.username
             original_price = get_plan_price(plan_choice)
             final_price = original_price
-            discount_applied = False
             discount_desc = ""
             promo_code_used = None
-            
+
+            # 處理優惠碼
             if promo_input:
                 try:
                     promos = load_promos()
@@ -384,13 +390,11 @@ def show_paywall():
                                     final_price = 0
                                     discount_desc = "全免！"
                                 final_price = round(final_price, 2)
-                                discount_applied = True
                                 promo_code_used = promo_input
-                except:
-                    pass
+                except Exception as e:
+                    st.warning(f"優惠碼處理出錯：{e}")
 
-            os.makedirs(PAYMENT_PROOFS_DIR, exist_ok=True)
-            
+            # 儲存圖片
             filename = None
             if uploaded_file is not None:
                 try:
@@ -400,13 +404,13 @@ def show_paywall():
                     filepath = os.path.join(PAYMENT_PROOFS_DIR, filename)
                     with open(filepath, 'wb') as f:
                         f.write(uploaded_file.getbuffer())
-                    st.success(f"✅ 圖片已儲存：{filename}")
                 except Exception as e:
-                    st.error(f"⚠️ 圖片儲存失敗（但會繼續提交）：{e}")
+                    st.warning(f"圖片儲存失敗（但會繼續提交）：{e}")
                     filename = None
             else:
                 st.warning("⚠️ 你未上傳圖片，但仍可提交")
 
+            # 儲存付款申請到 payment_proofs.json
             try:
                 proofs = load_payment_proofs()
                 new_proof = {
@@ -416,7 +420,7 @@ def show_paywall():
                     "plan_name": get_plan_name(plan_choice),
                     "original_price": original_price,
                     "final_price": final_price,
-                    "discount_applied": discount_applied,
+                    "discount_applied": bool(promo_code_used),
                     "discount_desc": discount_desc,
                     "promo_code": promo_code_used,
                     "filename": filename if filename else "無圖片",
@@ -424,7 +428,6 @@ def show_paywall():
                     "status": "pending"
                 }
                 proofs['proof_records'].append(new_proof)
-                
                 if save_payment_proofs(proofs):
                     st.session_state['payment_just_submitted'] = True
                     st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
