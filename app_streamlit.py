@@ -52,7 +52,7 @@ st.markdown("""
         display: block !important;
         visibility: visible !important;
         opacity: 1 !important;
-        width: 300px !important;
+        width: 280px !important;
     }
     section[data-testid="stSidebar"] * {
         display: block !important;
@@ -66,7 +66,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================================
-# 🔐 系統設定
+# 🔐 系統設定（動態載入）
 # ============================================================
 CONFIG_FILE = 'system_config.json'
 
@@ -127,47 +127,38 @@ def save_system_config(config):
 CONFIG = load_system_config()
 
 # ============================================================
-# 基本 JSON 讀寫
+# 2. 數據讀寫函數
 # ============================================================
-def load_json(file_path, default=None):
-    if default is None:
-        default = {}
-    if os.path.exists(file_path):
+USER_DATA_FILE = 'users.json'
+FINANCE_FILE = 'finance.json'
+LOG_FILE = 'admin_log.json'
+AUTOMATION_FILE = 'automation.json'
+CONTENT_FILE = 'content.json'
+PROMO_FILE = 'promo_codes.json'
+ACCURACY_FILE = 'accuracy.json'
+PAYMENT_PROOFS_FILE = 'payment_proofs.json'
+PAYMENT_PROOFS_DIR = 'payment_proofs'
+
+if not os.path.exists(PAYMENT_PROOFS_DIR):
+    os.makedirs(PAYMENT_PROOFS_DIR)
+
+def load_json(file):
+    if os.path.exists(file):
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except:
-            return default
-    return default
+            return {}
+    return {}
 
-def save_json(file_path, data):
+def save_json(file, data):
     try:
-        with open(file_path, 'w', encoding='utf-8') as f:
+        with open(file, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         return True
     except:
         return False
 
-# ============================================================
-# 檔案路徑常數
-# ============================================================
-USER_DATA_FILE = 'users.json'
-FINANCE_FILE = 'finance.json'
-PROMO_FILE = 'promo_codes.json'
-LOG_FILE = 'admin_log.json'
-ACCURACY_FILE = 'accuracy.json'
-CONTENT_FILE = 'content.json'
-AUTOMATION_FILE = 'automation.json'
-
-# ============================================================
-# 初始化 session_state 付款記錄
-# ============================================================
-if 'payment_requests' not in st.session_state:
-    st.session_state.payment_requests = {"requests": []}
-
-# ============================================================
-# 用戶系統
-# ============================================================
 def load_users():
     users = load_json(USER_DATA_FILE)
     if not users or "admin" not in users:
@@ -199,6 +190,8 @@ def load_users():
         if "admin" in users:
             users["admin"]["group"] = "super_admin"
             users["admin"]["predictions_limit"] = -1
+            if users["admin"].get("note") != "系統超級管理員":
+                users["admin"]["note"] = "系統超級管理員（已自動修復）"
         for uid, u in users.items():
             if 'plan' not in u: u['plan'] = None
             if 'paid_date' not in u: u['paid_date'] = None
@@ -225,43 +218,6 @@ def load_users():
 def save_users(users):
     return save_json(USER_DATA_FILE, users)
 
-def authenticate(username, password):
-    users = load_users()
-    if username in users and users[username].get('password') == password:
-        return users[username]
-    return None
-
-def get_user(username):
-    users = load_users()
-    return users.get(username)
-
-def get_remaining_predictions(username):
-    user = get_user(username)
-    if not user:
-        return 0
-    if user.get('group') in ['VIP', 'paid', 'super_admin']:
-        return 9999
-    limit = user.get('predictions_limit', CONFIG['free_limit'])
-    used = user.get('free_usage', 0)
-    return max(0, limit - used)
-
-def update_user(username, updates):
-    users = load_users()
-    if username in users:
-        users[username].update(updates)
-        return save_users(users)
-    return False
-
-def log_admin_action(admin, action):
-    logs = load_logs()
-    if 'logs' not in logs: logs['logs'] = []
-    logs['logs'].append({
-        'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'admin': admin,
-        'action': action
-    })
-    save_logs(logs)
-
 def load_finance():
     return load_json(FINANCE_FILE)
 
@@ -286,6 +242,35 @@ def load_accuracy():
 def save_accuracy(acc):
     return save_json(ACCURACY_FILE, acc)
 
+def load_payment_proofs():
+    proofs = load_json(PAYMENT_PROOFS_FILE)
+    if not proofs:
+        proofs = {"proof_records": []}
+        save_payment_proofs(proofs)
+    elif "proof_records" not in proofs:
+        proofs["proof_records"] = []
+        save_payment_proofs(proofs)
+    return proofs
+
+def save_payment_proofs(proofs):
+    return save_json(PAYMENT_PROOFS_FILE, proofs)
+
+def log_admin_action(admin, action):
+    logs = load_logs()
+    if 'logs' not in logs: logs['logs'] = []
+    logs['logs'].append({
+        'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'admin': admin,
+        'action': action
+    })
+    save_logs(logs)
+
+def authenticate(username, password):
+    users = load_users()
+    if username in users and users[username].get('password') == password:
+        return True
+    return False
+
 def generate_promo_code():
     return ''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=8))
 
@@ -309,218 +294,7 @@ def get_plan_price(plan):
     return 0
 
 # ============================================================
-# 付款申請功能（存入 session_state）
-# ============================================================
-def submit_payment_request(username, plan, final_price, discount_desc, promo_code_used):
-    new_id = len(st.session_state.payment_requests['requests']) + 1
-    request = {
-        "id": new_id,
-        "username": username,
-        "plan": plan,
-        "plan_name": get_plan_name(plan),
-        "final_price": final_price,
-        "discount_desc": discount_desc,
-        "promo_code": promo_code_used,
-        "submitted_at": datetime.now().isoformat(),
-        "status": "pending"
-    }
-    st.session_state.payment_requests['requests'].append(request)
-    return True, "申請已提交"
-
-def get_all_pending_requests():
-    all_requests = []
-    for req in st.session_state.payment_requests['requests']:
-        if req.get('status') == 'pending':
-            all_requests.append({
-                "username": req['username'],
-                "request": req
-            })
-    return all_requests
-
-def approve_payment_request(username, request_id, admin_username):
-    for req in st.session_state.payment_requests['requests']:
-        if req.get('id') == request_id and req.get('status') == 'pending':
-            users = load_users()
-            if username in users:
-                plan = req['plan']
-                days = get_plan_days(plan)
-                if days == 0:
-                    days = 30
-                expiry = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
-                users[username]['is_paid'] = True
-                users[username]['group'] = 'VIP'
-                users[username]['paid_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                users[username]['expiry_date'] = expiry
-                users[username]['plan'] = plan
-                users[username]['predictions_limit'] = -1
-                save_users(users)
-                req['status'] = 'approved'
-                log_admin_action(admin_username, f"批准付款並升級 {username} 為 VIP（{plan}）")
-                return True, f"已批准 {username} 的付款，到期日 {expiry}"
-            else:
-                return False, "用戶不存在"
-    return False, "找不到該申請"
-
-def reject_payment_request(username, request_id, admin_username):
-    for req in st.session_state.payment_requests['requests']:
-        if req.get('id') == request_id and req.get('status') == 'pending':
-            req['status'] = 'rejected'
-            log_admin_action(admin_username, f"拒絕 {username} 的付款申請")
-            return True, "已拒絕該申請"
-    return False, "找不到該申請"
-
-# ============================================================
-# 付款牆（統一付款界面，開放所有用戶）
-# ============================================================
-def show_paywall():
-    st.subheader("💳 選擇你嘅方案")
-
-    plan_options = {
-        "day": f"☀️ 日費  ${CONFIG['price_day']}   (1天)",
-        "month": f"📆 月費  ${CONFIG['price_month']}  (30天)",
-        "quarter": f"📅 季費  ${CONFIG['price_quarter']} (90天)"
-    }
-
-    if st.session_state.get('payment_just_submitted', False):
-        st.success("✅ 付款申請已成功提交！管理員將盡快審核。")
-        st.info("📩 提交後請 Telegram 通知管理員（可加快審核）")
-        st.markdown("💬 Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
-        if 'payment_detail' in st.session_state:
-            st.write(st.session_state['payment_detail'])
-        if st.button("返回主頁"):
-            for key in ['payment_just_submitted', 'payment_detail']:
-                if key in st.session_state:
-                    del st.session_state[key]
-            st.rerun()
-        st.stop()
-
-    with st.form(key="payment_form"):
-        plan_choice = st.radio(
-            "請選擇付費方案：",
-            options=list(plan_options.keys()),
-            format_func=lambda x: plan_options[x],
-            horizontal=True,
-            key="plan_radio_in_form"
-        )
-
-        if plan_choice:
-            original_price = get_plan_price(plan_choice)
-            st.info(f"💰 價格：${original_price}")
-        else:
-            st.info("請選擇一個方案")
-
-        promo_input = st.text_input("優惠碼（如有）", key="promo_input_form")
-
-        st.divider()
-        st.markdown("""
-        **📤 付款方式：FPS 轉數快 `12345678`（SHTSN SYSTEM）**  
-        💬 過數後請將截圖發送 Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**
-        """)
-
-        submitted = st.form_submit_button("📩 提交付款申請，等待管理員審核")
-
-        if submitted:
-            if not plan_choice:
-                st.error("❌ 請選擇方案")
-                return
-            if not st.session_state.get('logged_in'):
-                st.error("❌ 請先登入")
-                return
-
-            username = st.session_state.username
-            original_price = get_plan_price(plan_choice)
-            final_price = original_price
-            discount_desc = ""
-            promo_code_used = None
-
-            if promo_input:
-                try:
-                    promos = load_promos()
-                    promo_data = promos.get(promo_input)
-                    if promo_data and not promo_data.get('used', False):
-                        expiry = promo_data.get('expiry')
-                        if expiry:
-                            expiry_date = datetime.fromisoformat(expiry)
-                            if expiry_date >= datetime.now():
-                                discount_type = promo_data.get('discount_type', 'percentage')
-                                discount_value = promo_data.get('discount_value', 0)
-                                if discount_type == 'percentage':
-                                    final_price = original_price * (1 - discount_value / 100)
-                                    discount_desc = f"{discount_value}% 折扣"
-                                elif discount_type == 'fixed':
-                                    final_price = max(0, original_price - discount_value)
-                                    discount_desc = f"減 ${discount_value}"
-                                elif discount_type == 'free':
-                                    final_price = 0
-                                    discount_desc = "全免！"
-                                final_price = round(final_price, 2)
-                                promo_code_used = promo_input
-                except Exception as e:
-                    st.warning(f"優惠碼處理出錯：{e}")
-
-            success, msg = submit_payment_request(username, plan_choice, final_price, discount_desc, promo_code_used)
-            if success:
-                st.success(msg)
-                st.session_state['payment_just_submitted'] = True
-                st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
-                st.rerun()
-            else:
-                st.error(msg)
-
-# ============================================================
-# 後台付款審核
-# ============================================================
-def admin_payment_review():
-    st.subheader("📤 付款審核")
-    pending = get_all_pending_requests()
-    if not pending:
-        st.info("✅ 目前沒有待審核嘅付款申請")
-        return
-    st.write(f"共 **{len(pending)}** 條待審核記錄")
-    for item in pending:
-        username = item['username']
-        req = item['request']
-        with st.container():
-            cols = st.columns([2, 2, 1.5, 1.5, 2])
-            with cols[0]:
-                st.write(f"👤 **{username}**")
-                st.caption(f"ID: {req.get('id', '')}")
-            with cols[1]:
-                plan_name = req.get('plan_name', '未知方案')
-                price = req.get('final_price', 0)
-                st.write(f"📌 {plan_name}")
-                st.write(f"💰 ${price:.2f}")
-                if req.get('discount_desc'):
-                    st.caption(f"折扣: {req.get('discount_desc', '')}")
-            with cols[2]:
-                submitted_at = req.get('submitted_at', '')
-                if submitted_at:
-                    try:
-                        dt = datetime.fromisoformat(submitted_at)
-                        st.caption(f"📅 {dt.strftime('%Y-%m-%d %H:%M')}")
-                    except:
-                        st.caption(submitted_at)
-            with cols[3]:
-                st.warning("⏳ 待審核")
-            with cols[4]:
-                if st.button("✅ 批准", key=f"approve_{req.get('id')}"):
-                    success, msg = approve_payment_request(username, req['id'], st.session_state.username)
-                    if success:
-                        st.success(msg)
-                        st.rerun()
-                    else:
-                        st.error(msg)
-                if st.button("❌ 拒絕", key=f"reject_{req.get('id')}"):
-                    success, msg = reject_payment_request(username, req['id'], st.session_state.username)
-                    if success:
-                        st.warning(msg)
-                        st.rerun()
-                    else:
-                        st.error(msg)
-            st.divider()
-
-# ============================================================
-# 模型載入（完整）
+# 3. 模型載入
 # ============================================================
 @st.cache_resource
 def load_models():
@@ -539,7 +313,7 @@ def load_models():
         return None, None, None
 
 # ============================================================
-# 特徵工程（36 特徵，完整）
+# 4. 特徵工程（36 特徵）
 # ============================================================
 FEATURES_EN = [
     'draw', 'act_wt', 'distance', 'rtg', 'avg_rank_last3',
@@ -867,7 +641,6 @@ def run_prediction(date_str, race_no):
     race_sel = df[(df['race_date'].dt.date == target.date()) & (df['race_no'] == race_no)]
     if race_sel.empty:
         st.error(f"日期 {date_str} 第 {race_no} 場無數據")
-        st.info("💡 提示：請選擇其他日期或場次，數據檔案可能未有該日賽事")
         return None, None
 
     try:
@@ -925,11 +698,7 @@ def run_prediction(date_str, race_no):
 
     prob_xgb = xgb_model.predict_proba(X)[:, 1]
     prob_cat = cat_model.predict_proba(X)[:, 1]
-    
-    xgb_w = CONFIG.get('xgb_weight', 25)
-    cat_w = CONFIG.get('cat_weight', 1)
-    prob_final = (prob_xgb * xgb_w + prob_cat * cat_w) / (xgb_w + cat_w)
-    
+    prob_final = (prob_xgb * 25 + prob_cat) / 26
     rank_score = rank_model.predict(X)
 
     result = race_sel[['中文名', 'draw', 'win_odds']].copy()
@@ -942,7 +711,7 @@ def run_prediction(date_str, race_no):
     return result, pool_rec
 
 # ============================================================
-# 用戶功能（完整）
+# 5. 用戶功能
 # ============================================================
 def record_prediction(username, date_str, race_no, horse_name, predicted_prob=None):
     users = load_users()
@@ -1080,53 +849,44 @@ def show_prediction_history(username):
     st.dataframe(df, use_container_width=True)
 
 # ============================================================
-# 登入/註冊（完整，已修正 DuplicateElementId 錯誤）
+# 6. 登入/註冊
 # ============================================================
 def login_page():
     st.title("🔐 登入 / 註冊")
+    tab1, tab2 = st.tabs(["登入", "註冊"])
     
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("登入", use_container_width=True, key="login_tab_btn"):
-            st.session_state.page_mode = "login"
-    with col2:
-        if st.button("註冊", use_container_width=True, key="register_tab_btn"):
-            st.session_state.page_mode = "register"
+    with tab1:
+        username = st.text_input("用戶名稱", key="login_user")
+        password = st.text_input("密碼", type="password", key="login_pass")
+        if st.button("登入", key="login_button"):
+            users = load_users()
+            if username in users and users[username].get('password') == password:
+                st.session_state.logged_in = True
+                st.session_state.username = username
+                st.session_state.role = users[username].get('group', 'free')
+                st.session_state.usage_count = users[username].get('free_usage', 0)
+                st.rerun()
+            else:
+                st.error("❌ 用戶名稱或密碼錯誤")
     
-    mode = st.session_state.get("page_mode", "login")
-    
-    if mode == "login":
-        with st.form("login_form"):
-            username = st.text_input("用戶名稱", key="login_username_input")
-            password = st.text_input("密碼", type="password", key="login_password_input")
-            if st.form_submit_button("登入", key="login_submit_btn"):
-                user = authenticate(username, password)
-                if user:
-                    st.session_state.logged_in = True
-                    st.session_state.username = username
-                    st.session_state.role = user.get('group', 'free')
-                    st.session_state.usage_count = user.get('free_usage', 0)
-                    st.rerun()
-                else:
-                    st.error("❌ 用戶名稱或密碼錯誤")
-    else:
+    with tab2:
         st.subheader("📝 註冊新帳號")
         with st.form("register_form"):
-            new_user = st.text_input("用戶名稱（最少 3 個字）", key="reg_username_input")
-            phone = st.text_input("手機號碼（可選）", key="reg_phone_input")
-            new_pass = st.text_input("密碼", type="password", key="reg_password_input")
-            new_pass2 = st.text_input("確認密碼", type="password", key="reg_password_confirm_input")
+            new_user = st.text_input("用戶名稱（最少 3 個字）", key="reg_user")
+            phone = st.text_input("手機號碼（可選）", key="reg_phone")
+            new_pass = st.text_input("密碼", type="password", key="reg_pass")
+            new_pass2 = st.text_input("確認密碼", type="password", key="reg_pass2")
             
             if CONFIG.get("enable_invite_reward", True):
-                invite_code_input = st.text_input("邀請碼（如有）", key="reg_invite_code_input", placeholder="輸入朋友的邀請碼")
+                invite_code_input = st.text_input("邀請碼（如有）", key="reg_invite_code", placeholder="輸入朋友的邀請碼")
             else:
                 invite_code_input = None
             
             col1, col2 = st.columns([3, 1])
             with col1:
-                verify_code_input = st.text_input("驗證碼", key="reg_verify_input", placeholder="輸入 6 位數字", max_chars=6)
+                verify_code_input = st.text_input("驗證碼", key="reg_verify", placeholder="輸入 6 位數字", max_chars=6)
             with col2:
-                if st.form_submit_button("📨 獲取驗證碼", type="secondary", key="get_verify_btn"):
+                if st.form_submit_button("📨 獲取驗證碼", type="secondary"):
                     code = generate_verification_code()
                     st.session_state['reg_verify_code'] = code
                     st.session_state['reg_verify_expiry'] = datetime.now() + timedelta(minutes=CONFIG.get('verification_expiry', 5))
@@ -1172,8 +932,9 @@ def login_page():
                 **最後更新日期：2026 年 8 月 25 日**
                 """)
             
-            agree_terms = st.checkbox("✅ 我已閱讀並同意上述服務條款", key="reg_agree_terms")
-            submitted = st.form_submit_button("註冊", key="reg_submit_btn")
+            agree_terms = st.checkbox("✅ 我已閱讀並同意上述服務條款", key="agree_terms")
+            
+            submitted = st.form_submit_button("註冊")
             
             if submitted:
                 if len(new_user) < 3:
@@ -1243,8 +1004,6 @@ def login_page():
                                 st.success("✅ 註冊成功！")
                         else:
                             st.success("✅ 註冊成功！")
-                        
-                        st.session_state.page_mode = "login"
                         st.rerun()
 # ============================================================
 # AI 自我學習（完整）
