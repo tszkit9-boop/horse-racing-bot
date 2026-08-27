@@ -1,3 +1,13 @@
 {
-  "requests": []
+  "requests": [
+    {
+      "id": 1,
+      "username": "arkit",
+      "plan": "quarter",
+      "plan_name": "季費",
+      "final_price": 328,
+      "submitted_at": "2026-08-28T12:00:00",
+      "status": "pending"
+    }
+  ]
 }
