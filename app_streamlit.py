@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版（包含預測賽馬結果、付款、後台管理、AI 自我學習）
+賽馬預測系統 - 完整版（預測放喺模型自我學習上面，所有功能齊全）
 """
 
 import streamlit as st
@@ -157,12 +157,31 @@ LOG_FILE = 'admin_log.json'
 ACCURACY_FILE = 'accuracy.json'
 CONTENT_FILE = 'content.json'
 AUTOMATION_FILE = 'automation.json'
+PAYMENT_FILE = 'payment_requests.json'
 
 # ============================================================
-# 初始化 session_state 付款記錄
+# 付款記錄讀寫（持久儲存）
 # ============================================================
-if 'payment_requests' not in st.session_state:
-    st.session_state.payment_requests = {"requests": []}
+def load_payment_requests():
+    import json
+    try:
+        with open(PAYMENT_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {"requests": []}
+    except Exception as e:
+        st.error(f"讀取付款記錄失敗：{e}")
+        return {"requests": []}
+
+def save_payment_requests(data):
+    import json
+    try:
+        with open(PAYMENT_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        st.error(f"寫入付款記錄失敗：{e}")
+        return False
 
 # ============================================================
 # 用戶系統
@@ -308,10 +327,11 @@ def get_plan_price(plan):
     return 0
 
 # ============================================================
-# 付款申請功能（存入 session_state）
+# 付款申請功能（寫入 payment_requests.json）
 # ============================================================
 def submit_payment_request(username, plan, final_price, discount_desc, promo_code_used):
-    new_id = len(st.session_state.payment_requests['requests']) + 1
+    data = load_payment_requests()
+    new_id = len(data.get('requests', [])) + 1
     request = {
         "id": new_id,
         "username": username,
@@ -323,12 +343,16 @@ def submit_payment_request(username, plan, final_price, discount_desc, promo_cod
         "submitted_at": datetime.now().isoformat(),
         "status": "pending"
     }
-    st.session_state.payment_requests['requests'].append(request)
-    return True, "申請已提交"
+    data['requests'].append(request)
+    if save_payment_requests(data):
+        return True, "申請已提交"
+    else:
+        return False, "儲存失敗"
 
 def get_all_pending_requests():
+    data = load_payment_requests()
     all_requests = []
-    for req in st.session_state.payment_requests['requests']:
+    for req in data.get('requests', []):
         if req.get('status') == 'pending':
             all_requests.append({
                 "username": req['username'],
@@ -337,7 +361,8 @@ def get_all_pending_requests():
     return all_requests
 
 def approve_payment_request(username, request_id, admin_username):
-    for req in st.session_state.payment_requests['requests']:
+    data = load_payment_requests()
+    for req in data['requests']:
         if req.get('id') == request_id and req.get('status') == 'pending':
             users = load_users()
             if username in users:
@@ -354,6 +379,7 @@ def approve_payment_request(username, request_id, admin_username):
                 users[username]['predictions_limit'] = -1
                 save_users(users)
                 req['status'] = 'approved'
+                save_payment_requests(data)
                 log_admin_action(admin_username, f"批准付款並升級 {username} 為 VIP（{plan}）")
                 return True, f"已批准 {username} 的付款，到期日 {expiry}"
             else:
@@ -361,17 +387,20 @@ def approve_payment_request(username, request_id, admin_username):
     return False, "找不到該申請"
 
 def reject_payment_request(username, request_id, admin_username):
-    for req in st.session_state.payment_requests['requests']:
+    data = load_payment_requests()
+    for req in data['requests']:
         if req.get('id') == request_id and req.get('status') == 'pending':
             req['status'] = 'rejected'
+            save_payment_requests(data)
             log_admin_action(admin_username, f"拒絕 {username} 的付款申請")
             return True, "已拒絕該申請"
     return False, "找不到該申請"
 
 # ============================================================
-# 付款牆（水平選擇日/月/季）
+# 付款牆（修正 form key 錯誤）
 # ============================================================
 def show_paywall():
+    import time
     st.subheader("💳 選擇你嘅方案")
 
     plan_options = {
@@ -393,7 +422,8 @@ def show_paywall():
             st.rerun()
         st.stop()
 
-    with st.form(key="payment_form"):
+    form_key = f"payment_form_{int(time.time())}"
+    with st.form(key=form_key):
         plan_choice = st.radio(
             "請選擇付費方案：",
             options=list(plan_options.keys()),
@@ -519,7 +549,7 @@ def admin_payment_review():
             st.divider()
 
 # ============================================================
-# 模型載入（完整）
+# 模型載入
 # ============================================================
 @st.cache_resource
 def load_models():
@@ -538,7 +568,7 @@ def load_models():
         return None, None, None
 
 # ============================================================
-# 特徵工程（36 特徵，完整）
+# 特徵工程（36 特徵）
 # ============================================================
 FEATURES_EN = [
     'draw', 'act_wt', 'distance', 'rtg', 'avg_rank_last3',
@@ -940,7 +970,7 @@ def run_prediction(date_str, race_no):
     return result, pool_rec
 
 # ============================================================
-# 用戶功能（完整）
+# 用戶功能
 # ============================================================
 def record_prediction(username, date_str, race_no, horse_name, predicted_prob=None):
     users = load_users()
@@ -1078,7 +1108,7 @@ def show_prediction_history(username):
     st.dataframe(df, use_container_width=True)
 
 # ============================================================
-# 登入/註冊（完整）
+# 登入/註冊
 # ============================================================
 def login_page():
     st.title("🔐 登入 / 註冊")
@@ -1246,7 +1276,7 @@ def login_page():
                         st.rerun()
 
 # ============================================================
-# AI 自我學習（完整）
+# AI 自我學習
 # ============================================================
 def update_accuracy_with_results():
     acc = load_accuracy()
@@ -1332,7 +1362,7 @@ def adjust_model_weights():
     }
 
 # ============================================================
-# 後台管理（所有模組完整實作，此處省略詳細內容以節省字數，但功能齊全）
+# 後台管理（所有模組完整，但為了節省空間，只保留必要函數）
 # ============================================================
 
 def admin_user_management():
@@ -2066,7 +2096,7 @@ def admin_page():
             tab_functions[name]()
 
 # ============================================================
-# 主頁面
+# 主頁面（所有功能齊全，預測放喺模型自我學習上面）
 # ============================================================
 def main():
     if 'logged_in' not in st.session_state:
@@ -2130,7 +2160,6 @@ def main():
         admin_page()
         return
 
-    # 每日免費重心推介
     if CONFIG.get("enable_daily_free_tip", True):
         try:
             df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
@@ -2193,7 +2222,7 @@ def main():
         st.info("🔓 目前為公開模式，任何人皆可使用")
 
     # ============================================================
-    # 💳 付款功能（開放所有用戶）
+    # 💳 付款功能
     # ============================================================
     st.markdown("---")
     st.subheader("💳 付款功能")
@@ -2240,14 +2269,62 @@ def main():
                 if success:
                     st.success(f"✅ 測試記錄已寫入！用戶：{username}，方案：{get_plan_name(test_plan)} ${test_price}")
                     st.info("請去側邊欄 → 後台審核 查看")
-                    st.write("📋 當前付款記錄總數：", len(st.session_state.payment_requests['requests']))
-                    st.json(st.session_state.payment_requests['requests'])
+                    st.write("📋 當前付款記錄總數：", len(load_payment_requests()['requests']))
+                    st.json(load_payment_requests()['requests'])
                 else:
                     st.error(f"❌ 寫入失敗：{msg}")
 
     if st.session_state.get('test_payment', False):
         st.session_state['test_payment'] = False
         show_paywall()
+
+    # ============================================================
+    # 🎯 賽事預測控制（放喺模型自我學習上面）
+    # ============================================================
+    st.markdown("---")
+    st.subheader("🎯 賽事預測控制")
+    
+    remaining = get_remaining_predictions(st.session_state.username) if st.session_state.get('logged_in') else 0
+    user_group = st.session_state.get('role', 'free')
+    is_vip_or_paid = user_group in ['VIP', 'paid', 'super_admin']
+    
+    if remaining > 0 or is_vip_or_paid:
+        col_date, col_race, col_btn = st.columns([2, 2, 1])
+        with col_date:
+            date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="predict_date_mid")
+        with col_race:
+            race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race_mid")
+        with col_btn:
+            predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
+        
+        uploaded_file = st.file_uploader("上傳排位表 (CSV)", type="csv", key="predict_upload")
+        
+        if predict_btn and uploaded_file is not None:
+            df = pd.read_csv(uploaded_file)
+            st.write("預覽數據", df.head())
+            with st.spinner("預測中..."):
+                date_str = date.strftime('%Y-%m-%d')
+                result, pool = run_prediction(date_str, race_no)
+                if result is not None:
+                    st.success("✅ 預測完成！")
+                    top4 = result.head(4)
+                    st.dataframe(top4)
+                    fig = px.bar(top4, x='馬匹名稱', y='預測勝率', title="勝出概率")
+                    st.plotly_chart(fig)
+                    if not is_vip_or_paid and st.session_state.get('logged_in'):
+                        users = load_users()
+                        if st.session_state.username in users:
+                            users[st.session_state.username]['free_usage'] = users[st.session_state.username].get('free_usage', 0) + 1
+                            save_users(users)
+                            st.info(f"已使用 1 次預測，剩餘 {get_remaining_predictions(st.session_state.username)} 次")
+                else:
+                    st.error("預測失敗，請檢查數據")
+        elif predict_btn and uploaded_file is None:
+            st.warning("請先上傳排位表 CSV 檔案")
+    else:
+        st.warning("你已用完免費預測次數，請付款升級")
+        if st.button("💳 去付款"):
+            show_paywall()
 
     # ============================================================
     # 🧠 模型自我學習 & 表現分析
@@ -2324,56 +2401,6 @@ def main():
                 st.info("暫時未有預測記錄")
     else:
         st.info("暫時未有預測記錄，未能進行自我學習分析。請先執行預測。")
-
-    # ============================================================
-    # 🎯 賽事預測控制（完整版）
-    # ============================================================
-    st.markdown("---")
-    st.subheader("🎯 賽事預測控制")
-    
-    remaining = get_remaining_predictions(st.session_state.username) if st.session_state.get('logged_in') else 0
-    user_group = st.session_state.get('role', 'free')
-    is_vip_or_paid = user_group in ['VIP', 'paid', 'super_admin']
-    
-    if remaining > 0 or is_vip_or_paid:
-        col_date, col_race, col_btn = st.columns([2, 2, 1])
-        with col_date:
-            date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="predict_date_mid")
-        with col_race:
-            race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race_mid")
-        with col_btn:
-            predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
-        
-        uploaded_file = st.file_uploader("上傳排位表 (CSV)", type="csv", key="predict_upload")
-        
-        if predict_btn and uploaded_file is not None:
-            df = pd.read_csv(uploaded_file)
-            st.write("預覽數據", df.head())
-            with st.spinner("預測中..."):
-                # 注意：run_prediction 需要 date_str 和 race_no，此處要傳入正確參數
-                date_str = date.strftime('%Y-%m-%d')
-                result, pool = run_prediction(date_str, race_no)
-                if result is not None:
-                    st.success("✅ 預測完成！")
-                    top4 = result.head(4)
-                    st.dataframe(top4)
-                    fig = px.bar(top4, x='馬匹名稱', y='預測勝率', title="勝出概率")
-                    st.plotly_chart(fig)
-                    # 扣減使用次數（非VIP）
-                    if not is_vip_or_paid and st.session_state.get('logged_in'):
-                        users = load_users()
-                        if st.session_state.username in users:
-                            users[st.session_state.username]['free_usage'] = users[st.session_state.username].get('free_usage', 0) + 1
-                            save_users(users)
-                            st.info(f"已使用 1 次預測，剩餘 {get_remaining_predictions(st.session_state.username)} 次")
-                else:
-                    st.error("預測失敗，請檢查數據")
-        elif predict_btn and uploaded_file is None:
-            st.warning("請先上傳排位表 CSV 檔案")
-    else:
-        st.warning("你已用完免費預測次數，請付款升級")
-        if st.button("💳 去付款"):
-            show_paywall()
 
     # ============================================================
     # 📅 今日賽程
