@@ -335,21 +335,13 @@ def show_paywall():
         else:
             st.info("請選擇一個方案")
 
-        promo_input = st.text_input("優惠碼（如有）", key="promo_input_form", placeholder="例如 A7K3X9P2")
+        promo_input = st.text_input("優惠碼（如有）", key="promo_input_form")
 
         st.divider()
-        
-        # FPS 轉數快資料
         st.markdown("""
-        ### 📤 付款方式：FPS 轉數快
-        <div style="background:#e3f2fd;border-radius:12px;padding:16px;text-align:center;border:2px solid #1a73e8;max-width:400px;margin:0 auto;">
-            <span style="font-size:24px;">🏦</span><br>
-            <b style="font-size:18px;">轉數快識別碼：<span style="color:#0d47a1;">12345678</span></b><br>
-            <span style="font-size:14px;color:#555;">戶口名稱：<b>SHTSN SYSTEM</b></span>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.caption("💡 過數後請 Telegram 通知管理員（@bryhjdjbrbxibvrjskofndhiebdpaq）以加快審核")
+        **📤 付款方式：FPS 轉數快 `12345678`（SHTSN SYSTEM）**  
+        💬 過數後請將截圖發送 Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**
+        """)
 
         submitted = st.form_submit_button("📩 提交付款申請，等待管理員審核")
 
@@ -367,7 +359,6 @@ def show_paywall():
             discount_desc = ""
             promo_code_used = None
 
-            # 處理優惠碼
             if promo_input:
                 try:
                     promos = load_promos()
@@ -393,9 +384,9 @@ def show_paywall():
                 except Exception as e:
                     st.warning(f"優惠碼處理出錯：{e}")
 
-            # 儲存付款申請到 payment_proofs.json
+            # ---------- 改動點：將申請存入 payment_proofs.json ----------
             try:
-                proofs = load_payment_proofs()
+                proofs = load_payment_proofs()  # 呢個函數你嘅檔案已經有
                 new_proof = {
                     "id": len(proofs['proof_records']) + 1,
                     "username": st.session_state.username,
