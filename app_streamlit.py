@@ -1789,12 +1789,12 @@ def admin_payment_review():
         with col_s1:
             search_term = st.text_input("搜尋用戶名稱", placeholder="輸入用戶名")
         with col_s2:
-            status_filter = "st.selectbox"(
-                "狀態篩選",
-                ["全部", "pending", "approved", "rejected"],
-                index=1,   # 預設 pending
-                format_func=lambda x: {"pending": "待審核", "approved": "已批准", "rejected": "已拒絕", "全部": "全部"}.get(x, x)
-            )
+          status_filter = st.selectbox(
+    "状态筛选",
+    ["全部", "pending", "approved", "rejected"],
+    index=1,
+    format_func=lambda x: {"pending": "待审核", "approved": "已批准", "rejected": "已拒绝", "全部": "全部"}.get(x, x)
+)
         with col_s3:
             if status_filter in ["pending", "全部"] and len(pending) > 0:
                 if st.button("📦 批量批准全部待審"):
