@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版（付款牆水平選擇日/月/季，免費兩次後顯示）
+賽馬預測系統 - 完整版（付款功能統一，開放所有用戶）
 """
 
 import streamlit as st
@@ -369,20 +369,19 @@ def reject_payment_request(username, request_id, admin_username):
     return False, "找不到該申請"
 
 # ============================================================
-# 付款牆（水平選擇日/月/季）
+# 付款牆（統一付款界面，開放所有用戶）
 # ============================================================
 def show_paywall():
-    st.write("🔵 **show_paywall() 已被執行**")
-    st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
     st.subheader("💳 選擇你嘅方案")
 
-    # 方案選項（水平 radio，同測試版完全一致）
+    # 方案選項（水平 radio）
     plan_options = {
         "day": f"☀️ 日費  ${CONFIG['price_day']}   (1天)",
         "month": f"📆 月費  ${CONFIG['price_month']}  (30天)",
         "quarter": f"📅 季費  ${CONFIG['price_quarter']} (90天)"
     }
 
+    # 如果已經提交成功，顯示成功訊息
     if st.session_state.get('payment_just_submitted', False):
         st.success("✅ 付款申請已成功提交！管理員將盡快審核。")
         st.info("📩 提交後請 Telegram 通知管理員（可加快審核）")
@@ -397,7 +396,6 @@ def show_paywall():
         st.stop()
 
     with st.form(key="payment_form"):
-        # 水平選擇方案（同測試版完全一樣）
         plan_choice = st.radio(
             "請選擇付費方案：",
             options=list(plan_options.keys()),
@@ -415,20 +413,14 @@ def show_paywall():
         promo_input = st.text_input("優惠碼（如有）", key="promo_input_form")
 
         st.divider()
-        st.subheader("📤 付款方式")
         st.markdown("""
-        **請使用以下方式過數：**
-        - 🏦 **FPS 轉數快**：`12345678`
-        - 📛 **戶口名稱**：`SHTSN SYSTEM`
-        - 💰 **金額**：請根據你選擇的方案支付
+        **📤 付款方式：FPS 轉數快 `12345678`（SHTSN SYSTEM）**  
+        💬 過數後請將截圖發送 Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**
         """)
-        st.info("💬 過數後，請將 **付款截圖** 透過 Telegram 發送俾管理員：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
-        st.caption("管理員確認收款後，會喺後台批准你嘅申請，系統會自動升級你嘅帳戶。")
 
         submitted = st.form_submit_button("📩 提交付款申請，等待管理員審核")
 
         if submitted:
-            st.write("🔍 **提交按鈕已撳下**")
             if not plan_choice:
                 st.error("❌ 請選擇方案")
                 return
@@ -2201,11 +2193,26 @@ def main():
     elif not CONFIG["enable_registration"]:
         st.info("🔓 目前為公開模式，任何人皆可使用")
 
-    # 付款功能測試（只有超級管理員可見）
+    # ============================================================
+    # 🟢 付款功能（開放所有用戶，原名「付款功能測試」已移除）
+    # ============================================================
     st.markdown("---")
-    st.subheader("🧪 付款功能測試")
+    st.subheader("💳 付款功能")
     
+    # 檢查用戶是否已登入
+    if st.session_state.get('logged_in'):
+        # 顯示付款牆（已移除警告）
+        show_paywall()
+    else:
+        st.info("請先登入以使用付款功能")
+        if st.button("前往登入"):
+            st.session_state.page_mode = "login"
+            st.rerun()
+
+    # 管理員專用快速測試按鈕（只對 super_admin 顯示）
     if st.session_state.get('role') == 'super_admin':
+        st.markdown("---")
+        st.subheader("⚡ 管理員快速測試")
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🚀 顯示付款牆（傳統）", type="secondary"):
@@ -2239,8 +2246,6 @@ def main():
                     st.json(st.session_state.payment_requests['requests'])
                 else:
                     st.error(f"❌ 寫入失敗：{msg}")
-    else:
-        st.info("🔒 付款測試功能只限管理員使用")
 
     if st.session_state.get('test_payment', False):
         st.session_state['test_payment'] = False
@@ -2406,6 +2411,7 @@ def main():
             is_vip = True
         
         if CONFIG["enable_payment"] and limit != -1 and used >= limit:
+            # 免費次數用完，直接顯示付款牆（但我們已經在主頁顯示了付款區域，這裡也可以調用）
             show_paywall()
         else:
             date_str = date.strftime('%Y-%m-%d')
@@ -2528,41 +2534,4 @@ def main():
                         <div style="font-size:15px;">
                             <div>🏆 <b>獨贏</b>：<span style="color:#1a237e;font-weight:bold;">{top4.iloc[0]['馬匹名稱']}</span></div>
                             <div>🔗 <b>連贏</b>：<span style="color:#0d47a1;font-weight:bold;">{top4.iloc[0]['馬匹名稱']} + {top4.iloc[1]['馬匹名稱']}</span></div>
-                            <div style="margin-top:12px;padding:12px;background:#fff3e0;border-radius:10px;text-align:center;border:1px dashed #ff6f00;">
-                                <span style="font-size:20px;">🔒</span>
-                                <span style="color:#e65100;font-weight:bold;"> 三重彩及四重彩推薦僅限 VIP 會員查看</span>
-                                <br><span style="font-size:13px;color:#888;">升級 VIP 即可解鎖完整投注建議</span>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    st.markdown("</div>", unsafe_allow_html=True)
-                    
-                    st.subheader("🎯 彩池推薦（詳細）")
-                    st.text(pool)
-
-                    if CONFIG["enable_registration"] and st.session_state.logged_in:
-                        winner_name = top4.iloc[0]['馬匹名稱']
-                        prob = top4.iloc[0]['預測勝率']
-                        record_prediction(st.session_state.username, date_str, race_no, winner_name, prob)
-                        users = load_users()
-                        if st.session_state.username in users:
-                            users[st.session_state.username]['free_usage'] = users[st.session_state.username].get('free_usage', 0) + 1
-                            users[st.session_state.username]['total_usage'] = users[st.session_state.username].get('total_usage', 0) + 1
-                            save_users(users)
-                        st.session_state.usage_count += 1
-                        st.info("📝 預測已記錄到你的歷史")
-
-    st.divider()
-    st.warning("⚠️ **免責聲明**：本系統提供之預測僅供參考，不構成投注建議。賽馬活動涉及風險，用戶應量力而為，本系統不對任何投注損失負責。用戶必須年滿18歲。使用本服務即表示同意以上條款。")
-    
-    col_f1, col_f2, col_f3 = st.columns(3)
-    with col_f1:
-        st.caption(f"🕐 最後更新：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    with col_f2:
-        st.caption("🔐 數據來源：HKJC | 系統版本：v14.0-用戶體驗版")
-    with col_f3:
-        st.caption("💬 Telegram：@bryhjdjbrbxibvrjskofndhiebdpaq")
-
-if __name__ == '__main__':
-    main()
+                            <div style="margin-top:12px;padding:12px;background:#fff3e0;border-radius:10px;text-align:center;border:1px dashed
