@@ -1751,14 +1751,10 @@ def admin_payment_review():
     proofs_data = load_payment_proofs()
     records = proofs_data.get('proof_records', [])
     
-    # ============================================================
-    # 🆕 過濾：只保留用戶存在於 users.json 嘅記錄
-    # ============================================================
+    # 過濾：只保留用戶存在於 users.json 嘅記錄
     users = load_users()
     existing_usernames = set(users.keys())
     records = [r for r in records if r.get('username') in existing_usernames]
-    # 更新 proofs_data 嘅 records（可選，但唔 save，只係顯示用）
-    # 如果想永久刪除，可以喺呢度 save，但為安全起見只係顯示過濾
     proofs_data['proof_records'] = records  # 只影響當前顯示
     
     pending = [r for r in records if r.get('status') == 'pending']
@@ -1800,20 +1796,16 @@ def admin_payment_review():
     
     if not filtered:
         st.info("📭 沒有符合條件的記錄")
-        # 如果有記錄但 filter 後冇，提示用戶轉 filter
-        if records:
-            st.caption(f"💡 共有 {len(records)} 條記錄，但篩選條件 ({status_filter}) 下冇匹配。請嘗試轉為「全部」")
         return
     
     st.subheader(f"📋 共 {len(filtered)} 條記錄")
     
-    # 清除已處理記錄按鈕
+    # 清除已處理記錄
     col_clear1, col_clear2 = st.columns(2)
     with col_clear1:
         if st.button("🧹 清除所有已處理記錄（批准 + 拒絕）", key="clear_processed"):
             proofs_data = load_payment_proofs()
             records = proofs_data.get('proof_records', [])
-            # 同時過濾已處理嘅記錄，但保留 pending
             proofs_data['proof_records'] = [r for r in records if r.get('status') == 'pending']
             save_payment_proofs(proofs_data)
             st.success("✅ 已清除所有已處理記錄")
@@ -1874,7 +1866,6 @@ def admin_payment_review():
                             st.rerun()
                 elif status == "approved":
                     st.success("✅ 已批准")
-                    users = load_users()
                     user_data = users.get(username, {})
                     expiry = user_data.get('expiry_date')
                     if expiry:
