@@ -1,18 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版（付款申請存入 users.json + 詳細除錯）
+賽馬預測系統 - 完整版（付款申請獨立儲存於 payment_requests.json）
 """
-# 🧪 強制寫入測試（用完記得刪除）
-import json
-import os
-try:
-    test_data = {"test_write": "success", "time": str(datetime.now())}
-    with open('test_write.json', 'w', encoding='utf-8') as f:
-        json.dump(test_data, f)
-    print("✅ 測試寫入成功：test_write.json")
-except Exception as e:
-    print(f"❌ 測試寫入失敗：{e}")
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -160,18 +151,18 @@ def save_json(file_path, data):
 # 檔案路徑常數
 # ============================================================
 USER_DATA_FILE = 'users.json'
-PAYMENT_REQUESTS_FILE = 'payment_requests.json'
 FINANCE_FILE = 'finance.json'
 PROMO_FILE = 'promo_codes.json'
 LOG_FILE = 'admin_log.json'
 ACCURACY_FILE = 'accuracy.json'
 CONTENT_FILE = 'content.json'
 AUTOMATION_FILE = 'automation.json'
+PAYMENT_REQUESTS_FILE = 'payment_requests.json'   # 新增獨立付款申請檔案
 
 # ============================================================
-# 用戶系統（含付款申請管理）
+# 付款申請專用函數（獨立於 users.json）
 # ============================================================
-def load_users():def load_payment_requests():
+def load_payment_requests():
     import json
     try:
         with open(PAYMENT_REQUESTS_FILE, 'r', encoding='utf-8') as f:
@@ -184,6 +175,11 @@ def save_payment_requests(data):
     with open(PAYMENT_REQUESTS_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     return True
+
+# ============================================================
+# 用戶系統
+# ============================================================
+def load_users():
     users = load_json(USER_DATA_FILE)
     if not users or "admin" not in users:
         users = {
@@ -206,8 +202,7 @@ def save_payment_requests(data):
                 "invite_code": "ADMIN001",
                 "invited_by": None,
                 "invite_rewards": 0,
-                "invite_count": 0,
-                "payment_requests": []
+                "invite_count": 0
             }
         }
         save_users(users)
@@ -235,8 +230,6 @@ def save_payment_requests(data):
                     u['predictions_limit'] = -1
                 else:
                     u['predictions_limit'] = CONFIG["free_limit"]
-            if 'payment_requests' not in u:
-                u['payment_requests'] = []
         save_users(users)
     return users
 
@@ -327,80 +320,212 @@ def get_plan_price(plan):
     return 0
 
 # ============================================================
-# 付款申請功能（存入 users.json）
+# 付款牆（寫入獨立檔案 payment_requests.json）
 # ============================================================
-def submit_payment_request(username, plan, final_price, discount_desc, promo_code_used):
-    users = load_users()
-    if username not in users:
-        return False, "用戶不存在"
-    request = {
-        "id": len(users[username]['payment_requests']) + 1,
-        "plan": plan,
-        "plan_name": get_plan_name(plan),
-        "final_price": final_price,
-        "discount_desc": discount_desc,
-        "promo_code": promo_code_used,
-        "submitted_at": datetime.now().isoformat(),
-        "status": "pending"
+def show_paywall():
+    import json
+    from datetime import datetime
+
+    st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
+    st.subheader("💳 選擇你嘅方案")
+
+    plan_options = {
+        "day": f"☀️ 日費  ${CONFIG['price_day']}   (1天)",
+        "month": f"📆 月費  ${CONFIG['price_month']}  (30天)",
+        "quarter": f"📅 季費  ${CONFIG['price_quarter']} (90天)"
     }
-    users[username]['payment_requests'].append(request)
-    save_users(users)
-    return True, "申請已提交"
 
-def get_all_pending_requests():
-    users = load_users()
-    all_requests = []
-    for username, user_data in users.items():
-        for req in user_data.get('payment_requests', []):
-            if req.get('status') == 'pending':
-                all_requests.append({
+    if st.session_state.get('payment_just_submitted', False):
+        st.success("✅ 付款申請已成功提交！管理員將盡快審核。")
+        st.info("📩 提交後請 Telegram 通知管理員（可加快審核）")
+        st.markdown("💬 Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
+        if 'payment_detail' in st.session_state:
+            st.write(st.session_state['payment_detail'])
+        if st.button("返回主頁"):
+            for key in ['payment_just_submitted', 'payment_detail']:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.rerun()
+        st.stop()
+
+    with st.form(key="payment_form"):
+        plan_choice = st.radio(
+            "請選擇付費方案：",
+            options=[""] + list(plan_options.keys()),
+            format_func=lambda x: plan_options.get(x, "請選擇方案"),
+            index=0,
+            key="plan_radio_in_form"
+        )
+
+        if plan_choice:
+            plan_name = get_plan_name(plan_choice)
+            plan_days = get_plan_days(plan_choice)
+            original_price = get_plan_price(plan_choice)
+            st.info(f"📌 你已選擇 **{plan_name}**（原價 ${original_price}，有效期 {plan_days} 天）")
+        else:
+            st.info("請選擇一個方案以繼續")
+
+        promo_input = st.text_input("優惠碼（如有）", key="promo_input_form", placeholder="例如 A7K3X9P2")
+
+        st.divider()
+        st.subheader("📤 付款方式")
+        st.markdown("""
+        **請使用以下方式過數：**
+        - 🏦 **FPS 轉數快**：`12345678`
+        - 📛 **戶口名稱**：`SHTSN SYSTEM`
+        - 💰 **金額**：請根據你選擇的方案支付
+        """)
+        st.info("💬 過數後，請將 **付款截圖** 透過 Telegram 發送俾管理員：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
+        st.caption("管理員確認收款後，會喺後台批准你嘅申請，系統會自動升級你嘅帳戶。")
+
+        submitted = st.form_submit_button("📩 提交付款申請，等待管理員審核")
+
+        if submitted:
+            if not plan_choice:
+                st.error("❌ 請先選擇一個付費方案")
+                st.stop()
+            if not st.session_state.get('logged_in', False):
+                st.error("❌ 請先登入")
+                st.stop()
+
+            username = st.session_state.username
+            original_price = get_plan_price(plan_choice)
+            final_price = original_price
+            discount_desc = ""
+            promo_code_used = None
+
+            if promo_input:
+                try:
+                    promos = load_promos()
+                    promo_data = promos.get(promo_input)
+                    if promo_data and not promo_data.get('used', False):
+                        expiry = promo_data.get('expiry')
+                        if expiry:
+                            expiry_date = datetime.fromisoformat(expiry)
+                            if expiry_date >= datetime.now():
+                                discount_type = promo_data.get('discount_type', 'percentage')
+                                discount_value = promo_data.get('discount_value', 0)
+                                if discount_type == 'percentage':
+                                    final_price = original_price * (1 - discount_value / 100)
+                                    discount_desc = f"{discount_value}% 折扣"
+                                elif discount_type == 'fixed':
+                                    final_price = max(0, original_price - discount_value)
+                                    discount_desc = f"減 ${discount_value}"
+                                elif discount_type == 'free':
+                                    final_price = 0
+                                    discount_desc = "全免！"
+                                final_price = round(final_price, 2)
+                                promo_code_used = promo_input
+                except Exception as e:
+                    st.warning(f"優惠碼處理出錯：{e}")
+
+            # 🟢 寫入獨立檔案 payment_requests.json
+            try:
+                data = load_payment_requests()
+                new_id = len(data.get('requests', [])) + 1
+                new_request = {
+                    "id": new_id,
                     "username": username,
-                    "request": req
-                })
-    return all_requests
+                    "plan": plan_choice,
+                    "plan_name": get_plan_name(plan_choice),
+                    "final_price": final_price,
+                    "discount_desc": discount_desc,
+                    "promo_code": promo_code_used,
+                    "submitted_at": datetime.now().isoformat(),
+                    "status": "pending"
+                }
+                data['requests'].append(new_request)
+                save_payment_requests(data)
 
-def approve_payment_request(username, request_id, admin_username):
-    users = load_users()
-    if username not in users:
-        return False, "用戶不存在"
-    target_request = None
-    for req in users[username]['payment_requests']:
-        if req.get('id') == request_id and req.get('status') == 'pending':
-            target_request = req
-            break
-    if not target_request:
-        return False, "找不到該申請"
-    plan = target_request['plan']
-    days = get_plan_days(plan)
-    if days == 0:
-        days = 30
-    expiry = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
-    users[username]['is_paid'] = True
-    users[username]['group'] = 'VIP'
-    users[username]['paid_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    users[username]['expiry_date'] = expiry
-    users[username]['plan'] = plan
-    users[username]['predictions_limit'] = -1
-    target_request['status'] = 'approved'
-    target_request['approved_at'] = datetime.now().isoformat()
-    target_request['approved_by'] = admin_username
-    save_users(users)
-    log_admin_action(admin_username, f"批准付款並升級 {username} 為 VIP（{plan}）")
-    return True, f"已批准 {username} 的付款，到期日 {expiry}"
+                st.success("✅ 付款申請已成功提交！")
+                st.session_state['payment_just_submitted'] = True
+                st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
+                st.rerun()
 
-def reject_payment_request(username, request_id, admin_username):
-    users = load_users()
-    if username not in users:
-        return False, "用戶不存在"
-    for req in users[username]['payment_requests']:
-        if req.get('id') == request_id and req.get('status') == 'pending':
-            req['status'] = 'rejected'
-            req['rejected_at'] = datetime.now().isoformat()
-            req['rejected_by'] = admin_username
-            save_users(users)
-            log_admin_action(admin_username, f"拒絕 {username} 的付款申請")
-            return True, "已拒絕該申請"
-    return False, "找不到該申請"
+            except Exception as e:
+                st.error(f"❌ 寫入失敗：{e}")
+                st.stop()
+
+# ============================================================
+# 後台付款審核（讀取獨立檔案）
+# ============================================================
+def admin_payment_review():
+    st.subheader("📤 付款審核")
+    data = load_payment_requests()
+    pending = [r for r in data.get('requests', []) if r.get('status') == 'pending']
+    if not pending:
+        st.info("✅ 目前沒有待審核嘅付款申請")
+        return
+    st.write(f"共 **{len(pending)}** 條待審核記錄")
+    for req in pending:
+        username = req.get('username', '未知')
+        with st.container():
+            cols = st.columns([2, 2, 1.5, 1.5, 2])
+            with cols[0]:
+                st.write(f"👤 **{username}**")
+                st.caption(f"ID: {req.get('id', '')}")
+            with cols[1]:
+                plan_name = req.get('plan_name', '未知方案')
+                price = req.get('final_price', 0)
+                st.write(f"📌 {plan_name}")
+                st.write(f"💰 ${price:.2f}")
+            with cols[2]:
+                submitted_at = req.get('submitted_at', '')
+                if submitted_at:
+                    try:
+                        dt = datetime.fromisoformat(submitted_at)
+                        st.caption(f"📅 {dt.strftime('%Y-%m-%d %H:%M')}")
+                    except:
+                        st.caption(submitted_at)
+            with cols[3]:
+                st.warning("⏳ 待審核")
+            with cols[4]:
+                if st.button("✅ 批准", key=f"approve_{req.get('id')}"):
+                    _approve_payment(req, data)
+                    st.rerun()
+                if st.button("❌ 拒絕", key=f"reject_{req.get('id')}"):
+                    _reject_payment(req, data)
+                    st.rerun()
+            st.divider()
+
+def _approve_payment(req, data):
+    try:
+        username = req.get('username')
+        users = load_users()
+        if username not in users:
+            st.error("❌ 用戶不存在")
+            return
+        plan = req['plan']
+        days = get_plan_days(plan)
+        if days == 0:
+            days = 30
+        expiry = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+        users[username]['is_paid'] = True
+        users[username]['group'] = 'VIP'
+        users[username]['paid_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        users[username]['expiry_date'] = expiry
+        users[username]['plan'] = plan
+        users[username]['predictions_limit'] = -1
+        save_users(users)
+
+        # 從付款請求中刪除（已處理）
+        data['requests'] = [r for r in data['requests'] if r.get('id') != req.get('id')]
+        save_payment_requests(data)
+
+        st.success(f"✅ {username} 已升級為 VIP，到期日 {expiry}")
+        log_admin_action(st.session_state.username, f"批准付款並升級 {username} 為 VIP（{plan}）")
+    except Exception as e:
+        st.error(f"❌ 錯誤：{e}")
+
+def _reject_payment(req, data):
+    try:
+        username = req.get('username')
+        data['requests'] = [r for r in data['requests'] if r.get('id') != req.get('id')]
+        save_payment_requests(data)
+        st.warning(f"❌ 已拒絕 {username} 的申請")
+        log_admin_action(st.session_state.username, f"拒絕付款申請：{username}")
+    except Exception as e:
+        st.error(f"❌ 錯誤：{e}")
 
 # ============================================================
 # 模型載入
@@ -1102,8 +1227,7 @@ def login_page():
                             'invite_code': new_user.upper() + str(random.randint(100, 999)),
                             'invited_by': invited_by,
                             'invite_rewards': 0,
-                            'invite_count': 0,
-                            'payment_requests': []
+                            'invite_count': 0
                         }
                         users[new_user] = new_user_data
                         save_users(users)
@@ -1130,132 +1254,6 @@ def login_page():
                         st.session_state.page_mode = "login"
                         st.rerun()
 
-# ============================================================
-# 付款牆（存入 users.json + 詳細除錯）
-# ============================================================
-def show_paywall():
-    import json
-    from datetime import datetime
-
-    st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
-    st.subheader("💳 選擇你嘅方案")
-
-    plan_options = {
-        "day": f"☀️ 日費  ${CONFIG['price_day']}   (1天)",
-        "month": f"📆 月費  ${CONFIG['price_month']}  (30天)",
-        "quarter": f"📅 季費  ${CONFIG['price_quarter']} (90天)"
-    }
-
-    if st.session_state.get('payment_just_submitted', False):
-        st.success("✅ 付款申請已成功提交！管理員將盡快審核。")
-        st.info("📩 提交後請 Telegram 通知管理員（可加快審核）")
-        st.markdown("💬 Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
-        if 'payment_detail' in st.session_state:
-            st.write(st.session_state['payment_detail'])
-        if st.button("返回主頁"):
-            for key in ['payment_just_submitted', 'payment_detail']:
-                if key in st.session_state:
-                    del st.session_state[key]
-            st.rerun()
-        st.stop()
-
-    with st.form(key="payment_form"):
-        plan_choice = st.radio(
-            "請選擇付費方案：",
-            options=[""] + list(plan_options.keys()),
-            format_func=lambda x: plan_options.get(x, "請選擇方案"),
-            index=0,
-            key="plan_radio_in_form"
-        )
-
-        if plan_choice:
-            plan_name = get_plan_name(plan_choice)
-            plan_days = get_plan_days(plan_choice)
-            original_price = get_plan_price(plan_choice)
-            st.info(f"📌 你已選擇 **{plan_name}**（原價 ${original_price}，有效期 {plan_days} 天）")
-        else:
-            st.info("請選擇一個方案以繼續")
-
-        promo_input = st.text_input("優惠碼（如有）", key="promo_input_form", placeholder="例如 A7K3X9P2")
-
-        st.divider()
-        st.subheader("📤 付款方式")
-        st.markdown("""
-        **請使用以下方式過數：**
-        - 🏦 **FPS 轉數快**：`12345678`
-        - 📛 **戶口名稱**：`SHTSN SYSTEM`
-        - 💰 **金額**：請根據你選擇的方案支付
-        """)
-        st.info("💬 過數後，請將 **付款截圖** 透過 Telegram 發送俾管理員：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
-        st.caption("管理員確認收款後，會喺後台批准你嘅申請，系統會自動升級你嘅帳戶。")
-
-        submitted = st.form_submit_button("📩 提交付款申請，等待管理員審核")
-
-        if submitted:
-            if not plan_choice:
-                st.error("❌ 請先選擇一個付費方案")
-                st.stop()
-            if not st.session_state.get('logged_in', False):
-                st.error("❌ 請先登入")
-                st.stop()
-
-            username = st.session_state.username
-            original_price = get_plan_price(plan_choice)
-            final_price = original_price
-            discount_desc = ""
-            promo_code_used = None
-
-            if promo_input:
-                try:
-                    promos = load_promos()
-                    promo_data = promos.get(promo_input)
-                    if promo_data and not promo_data.get('used', False):
-                        expiry = promo_data.get('expiry')
-                        if expiry:
-                            expiry_date = datetime.fromisoformat(expiry)
-                            if expiry_date >= datetime.now():
-                                discount_type = promo_data.get('discount_type', 'percentage')
-                                discount_value = promo_data.get('discount_value', 0)
-                                if discount_type == 'percentage':
-                                    final_price = original_price * (1 - discount_value / 100)
-                                    discount_desc = f"{discount_value}% 折扣"
-                                elif discount_type == 'fixed':
-                                    final_price = max(0, original_price - discount_value)
-                                    discount_desc = f"減 ${discount_value}"
-                                elif discount_type == 'free':
-                                    final_price = 0
-                                    discount_desc = "全免！"
-                                final_price = round(final_price, 2)
-                                promo_code_used = promo_input
-                except Exception as e:
-                    st.warning(f"優惠碼處理出錯：{e}")
-
-            # 🟢 寫入新檔案 payment_requests.json
-            try:
-                data = load_payment_requests()
-                new_id = len(data['requests']) + 1
-                new_request = {
-                    "id": new_id,
-                    "username": username,
-                    "plan": plan_choice,
-                    "plan_name": get_plan_name(plan_choice),
-                    "final_price": final_price,
-                    "discount_desc": discount_desc,
-                    "promo_code": promo_code_used,
-                    "submitted_at": datetime.now().isoformat(),
-                    "status": "pending"
-                }
-                data['requests'].append(new_request)
-                save_payment_requests(data)
-
-                st.success("✅ 付款申請已成功提交！")
-                st.session_state['payment_just_submitted'] = True
-                st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
-                st.rerun()
-
-            except Exception as e:
-                st.error(f"❌ 寫入失敗：{e}")
-                st.stop()
 # ============================================================
 # AI 自我學習
 # ============================================================
@@ -1343,9 +1341,8 @@ def adjust_model_weights():
     }
 
 # ============================================================
-# 後台管理（付款審核含詳細除錯）
+# 後台管理（完整模組）
 # ============================================================
-
 def admin_user_management():
     st.subheader("👥 用戶管理")
     with st.expander("➕ 新增用戶", expanded=False):
@@ -1382,8 +1379,7 @@ def admin_user_management():
                         "invite_code": new_username.upper() + str(random.randint(100, 999)),
                         "invited_by": None,
                         "invite_rewards": 0,
-                        "invite_count": 0,
-                        "payment_requests": []
+                        "invite_count": 0
                     }
                     save_users(users)
                     log_admin_action(st.session_state.username, f"新增用戶 {new_username}")
@@ -1919,47 +1915,6 @@ def admin_security():
             st.rerun()
         else:
             st.error("用戶不存在")
-
-def admin_payment_review():
-    st.subheader("📤 付款審核")
-    data = load_payment_requests()
-    pending = [r for r in data['requests'] if r.get('status') == 'pending']
-    if not pending:
-        st.info("✅ 目前沒有待審核嘅付款申請")
-        return
-    st.write(f"共 **{len(pending)}** 條待審核記錄")
-    for req in pending:
-        username = req.get('username', '未知')
-        with st.container():
-            cols = st.columns([2, 2, 1.5, 1.5, 2])
-            with cols[0]:
-                st.write(f"👤 **{username}**")
-                st.caption(f"ID: {req.get('id', '')}")
-            with cols[1]:
-                plan_name = req.get('plan_name', '未知方案')
-                price = req.get('final_price', 0)
-                st.write(f"📌 {plan_name}")
-                st.write(f"💰 ${price:.2f}")
-            with cols[2]:
-                submitted_at = req.get('submitted_at', '')
-                if submitted_at:
-                    try:
-                        dt = datetime.fromisoformat(submitted_at)
-                        st.caption(f"📅 {dt.strftime('%Y-%m-%d %H:%M')}")
-                    except:
-                        st.caption(submitted_at)
-            with cols[3]:
-                st.warning("⏳ 待審核")
-            with cols[4]:
-                if st.button("✅ 批准", key=f"approve_{req.get('id')}"):
-                    # 批准邏輯
-                    _approve_payment(req, data)
-                    st.rerun()
-                if st.button("❌ 拒絕", key=f"reject_{req.get('id')}"):
-                    # 拒絕邏輯
-                    _reject_payment(req, data)
-                    st.rerun()
-            st.divider()
 
 def admin_system_settings():
     users = load_users()
