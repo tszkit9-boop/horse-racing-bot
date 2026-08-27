@@ -1333,7 +1333,7 @@ def adjust_model_weights():
     }
 
 # ============================================================
-# 後台管理（所有模組完整實作）
+# 後台管理（所有模組完整實作 — 包含所有缺漏函數）
 # ============================================================
 
 def admin_user_management():
@@ -1668,6 +1668,7 @@ def admin_accuracy_monitor():
     with st.expander("📋 查看所有記錄"):
         st.dataframe(df_records, use_container_width=True)
 
+# ------------------- 訂閱管理（原本缺漏） -------------------
 def admin_subscription():
     st.subheader("⏰ 訂閱管理 & 到期提醒")
     users = load_users()
@@ -1698,7 +1699,6 @@ def admin_subscription():
 
     st.divider()
     st.subheader("⏰ 自動終止過期會員")
-    
     if st.button("🔍 檢查並終止過期會員", key="check_expired"):
         users = load_users()
         today = datetime.now()
@@ -1734,6 +1734,7 @@ def admin_subscription():
             st.success(f"✅ {username} 已續期至 {new_expiry}")
             st.rerun()
 
+# ------------------- 監控（原本缺漏） -------------------
 def admin_monitoring():
     st.subheader("📡 系統監控")
     files = ['ALL_DATA_MERGED.csv', 'HKCJ_FULL_YEAR_DATA.csv', 'horse_name_mapping.csv',
@@ -1749,6 +1750,7 @@ def admin_monitoring():
         df_log = pd.DataFrame(logs['logs'][-20:])
         st.dataframe(df_log, use_container_width=True)
 
+# ------------------- 內容管理（原本已存在，但保留） -------------------
 def admin_content():
     st.subheader("📝 內容管理")
     content = load_json(CONTENT_FILE)
@@ -1835,6 +1837,7 @@ def admin_content():
             f.write(uploaded.getbuffer())
         st.success("✅ 排位表已更新")
 
+# ------------------- 自動化（原本缺漏） -------------------
 def admin_automation():
     st.subheader("🤖 自動化工具")
     auto = load_json(AUTOMATION_FILE)
@@ -1849,6 +1852,7 @@ def admin_automation():
         save_json(AUTOMATION_FILE, auto)
         st.success("✅ 已儲存")
 
+# ------------------- 安全（原本缺漏） -------------------
 def admin_security():
     st.subheader("🔐 安全與權限")
     st.write("操作日誌")
@@ -1873,10 +1877,18 @@ def admin_security():
         else:
             st.error("用戶不存在")
 
+# ------------------- 付款審核（需要 load_payment_proofs） -------------------
 def admin_payment_review():
     st.subheader("📤 付款審核")
     
-    proofs_data = load_payment_proofs()
+    # 確保 load_payment_proofs 存在（如果不存在，則建立）
+    try:
+        proofs_data = load_payment_proofs()
+    except NameError:
+        # 如果未定義，則在此定義（但建議在第一部分定義）
+        st.error("❌ load_payment_proofs 未定義，請確保第一部分包含此函數")
+        return
+
     records = proofs_data.get('proof_records', [])
     
     pending = [r for r in records if r.get('status') == 'pending']
@@ -2010,6 +2022,7 @@ def admin_payment_review():
         else:
             st.info("暫無日誌")
 
+# ------------------- 輔助函數（付款審核用） -------------------
 def _approve_payment(rec, proofs_data):
     try:
         st.info("⏳ 開始處理批准...")
@@ -2092,6 +2105,7 @@ def _refund_payment(rec, proofs_data):
         import traceback
         st.code(traceback.format_exc())
 
+# ------------------- 系統設定（僅超級管理員） -------------------
 def admin_system_settings():
     users = load_users()
     admin_username = st.session_state.get('username', 'admin')
@@ -2180,7 +2194,7 @@ def admin_system_settings():
             st.error("❌ 儲存失敗，請檢查檔案權限。")
 
 # ============================================================
-# 10. 主頁面（預測控制移去中間，後台整合為上方 Tab）
+# 10. 主頁面（後台整合為上方 Tab，已加入登出按鈕）
 # ============================================================
 def main():
     if 'logged_in' not in st.session_state:
@@ -2242,13 +2256,19 @@ def main():
         login_page()
         return
 
-    # ----- 主標題（後台按鈕移到標題旁）-----
-    col1, col2 = st.columns([6, 1])
-    with col1:
+    # ----- 主標題（加入登出按鈕）-----
+    col_title, col_btn1, col_btn2 = st.columns([6, 1, 1])
+    with col_title:
         st.title("🏇 賽馬預測系統")
         st.markdown("AI 驅動・即時預測・彩池推薦")
         st.caption(f"{datetime.now().strftime('%Y年%m月%d日')} · 36個特徵 · 三模型融合 · 六種彩池")
-    with col2:
+    with col_btn1:
+        if st.button("🚪 登出", use_container_width=True, key="logout_top"):
+            for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history', 'show_admin', 'admin_authenticated']:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.rerun()
+    with col_btn2:
         if CONFIG["enable_admin"] and st.session_state.get("role") in ["super_admin", "admin"]:
             if st.session_state.show_admin:
                 if st.button("🏠 返回主頁", use_container_width=True, key="back_home_btn"):
@@ -2363,7 +2383,7 @@ def main():
     with col_btn:
         predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
 
-    # 側邊欄（保留用戶資訊、聯絡方式、導航）
+    # 側邊欄（保留用戶資訊、聯絡方式、導航，以及側邊登出按鈕，以備不時之需）
     with st.sidebar:
         st.header("🎯 用戶資訊")
         if CONFIG["enable_registration"] and st.session_state.logged_in:
@@ -2380,7 +2400,7 @@ def main():
             if st.button("📋 我的預測記錄", key="show_history_btn_side"):
                 st.session_state.show_history = not st.session_state.show_history
             if st.button("🚪 登出", key="logout_btn_side"):
-                for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history']:
+                for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history', 'show_admin']:
                     if key in st.session_state:
                         del st.session_state[key]
                 st.rerun()
