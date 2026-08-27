@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版（付款申請存入 users.json，確保一定寫入）
+賽馬預測系統 - 完整版（付款申請存入 users.json）
 """
 
 import streamlit as st
@@ -126,7 +126,7 @@ def save_system_config(config):
 CONFIG = load_system_config()
 
 # ============================================================
-# 1. 基本 JSON 讀寫
+# 基本 JSON 讀寫
 # ============================================================
 def load_json(file_path, default=None):
     if default is None:
@@ -148,7 +148,7 @@ def save_json(file_path, data):
         return False
 
 # ============================================================
-# 2. 檔案路徑常數
+# 檔案路徑常數
 # ============================================================
 USER_DATA_FILE = 'users.json'
 FINANCE_FILE = 'finance.json'
@@ -159,7 +159,7 @@ CONTENT_FILE = 'content.json'
 AUTOMATION_FILE = 'automation.json'
 
 # ============================================================
-# 3. 用戶系統（含付款申請管理）
+# 用戶系統（含付款申請管理）
 # ============================================================
 def load_users():
     users = load_json(USER_DATA_FILE)
@@ -221,22 +221,15 @@ def load_users():
 def save_users(users):
     return save_json(USER_DATA_FILE, users)
 
-def get_user(username):
-    users = load_users()
-    return users.get(username)
-
-def update_user(username, updates):
-    users = load_users()
-    if username in users:
-        users[username].update(updates)
-        return save_users(users)
-    return False
-
 def authenticate(username, password):
     users = load_users()
     if username in users and users[username].get('password') == password:
         return users[username]
     return None
+
+def get_user(username):
+    users = load_users()
+    return users.get(username)
 
 def get_remaining_predictions(username):
     user = get_user(username)
@@ -248,8 +241,71 @@ def get_remaining_predictions(username):
     used = user.get('free_usage', 0)
     return max(0, limit - used)
 
+def update_user(username, updates):
+    users = load_users()
+    if username in users:
+        users[username].update(updates)
+        return save_users(users)
+    return False
+
+def log_admin_action(admin, action):
+    logs = load_logs()
+    if 'logs' not in logs: logs['logs'] = []
+    logs['logs'].append({
+        'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'admin': admin,
+        'action': action
+    })
+    save_logs(logs)
+
+def load_finance():
+    return load_json(FINANCE_FILE)
+
+def save_finance(finance):
+    return save_json(FINANCE_FILE, finance)
+
+def load_promos():
+    return load_json(PROMO_FILE)
+
+def save_promos(promos):
+    return save_json(PROMO_FILE, promos)
+
+def load_logs():
+    return load_json(LOG_FILE)
+
+def save_logs(logs):
+    return save_json(LOG_FILE, logs)
+
+def load_accuracy():
+    return load_json(ACCURACY_FILE)
+
+def save_accuracy(acc):
+    return save_json(ACCURACY_FILE, acc)
+
+def generate_promo_code():
+    return ''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=8))
+
+def generate_verification_code():
+    return ''.join(random.choices('0123456789', k=6))
+
+def get_plan_days(plan):
+    if plan == 'day': return 1
+    elif plan == 'month': return 30
+    elif plan == 'quarter': return 90
+    return 0
+
+def get_plan_name(plan):
+    names = {'day': '日費', 'month': '月費', 'quarter': '季費'}
+    return names.get(plan, '未知')
+
+def get_plan_price(plan):
+    if plan == 'day': return CONFIG['price_day']
+    elif plan == 'month': return CONFIG['price_month']
+    elif plan == 'quarter': return CONFIG['price_quarter']
+    return 0
+
 # ============================================================
-# 4. 付款申請功能（存入 users.json）
+# 付款申請功能（存入 users.json）
 # ============================================================
 def submit_payment_request(username, plan, final_price, discount_desc, promo_code_used):
     users = load_users()
@@ -325,66 +381,7 @@ def reject_payment_request(username, request_id, admin_username):
     return False, "找不到該申請"
 
 # ============================================================
-# 5. 其他數據讀寫
-# ============================================================
-def load_finance():
-    return load_json(FINANCE_FILE)
-
-def save_finance(finance):
-    return save_json(FINANCE_FILE, finance)
-
-def load_promos():
-    return load_json(PROMO_FILE)
-
-def save_promos(promos):
-    return save_json(PROMO_FILE, promos)
-
-def load_logs():
-    return load_json(LOG_FILE)
-
-def save_logs(logs):
-    return save_json(LOG_FILE, logs)
-
-def load_accuracy():
-    return load_json(ACCURACY_FILE)
-
-def save_accuracy(acc):
-    return save_json(ACCURACY_FILE, acc)
-
-def log_admin_action(admin, action):
-    logs = load_logs()
-    if 'logs' not in logs: logs['logs'] = []
-    logs['logs'].append({
-        'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'admin': admin,
-        'action': action
-    })
-    save_logs(logs)
-
-def generate_promo_code():
-    return ''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=8))
-
-def generate_verification_code():
-    return ''.join(random.choices('0123456789', k=6))
-
-def get_plan_days(plan):
-    if plan == 'day': return 1
-    elif plan == 'month': return 30
-    elif plan == 'quarter': return 90
-    return 0
-
-def get_plan_name(plan):
-    names = {'day': '日費', 'month': '月費', 'quarter': '季費'}
-    return names.get(plan, '未知')
-
-def get_plan_price(plan):
-    if plan == 'day': return CONFIG['price_day']
-    elif plan == 'month': return CONFIG['price_month']
-    elif plan == 'quarter': return CONFIG['price_quarter']
-    return 0
-
-# ============================================================
-# 6. 模型載入
+# 模型載入
 # ============================================================
 @st.cache_resource
 def load_models():
@@ -403,7 +400,7 @@ def load_models():
         return None, None, None
 
 # ============================================================
-# 7. 特徵工程（36 特徵）
+# 特徵工程（36 特徵）
 # ============================================================
 FEATURES_EN = [
     'draw', 'act_wt', 'distance', 'rtg', 'avg_rank_last3',
@@ -805,7 +802,7 @@ def run_prediction(date_str, race_no):
     return result, pool_rec
 
 # ============================================================
-# 8. 用戶功能
+# 用戶功能
 # ============================================================
 def record_prediction(username, date_str, race_no, horse_name, predicted_prob=None):
     users = load_users()
@@ -943,7 +940,7 @@ def show_prediction_history(username):
     st.dataframe(df, use_container_width=True)
 
 # ============================================================
-# 9. 登入/註冊
+# 登入/註冊
 # ============================================================
 def login_page():
     st.title("🔐 登入 / 註冊")
@@ -1112,24 +1109,9 @@ def login_page():
                         st.rerun()
 
 # ============================================================
-# 10. 付款牆
+# 付款牆（存入 users.json）
 # ============================================================
 def show_paywall():
-    import json
-    import os
-    from datetime import datetime
-
-    # 用絕對路徑
-    file_path = os.path.abspath('payment_proofs.json')
-    st.write(f"📁 目標檔案路徑：`{file_path}`")
-
-    # 檢查目錄是否可寫
-    dir_path = os.path.dirname(file_path)
-    if os.access(dir_path, os.W_OK):
-        st.write("✅ 目錄可寫")
-    else:
-        st.error(f"❌ 目錄不可寫：{dir_path}")
-
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
     st.subheader("💳 選擇你嘅方案")
 
@@ -1192,11 +1174,6 @@ def show_paywall():
                 st.error("❌ 請先登入")
                 st.stop()
 
-            # 開始除錯
-            st.write("🔍 **開始寫入 payment_proofs.json**")
-            st.write(f"👤 用戶：{st.session_state.username}")
-            st.write(f"📌 方案：{plan_choice}")
-
             original_price = get_plan_price(plan_choice)
             final_price = original_price
             discount_desc = ""
@@ -1224,68 +1201,26 @@ def show_paywall():
                                     discount_desc = "全免！"
                                 final_price = round(final_price, 2)
                                 promo_code_used = promo_input
-                except Exception as e:
-                    st.warning(f"優惠碼處理出錯：{e}")
+                except:
+                    pass
 
-            st.write(f"💰 最終金額：${final_price}")
-
-            # 讀取現有 payment_proofs.json
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                st.write("✅ 讀取現有 payment_proofs.json 成功")
-            except FileNotFoundError:
-                data = {"proof_records": []}
-                st.write("📭 payment_proofs.json 不存在，將建立新檔案")
-            except Exception as e:
-                st.error(f"❌ 讀取 payment_proofs.json 失敗：{e}")
-                data = {"proof_records": []}
-
-            new_id = len(data.get('proof_records', [])) + 1
-            new_proof = {
-                "id": new_id,
-                "username": st.session_state.username,
-                "plan": plan_choice,
-                "plan_name": get_plan_name(plan_choice),
-                "original_price": original_price,
-                "final_price": final_price,
-                "discount_desc": discount_desc,
-                "promo_code": promo_code_used,
-                "submitted_at": datetime.now().isoformat(),
-                "status": "pending"
-            }
-            data['proof_records'].append(new_proof)
-
-            st.write("📝 準備寫入嘅記錄：", new_proof)
-
-            # 寫入檔案
-            try:
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-                st.success("✅ 寫入 payment_proofs.json 成功！")
-
-                # 驗證
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    check = json.load(f)
-                st.write("🔍 驗證讀取返嚟嘅內容：", check)
-
-                # 檢查新記錄是否存在
-                found = any(r.get('id') == new_id for r in check.get('proof_records', []))
-                if found:
-                    st.success("✅ 驗證成功，新記錄已存在！")
-                else:
-                    st.error("❌ 驗證失敗，新記錄唔見咗！")
-                    st.stop()
-
+            success, msg = submit_payment_request(
+                st.session_state.username,
+                plan_choice,
+                final_price,
+                discount_desc,
+                promo_code_used
+            )
+            if success:
+                st.success("✅ " + msg)
                 st.session_state['payment_just_submitted'] = True
                 st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
                 st.rerun()
-            except Exception as e:
-                st.error(f"❌ 寫入 payment_proofs.json 失敗：{e}")
-                st.stop()
+            else:
+                st.error("❌ " + msg)
 
 # ============================================================
-# 11. AI 自我學習
+# AI 自我學習
 # ============================================================
 def update_accuracy_with_results():
     acc = load_accuracy()
@@ -1371,7 +1306,7 @@ def adjust_model_weights():
     }
 
 # ============================================================
-# 12. 後台管理
+# 後台管理
 # ============================================================
 
 def admin_user_management():
@@ -2085,7 +2020,7 @@ def admin_system_settings():
             st.error("❌ 儲存失敗，請檢查檔案權限。")
 
 # ============================================================
-# 13. 後台頁面
+# 後台頁面
 # ============================================================
 def admin_page():
     if 'admin_authenticated' not in st.session_state:
@@ -2155,7 +2090,7 @@ def admin_page():
             tab_functions[name]()
 
 # ============================================================
-# 14. 主頁面
+# 主頁面
 # ============================================================
 def main():
     if 'logged_in' not in st.session_state:
