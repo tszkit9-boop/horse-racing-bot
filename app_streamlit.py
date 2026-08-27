@@ -826,7 +826,7 @@ def show_prediction_history(username):
 def login_page():
     st.title("🔐 登入 / 註冊")
     
-    # 兩個並排按鈕，代替 tabs
+    # 兩個並排按鈕
     col1, col2 = st.columns(2)
     with col1:
         if st.button("🔑 登入", use_container_width=True):
@@ -835,10 +835,8 @@ def login_page():
         if st.button("📝 註冊", use_container_width=True):
             st.session_state.page_mode = "register"
     
-    # 預設顯示登入
     mode = st.session_state.get("page_mode", "login")
     
-    # ---------- 登入區塊 ----------
     if mode == "login":
         with st.form("login_form"):
             username = st.text_input("用戶名稱", key="login_user")
@@ -853,9 +851,7 @@ def login_page():
                     st.rerun()
                 else:
                     st.error("❌ 用戶名稱或密碼錯誤")
-    
-    # ---------- 註冊區塊 ----------
-    else:  # mode == "register"
+    else:
         st.subheader("📝 註冊新帳號")
         with st.form("register_form"):
             new_user = st.text_input("用戶名稱（最少 3 個字）", key="reg_user")
@@ -919,7 +915,6 @@ def login_page():
                 """)
             
             agree_terms = st.checkbox("✅ 我已閱讀並同意上述服務條款", key="agree_terms")
-            
             submitted = st.form_submit_button("註冊")
             
             if submitted:
@@ -991,7 +986,7 @@ def login_page():
                         else:
                             st.success("✅ 註冊成功！")
                         
-                        # 👇 重點：設定 page_mode 為 login，然後 rerun
+                        # 🎯 重點：註冊後自動跳去登入
                         st.session_state.page_mode = "login"
                         st.rerun()
 
