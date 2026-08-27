@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 賽馬預測系統 - 完整版（付款功能統一，開放所有用戶）
+（此版本保留舊界面順序，只修正日期預設值，避免無數據錯誤）
 """
 
 import streamlit as st
@@ -866,6 +867,7 @@ def run_prediction(date_str, race_no):
     race_sel = df[(df['race_date'].dt.date == target.date()) & (df['race_no'] == race_no)]
     if race_sel.empty:
         st.error(f"日期 {date_str} 第 {race_no} 場無數據")
+        st.info("💡 提示：請選擇其他日期或場次，數據檔案可能未有該日賽事")
         return None, None
 
     try:
@@ -1728,7 +1730,7 @@ def admin_security():
             st.rerun()
 
 # ============================================================
-# 🏠 主頁面（按新順序渲染）
+# 🏠 主頁面（保留舊版順序 + 日期修正）
 # ============================================================
 def main():
     # 初始化 session_state
@@ -1744,13 +1746,9 @@ def main():
         login_page()
         return
 
-    # --- 1. 每日免費重心推介（原在標題上方） ---
-    if CONFIG.get('enable_daily_free_tip', True):
-        st.markdown("### 📌 每日免費重心推介")
-        st.info("今日重心馬匹：待更新（可由管理員在後台設定）")
-        st.caption("*此為免費推介，僅供參考*")
-
-    # --- 2. 主標題＋後台／登出按鈕 ---
+    # ======== 主頁面內容（舊版順序） ========
+    
+    # 標題 ＋ 後台／登出按鈕
     col_title, col_btn = st.columns([4, 1])
     with col_title:
         st.title("🏇 賽馬預測系統")
@@ -1765,18 +1763,56 @@ def main():
                 st.session_state.page = "admin"
                 st.rerun()
 
-    # --- 3. 公告 ---
+    # 公告（放在標題下方，即原本位置）
     content = load_json(CONTENT_FILE)
     if content and content.get('announcement'):
         st.markdown("### 📢 公告")
         st.markdown(content['announcement'])
 
-    # --- 4. 用戶儀表板 ---
+    # 用戶儀表板
     show_user_dashboard(st.session_state.username)
 
-    # --- 5. 賽事預測控制 ---
+    # 模型自我學習 & 表現分析（舊版放在預測之前）
+    st.subheader("🧠 模型自我學習 & 表現分析")
+    acc = load_accuracy()
+    records = acc.get('records', [])
+    if not records:
+        st.info("暫時未有預測記錄，未能進行自我學習分析。請先執行預測。")
+    else:
+        total = len([r for r in records if r.get('is_hit') is not None])
+        hit = sum(1 for r in records if r.get('is_hit') is True)
+        hit_rate = hit / total if total > 0 else 0
+        col1, col2, col3 = st.columns(3)
+        col1.metric("已比對預測", total)
+        col2.metric("命中次數", hit)
+        col3.metric("整體命中率", f"{hit_rate:.2%}" if total>0 else "N/A")
+        config = load_system_config()
+        st.caption(f"當前模型權重：XGBoost = {config.get('xgb_weight', 25)}，CatBoost = {config.get('cat_weight', 1)}")
+        if st.button("手動調整權重（按命中率）"):
+            result = adjust_model_weights()
+            st.success(f"調整完成！XGB={result['xgb_weight']}, Cat={result['cat_weight']}, 命中率={result['hit_rate']:.2%}")
+            st.rerun()
+
+    # --- 賽事預測控制（舊版位置） ---
     st.subheader("🎯 賽事預測")
-    date_input = st.date_input("選擇日期", datetime.now().date())
+    
+    # 🔧 改良：自動選取數據檔案中最近嘅賽日作為預設值
+    try:
+        df_check = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
+        df_check = standardize_columns_safe(df_check)
+        if 'race_date' in df_check.columns:
+            df_check['race_date'] = pd.to_datetime(df_check['race_date'], errors='coerce')
+            latest_date = df_check['race_date'].max()
+            if pd.notna(latest_date):
+                default_date = latest_date.date()
+            else:
+                default_date = datetime.now().date()
+        else:
+            default_date = datetime.now().date()
+    except:
+        default_date = datetime.now().date()
+
+    date_input = st.date_input("選擇日期", value=default_date)
     race_no = st.number_input("場次", min_value=1, step=1, value=1)
     if st.button("執行預測"):
         with st.spinner("預測中..."):
@@ -1790,25 +1826,7 @@ def main():
             else:
                 st.error("預測失敗，請檢查數據")
 
-    # --- 6. 模型自我學習 & 表現分析 ---
-    st.subheader("🧠 模型自我學習 & 表現分析")
-    acc = load_accuracy()
-    records = acc.get('records', [])
-    total = len([r for r in records if r.get('is_hit') is not None])
-    hit = sum(1 for r in records if r.get('is_hit') is True)
-    hit_rate = hit / total if total > 0 else 0
-    col1, col2, col3 = st.columns(3)
-    col1.metric("已比對預測", total)
-    col2.metric("命中次數", hit)
-    col3.metric("整體命中率", f"{hit_rate:.2%}" if total>0 else "N/A")
-    config = load_system_config()
-    st.caption(f"當前模型權重：XGBoost = {config.get('xgb_weight', 25)}，CatBoost = {config.get('cat_weight', 1)}")
-    if st.button("手動調整權重（按命中率）"):
-        result = adjust_model_weights()
-        st.success(f"調整完成！XGB={result['xgb_weight']}, Cat={result['cat_weight']}, 命中率={result['hit_rate']:.2%}")
-        st.rerun()
-
-    # --- 7. 今日賽程 ---
+    # --- 今日賽程 ---
     st.subheader("📅 今日賽程")
     try:
         df_schedule = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
@@ -1820,14 +1838,18 @@ def main():
             if not today_races.empty:
                 st.dataframe(today_races[['race_no', 'distance', 'going', 'horse_name', 'jockey', 'trainer']].head(20), use_container_width=True)
             else:
-                st.info("今日沒有賽程數據")
+                st.info("今日沒有賽事")
         else:
             st.warning("排位表缺少日期欄位")
     except Exception as e:
         st.warning(f"無法讀取今日賽程：{e}")
 
-    # --- 8. 付款功能（最後） ---
+    # --- 付款功能（最後） ---
     show_paywall()
+
+    # 免責聲明
+    st.divider()
+    st.caption("**免責聲明：** 本系統提供之預測僅供參考，不構成投注建議。賽馬活動涉及風險，用戶應量力而為，本系統不對任何投注損失負責。用戶必須年滿18歲。使用本服務即表示同意以上條款。")
 
 # ============================================================
 # 執行主程式
