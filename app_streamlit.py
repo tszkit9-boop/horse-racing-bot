@@ -1028,6 +1028,10 @@ def login_page():
 # 🔧 付款牆（無上傳功能，只顯示 FPS + Telegram）
 # ============================================================
 def show_paywall():
+    import os
+    import json
+    from datetime import datetime, timedelta
+
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
     st.subheader("💳 選擇你嘅方案")
 
@@ -1124,43 +1128,50 @@ def show_paywall():
                 except:
                     pass
 
-            # 🗑️ 唔再上傳圖片，直接記錄申請
+            # 準備新記錄
+            proofs = load_payment_proofs()
+            new_id = len(proofs['proof_records']) + 1
+            new_proof = {
+                "id": new_id,
+                "username": st.session_state.username,
+                "plan": plan_choice,
+                "plan_name": get_plan_name(plan_choice),
+                "original_price": original_price,
+                "final_price": final_price,
+                "discount_applied": discount_applied,
+                "discount_desc": discount_desc,
+                "promo_code": promo_code_used,
+                "filename": "無圖片（請自行 Telegram 發送截圖）",
+                "uploaded_at": datetime.now().isoformat(),
+                "status": "pending"
+            }
+            proofs['proof_records'].append(new_proof)
+
+            # 🔥 直接寫入檔案，並檢查
             try:
-                proofs = load_payment_proofs()
-                new_proof = {
-                    "id": len(proofs['proof_records']) + 1,
-                    "username": st.session_state.username,
-                    "plan": plan_choice,
-                    "plan_name": get_plan_name(plan_choice),
-                    "original_price": original_price,
-                    "final_price": final_price,
-                    "discount_applied": discount_applied,
-                    "discount_desc": discount_desc,
-                    "promo_code": promo_code_used,
-                    "filename": "無圖片（請自行 Telegram 發送截圖）",
-                    "uploaded_at": datetime.now().isoformat(),
-                    "status": "pending"
-                }
-                proofs['proof_records'].append(new_proof)
+                file_path = 'payment_proofs.json'
+                # 顯示路徑，方便除錯
+                st.write(f"📁 嘗試寫入檔案：`{os.path.abspath(file_path)}`")
                 
-                # 🔥 直接用 Python 寫入，確保成功
-                import json
-                with open('payment_proofs.json', 'w', encoding='utf-8') as f:
+                with open(file_path, 'w', encoding='utf-8') as f:
                     json.dump(proofs, f, ensure_ascii=False, indent=2)
                 
-                # 再讀一次確認寫入成功
-                with open('payment_proofs.json', 'r', encoding='utf-8') as f:
-                    check = json.load(f)
-                if check == proofs:
+                # 驗證寫入
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    check_data = json.load(f)
+                
+                if check_data == proofs:
                     st.success("✅ 付款申請已成功記錄！")
                     st.session_state['payment_just_submitted'] = True
                     st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
                     st.rerun()
                 else:
-                    st.error("❌ 寫入後驗證失敗，請檢查檔案權限")
-                
+                    st.error("❌ 寫入後驗證失敗，內容不符")
+                    st.json(check_data)
+                    st.json(proofs)
+                    st.stop()
             except Exception as e:
-                st.error(f"❌ 提交過程中發生錯誤：{e}")
+                st.error(f"❌ 寫入檔案失敗：{e}")
                 st.stop()
 
 # ============================================================
