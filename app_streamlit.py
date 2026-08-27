@@ -160,6 +160,7 @@ def save_json(file_path, data):
 # 檔案路徑常數
 # ============================================================
 USER_DATA_FILE = 'users.json'
+PAYMENT_REQUESTS_FILE = 'payment_requests.json'
 FINANCE_FILE = 'finance.json'
 PROMO_FILE = 'promo_codes.json'
 LOG_FILE = 'admin_log.json'
@@ -170,7 +171,19 @@ AUTOMATION_FILE = 'automation.json'
 # ============================================================
 # 用戶系統（含付款申請管理）
 # ============================================================
-def load_users():
+def load_users():def load_payment_requests():
+    import json
+    try:
+        with open(PAYMENT_REQUESTS_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except:
+        return {"requests": []}
+
+def save_payment_requests(data):
+    import json
+    with open(PAYMENT_REQUESTS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    return True
     users = load_json(USER_DATA_FILE)
     if not users or "admin" not in users:
         users = {
@@ -1122,7 +1135,6 @@ def login_page():
 # ============================================================
 def show_paywall():
     import json
-    import os
     from datetime import datetime
 
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
@@ -1218,21 +1230,13 @@ def show_paywall():
                 except Exception as e:
                     st.warning(f"優惠碼處理出錯：{e}")
 
-            # 🚀 直接寫入 users.json
+            # 🟢 寫入新檔案 payment_requests.json
             try:
-                file_path = 'users.json'
-                # 讀取
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    users = json.load(f)
-
-                # 確保 payment_requests 存在
-                if 'payment_requests' not in users[username]:
-                    users[username]['payment_requests'] = []
-
-                # 建立新記錄
-                new_id = len(users[username]['payment_requests']) + 1
+                data = load_payment_requests()
+                new_id = len(data['requests']) + 1
                 new_request = {
                     "id": new_id,
+                    "username": username,
                     "plan": plan_choice,
                     "plan_name": get_plan_name(plan_choice),
                     "final_price": final_price,
@@ -1241,38 +1245,17 @@ def show_paywall():
                     "submitted_at": datetime.now().isoformat(),
                     "status": "pending"
                 }
+                data['requests'].append(new_request)
+                save_payment_requests(data)
 
-                users[username]['payment_requests'].append(new_request)
-
-                # 寫入
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    json.dump(users, f, ensure_ascii=False, indent=2)
-
-                # 驗證
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    check_users = json.load(f)
-
-                # 顯示完整 users.json 內容（方便你確認）
-                st.write("📄 **完整的 users.json 內容：**")
-                st.json(check_users)
-
-                # 檢查新記錄是否存在
-                check_requests = check_users.get(username, {}).get('payment_requests', [])
-                if any(r.get('id') == new_id for r in check_requests):
-                    st.success("✅ 驗證成功！記錄已存在！")
-                    st.session_state['payment_just_submitted'] = True
-                    st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
-                    st.info("📌 請撳下面嘅「返回主頁」按鈕繼續。")
-                else:
-                    st.error("❌ 驗證失敗：寫入後讀取嘅內容中搵唔到新記錄！")
-                    st.stop()
+                st.success("✅ 付款申請已成功提交！")
+                st.session_state['payment_just_submitted'] = True
+                st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
+                st.rerun()
 
             except Exception as e:
                 st.error(f"❌ 寫入失敗：{e}")
-                import traceback
-                st.code(traceback.format_exc())
                 st.stop()
-
 # ============================================================
 # AI 自我學習
 # ============================================================
@@ -1939,35 +1922,14 @@ def admin_security():
 
 def admin_payment_review():
     st.subheader("📤 付款審核")
-
-    # 讀取所有用戶
-    users = load_users()
-    st.write("🔍 **除錯資訊：讀取 users.json 中所有用戶嘅 payment_requests**")
-
-    all_requests = []
-    for username, user_data in users.items():
-        reqs = user_data.get('payment_requests', [])
-        if reqs:
-            st.write(f"👤 {username} 嘅 payment_requests：", reqs)
-            for req in reqs:
-                if req.get('status') == 'pending':
-                    all_requests.append({
-                        "username": username,
-                        "request": req
-                    })
-        else:
-            st.write(f"👤 {username} 冇 payment_requests")
-
-    st.write(f"📊 共找到 {len(all_requests)} 條待審核記錄")
-
-    if not all_requests:
+    data = load_payment_requests()
+    pending = [r for r in data['requests'] if r.get('status') == 'pending']
+    if not pending:
         st.info("✅ 目前沒有待審核嘅付款申請")
         return
-
-    st.write(f"共 **{len(all_requests)}** 條待審核記錄")
-    for item in all_requests:
-        username = item['username']
-        req = item['request']
+    st.write(f"共 **{len(pending)}** 條待審核記錄")
+    for req in pending:
+        username = req.get('username', '未知')
         with st.container():
             cols = st.columns([2, 2, 1.5, 1.5, 2])
             with cols[0]:
@@ -1978,8 +1940,6 @@ def admin_payment_review():
                 price = req.get('final_price', 0)
                 st.write(f"📌 {plan_name}")
                 st.write(f"💰 ${price:.2f}")
-                if req.get('discount_desc'):
-                    st.caption(f"折扣: {req.get('discount_desc', '')}")
             with cols[2]:
                 submitted_at = req.get('submitted_at', '')
                 if submitted_at:
@@ -1991,20 +1951,14 @@ def admin_payment_review():
             with cols[3]:
                 st.warning("⏳ 待審核")
             with cols[4]:
-                if st.button("✅ 批准", key=f"approve_{username}_{req.get('id')}"):
-                    success, msg = approve_payment_request(username, req['id'], st.session_state.username)
-                    if success:
-                        st.success(msg)
-                        st.rerun()
-                    else:
-                        st.error(msg)
-                if st.button("❌ 拒絕", key=f"reject_{username}_{req.get('id')}"):
-                    success, msg = reject_payment_request(username, req['id'], st.session_state.username)
-                    if success:
-                        st.warning(msg)
-                        st.rerun()
-                    else:
-                        st.error(msg)
+                if st.button("✅ 批准", key=f"approve_{req.get('id')}"):
+                    # 批准邏輯
+                    _approve_payment(req, data)
+                    st.rerun()
+                if st.button("❌ 拒絕", key=f"reject_{req.get('id')}"):
+                    # 拒絕邏輯
+                    _reject_payment(req, data)
+                    st.rerun()
             st.divider()
 
 def admin_system_settings():
