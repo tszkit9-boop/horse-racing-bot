@@ -1124,7 +1124,7 @@ def show_paywall():
                 except:
                     pass
 
-            # 🗑️ 移除圖片儲存邏輯，直接記錄申請（無圖片）
+            # 🗑️ 唔再上傳圖片，直接記錄申請
             try:
                 proofs = load_payment_proofs()
                 new_proof = {
@@ -1143,16 +1143,21 @@ def show_paywall():
                 }
                 proofs['proof_records'].append(new_proof)
                 
-                # 🧪 直接寫入，確保成功
+                # 🔥 直接用 Python 寫入，確保成功
                 import json
                 with open('payment_proofs.json', 'w', encoding='utf-8') as f:
                     json.dump(proofs, f, ensure_ascii=False, indent=2)
                 
-                # 確認寫入成功
-                st.success("✅ 付款申請已成功記錄！")
-                st.session_state['payment_just_submitted'] = True
-                st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
-                st.rerun()
+                # 再讀一次確認寫入成功
+                with open('payment_proofs.json', 'r', encoding='utf-8') as f:
+                    check = json.load(f)
+                if check == proofs:
+                    st.success("✅ 付款申請已成功記錄！")
+                    st.session_state['payment_just_submitted'] = True
+                    st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
+                    st.rerun()
+                else:
+                    st.error("❌ 寫入後驗證失敗，請檢查檔案權限")
                 
             except Exception as e:
                 st.error(f"❌ 提交過程中發生錯誤：{e}")
