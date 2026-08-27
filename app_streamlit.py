@@ -327,6 +327,9 @@ def show_paywall():
     import os
     from datetime import datetime
 
+    # 顯示一個標記，確認呢個函數被執行
+    st.write("🔵 **show_paywall() 已被執行**")
+
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
     st.subheader("💳 選擇你嘅方案")
 
@@ -336,7 +339,6 @@ def show_paywall():
         "quarter": f"📅 季費  ${CONFIG['price_quarter']} (90天)"
     }
 
-    # 如果已經提交成功，顯示成功訊息
     if st.session_state.get('payment_just_submitted', False):
         st.success("✅ 付款申請已成功提交！管理員將盡快審核。")
         st.info("📩 提交後請 Telegram 通知管理員（可加快審核）")
@@ -376,36 +378,27 @@ def show_paywall():
         submitted = st.form_submit_button("📩 提交付款申請，等待管理員審核")
 
         if submitted:
-            # 開始 try 區塊，捕捉所有錯誤
+            # 開始嘗試捕捉所有錯誤
             try:
-                st.write("🔍 **提交按鈕已撳下**")
+                st.write("🔍 **提交按鈕已撳下**")   # 呢行一定要出現
 
                 if not plan_choice:
                     st.error("❌ 請選擇方案")
-                    st.stop()
+                    return  # 唔用 st.stop()
                 if not st.session_state.get('logged_in'):
                     st.error("❌ 請先登入")
-                    st.stop()
+                    return
 
                 username = st.session_state.username
                 st.write(f"👤 用戶：{username}")
                 st.write(f"📌 方案：{plan_choice}")
 
-                # 計算最終金額（簡單起見，忽略優惠碼）
                 final_price = get_plan_price(plan_choice)
                 st.write(f"💰 金額：${final_price}")
 
-                # 檔案路徑
                 file_path = 'payment_requests.json'
                 abs_path = os.path.abspath(file_path)
                 st.write(f"📁 寫入路徑：{abs_path}")
-
-                # 檢查目錄是否可寫
-                dir_path = os.path.dirname(abs_path)
-                if os.access(dir_path, os.W_OK):
-                    st.write("✅ 目錄可寫")
-                else:
-                    st.error(f"❌ 目錄不可寫：{dir_path}")
 
                 # 讀取現有內容
                 try:
@@ -417,7 +410,7 @@ def show_paywall():
                     st.write("📭 檔案不存在，將建立新檔案")
                 except Exception as e:
                     st.error(f"讀取檔案時發生錯誤：{e}")
-                    raise  # 重新拋出以便被外層捕獲
+                    return
 
                 # 建立新記錄
                 new_id = len(data.get('requests', [])) + 1
@@ -443,16 +436,20 @@ def show_paywall():
                     check = json.load(f)
                 st.write("🔍 驗證讀取：", check)
 
-                # 如果所有步驟成功，設置 session state 並重新整理
+                # 成功後設定 session state，但唔立即 rerun，等用戶撳「返回主頁」
                 st.session_state['payment_just_submitted'] = True
                 st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
-                st.rerun()
+                st.info("✅ 記錄已保存，請撳「返回主頁」繼續")
+
+                # 手動顯示返回按鈕（因為上面已經有返回按鈕，但嗰個喺 payment_just_submitted 為 True 時先會出現）
+                # 所以呢度加一個
+                if st.button("返回主頁（完成）"):
+                    st.rerun()
 
             except Exception as e:
-                # 顯示完整錯誤，唔會閃退
                 st.error("❌ 提交過程中發生錯誤：")
-                st.exception(e)  # 顯示完整 traceback
-                st.stop()
+                st.exception(e)  # 顯示完整錯誤
+                # 唔使用 st.stop()
 
 # ============================================================
 # 後台付款審核（讀取獨立檔案）
