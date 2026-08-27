@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版（預測唔使上傳 CSV，自動讀取系統數據）
+賽馬預測系統 - 完整版（付款功能統一，開放所有用戶）
 """
 
 import streamlit as st
@@ -157,31 +157,12 @@ LOG_FILE = 'admin_log.json'
 ACCURACY_FILE = 'accuracy.json'
 CONTENT_FILE = 'content.json'
 AUTOMATION_FILE = 'automation.json'
-PAYMENT_FILE = 'payment_requests.json'
 
 # ============================================================
-# 付款記錄讀寫（持久儲存）
+# 初始化 session_state 付款記錄
 # ============================================================
-def load_payment_requests():
-    import json
-    try:
-        with open(PAYMENT_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return {"requests": []}
-    except Exception as e:
-        st.error(f"讀取付款記錄失敗：{e}")
-        return {"requests": []}
-
-def save_payment_requests(data):
-    import json
-    try:
-        with open(PAYMENT_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        return True
-    except Exception as e:
-        st.error(f"寫入付款記錄失敗：{e}")
-        return False
+if 'payment_requests' not in st.session_state:
+    st.session_state.payment_requests = {"requests": []}
 
 # ============================================================
 # 用戶系統
@@ -327,11 +308,10 @@ def get_plan_price(plan):
     return 0
 
 # ============================================================
-# 付款申請功能（寫入 payment_requests.json）
+# 付款申請功能（存入 session_state）
 # ============================================================
 def submit_payment_request(username, plan, final_price, discount_desc, promo_code_used):
-    data = load_payment_requests()
-    new_id = len(data.get('requests', [])) + 1
+    new_id = len(st.session_state.payment_requests['requests']) + 1
     request = {
         "id": new_id,
         "username": username,
@@ -343,16 +323,12 @@ def submit_payment_request(username, plan, final_price, discount_desc, promo_cod
         "submitted_at": datetime.now().isoformat(),
         "status": "pending"
     }
-    data['requests'].append(request)
-    if save_payment_requests(data):
-        return True, "申請已提交"
-    else:
-        return False, "儲存失敗"
+    st.session_state.payment_requests['requests'].append(request)
+    return True, "申請已提交"
 
 def get_all_pending_requests():
-    data = load_payment_requests()
     all_requests = []
-    for req in data.get('requests', []):
+    for req in st.session_state.payment_requests['requests']:
         if req.get('status') == 'pending':
             all_requests.append({
                 "username": req['username'],
@@ -361,8 +337,7 @@ def get_all_pending_requests():
     return all_requests
 
 def approve_payment_request(username, request_id, admin_username):
-    data = load_payment_requests()
-    for req in data['requests']:
+    for req in st.session_state.payment_requests['requests']:
         if req.get('id') == request_id and req.get('status') == 'pending':
             users = load_users()
             if username in users:
@@ -379,7 +354,6 @@ def approve_payment_request(username, request_id, admin_username):
                 users[username]['predictions_limit'] = -1
                 save_users(users)
                 req['status'] = 'approved'
-                save_payment_requests(data)
                 log_admin_action(admin_username, f"批准付款並升級 {username} 為 VIP（{plan}）")
                 return True, f"已批准 {username} 的付款，到期日 {expiry}"
             else:
@@ -387,28 +361,27 @@ def approve_payment_request(username, request_id, admin_username):
     return False, "找不到該申請"
 
 def reject_payment_request(username, request_id, admin_username):
-    data = load_payment_requests()
-    for req in data['requests']:
+    for req in st.session_state.payment_requests['requests']:
         if req.get('id') == request_id and req.get('status') == 'pending':
             req['status'] = 'rejected'
-            save_payment_requests(data)
             log_admin_action(admin_username, f"拒絕 {username} 的付款申請")
             return True, "已拒絕該申請"
     return False, "找不到該申請"
 
 # ============================================================
-# 付款牆（修正 form key 錯誤）
+# 付款牆（統一付款界面，開放所有用戶）
 # ============================================================
 def show_paywall():
-    import time
     st.subheader("💳 選擇你嘅方案")
 
+    # 方案選項（水平 radio）
     plan_options = {
         "day": f"☀️ 日費  ${CONFIG['price_day']}   (1天)",
         "month": f"📆 月費  ${CONFIG['price_month']}  (30天)",
         "quarter": f"📅 季費  ${CONFIG['price_quarter']} (90天)"
     }
 
+    # 如果已經提交成功，顯示成功訊息
     if st.session_state.get('payment_just_submitted', False):
         st.success("✅ 付款申請已成功提交！管理員將盡快審核。")
         st.info("📩 提交後請 Telegram 通知管理員（可加快審核）")
@@ -422,8 +395,7 @@ def show_paywall():
             st.rerun()
         st.stop()
 
-    form_key = f"payment_form_{int(time.time())}"
-    with st.form(key=form_key):
+    with st.form(key="payment_form"):
         plan_choice = st.radio(
             "請選擇付費方案：",
             options=list(plan_options.keys()),
@@ -549,7 +521,7 @@ def admin_payment_review():
             st.divider()
 
 # ============================================================
-# 模型載入
+# 模型載入（完整）
 # ============================================================
 @st.cache_resource
 def load_models():
@@ -568,7 +540,7 @@ def load_models():
         return None, None, None
 
 # ============================================================
-# 特徵工程（36 特徵）
+# 特徵工程（36 特徵，完整）
 # ============================================================
 FEATURES_EN = [
     'draw', 'act_wt', 'distance', 'rtg', 'avg_rank_last3',
@@ -970,7 +942,7 @@ def run_prediction(date_str, race_no):
     return result, pool_rec
 
 # ============================================================
-# 用戶功能
+# 用戶功能（完整）
 # ============================================================
 def record_prediction(username, date_str, race_no, horse_name, predicted_prob=None):
     users = load_users()
@@ -1108,7 +1080,7 @@ def show_prediction_history(username):
     st.dataframe(df, use_container_width=True)
 
 # ============================================================
-# 登入/註冊
+# 登入/註冊（完整）
 # ============================================================
 def login_page():
     st.title("🔐 登入 / 註冊")
@@ -1276,7 +1248,7 @@ def login_page():
                         st.rerun()
 
 # ============================================================
-# AI 自我學習
+# AI 自我學習（完整）
 # ============================================================
 def update_accuracy_with_results():
     acc = load_accuracy()
@@ -1362,7 +1334,7 @@ def adjust_model_weights():
     }
 
 # ============================================================
-# 後台管理（完整模組）
+# 後台管理（所有模組完整實作）
 # ============================================================
 
 def admin_user_management():
@@ -2096,7 +2068,7 @@ def admin_page():
             tab_functions[name]()
 
 # ============================================================
-# 主頁面（所有功能齊全，預測放喺模型自我學習上面，唔使上傳 CSV）
+# 主頁面
 # ============================================================
 def main():
     if 'logged_in' not in st.session_state:
@@ -2222,23 +2194,22 @@ def main():
         st.info("🔓 目前為公開模式，任何人皆可使用")
 
     # ============================================================
-    # 💳 付款功能
+    # 🟢 付款功能（開放所有用戶，原名「付款功能測試」已移除）
     # ============================================================
     st.markdown("---")
     st.subheader("💳 付款功能")
     
+    # 檢查用戶是否已登入
     if st.session_state.get('logged_in'):
-        remaining = get_remaining_predictions(st.session_state.username)
-        if remaining <= 0:
-            show_paywall()
-        else:
-            st.info(f"你仲有 {remaining} 次免費預測，用完後可以付款升級 VIP。")
-            if st.button("💳 升級帳戶"):
-                show_paywall()
+        # 顯示付款牆（已移除警告）
+        show_paywall()
     else:
         st.info("請先登入以使用付款功能")
+        if st.button("前往登入"):
+            st.session_state.page_mode = "login"
+            st.rerun()
 
-    # 管理員快速測試
+    # 管理員專用快速測試按鈕（只對 super_admin 顯示）
     if st.session_state.get('role') == 'super_admin':
         st.markdown("---")
         st.subheader("⚡ 管理員快速測試")
@@ -2247,6 +2218,7 @@ def main():
             if st.button("🚀 顯示付款牆（傳統）", type="secondary"):
                 st.session_state['test_payment'] = True
                 st.rerun()
+        
         with col2:
             test_plan = st.radio(
                 "選擇測試方案",
@@ -2257,6 +2229,7 @@ def main():
             )
             plan_price = {"day": 18, "month": 128, "quarter": 328}
             test_price = plan_price[test_plan]
+            
             if st.button(f"⚡ 直接提交測試付款（{get_plan_name(test_plan)} ${test_price}）", type="primary"):
                 username = st.session_state.username if st.session_state.get('logged_in') else "testuser"
                 success, msg = submit_payment_request(
@@ -2269,8 +2242,8 @@ def main():
                 if success:
                     st.success(f"✅ 測試記錄已寫入！用戶：{username}，方案：{get_plan_name(test_plan)} ${test_price}")
                     st.info("請去側邊欄 → 後台審核 查看")
-                    st.write("📋 當前付款記錄總數：", len(load_payment_requests()['requests']))
-                    st.json(load_payment_requests()['requests'])
+                    st.write("📋 當前付款記錄總數：", len(st.session_state.payment_requests['requests']))
+                    st.json(st.session_state.payment_requests['requests'])
                 else:
                     st.error(f"❌ 寫入失敗：{msg}")
 
@@ -2278,59 +2251,7 @@ def main():
         st.session_state['test_payment'] = False
         show_paywall()
 
-    # ============================================================
-    # 🎯 賽事預測控制（唔使上傳 CSV，直接使用系統數據）
-    # ============================================================
-    st.markdown("---")
-    st.subheader("🎯 賽事預測控制")
-    
-    remaining = get_remaining_predictions(st.session_state.username) if st.session_state.get('logged_in') else 0
-    user_group = st.session_state.get('role', 'free')
-    is_vip_or_paid = user_group in ['VIP', 'paid', 'super_admin']
-    
-    if remaining > 0 or is_vip_or_paid:
-        col_date, col_race, col_btn = st.columns([2, 2, 1])
-        with col_date:
-            date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="predict_date_mid")
-        with col_race:
-            race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race_mid")
-        with col_btn:
-            predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
-        
-        # 移除強制上傳 CSV，直接使用系統數據
-        if predict_btn:
-            date_str = date.strftime('%Y-%m-%d')
-            with st.spinner("⏳ 預測中，請稍候..."):
-                try:
-                    result, pool = run_prediction(date_str, race_no)
-                    if result is not None:
-                        st.success("✅ 預測完成！")
-                        top4 = result.head(4)
-                        st.dataframe(top4)
-                        fig = px.bar(top4, x='馬匹名稱', y='預測勝率', title="勝出概率")
-                        st.plotly_chart(fig)
-                        # 顯示彩池推薦
-                        with st.expander("🎯 彩池推薦（詳細）"):
-                            st.text(pool)
-                        # 扣減使用次數（非VIP）
-                        if not is_vip_or_paid and st.session_state.get('logged_in'):
-                            users = load_users()
-                            if st.session_state.username in users:
-                                users[st.session_state.username]['free_usage'] = users[st.session_state.username].get('free_usage', 0) + 1
-                                save_users(users)
-                                st.info(f"已使用 1 次預測，剩餘 {get_remaining_predictions(st.session_state.username)} 次")
-                    else:
-                        st.error("❌ 預測失敗，可能該日期/場次冇數據，請選擇其他日期或場次。")
-                except Exception as e:
-                    st.error(f"❌ 預測過程中發生錯誤：{e}")
-    else:
-        st.warning("你已用完免費預測次數，請付款升級")
-        if st.button("💳 去付款"):
-            show_paywall()
-
-    # ============================================================
-    # 🧠 模型自我學習 & 表現分析
-    # ============================================================
+    # 模型自我學習 & 表現分析
     st.markdown("---")
     st.subheader("🧠 模型自我學習 & 表現分析")
     acc = load_accuracy()
@@ -2404,31 +2325,17 @@ def main():
     else:
         st.info("暫時未有預測記錄，未能進行自我學習分析。請先執行預測。")
 
-    # ============================================================
-    # 📅 今日賽程
-    # ============================================================
+    # 預測控制（完整）
     st.markdown("---")
-    st.subheader("📅 今日賽程")
-    try:
-        df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
-        df_sched = standardize_columns_safe(df_sched)
-        if 'race_date' in df_sched.columns:
-            df_sched['race_date'] = pd.to_datetime(df_sched['race_date'], errors='coerce')
-            df_sched = df_sched.dropna(subset=['race_date'])
-            today = datetime.now().date()
-            day_races = df_sched[df_sched['race_date'].dt.date == today]
-            if day_races.empty:
-                st.info("今日沒有賽事")
-            else:
-                for course in day_races['race_course'].unique():
-                    races = day_races[day_races['race_course'] == course]['race_no'].unique()
-                    st.write(f"🏟️ **{course}**：第 {', '.join(map(str, sorted(races)))} 場")
-        else:
-            st.info("今日沒有賽事")
-    except:
-        st.info("今日沒有賽事")
+    st.subheader("🎯 賽事預測控制")
+    col_date, col_race, col_btn = st.columns([2, 2, 1])
+    with col_date:
+        date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="predict_date_mid")
+    with col_race:
+        race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race_mid")
+    with col_btn:
+        predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
 
-    # 側邊欄
     with st.sidebar:
         st.header("🎯 用戶資訊")
         if CONFIG["enable_registration"] and st.session_state.logged_in:
@@ -2471,7 +2378,187 @@ def main():
         show_prediction_history(st.session_state.username)
         st.divider()
 
-    # 免責聲明
+    st.subheader("📅 今日賽程")
+    try:
+        df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
+        df_sched = standardize_columns_safe(df_sched)
+        if 'race_date' in df_sched.columns:
+            df_sched['race_date'] = pd.to_datetime(df_sched['race_date'], errors='coerce')
+            df_sched = df_sched.dropna(subset=['race_date'])
+            today = datetime.now().date()
+            day_races = df_sched[df_sched['race_date'].dt.date == today]
+            if day_races.empty:
+                st.info("今日沒有賽事")
+            else:
+                for course in day_races['race_course'].unique():
+                    races = day_races[day_races['race_course'] == course]['race_no'].unique()
+                    st.write(f"🏟️ **{course}**：第 {', '.join(map(str, sorted(races)))} 場")
+        else:
+            st.info("今日沒有賽事")
+    except:
+        st.info("今日沒有賽事")
+
+    if predict_btn:
+        users = load_users()
+        user_data = users.get(st.session_state.username, {})
+        limit = user_data.get('predictions_limit', CONFIG['free_limit'])
+        used = user_data.get('free_usage', 0)
+        user_group = user_data.get('group', 'free')
+        
+        if CONFIG.get("enable_vip_content", True):
+            is_vip = user_group in ['VIP', 'super_admin']
+        else:
+            is_vip = True
+        
+        if CONFIG["enable_payment"] and limit != -1 and used >= limit:
+            # 免費次數用完，直接顯示付款牆（但我們已經在主頁顯示了付款區域，這裡也可以調用）
+            show_paywall()
+        else:
+            date_str = date.strftime('%Y-%m-%d')
+            with st.spinner(f"執行預測 {date_str} 第 {race_no} 場..."):
+                result, pool = run_prediction(date_str, race_no)
+                if result is not None:
+                    st.success(f"✅ {date_str} 第 {race_no} 場 預測完成")
+                    
+                    top4 = result.head(4)
+                    top1 = top4.iloc[0]
+                    
+                    st.markdown("---")
+                    st.markdown(f"""
+                    <div style="background:linear-gradient(135deg,#1a237e,#0d47a1,#1565c0);border-radius:20px;padding:25px 30px;text-align:center;box-shadow:0 8px 32px rgba(21,101,192,0.4);border:2px solid rgba(255,215,0,0.3);position:relative;overflow:hidden;">
+                        <div style="position:absolute;top:-30px;right:-30px;font-size:100px;opacity:0.1;">🏆</div>
+                        <div style="position:absolute;bottom:-20px;left:-20px;font-size:80px;opacity:0.08;">⭐</div>
+                        <span style="font-size:16px;color:#ffd54f;font-weight:bold;letter-spacing:3px;background:rgba(255,215,0,0.15);padding:4px 16px;border-radius:20px;">🏆 獨贏首選</span><br>
+                        <span style="font-size:48px;color:#ffffff;font-weight:900;letter-spacing:3px;text-shadow:0 2px 8px rgba(0,0,0,0.3);display:inline-block;margin-top:8px;">{top1['馬匹名稱']}</span><br>
+                        <div style="display:flex;justify-content:center;gap:30px;margin-top:10px;flex-wrap:wrap;">
+                            <span style="font-size:18px;color:#bbdefb;">檔位 <b style="color:#ffffff;font-size:22px;">{top1['檔位']}</b></span>
+                            <span style="font-size:18px;color:#bbdefb;">勝率 <b style="color:#69f0ae;font-size:22px;">{top1['預測勝率']:.2%}</b></span>
+                            <span style="font-size:18px;color:#bbdefb;">值博指數 <b style="color:#ffd54f;font-size:22px;">{top1['值博指數']:.4f}</b></span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.markdown("<h3 style='margin-top:25px;margin-bottom:10px;'>🔗 連贏推薦</h3>", unsafe_allow_html=True)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.markdown(f"""
+                        <div style="background:linear-gradient(135deg,#e3f2fd,#bbdefb);border-radius:14px;padding:16px 20px;text-align:center;box-shadow:0 4px 12px rgba(13,71,161,0.15);border-left:5px solid #0d47a1;">
+                            <span style="font-size:28px;">🏇</span>
+                            <h4 style="margin:4px 0 2px 0;color:#0d47a1;">{top4.iloc[0]['馬匹名稱']}</h4>
+                            <div style="display:flex;justify-content:center;gap:20px;font-size:14px;color:#555;">
+                                <span>檔位 <b>{top4.iloc[0]['檔位']}</b></span>
+                                <span>勝率 <b style="color:#2e7d32;">{top4.iloc[0]['預測勝率']:.2%}</b></span>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    with col2:
+                        st.markdown(f"""
+                        <div style="background:linear-gradient(135deg,#e3f2fd,#bbdefb);border-radius:14px;padding:16px 20px;text-align:center;box-shadow:0 4px 12px rgba(13,71,161,0.15);border-left:5px solid #0d47a1;">
+                            <span style="font-size:28px;">🏇</span>
+                            <h4 style="margin:4px 0 2px 0;color:#0d47a1;">{top4.iloc[1]['馬匹名稱']}</h4>
+                            <div style="display:flex;justify-content:center;gap:20px;font-size:14px;color:#555;">
+                                <span>檔位 <b>{top4.iloc[1]['檔位']}</b></span>
+                                <span>勝率 <b style="color:#2e7d32;">{top4.iloc[1]['預測勝率']:.2%}</b></span>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    st.caption("💡 連贏：揀 2 隻馬，跑出前 2 名（不分順序）即中")
+                    
+                    if is_vip:
+                        st.markdown("<h3 style='margin-top:25px;margin-bottom:10px;'>🥉 三重彩推薦（4 隻複式）</h3>", unsafe_allow_html=True)
+                        cols = st.columns(4)
+                        colors = ['#fce4ec', '#f3e5f5', '#e8eaf6', '#e0f7fa']
+                        for i in range(4):
+                            row = top4.iloc[i]
+                            with cols[i]:
+                                st.markdown(f"""
+                                <div style="background:{colors[i]};border-radius:12px;padding:14px 10px;text-align:center;box-shadow:0 3px 10px rgba(0,0,0,0.08);border:1px solid rgba(0,0,0,0.05);">
+                                    <span style="font-size:24px;">🏇</span>
+                                    <h5 style="margin:2px 0;color:#333;font-size:15px;">{row['馬匹名稱']}</h5>
+                                    <div style="font-size:13px;color:#555;">檔位 <b>{row['檔位']}</b><br>勝率 <b style="color:#2e7d32;">{row['預測勝率']:.2%}</b></div>
+                                </div>
+                                """, unsafe_allow_html=True)
+                        st.caption("💡 三重彩：揀 3 隻馬，順序估中冠亞季軍。以上 4 隻馬可做複式三重彩（4 選 3）")
+                    else:
+                        st.markdown("""
+                        <div style="background:linear-gradient(135deg,#fff3e0,#ffe0b2);border-radius:16px;padding:30px 20px;text-align:center;border:2px dashed #ff6f00;margin:10px 0;">
+                            <span style="font-size:48px;">🔒</span>
+                            <h3 style="color:#e65100;margin:10px 0;">三重彩推薦</h3>
+                            <p style="color:#bf360c;font-size:16px;">此內容僅限 <b>VIP 會員</b> 查看</p>
+                            <p style="color:#888;font-size:14px;">升級 VIP 即可解鎖三重彩、四重彩等獨家彩池推薦</p>
+                            <div style="margin-top:15px;"><span style="background:#ff6f00;color:white;padding:8px 24px;border-radius:20px;font-weight:bold;font-size:14px;">💎 立即升級 VIP</span></div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    if is_vip:
+                        st.markdown("<h3 style='margin-top:25px;margin-bottom:10px;'>🏅 四重彩推薦（4 隻複式）</h3>", unsafe_allow_html=True)
+                        cols = st.columns(4)
+                        colors2 = ['#e8f5e9', '#e0f2f1', '#fff3e0', '#fbe9e7']
+                        for i in range(4):
+                            row = top4.iloc[i]
+                            with cols[i]:
+                                st.markdown(f"""
+                                <div style="background:{colors2[i]};border-radius:12px;padding:14px 10px;text-align:center;box-shadow:0 3px 10px rgba(0,0,0,0.08);border:1px solid rgba(0,0,0,0.05);">
+                                    <span style="font-size:24px;">🏇</span>
+                                    <h5 style="margin:2px 0;color:#333;font-size:15px;">{row['馬匹名稱']}</h5>
+                                    <div style="font-size:13px;color:#555;">檔位 <b>{row['檔位']}</b><br>勝率 <b style="color:#2e7d32;">{row['預測勝率']:.2%}</b></div>
+                                </div>
+                                """, unsafe_allow_html=True)
+                        st.caption("💡 四重彩：揀 4 隻馬，順序估中冠亞季殿軍。以上 4 隻馬可做複式四重彩（4 選 4）")
+                    else:
+                        st.markdown("""
+                        <div style="background:linear-gradient(135deg,#e8f5e9,#c8e6c9);border-radius:16px;padding:20px 20px;text-align:center;border:2px dashed #2e7d32;margin:10px 0;">
+                            <span style="font-size:36px;">🔒</span>
+                            <h4 style="color:#1b5e20;margin:5px 0;">四重彩推薦</h4>
+                            <p style="color:#555;font-size:14px;">升級 VIP 即可解鎖四重彩推薦</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    st.divider()
+                    st.markdown("""
+                    <h3 style='margin-bottom:10px;'>📋 總結投注建議</h3>
+                    <div style="background:linear-gradient(135deg,#f1f8e9,#dcedc8);border-radius:16px;padding:20px 24px;border:2px solid #2e7d32;box-shadow:0 4px 16px rgba(46,125,50,0.15);">
+                    """, unsafe_allow_html=True)
+                    
+                    if is_vip:
+                        st.markdown(f"""
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 30px;font-size:15px;">
+                            <div>🏆 <b>獨贏</b>：<span style="color:#1a237e;font-weight:bold;">{top4.iloc[0]['馬匹名稱']}</span></div>
+                            <div>🔗 <b>連贏</b>：<span style="color:#0d47a1;font-weight:bold;">{top4.iloc[0]['馬匹名稱']} + {top4.iloc[1]['馬匹名稱']}</span></div>
+                            <div style="grid-column:span 2;">🥉 <b>三重彩</b>：<span style="color:#4a148c;font-weight:bold;">{top4.iloc[0]['馬匹名稱']}、{top4.iloc[1]['馬匹名稱']}、{top4.iloc[2]['馬匹名稱']}、{top4.iloc[3]['馬匹名稱']}</span>（複式 4 選 3）</div>
+                            <div style="grid-column:span 2;">🏅 <b>四重彩</b>：<span style="color:#1b5e20;font-weight:bold;">{top4.iloc[0]['馬匹名稱']}、{top4.iloc[1]['馬匹名稱']}、{top4.iloc[2]['馬匹名稱']}、{top4.iloc[3]['馬匹名稱']}</span>（複式 4 選 4）</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"""
+                        <div style="font-size:15px;">
+                            <div>🏆 <b>獨贏</b>：<span style="color:#1a237e;font-weight:bold;">{top4.iloc[0]['馬匹名稱']}</span></div>
+                            <div>🔗 <b>連贏</b>：<span style="color:#0d47a1;font-weight:bold;">{top4.iloc[0]['馬匹名稱']} + {top4.iloc[1]['馬匹名稱']}</span></div>
+                            <div style="margin-top:12px;padding:12px;background:#fff3e0;border-radius:10px;text-align:center;border:1px dashed #ff6f00;">
+                                <span style="font-size:20px;">🔒</span>
+                                <span style="color:#e65100;font-weight:bold;"> 三重彩及四重彩推薦僅限 VIP 會員查看</span>
+                                <br><span style="font-size:13px;color:#888;">升級 VIP 即可解鎖完整投注建議</span>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    st.markdown("</div>", unsafe_allow_html=True)
+                    
+                    st.subheader("🎯 彩池推薦（詳細）")
+                    st.text(pool)
+
+                    if CONFIG["enable_registration"] and st.session_state.logged_in:
+                        winner_name = top4.iloc[0]['馬匹名稱']
+                        prob = top4.iloc[0]['預測勝率']
+                        record_prediction(st.session_state.username, date_str, race_no, winner_name, prob)
+                        users = load_users()
+                        if st.session_state.username in users:
+                            users[st.session_state.username]['free_usage'] = users[st.session_state.username].get('free_usage', 0) + 1
+                            users[st.session_state.username]['total_usage'] = users[st.session_state.username].get('total_usage', 0) + 1
+                            save_users(users)
+                        st.session_state.usage_count += 1
+                        st.info("📝 預測已記錄到你的歷史")
+
     st.divider()
     st.warning("⚠️ **免責聲明**：本系統提供之預測僅供參考，不構成投注建議。賽馬活動涉及風險，用戶應量力而為，本系統不對任何投注損失負責。用戶必須年滿18歲。使用本服務即表示同意以上條款。")
     
