@@ -1040,6 +1040,7 @@ def login_page():
 # ============================================================
 def show_paywall():
     import json
+    import os
     from datetime import datetime, timedelta
 
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
@@ -1099,6 +1100,12 @@ def show_paywall():
         if submitted:
             st.info("⏳ 正在處理你嘅申請...")
             
+            # 🔍 除錯：顯示當前狀態
+            st.write("🔍 除錯：開始處理提交")
+            st.write(f"plan_choice = {plan_choice}")
+            st.write(f"logged_in = {st.session_state.get('logged_in', False)}")
+            st.write(f"username = {st.session_state.get('username', 'None')}")
+            
             if not plan_choice:
                 st.error("❌ 請先選擇一個付費方案")
                 st.stop()
@@ -1135,11 +1142,16 @@ def show_paywall():
                                 final_price = round(final_price, 2)
                                 discount_applied = True
                                 promo_code_used = promo_input
-                except:
-                    pass
+                except Exception as e:
+                    st.warning(f"優惠碼處理出錯：{e}")
 
-            # 🟢 讀取現有記錄
+            # 🔍 除錯：顯示最終金額
+            st.write(f"🔍 最終金額：{final_price}")
+
+            # 讀取現有記錄
             proofs = load_payment_proofs()
+            st.write("🔍 讀取到嘅記錄數量：", len(proofs.get('proof_records', [])))
+
             new_id = len(proofs['proof_records']) + 1
             new_proof = {
                 "id": new_id,
@@ -1157,25 +1169,37 @@ def show_paywall():
             }
             proofs['proof_records'].append(new_proof)
 
-            # 🟢 直接寫入，並驗證
+            # 🔍 顯示將要寫入嘅內容
+            st.write("🔍 將要寫入嘅記錄：", new_proof)
+
+            # 🔥 寫入檔案
             try:
-                with open('payment_proofs.json', 'w', encoding='utf-8') as f:
+                file_path = 'payment_proofs.json'
+                abs_path = os.path.abspath(file_path)
+                st.write(f"📁 嘗試寫入檔案：`{abs_path}`")
+                
+                with open(file_path, 'w', encoding='utf-8') as f:
                     json.dump(proofs, f, ensure_ascii=False, indent=2)
-                
-                # 驗證寫入
-                with open('payment_proofs.json', 'r', encoding='utf-8') as f:
+                st.success("✅ 寫入成功！")
+
+                # 驗證
+                with open(file_path, 'r', encoding='utf-8') as f:
                     check = json.load(f)
-                
+                st.write("🔍 驗證讀取到嘅內容：", check)
+
                 if check == proofs:
-                    st.success("✅ 付款申請已成功記錄！")
+                    st.success("✅ 驗證成功，記錄已保存！")
                     st.session_state['payment_just_submitted'] = True
                     st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
-                    st.rerun()
+                    # 唔自動 rerun，等用戶自己撳返回
+                    st.info("請撳下面嘅「返回主頁」按鈕繼續。")
                 else:
-                    st.error("❌ 寫入後驗證失敗，請檢查檔案權限")
+                    st.error("❌ 驗證失敗，寫入嘅內容同讀取嘅內容不符！")
                     st.stop()
             except Exception as e:
-                st.error(f"❌ 寫入付款記錄失敗：{e}")
+                st.error(f"❌ 寫入失敗：{e}")
+                import traceback
+                st.code(traceback.format_exc())
                 st.stop()
 
 # ============================================================
