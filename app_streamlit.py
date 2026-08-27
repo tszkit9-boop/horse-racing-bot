@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版（付款申請存入 users.json）
+賽馬預測系統 - 完整版（付款申請存入 users.json + 詳細除錯）
 """
 
 import streamlit as st
@@ -1109,7 +1109,7 @@ def login_page():
                         st.rerun()
 
 # ============================================================
-# 付款牆（存入 users.json）
+# 付款牆（存入 users.json + 詳細除錯）
 # ============================================================
 def show_paywall():
     st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
@@ -1174,6 +1174,12 @@ def show_paywall():
                 st.error("❌ 請先登入")
                 st.stop()
 
+            # 🟢 開始除錯
+            st.write("---")
+            st.write("🔍 **開始寫入付款申請**")
+            st.write(f"👤 用戶：{st.session_state.username}")
+            st.write(f"📌 方案：{plan_choice}")
+
             original_price = get_plan_price(plan_choice)
             final_price = original_price
             discount_desc = ""
@@ -1201,23 +1207,58 @@ def show_paywall():
                                     discount_desc = "全免！"
                                 final_price = round(final_price, 2)
                                 promo_code_used = promo_input
-                except:
-                    pass
+                except Exception as e:
+                    st.warning(f"優惠碼處理出錯：{e}")
 
-            success, msg = submit_payment_request(
-                st.session_state.username,
-                plan_choice,
-                final_price,
-                discount_desc,
-                promo_code_used
-            )
-            if success:
-                st.success("✅ " + msg)
+            st.write(f"💰 最終金額：${final_price}")
+
+            # 🔥 讀取 users.json
+            users = load_users()
+            st.write(f"📂 讀取 users.json 成功，用戶數量：{len(users)}")
+
+            if st.session_state.username not in users:
+                st.error("❌ 用戶不存在於 users.json！")
+                st.stop()
+
+            # 建立申請記錄
+            request = {
+                "id": len(users[st.session_state.username].get('payment_requests', [])) + 1,
+                "plan": plan_choice,
+                "plan_name": get_plan_name(plan_choice),
+                "final_price": final_price,
+                "discount_desc": discount_desc,
+                "promo_code": promo_code_used,
+                "submitted_at": datetime.now().isoformat(),
+                "status": "pending"
+            }
+            st.write("📝 準備寫入嘅記錄：", request)
+
+            # 加入 payment_requests
+            if 'payment_requests' not in users[st.session_state.username]:
+                users[st.session_state.username]['payment_requests'] = []
+            users[st.session_state.username]['payment_requests'].append(request)
+
+            # 儲存
+            try:
+                save_users(users)
+                st.success("✅ users.json 寫入成功！")
+
+                # 讀返出嚟驗證
+                check_users = load_users()
+                check_requests = check_users.get(st.session_state.username, {}).get('payment_requests', [])
+                st.write("🔍 驗證：寫入後讀取到嘅 payment_requests：", check_requests)
+
+                if check_requests:
+                    st.success("✅ 驗證成功，記錄已存在！")
+                else:
+                    st.error("❌ 驗證失敗，記錄不存在！")
+
                 st.session_state['payment_just_submitted'] = True
                 st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
                 st.rerun()
-            else:
-                st.error("❌ " + msg)
+            except Exception as e:
+                st.error(f"❌ 儲存 users.json 失敗：{e}")
+                st.stop()
 
 # ============================================================
 # AI 自我學習
@@ -1306,7 +1347,7 @@ def adjust_model_weights():
     }
 
 # ============================================================
-# 後台管理
+# 後台管理（付款審核含詳細除錯）
 # ============================================================
 
 def admin_user_management():
@@ -1885,12 +1926,33 @@ def admin_security():
 
 def admin_payment_review():
     st.subheader("📤 付款審核")
-    pending_requests = get_all_pending_requests()
-    if not pending_requests:
+
+    # 讀取所有用戶
+    users = load_users()
+    st.write("🔍 **除錯資訊：讀取 users.json 中所有用戶嘅 payment_requests**")
+
+    all_requests = []
+    for username, user_data in users.items():
+        reqs = user_data.get('payment_requests', [])
+        if reqs:
+            st.write(f"👤 {username} 嘅 payment_requests：", reqs)
+            for req in reqs:
+                if req.get('status') == 'pending':
+                    all_requests.append({
+                        "username": username,
+                        "request": req
+                    })
+        else:
+            st.write(f"👤 {username} 冇 payment_requests")
+
+    st.write(f"📊 共找到 {len(all_requests)} 條待審核記錄")
+
+    if not all_requests:
         st.info("✅ 目前沒有待審核嘅付款申請")
         return
-    st.write(f"共 **{len(pending_requests)}** 條待審核記錄")
-    for item in pending_requests:
+
+    st.write(f"共 **{len(all_requests)}** 條待審核記錄")
+    for item in all_requests:
         username = item['username']
         req = item['request']
         with st.container():
