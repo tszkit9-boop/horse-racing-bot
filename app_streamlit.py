@@ -1762,7 +1762,7 @@ def admin_payment_review():
             status_filter = st.selectbox(
                 "狀態篩選",
                 ["全部", "pending", "approved", "rejected"],
-                index=0,
+                index=1,   # 預設顯示「待審核」
                 format_func=lambda x: {"pending": "待審核", "approved": "已批准", "rejected": "已拒絕", "全部": "全部"}.get(x, x)
             )
         with col_s3:
@@ -1784,6 +1784,17 @@ def admin_payment_review():
         return
     
     st.subheader(f"📋 共 {len(filtered)} 條記錄")
+    
+    # 🗑️ 清除已處理記錄（可選功能）
+    col_clear1, col_clear2 = st.columns(2)
+    with col_clear1:
+        if st.button("🗑️ 清除所有已處理記錄（批准 + 拒絕）", key="clear_processed"):
+            proofs_data = load_payment_proofs()
+            records = proofs_data.get('proof_records', [])
+            proofs_data['proof_records'] = [r for r in records if r.get('status') == 'pending']
+            save_payment_proofs(proofs_data)
+            st.success("✅ 已清除所有已處理記錄")
+            st.rerun()
     
     for idx, rec in enumerate(filtered):
         original_idx = records.index(rec)
