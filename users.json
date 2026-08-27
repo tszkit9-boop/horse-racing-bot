@@ -75,5 +75,16 @@
     "invited_by": null,
     "invite_rewards": 0,
     "invite_count": 0
-  }
+  }"payment_requests": [
+    {
+        "id": 1,
+        "plan": "day",
+        "plan_name": "日費",
+        "final_price": 18,
+        "discount_desc": "",
+        "promo_code": null,
+        "submitted_at": "2026-08-27T12:00:00.000000",
+        "status": "pending"
+    }
+]
 }
