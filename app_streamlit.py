@@ -1742,6 +1742,11 @@ def admin_payment_review():
     proofs_data = load_payment_proofs()
     records = proofs_data.get('proof_records', [])
     
+    # Debug: 顯示所有記錄嘅 status 俾 admin 睇（可以之後刪除）
+    if st.checkbox("🔍 顯示除錯資料（睇吓所有記錄嘅 status）", key="debug_show"):
+        status_list = [r.get('status', '無 status') for r in records]
+        st.write(f"所有記錄嘅 status：{status_list}")
+    
     pending = [r for r in records if r.get('status') == 'pending']
     approved = [r for r in records if r.get('status') == 'approved']
     rejected = [r for r in records if r.get('status') == 'rejected']
@@ -1773,6 +1778,7 @@ def admin_payment_review():
                     st.success(f"✅ 已批量批准 {len(pending)} 條記錄")
                     st.rerun()
     
+    # 過濾記錄
     filtered = records.copy()
     if search_term:
         filtered = [r for r in filtered if search_term.lower() in r.get('username', '').lower()]
@@ -1781,6 +1787,9 @@ def admin_payment_review():
     
     if not filtered:
         st.info("📭 沒有符合條件的記錄")
+        # 如果有記錄但 filter 後冇，提示用戶轉 filter
+        if records:
+            st.caption(f"💡 共有 {len(records)} 條記錄，但篩選條件 ({status_filter}) 下冇匹配。請嘗試轉為「全部」")
         return
     
     st.subheader(f"📋 共 {len(filtered)} 條記錄")
@@ -1822,7 +1831,7 @@ def admin_payment_review():
                     except:
                         st.caption(uploaded_at)
                 filename = rec.get('filename')
-                if filename:
+                if filename and filename != "無圖片" and filename != "請用戶透過 Telegram 發送截圖":
                     filepath = os.path.join(PAYMENT_PROOFS_DIR, filename)
                     if os.path.exists(filepath):
                         try:
@@ -1832,6 +1841,8 @@ def admin_payment_review():
                             st.caption("圖片無法載入")
                     else:
                         st.caption("圖片檔案缺失")
+                else:
+                    st.caption("📩 用戶將透過 Telegram 發送截圖")
             with cols[3]:
                 if status == "pending":
                     st.warning("⏳ 待審核")
