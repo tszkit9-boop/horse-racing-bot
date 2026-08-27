@@ -1049,7 +1049,6 @@ def show_paywall():
         else:
             st.info("請選擇一個方案以繼續")
 
-        # 💳 過數資料（淨係轉數快 FPS）
         st.markdown("---")
         st.markdown("### 💳 過數資料")
         st.info("""
@@ -1062,7 +1061,6 @@ def show_paywall():
 
         promo_input = st.text_input("優惠碼（如有）", key="promo_input_form", placeholder="例如 A7K3X9P2")
 
-        # 📩 聯絡管理員（取代上傳證明）
         st.markdown("---")
         st.markdown("### 📩 完成轉帳後")
         st.markdown("""
@@ -1121,8 +1119,8 @@ def show_paywall():
                 new_proof = {
                     "id": len(proofs['proof_records']) + 1,
                     "username": st.session_state.username,
-                    "plan": plan_choice,
-                    "plan_name": get_plan_name(plan_choice),
+                    "plan": plan_choice,                        # ✅ 直接儲存 plan_choice
+                    "plan_name": get_plan_name(plan_choice),    # ✅ 顯示用嘅名稱
                     "original_price": original_price,
                     "final_price": final_price,
                     "discount_applied": discount_applied,
