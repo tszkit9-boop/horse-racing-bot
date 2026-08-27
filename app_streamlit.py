@@ -2534,4 +2534,41 @@ def main():
                         <div style="font-size:15px;">
                             <div>🏆 <b>獨贏</b>：<span style="color:#1a237e;font-weight:bold;">{top4.iloc[0]['馬匹名稱']}</span></div>
                             <div>🔗 <b>連贏</b>：<span style="color:#0d47a1;font-weight:bold;">{top4.iloc[0]['馬匹名稱']} + {top4.iloc[1]['馬匹名稱']}</span></div>
-                            <div style="margin-top:12px;padding:12px;background:#fff3e0;border-radius:10px;text-align:center;border:1px dashed
+                            <div style="margin-top:12px;padding:12px;background:#fff3e0;border-radius:10px;text-align:center;border:1px dashed #ff6f00;">
+                                <span style="font-size:20px;">🔒</span>
+                                <span style="color:#e65100;font-weight:bold;"> 三重彩及四重彩推薦僅限 VIP 會員查看</span>
+                                <br><span style="font-size:13px;color:#888;">升級 VIP 即可解鎖完整投注建議</span>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    st.markdown("</div>", unsafe_allow_html=True)
+                    
+                    st.subheader("🎯 彩池推薦（詳細）")
+                    st.text(pool)
+
+                    if CONFIG["enable_registration"] and st.session_state.logged_in:
+                        winner_name = top4.iloc[0]['馬匹名稱']
+                        prob = top4.iloc[0]['預測勝率']
+                        record_prediction(st.session_state.username, date_str, race_no, winner_name, prob)
+                        users = load_users()
+                        if st.session_state.username in users:
+                            users[st.session_state.username]['free_usage'] = users[st.session_state.username].get('free_usage', 0) + 1
+                            users[st.session_state.username]['total_usage'] = users[st.session_state.username].get('total_usage', 0) + 1
+                            save_users(users)
+                        st.session_state.usage_count += 1
+                        st.info("📝 預測已記錄到你的歷史")
+
+    st.divider()
+    st.warning("⚠️ **免責聲明**：本系統提供之預測僅供參考，不構成投注建議。賽馬活動涉及風險，用戶應量力而為，本系統不對任何投注損失負責。用戶必須年滿18歲。使用本服務即表示同意以上條款。")
+    
+    col_f1, col_f2, col_f3 = st.columns(3)
+    with col_f1:
+        st.caption(f"🕐 最後更新：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    with col_f2:
+        st.caption("🔐 數據來源：HKJC | 系統版本：v14.0-用戶體驗版")
+    with col_f3:
+        st.caption("💬 Telegram：@bryhjdjbrbxibvrjskofndhiebdpaq")
+
+if __name__ == '__main__':
+    main()
