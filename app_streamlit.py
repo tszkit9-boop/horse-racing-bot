@@ -2195,11 +2195,35 @@ def main():
         st.info("🔓 目前為公開模式，任何人皆可使用")
 
     # 測試付款按鈕
+        # 🟢 付款功能測試（直接提交，唔使填表）
     st.markdown("---")
     st.subheader("🧪 付款功能測試")
-    if st.button("🚀 測試付款（跳過免費次數檢查）", type="primary"):
-        st.session_state['test_payment'] = True
-        st.rerun()
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🚀 顯示付款牆（傳統）", type="secondary"):
+            st.session_state['test_payment'] = True
+            st.rerun()
+    
+    with col2:
+        if st.button("⚡ 直接提交測試付款（立即寫入記錄）", type="primary"):
+            # 直接寫入一條測試記錄
+            username = st.session_state.username if st.session_state.get('logged_in') else "testuser"
+            success, msg = submit_payment_request(
+                username=username,
+                plan="day",
+                final_price=18,
+                discount_desc="",
+                promo_code_used=None
+            )
+            if success:
+                st.success(f"✅ 測試記錄已寫入！用戶：{username}，方案：日費 $18")
+                st.info("請去側邊欄 → 後台審核 查看")
+                # 顯示當前所有記錄（除錯）
+                st.write("📋 當前付款記錄總數：", len(st.session_state.payment_requests['requests']))
+                st.json(st.session_state.payment_requests['requests'])
+            else:
+                st.error(f"❌ 寫入失敗：{msg}")
 
     if st.session_state.get('test_payment', False):
         st.session_state['test_payment'] = False
