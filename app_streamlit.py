@@ -335,13 +335,21 @@ def show_paywall():
         else:
             st.info("請選擇一個方案")
 
-        promo_input = st.text_input("優惠碼（如有）", key="promo_input_form")
+        promo_input = st.text_input("優惠碼（如有）", key="promo_input_form", placeholder="例如 A7K3X9P2")
 
         st.divider()
+        
+        # FPS 轉數快資料
         st.markdown("""
-        **📤 付款方式：FPS 轉數快 `12345678`（SHTSN SYSTEM）**  
-        💬 過數後請將截圖發送 Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**
-        """)
+        ### 📤 付款方式：FPS 轉數快
+        <div style="background:#e3f2fd;border-radius:12px;padding:16px;text-align:center;border:2px solid #1a73e8;max-width:400px;margin:0 auto;">
+            <span style="font-size:24px;">🏦</span><br>
+            <b style="font-size:18px;">轉數快識別碼：<span style="color:#0d47a1;">12345678</span></b><br>
+            <span style="font-size:14px;color:#555;">戶口名稱：<b>SHTSN SYSTEM</b></span>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.caption("💡 過數後請 Telegram 通知管理員（@bryhjdjbrbxibvrjskofndhiebdpaq）以加快審核")
 
         submitted = st.form_submit_button("📩 提交付款申請，等待管理員審核")
 
@@ -359,6 +367,7 @@ def show_paywall():
             discount_desc = ""
             promo_code_used = None
 
+            # 處理優惠碼
             if promo_input:
                 try:
                     promos = load_promos()
@@ -384,14 +393,35 @@ def show_paywall():
                 except Exception as e:
                     st.warning(f"優惠碼處理出錯：{e}")
 
-            success, msg = submit_payment_request(username, plan_choice, final_price, discount_desc, promo_code_used)
-            if success:
-                st.success(msg)
-                st.session_state['payment_just_submitted'] = True
-                st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
-                st.rerun()
-            else:
-                st.error(msg)
+            # 儲存付款申請到 payment_proofs.json
+            try:
+                proofs = load_payment_proofs()
+                new_proof = {
+                    "id": len(proofs['proof_records']) + 1,
+                    "username": st.session_state.username,
+                    "plan": plan_choice,
+                    "plan_name": get_plan_name(plan_choice),
+                    "original_price": original_price,
+                    "final_price": final_price,
+                    "discount_applied": bool(promo_code_used),
+                    "discount_desc": discount_desc,
+                    "promo_code": promo_code_used,
+                    "filename": "無圖片",
+                    "uploaded_at": datetime.now().isoformat(),
+                    "status": "pending"
+                }
+                proofs['proof_records'].append(new_proof)
+                if save_payment_proofs(proofs):
+                    st.session_state['payment_just_submitted'] = True
+                    st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
+                    st.success("✅ 提交成功！管理員將盡快審核。")
+                    st.rerun()
+                else:
+                    st.error("❌ 寫入付款記錄失敗，請檢查檔案權限")
+                    st.stop()
+            except Exception as e:
+                st.error(f"❌ 提交過程中發生錯誤：{e}")
+                st.stop()
 
 # ============================================================
 # 3. 模型載入
