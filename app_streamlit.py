@@ -1100,12 +1100,12 @@ def login_page():
             username = st.text_input("用戶名稱", key="login_user")
             password = st.text_input("密碼", type="password", key="login_pass")
             if st.form_submit_button("登入"):
-                user = authenticate(username, password)
-                if user:
+                users = load_users()
+                if username in users and users[username].get('password') == password:
                     st.session_state.logged_in = True
                     st.session_state.username = username
-                    st.session_state.role = user.get('group', 'free')
-                    st.session_state.usage_count = user.get('free_usage', 0)
+                    st.session_state.role = users[username].get('group', 'free')
+                    st.session_state.usage_count = users[username].get('free_usage', 0)
                     st.rerun()
                 else:
                     st.error("❌ 用戶名稱或密碼錯誤")
@@ -1239,13 +1239,13 @@ def login_page():
                                 new_user_data['invite_rewards'] = reward_invitee
                                 save_users(users)
                                 st.success(f"✅ 註冊成功！你同邀請人各獲得 {reward_invitee} 次免費預測獎勵！")
+                                st.rerun()  # <--- 註冊成功後自動刷新
                             else:
                                 st.success("✅ 註冊成功！")
+                                st.rerun()  # <--- 註冊成功後自動刷新
                         else:
                             st.success("✅ 註冊成功！")
-                        
-                        st.session_state.page_mode = "login"
-                        st.rerun()
+                            st.rerun()  # <--- 註冊成功後自動刷新
 # ============================================================
 # AI 自我學習（完整）
 # ============================================================
