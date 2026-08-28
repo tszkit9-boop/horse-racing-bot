@@ -141,22 +141,11 @@ def load_json(file_path, default=None):
 
 def save_json(file_path, data):
     try:
-        # 確保目錄存在
-        dir_path = os.path.dirname(file_path)
-        if dir_path and not os.path.exists(dir_path):
-            os.makedirs(dir_path)
-        
-        # 寫入檔案
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         return True
-    except Exception as e:
-        st.error(f"❌ 寫入檔案 {file_path} 失敗：{e}")
+    except:
         return False
-
-def save_users(users):
-    success = save_json(USER_DATA_FILE, users)
-    return success
 
 # ============================================================
 # 檔案路徑常數
@@ -168,22 +157,18 @@ LOG_FILE = 'admin_log.json'
 ACCURACY_FILE = 'accuracy.json'
 CONTENT_FILE = 'content.json'
 AUTOMATION_FILE = 'automation.json'
-PAYMENT_PROOFS_FILE = 'payment_proofs.json'
-PAYMENT_PROOFS_DIR = 'payment_proofs'
-
-if not os.path.exists(PAYMENT_PROOFS_DIR):
-    os.makedirs(PAYMENT_PROOFS_DIR)
 
 # ============================================================
-# 初始化 session_state 付款記錄（保留用於測試）
+# 初始化 session_state 付款記錄
 # ============================================================
 if 'payment_requests' not in st.session_state:
     st.session_state.payment_requests = {"requests": []}
 
 # ============================================================
-# 用戶系統
+# 用戶系統（已改為 session_state 儲存新用戶）
 # ============================================================
 def load_users():
+    # 先從檔案載入
     users = load_json(USER_DATA_FILE)
     if not users or "admin" not in users:
         users = {
@@ -214,6 +199,8 @@ def load_users():
         if "admin" in users:
             users["admin"]["group"] = "super_admin"
             users["admin"]["predictions_limit"] = -1
+            if users["admin"].get("note") != "系統超級管理員":
+                users["admin"]["note"] = "系統超級管理員"
         for uid, u in users.items():
             if 'plan' not in u: u['plan'] = None
             if 'paid_date' not in u: u['paid_date'] = None
@@ -235,6 +222,13 @@ def load_users():
                 else:
                     u['predictions_limit'] = CONFIG["free_limit"]
         save_users(users)
+
+    # ====== 合併 session_state 中嘅新用戶 ======
+    if 'new_users_session' in st.session_state:
+        for new_user_data in st.session_state.new_users_session:
+            username = new_user_data.get('username')
+            if username and username not in users:
+                users[username] = new_user_data
     return users
 
 def save_users(users):
@@ -301,19 +295,6 @@ def load_accuracy():
 def save_accuracy(acc):
     return save_json(ACCURACY_FILE, acc)
 
-def load_payment_proofs():
-    proofs = load_json(PAYMENT_PROOFS_FILE)
-    if not proofs:
-        proofs = {"proof_records": []}
-        save_payment_proofs(proofs)
-    elif "proof_records" not in proofs:
-        proofs["proof_records"] = []
-        save_payment_proofs(proofs)
-    return proofs
-
-def save_payment_proofs(proofs):
-    return save_json(PAYMENT_PROOFS_FILE, proofs)
-
 def generate_promo_code():
     return ''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=8))
 
@@ -337,7 +318,7 @@ def get_plan_price(plan):
     return 0
 
 # ============================================================
-# 付款申請功能（存入 session_state - 保留用於測試）
+# 付款申請功能（存入 session_state）
 # ============================================================
 def submit_payment_request(username, plan, final_price, discount_desc, promo_code_used):
     new_id = len(st.session_state.payment_requests['requests']) + 1
@@ -488,253 +469,66 @@ def show_paywall():
                 except Exception as e:
                     st.warning(f"優惠碼處理出錯：{e}")
 
-            # 儲存到 payment_proofs.json
-            try:
-                proofs = load_payment_proofs()
-                new_proof = {
-                    "id": len(proofs['proof_records']) + 1,
-                    "username": st.session_state.username,
-                    "plan": plan_choice,
-                    "plan_name": get_plan_name(plan_choice),
-                    "original_price": original_price,
-                    "final_price": final_price,
-                    "discount_applied": bool(promo_code_used),
-                    "discount_desc": discount_desc,
-                    "promo_code": promo_code_used,
-                    "filename": "無圖片",
-                    "uploaded_at": datetime.now().isoformat(),
-                    "status": "pending"
-                }
-                proofs['proof_records'].append(new_proof)
-                if save_payment_proofs(proofs):
-                    st.session_state['payment_just_submitted'] = True
-                    st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
-                    st.success("✅ 提交成功！管理員將盡快審核。")
-                    st.rerun()
-                else:
-                    st.error("❌ 寫入付款記錄失敗，請檢查檔案權限")
-                    st.stop()
-            except Exception as e:
-                st.error(f"❌ 提交過程中發生錯誤：{e}")
-                st.stop()
+            success, msg = submit_payment_request(username, plan_choice, final_price, discount_desc, promo_code_used)
+            if success:
+                st.success(msg)
+                st.session_state['payment_just_submitted'] = True
+                st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
+                st.rerun()
+            else:
+                st.error(msg)
 
 # ============================================================
-# 後台付款審核（使用 payment_proofs.json）
+# 後台付款審核
 # ============================================================
 def admin_payment_review():
     st.subheader("📤 付款審核")
-    proofs_data = load_payment_proofs()
-    records = proofs_data.get('proof_records', [])
-    
-    pending = [r for r in records if r.get('status') == 'pending']
-    approved = [r for r in records if r.get('status') == 'approved']
-    rejected = [r for r in records if r.get('status') == 'rejected']
-    total_income = sum(r.get('final_price', 0) for r in approved)
-    
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("⏳ 待審核", len(pending))
-    col2.metric("✅ 已批准", len(approved))
-    col3.metric("❌ 已拒絕", len(rejected))
-    col4.metric("💰 總收入", f"${total_income:.2f}")
-    st.divider()
-    
-    with st.expander("🔍 篩選與搜尋", expanded=True):
-        col_s1, col_s2, col_s3 = st.columns([2, 2, 1])
-        with col_s1:
-            search_term = st.text_input("搜尋用戶名稱", placeholder="輸入用戶名")
-        with col_s2:
-            status_filter = st.selectbox(
-                "狀態篩選",
-                ["全部", "pending", "approved", "rejected"],
-                index=1,
-                format_func=lambda x: {"pending": "待審核", "approved": "已批准", "rejected": "已拒絕", "全部": "全部"}.get(x, x)
-            )
-        with col_s3:
-            if status_filter in ["pending", "全部"] and len(pending) > 0:
-                if st.button("📦 批量批准全部待審"):
-                    for rec in pending:
-                        _approve_payment(rec, proofs_data)
-                    st.success(f"✅ 已批量批准 {len(pending)} 條記錄")
-                    st.rerun()
-    
-    filtered = records.copy()
-    if search_term:
-        filtered = [r for r in filtered if search_term.lower() in r.get('username', '').lower()]
-    if status_filter != "全部":
-        filtered = [r for r in filtered if r.get('status') == status_filter]
-    
-    if not filtered:
-        st.info("📭 沒有符合條件的記錄")
+    pending = get_all_pending_requests()
+    if not pending:
+        st.info("✅ 目前沒有待審核嘅付款申請")
         return
-    
-    st.subheader(f"📋 共 {len(filtered)} 條記錄")
-    
-    for idx, rec in enumerate(filtered):
-        original_idx = records.index(rec)
-        status = rec.get('status', 'pending')
-        username = rec.get('username', '未知')
-        
+    st.write(f"共 **{len(pending)}** 條待審核記錄")
+    for item in pending:
+        username = item['username']
+        req = item['request']
         with st.container():
             cols = st.columns([2, 2, 1.5, 1.5, 2])
             with cols[0]:
                 st.write(f"👤 **{username}**")
-                st.caption(f"ID: {rec.get('id', '')}")
+                st.caption(f"ID: {req.get('id', '')}")
             with cols[1]:
-                plan_name = rec.get('plan_name', '未知方案')
-                price = rec.get('final_price', 0)
+                plan_name = req.get('plan_name', '未知方案')
+                price = req.get('final_price', 0)
                 st.write(f"📌 {plan_name}")
                 st.write(f"💰 ${price:.2f}")
-                if rec.get('discount_applied'):
-                    st.caption(f"折扣: {rec.get('discount_desc', '')}")
+                if req.get('discount_desc'):
+                    st.caption(f"折扣: {req.get('discount_desc', '')}")
             with cols[2]:
-                uploaded_at = rec.get('uploaded_at', '')
-                if uploaded_at:
+                submitted_at = req.get('submitted_at', '')
+                if submitted_at:
                     try:
-                        dt = datetime.fromisoformat(uploaded_at)
+                        dt = datetime.fromisoformat(submitted_at)
                         st.caption(f"📅 {dt.strftime('%Y-%m-%d %H:%M')}")
                     except:
-                        st.caption(uploaded_at)
-                filename = rec.get('filename')
-                if filename:
-                    filepath = os.path.join(PAYMENT_PROOFS_DIR, filename)
-                    if os.path.exists(filepath):
-                        try:
-                            image = Image.open(filepath)
-                            st.image(image, width=120)
-                        except:
-                            st.caption("圖片無法載入")
-                    else:
-                        st.caption("圖片檔案缺失")
+                        st.caption(submitted_at)
             with cols[3]:
-                if status == "pending":
-                    st.warning("⏳ 待審核")
-                elif status == "approved":
-                    st.success("✅ 已批准")
-                    users = load_users()
-                    user_data = users.get(username, {})
-                    expiry = user_data.get('expiry_date')
-                    if expiry:
-                        try:
-                            exp_dt = pd.to_datetime(expiry)
-                            days_left = (exp_dt - datetime.now()).days
-                            st.caption(f"到期: {exp_dt.strftime('%Y-%m-%d')} ({days_left}天)")
-                        except:
-                            pass
-                elif status == "rejected":
-                    st.error("❌ 已拒絕")
-                else:
-                    st.info(status)
-                if rec.get('approved_by'):
-                    st.caption(f"操作人: {rec['approved_by']}")
-                if rec.get('approved_at'):
-                    try:
-                        dt = datetime.fromisoformat(rec['approved_at'])
-                        st.caption(f"操作時間: {dt.strftime('%Y-%m-%d %H:%M')}")
-                    except:
-                        pass
+                st.warning("⏳ 待審核")
             with cols[4]:
-                if status == "pending":
-                    if st.button("✅ 批准", key=f"approve_{original_idx}"):
-                        _approve_payment(rec, proofs_data)
+                if st.button("✅ 批准", key=f"approve_{req.get('id')}"):
+                    success, msg = approve_payment_request(username, req['id'], st.session_state.username)
+                    if success:
+                        st.success(msg)
                         st.rerun()
-                    if st.button("❌ 拒絕", key=f"reject_{original_idx}"):
-                        _reject_payment(rec, proofs_data)
+                    else:
+                        st.error(msg)
+                if st.button("❌ 拒絕", key=f"reject_{req.get('id')}"):
+                    success, msg = reject_payment_request(username, req['id'], st.session_state.username)
+                    if success:
+                        st.warning(msg)
                         st.rerun()
-                elif status == "approved":
-                    if st.button("↩️ 退款", key=f"refund_{original_idx}"):
-                        _refund_payment(rec, proofs_data)
-                        st.rerun()
-                else:
-                    st.write("已處理")
+                    else:
+                        st.error(msg)
             st.divider()
-    
-    with st.expander("📜 操作日誌 (最近20條)"):
-        logs = load_logs()
-        log_entries = logs.get('logs', [])[-20:]
-        if log_entries:
-            for log in reversed(log_entries):
-                st.text(f"[{log['time']}] {log['admin']} - {log['action']}")
-        else:
-            st.info("暫無日誌")
-
-def _approve_payment(rec, proofs_data):
-    try:
-        rec['status'] = 'approved'
-        rec['approved_at'] = datetime.now().isoformat()
-        rec['approved_by'] = st.session_state.username
-        save_payment_proofs(proofs_data)
-        
-        username = rec.get('username')
-        if not username:
-            st.error("❌ 記錄中缺少 username")
-            return
-        
-        users = load_users()
-        if username not in users:
-            st.error(f"❌ 用戶 {username} 不存在")
-            return
-        
-        plan = rec.get('plan', 'month')
-        days = get_plan_days(plan)
-        if days == 0:
-            days = 30
-        expiry = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
-        
-        users[username]['is_paid'] = True
-        users[username]['group'] = 'VIP'
-        users[username]['paid_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        users[username]['expiry_date'] = expiry
-        users[username]['plan'] = plan
-        users[username]['predictions_limit'] = -1
-        
-        if save_users(users):
-            st.success(f"✅ {username} 已升級為 VIP！")
-            st.success(f"📅 到期日：{expiry}")
-            log_admin_action(st.session_state.username, f"批准付款並升級 {username} 為 VIP（{plan}）")
-        else:
-            st.error("❌ 儲存 users.json 失敗")
-    except Exception as e:
-        st.error(f"❌ 錯誤：{e}")
-
-def _reject_payment(rec, proofs_data):
-    rec['status'] = 'rejected'
-    rec['approved_at'] = datetime.now().isoformat()
-    rec['approved_by'] = st.session_state.username
-    save_payment_proofs(proofs_data)
-    st.warning(f"❌ 已拒絕 {rec.get('username')} 的申請")
-    log_admin_action(st.session_state.username, f"拒絕付款申請：{rec.get('username')}")
-
-def _refund_payment(rec, proofs_data):
-    try:
-        users = load_users()
-        username = rec.get('username')
-        if not username:
-            st.error("❌ 記錄中缺少 username")
-            return
-        if username not in users:
-            st.error(f"❌ 用戶 {username} 不存在")
-            return
-        users[username]['is_paid'] = False
-        users[username]['group'] = 'free'
-        users[username]['expiry_date'] = None
-        users[username]['plan'] = None
-        users[username]['predictions_limit'] = CONFIG["free_limit"]
-        if save_users(users):
-            st.success(f"✅ 用戶 {username} 已降級為免費")
-        else:
-            st.error("❌ 儲存 users.json 失敗")
-            return
-        rec['status'] = 'rejected'
-        rec['refunded'] = True
-        rec['refunded_at'] = datetime.now().isoformat()
-        rec['refunded_by'] = st.session_state.username
-        save_payment_proofs(proofs_data)
-        st.success(f"✅ 已為 {username} 辦理退款")
-        log_admin_action(st.session_state.username, f"退款：{username}")
-    except Exception as e:
-        st.error(f"❌ 退款錯誤：{e}")
-        import traceback
-        st.code(traceback.format_exc())
 
 # ============================================================
 # 模型載入（完整）
@@ -1296,7 +1090,7 @@ def show_prediction_history(username):
     st.dataframe(df, use_container_width=True)
 
 # ============================================================
-# 登入/註冊（完整）
+# 登入/註冊（完整，已改為 session_state 儲存新用戶）
 # ============================================================
 def login_page():
     st.title("🔐 登入 / 註冊")
@@ -1418,7 +1212,9 @@ def login_page():
                             if not invited_by:
                                 st.warning("⚠️ 邀請碼無效，請確認後再試。")
                         
+                        # ====== 建立新用戶資料 ======
                         new_user_data = {
+                            'username': new_user,
                             'password': new_pass,
                             'phone': phone,
                             'is_paid': False,
@@ -1438,28 +1234,21 @@ def login_page():
                             'invite_rewards': 0,
                             'invite_count': 0
                         }
-                        users[new_user] = new_user_data
-                        
-                        # ====== 強制寫入 users.json ======
+
+                        # ====== 儲存到 session_state ======
+                        if 'new_users_session' not in st.session_state:
+                            st.session_state.new_users_session = []
+                        st.session_state.new_users_session.append(new_user_data)
+
+                        # ====== 同時嘗試寫入檔案（可選） ======
                         try:
-                            save_success = save_users(users)
-                            if save_success:
-                                st.success("✅ 用戶已成功寫入 users.json")
-                                # 立即讀取確認
-                                check_users = load_users()
-                                if new_user in check_users:
-                                    st.success(f"✅ 確認 {new_user} 已存在於 users.json")
-                                else:
-                                    st.error(f"❌ 寫入後讀取失敗，{new_user} 不在 users.json 中")
-                                    st.stop()
-                            else:
-                                st.error("❌ 寫入 users.json 失敗，請檢查檔案權限")
-                                st.stop()
-                        except Exception as e:
-                            st.error(f"❌ 寫入 users.json 時發生錯誤：{e}")
-                            st.stop()
-                        
-                        # 處理邀請獎勵
+                            file_users = load_json(USER_DATA_FILE)
+                            file_users[new_user] = new_user_data
+                            save_json(USER_DATA_FILE, file_users)
+                        except:
+                            pass
+
+                        # ====== 處理邀請獎勵 ======
                         if CONFIG.get("enable_invite_reward", True) and invited_by:
                             inviter = users.get(invited_by)
                             if inviter:
@@ -1472,14 +1261,21 @@ def login_page():
                                 if new_user_data['predictions_limit'] != -1:
                                     new_user_data['predictions_limit'] += reward_invitee
                                 new_user_data['invite_rewards'] = reward_invitee
-                                save_users(users)
+                                # 更新檔案
+                                try:
+                                    file_users = load_json(USER_DATA_FILE)
+                                    file_users[invited_by] = inviter
+                                    file_users[new_user] = new_user_data
+                                    save_json(USER_DATA_FILE, file_users)
+                                except:
+                                    pass
                                 st.success(f"✅ 註冊成功！你同邀請人各獲得 {reward_invitee} 次免費預測獎勵！")
                             else:
                                 st.success("✅ 註冊成功！")
                         else:
                             st.success("✅ 註冊成功！")
-                        
-                        # ====== 註冊成功後自動登入並跳轉到主頁面 ======
+
+                        # ====== 自動登入並跳轉 ======
                         st.session_state.logged_in = True
                         st.session_state.username = new_user
                         st.session_state.role = 'free'
