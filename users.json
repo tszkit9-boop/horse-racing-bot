@@ -56,5 +56,26 @@
     "invite_rewards": 0,
     "invite_count": 0,
     "payment_requests": []
+  },
+  "wan0811": {
+    "username": "wan0811",
+    "password": "ccn92139",
+    "phone": "",
+    "is_paid": false,
+    "paid_date": null,
+    "expiry_date": null,
+    "free_usage": 0,
+    "total_usage": 0,
+    "created_at": "2026-08-28 13:25:51",
+    "note": "",
+    "group": "free",
+    "plan": null,
+    "predictions_limit": 2,
+    "history": [],
+    "terms_agreed": "2026-08-28T13:25:51.622347",
+    "invite_code": "WAN0811872",
+    "invited_by": null,
+    "invite_rewards": 0,
+    "invite_count": 0
   }
 }
