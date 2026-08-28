@@ -1,0 +1,32 @@
+name: 自動更新賽馬數據
+
+on:
+  schedule:
+    - cron: '0 17 * * *'  # 香港時間每日凌晨 01:00 (即 UTC 17:00)
+  workflow_dispatch: # 允許你手動喺GitHub網頁撳掣測試
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 攞最新代碼
+        uses: actions/checkout@v3
+      
+      - name: 設定 Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          
+      - name: 安裝所需套件
+        run: pip install -r requirements.txt
+        
+      - name: 運行自動更新腳本
+        run: python scripts/auto_expire.py
+        
+      - name: 自動提交更新
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add .
+          git commit -m "自動更新數據" || echo "No changes to commit"
+          git push
