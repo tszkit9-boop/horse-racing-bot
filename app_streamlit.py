@@ -1478,6 +1478,22 @@ def admin_user_management():
                 log_admin_action(st.session_state.username, f"編輯用戶 {username}")
                 st.success("✅ 已更新")
                 st.rerun()
+    
+    # ==================== 一鍵下載 users.json ====================
+    st.divider()
+    st.subheader("📥 數據匯出")
+    try:
+        with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
+            data = f.read()
+        st.download_button(
+            label="📥 下載 users.json",
+            data=data,
+            file_name="users.json",
+            mime="application/json",
+            key="download_users_json"
+        )
+    except Exception as e:
+        st.error(f"讀取檔案失敗：{e}")
 
 def admin_analytics():
     st.subheader("📊 數據分析 & 用戶增長")
