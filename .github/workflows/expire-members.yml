@@ -2,7 +2,7 @@ name: 自動更新賽馬數據
 
 on:
   schedule:
-    - cron: '0 17 * * *'  # 香港時間每日凌晨 01:00 (即 UTC 17:00)
+    - cron: '30 17 * * *'  # 香港時間每日凌晨 01:30（UTC 17:30）
   workflow_dispatch: # 允許你手動喺GitHub網頁撳掣測試
 
 jobs:
