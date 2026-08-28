@@ -1,24 +1,18 @@
-# Logs
-logs
+# Python 垃圾檔案
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 敏感數據同密碼（最緊要！）
+.env
+*.csv
+*.xlsx
+payment_proofs/
+
+# Logs 同埋編輯器
+logs/
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-node_modules
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+.vscode/
+.idea/
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
