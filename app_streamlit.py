@@ -1246,7 +1246,6 @@ def login_page():
                         
                         st.session_state.page_mode = "login"
                         st.rerun()
-
 # ============================================================
 # AI 自我學習（完整）
 # ============================================================
@@ -1479,22 +1478,6 @@ def admin_user_management():
                 log_admin_action(st.session_state.username, f"編輯用戶 {username}")
                 st.success("✅ 已更新")
                 st.rerun()
-    
-    st.divider()
-    st.subheader("📥 數據匯出")
-    if st.button("📥 下載 users.json", key="download_users_json"):
-        try:
-            with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
-                data = f.read()
-            st.download_button(
-                label="✅ 點擊下載 users.json",
-                data=data,
-                file_name="users.json",
-                mime="application/json",
-                key="download_users_btn"
-            )
-        except Exception as e:
-            st.error(f"讀取檔案失敗：{e}")
 
 def admin_analytics():
     st.subheader("📊 數據分析 & 用戶增長")
@@ -2068,7 +2051,7 @@ def admin_page():
             tab_functions[name]()
 
 # ============================================================
-# 主頁面
+# 主頁面（已將付款功能同賽事預測控制互調位置）
 # ============================================================
 def main():
     if 'logged_in' not in st.session_state:
@@ -2194,64 +2177,8 @@ def main():
         st.info("🔓 目前為公開模式，任何人皆可使用")
 
     # ============================================================
-    # 🟢 付款功能（開放所有用戶，原名「付款功能測試」已移除）
+    # 🟢 模型自我學習 & 表現分析
     # ============================================================
-    st.markdown("---")
-    st.subheader("💳 付款功能")
-    
-    # 檢查用戶是否已登入
-    if st.session_state.get('logged_in'):
-        # 顯示付款牆（已移除警告）
-        show_paywall()
-    else:
-        st.info("請先登入以使用付款功能")
-        if st.button("前往登入"):
-            st.session_state.page_mode = "login"
-            st.rerun()
-
-    # 管理員專用快速測試按鈕（只對 super_admin 顯示）
-    if st.session_state.get('role') == 'super_admin':
-        st.markdown("---")
-        st.subheader("⚡ 管理員快速測試")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("🚀 顯示付款牆（傳統）", type="secondary"):
-                st.session_state['test_payment'] = True
-                st.rerun()
-        
-        with col2:
-            test_plan = st.radio(
-                "選擇測試方案",
-                options=["day", "month", "quarter"],
-                format_func=lambda x: {"day": "☀️ 日費 $18", "month": "📆 月費 $128", "quarter": "📅 季費 $328"}[x],
-                key="test_plan_select",
-                horizontal=True
-            )
-            plan_price = {"day": 18, "month": 128, "quarter": 328}
-            test_price = plan_price[test_plan]
-            
-            if st.button(f"⚡ 直接提交測試付款（{get_plan_name(test_plan)} ${test_price}）", type="primary"):
-                username = st.session_state.username if st.session_state.get('logged_in') else "testuser"
-                success, msg = submit_payment_request(
-                    username=username,
-                    plan=test_plan,
-                    final_price=test_price,
-                    discount_desc="",
-                    promo_code_used=None
-                )
-                if success:
-                    st.success(f"✅ 測試記錄已寫入！用戶：{username}，方案：{get_plan_name(test_plan)} ${test_price}")
-                    st.info("請去側邊欄 → 後台審核 查看")
-                    st.write("📋 當前付款記錄總數：", len(st.session_state.payment_requests['requests']))
-                    st.json(st.session_state.payment_requests['requests'])
-                else:
-                    st.error(f"❌ 寫入失敗：{msg}")
-
-    if st.session_state.get('test_payment', False):
-        st.session_state['test_payment'] = False
-        show_paywall()
-
-    # 模型自我學習 & 表現分析
     st.markdown("---")
     st.subheader("🧠 模型自我學習 & 表現分析")
     acc = load_accuracy()
@@ -2325,7 +2252,9 @@ def main():
     else:
         st.info("暫時未有預測記錄，未能進行自我學習分析。請先執行預測。")
 
-    # 預測控制（完整）
+    # ============================================================
+    # 🟢 賽事預測控制（已移到付款功能前面）
+    # ============================================================
     st.markdown("---")
     st.subheader("🎯 賽事預測控制")
     col_date, col_race, col_btn = st.columns([2, 2, 1])
@@ -2378,26 +2307,6 @@ def main():
         show_prediction_history(st.session_state.username)
         st.divider()
 
-    st.subheader("📅 今日賽程")
-    try:
-        df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
-        df_sched = standardize_columns_safe(df_sched)
-        if 'race_date' in df_sched.columns:
-            df_sched['race_date'] = pd.to_datetime(df_sched['race_date'], errors='coerce')
-            df_sched = df_sched.dropna(subset=['race_date'])
-            today = datetime.now().date()
-            day_races = df_sched[df_sched['race_date'].dt.date == today]
-            if day_races.empty:
-                st.info("今日沒有賽事")
-            else:
-                for course in day_races['race_course'].unique():
-                    races = day_races[day_races['race_course'] == course]['race_no'].unique()
-                    st.write(f"🏟️ **{course}**：第 {', '.join(map(str, sorted(races)))} 場")
-        else:
-            st.info("今日沒有賽事")
-    except:
-        st.info("今日沒有賽事")
-
     if predict_btn:
         users = load_users()
         user_data = users.get(st.session_state.username, {})
@@ -2411,7 +2320,6 @@ def main():
             is_vip = True
         
         if CONFIG["enable_payment"] and limit != -1 and used >= limit:
-            # 免費次數用完，直接顯示付款牆（但我們已經在主頁顯示了付款區域，這裡也可以調用）
             show_paywall()
         else:
             date_str = date.strftime('%Y-%m-%d')
@@ -2558,6 +2466,87 @@ def main():
                             save_users(users)
                         st.session_state.usage_count += 1
                         st.info("📝 預測已記錄到你的歷史")
+
+    # ============================================================
+    # 🟢 付款功能（已移到賽事預測控制後面）
+    # ============================================================
+    st.markdown("---")
+    st.subheader("💳 付款功能")
+    
+    # 檢查用戶是否已登入
+    if st.session_state.get('logged_in'):
+        # 顯示付款牆
+        show_paywall()
+    else:
+        st.info("請先登入以使用付款功能")
+        if st.button("前往登入"):
+            st.session_state.page_mode = "login"
+            st.rerun()
+
+    # 管理員專用快速測試按鈕（只對 super_admin 顯示）
+    if st.session_state.get('role') == 'super_admin':
+        st.markdown("---")
+        st.subheader("⚡ 管理員快速測試")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🚀 顯示付款牆（傳統）", type="secondary"):
+                st.session_state['test_payment'] = True
+                st.rerun()
+        
+        with col2:
+            test_plan = st.radio(
+                "選擇測試方案",
+                options=["day", "month", "quarter"],
+                format_func=lambda x: {"day": "☀️ 日費 $18", "month": "📆 月費 $128", "quarter": "📅 季費 $328"}[x],
+                key="test_plan_select",
+                horizontal=True
+            )
+            plan_price = {"day": 18, "month": 128, "quarter": 328}
+            test_price = plan_price[test_plan]
+            
+            if st.button(f"⚡ 直接提交測試付款（{get_plan_name(test_plan)} ${test_price}）", type="primary"):
+                username = st.session_state.username if st.session_state.get('logged_in') else "testuser"
+                success, msg = submit_payment_request(
+                    username=username,
+                    plan=test_plan,
+                    final_price=test_price,
+                    discount_desc="",
+                    promo_code_used=None
+                )
+                if success:
+                    st.success(f"✅ 測試記錄已寫入！用戶：{username}，方案：{get_plan_name(test_plan)} ${test_price}")
+                    st.info("請去側邊欄 → 後台審核 查看")
+                    st.write("📋 當前付款記錄總數：", len(st.session_state.payment_requests['requests']))
+                    st.json(st.session_state.payment_requests['requests'])
+                else:
+                    st.error(f"❌ 寫入失敗：{msg}")
+
+    if st.session_state.get('test_payment', False):
+        st.session_state['test_payment'] = False
+        show_paywall()
+
+    # ============================================================
+    # 🟢 今日賽程
+    # ============================================================
+    st.subheader("📅 今日賽程")
+    try:
+        df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
+        df_sched = standardize_columns_safe(df_sched)
+        if 'race_date' in df_sched.columns:
+            df_sched['race_date'] = pd.to_datetime(df_sched['race_date'], errors='coerce')
+            df_sched = df_sched.dropna(subset=['race_date'])
+            today = datetime.now().date()
+            day_races = df_sched[df_sched['race_date'].dt.date == today]
+            if day_races.empty:
+                st.info("今日沒有賽事")
+            else:
+                for course in day_races['race_course'].unique():
+                    races = day_races[day_races['race_course'] == course]['race_no'].unique()
+                    st.write(f"🏟️ **{course}**：第 {', '.join(map(str, sorted(races)))} 場")
+        else:
+            st.info("今日沒有賽事")
+    except:
+        st.info("今日沒有賽事")
 
     st.divider()
     st.warning("⚠️ **免責聲明**：本系統提供之預測僅供參考，不構成投注建議。賽馬活動涉及風險，用戶應量力而為，本系統不對任何投注損失負責。用戶必須年滿18歲。使用本服務即表示同意以上條款。")
