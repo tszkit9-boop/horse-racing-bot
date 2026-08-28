@@ -1239,13 +1239,28 @@ def login_page():
                                 new_user_data['invite_rewards'] = reward_invitee
                                 save_users(users)
                                 st.success(f"✅ 註冊成功！你同邀請人各獲得 {reward_invitee} 次免費預測獎勵！")
-                                st.rerun()  # <--- 註冊成功後自動刷新
+                                # 自動登入
+                                st.session_state.logged_in = True
+                                st.session_state.username = new_user
+                                st.session_state.role = 'free'
+                                st.session_state.usage_count = 0
+                                st.rerun()
                             else:
                                 st.success("✅ 註冊成功！")
-                                st.rerun()  # <--- 註冊成功後自動刷新
+                                # 自動登入
+                                st.session_state.logged_in = True
+                                st.session_state.username = new_user
+                                st.session_state.role = 'free'
+                                st.session_state.usage_count = 0
+                                st.rerun()
                         else:
                             st.success("✅ 註冊成功！")
-                            st.rerun()  # <--- 註冊成功後自動刷新
+                            # 自動登入
+                            st.session_state.logged_in = True
+                            st.session_state.username = new_user
+                            st.session_state.role = 'free'
+                            st.session_state.usage_count = 0
+                            st.rerun()
 # ============================================================
 # AI 自我學習（完整）
 # ============================================================
