@@ -1530,6 +1530,88 @@ def admin_user_management():
     except Exception as e:
         st.error(f"讀取檔案失敗：{e}")
 
+# ---------- 新增：次數管理 ----------
+def admin_manage_predictions():
+    st.subheader("📊 管理用戶預測次數")
+    users = load_users()
+    if not users:
+        st.info("暫無用戶")
+        return
+
+    # 選擇用戶
+    username_list = list(users.keys())
+    selected_user = st.selectbox("選擇用戶", username_list, key="manage_predictions_user")
+
+    if selected_user:
+        user_data = users[selected_user]
+        current_limit = user_data.get('predictions_limit', CONFIG['free_limit'])
+        current_usage = user_data.get('free_usage', 0)
+
+        # 顯示當前狀態
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("用戶", selected_user)
+        with col2:
+            st.metric("目前剩餘次數", current_limit - current_usage if current_limit != -1 else "無限")
+        with col3:
+            st.metric("已使用次數", current_usage)
+
+        st.divider()
+
+        # 操作選項
+        action = st.radio(
+            "選擇操作",
+            ["增加次數", "減少次數", "設定為指定次數"],
+            horizontal=True,
+            key="predictions_action"
+        )
+
+        if action == "增加次數":
+            add_amount = st.number_input("增加次數", min_value=1, step=1, value=1, key="add_predictions")
+            if st.button("✅ 增加", type="primary", key="confirm_add_predictions"):
+                if current_limit == -1:
+                    st.warning("⚠️ 此用戶已是無限次數，無需增加")
+                else:
+                    users[selected_user]['predictions_limit'] = current_limit + add_amount
+                    save_users(users)
+                    log_admin_action(st.session_state.username, f"為 {selected_user} 增加 {add_amount} 次預測")
+                    st.success(f"✅ 已為 {selected_user} 增加 {add_amount} 次預測（新上限：{current_limit + add_amount}）")
+                    st.rerun()
+
+        elif action == "減少次數":
+            reduce_amount = st.number_input("減少次數", min_value=1, step=1, value=1, key="reduce_predictions")
+            if st.button("✅ 減少", type="primary", key="confirm_reduce_predictions"):
+                if current_limit == -1:
+                    st.warning("⚠️ 此用戶是無限次數，無法減少")
+                elif current_limit - reduce_amount < 0:
+                    st.error(f"❌ 減少後次數不能低於 0（目前為 {current_limit}）")
+                else:
+                    users[selected_user]['predictions_limit'] = current_limit - reduce_amount
+                    save_users(users)
+                    log_admin_action(st.session_state.username, f"為 {selected_user} 減少 {reduce_amount} 次預測")
+                    st.success(f"✅ 已為 {selected_user} 減少 {reduce_amount} 次預測（新上限：{current_limit - reduce_amount}）")
+                    st.rerun()
+
+        elif action == "設定為指定次數":
+            set_amount = st.number_input(
+                "設定為指定次數（輸入 -1 = 無限）",
+                min_value=-1,
+                step=1,
+                value=current_limit if current_limit != -1 else 10,
+                key="set_predictions"
+            )
+            if st.button("✅ 設定", type="primary", key="confirm_set_predictions"):
+                users[selected_user]['predictions_limit'] = set_amount
+                save_users(users)
+                log_admin_action(st.session_state.username, f"將 {selected_user} 預測次數設定為 {set_amount}")
+                display_text = "無限" if set_amount == -1 else str(set_amount)
+                st.success(f"✅ 已將 {selected_user} 的預測次數設為 {display_text}")
+                st.rerun()
+
+        st.divider()
+        st.caption("💡 提示：修改會即時生效，用戶無需重新登入")
+
+# ---------- 原有後台函數 ----------
 def admin_analytics():
     st.subheader("📊 數據分析 & 用戶增長")
     users = load_users()
@@ -2032,7 +2114,7 @@ def admin_system_settings():
             st.error("❌ 儲存失敗，請檢查檔案權限。")
 
 # ============================================================
-# 後台頁面
+# 後台頁面（已加入「次數管理」分頁）
 # ============================================================
 def admin_page():
     if 'admin_authenticated' not in st.session_state:
@@ -2074,6 +2156,7 @@ def admin_page():
     
     tab_functions = {
         "👥 用戶管理": admin_user_management if CONFIG.get("module_user_management", True) else lambda: st.info("模組已關閉"),
+        "📊 次數管理": admin_manage_predictions,
         "📊 數據分析": admin_analytics if CONFIG.get("module_analytics", True) else lambda: st.info("模組已關閉"),
         "💰 財務": admin_finance if CONFIG.get("module_finance", True) else lambda: st.info("模組已關閉"),
         "🎟️ 優惠碼": admin_promo_codes if CONFIG.get("module_promo", True) else lambda: st.info("模組已關閉"),
@@ -2086,7 +2169,7 @@ def admin_page():
         "🔐 安全": admin_security if CONFIG.get("module_security", True) else lambda: st.info("模組已關閉"),
     }
     
-    base_tabs = ["👥 用戶管理", "📊 數據分析", "💰 財務", "🎟️ 優惠碼", 
+    base_tabs = ["👥 用戶管理", "📊 次數管理", "📊 數據分析", "💰 財務", "🎟️ 優惠碼", 
                  "📈 預測監控", "⏰ 訂閱管理", "📤 付款審核", "📡 監控", 
                  "📝 內容", "🤖 自動化", "🔐 安全"]
     
