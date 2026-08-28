@@ -1223,7 +1223,16 @@ def login_page():
                             'invite_count': 0
                         }
                         users[new_user] = new_user_data
-                        save_users(users)
+                        
+                        # ====== 強制寫入 users.json ======
+                        try:
+                            save_success = save_users(users)
+                            if not save_success:
+                                st.error("❌ 寫入 users.json 失敗，請檢查檔案權限")
+                                st.stop()
+                        except Exception as e:
+                            st.error(f"❌ 寫入 users.json 時發生錯誤：{e}")
+                            st.stop()
                         
                         # 處理邀請獎勵
                         if CONFIG.get("enable_invite_reward", True) and invited_by:
@@ -1250,7 +1259,7 @@ def login_page():
                         st.session_state.username = new_user
                         st.session_state.role = 'free'
                         st.session_state.usage_count = 0
-                        st.session_state.page_mode = "login"   # 重置模式，避免下次顯示註冊頁
+                        st.session_state.page_mode = "login"
                         st.rerun()
 # ============================================================
 # AI 自我學習（完整）
