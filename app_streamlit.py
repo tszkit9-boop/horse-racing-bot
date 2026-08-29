@@ -555,7 +555,7 @@ def admin_payment_review():
                         st.error(msg)
            if st.button("❌ 拒絕", key=f"reject_{req.get('id')}"):
     success, msg = reject_payment_request(username, req['id'], st.session_state.username)
-    if success:
+           if success:
         st.warning(msg)
         st.rerun()
     else:
