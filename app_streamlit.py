@@ -1372,210 +1372,6 @@ def adjust_model_weights():
 # 後台管理（所有模組完整實作）
 # ============================================================
 
-def admin_dashboard():
-    st.subheader("📊 系統儀表板")
-    
-    # 載入所有數據
-    users = load_users()
-    finance = load_finance()
-    acc = load_accuracy()
-    records = acc.get('records', [])
-    payment_proofs = load_payment_proofs()
-    
-    # ====== 核心統計 ======
-    total_users = len(users)
-    today = datetime.now().date()
-    today_str = today.strftime('%Y-%m-%d')
-    
-    # 今日新增用戶
-    today_new_users = 0
-    for u in users.values():
-        created = u.get('created_at', '')
-        if created:
-            try:
-                if created.startswith(today_str):
-                    today_new_users += 1
-            except:
-                pass
-    
-    total_income = finance.get('total_income', 0)
-    
-    # 總預測次數
-    total_predictions = sum(u.get('total_usage', 0) for u in users.values())
-    
-    # 整體命中率
-    total_hit = len([r for r in records if r.get('is_hit') is True])
-    total_compared = len([r for r in records if r.get('is_hit') is not None])
-    hit_rate = total_hit / total_compared if total_compared > 0 else 0
-    
-    # 待審核付款
-    pending_payments = len([p for p in payment_proofs.get('proof_records', []) if p.get('status') == 'pending'])
-    
-    # 即將到期 VIP（3日內）
-    expiring_soon = 0
-    expired_vip = 0
-    for u in users.values():
-        if u.get('group') == 'VIP' and u.get('expiry_date'):
-            try:
-                exp = pd.to_datetime(u['expiry_date'])
-                days_left = (exp - datetime.now()).days
-                if 0 < days_left <= 3:
-                    expiring_soon += 1
-                elif days_left < 0:
-                    expired_vip += 1
-            except:
-                pass
-    
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
-    col1.metric("👤 總用戶", total_users)
-    col2.metric("📈 今日新增", today_new_users)
-    col3.metric("💰 總收入", f"${total_income:.2f}")
-    col4.metric("📊 總預測", total_predictions)
-    col5.metric("🎯 命中率", f"{hit_rate:.2%}" if total_compared > 0 else "N/A")
-    col6.metric("⏳ 待審核", pending_payments)
-    
-    st.divider()
-    
-    # ====== 警示區 ======
-    col_alert1, col_alert2, col_alert3 = st.columns(3)
-    with col_alert1:
-        if pending_payments > 0:
-            st.warning(f"⏳ 有 {pending_payments} 筆付款申請待審核")
-        else:
-            st.success("✅ 沒有待審核付款")
-    with col_alert2:
-        if expiring_soon > 0:
-            st.warning(f"⚠️ 有 {expiring_soon} 個 VIP 將在 3 日內到期")
-        else:
-            st.success("✅ 沒有即將到期 VIP")
-    with col_alert3:
-        if expired_vip > 0:
-            st.error(f"🔴 有 {expired_vip} 個 VIP 已過期")
-        else:
-            st.success("✅ 沒有過期 VIP")
-    
-    # ====== 圖表區域 ======
-    col_chart1, col_chart2 = st.columns(2)
-    
-    with col_chart1:
-        # 用戶增長趨勢（最近7日）
-        if total_users > 0:
-            st.subheader("📈 用戶增長趨勢（最近7日）")
-            # 統計最近7日每日新增
-            date_list = []
-            for i in range(7):
-                d = (today - timedelta(days=i)).strftime('%Y-%m-%d')
-                date_list.append(d)
-            date_list.reverse()
-            
-            daily_new = []
-            for d in date_list:
-                count = 0
-                for u in users.values():
-                    created = u.get('created_at', '')
-                    if created and created.startswith(d):
-                        count += 1
-                daily_new.append(count)
-            
-            df_trend = pd.DataFrame({
-                '日期': date_list,
-                '新增用戶': daily_new
-            })
-            fig = px.bar(df_trend, x='日期', y='新增用戶', title='每日新增用戶')
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("暫無用戶數據")
-    
-    with col_chart2:
-        # 命中率走勢（最近7日）
-        if records:
-            st.subheader("🎯 命中率趨勢（最近7日）")
-            df_records = pd.DataFrame(records)
-            if 'date' in df_records.columns and 'is_hit' in df_records.columns:
-                df_records['date'] = pd.to_datetime(df_records['date'])
-                df_records = df_records.dropna(subset=['date', 'is_hit'])
-                if not df_records.empty:
-                    df_records['date_str'] = df_records['date'].dt.strftime('%Y-%m-%d')
-                    # 只取最近7日
-                    recent_dates = [(today - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(7)]
-                    recent_dates.reverse()
-                    df_recent = df_records[df_records['date_str'].isin(recent_dates)]
-                    if not df_recent.empty:
-                        daily = df_recent.groupby('date_str').agg(
-                            total=('is_hit', 'count'),
-                            hit=('is_hit', lambda x: (x==True).sum())
-                        ).reset_index()
-                        daily['hit_rate'] = daily['hit'] / daily['total']
-                        fig2 = px.line(daily, x='date_str', y='hit_rate', 
-                                      title='每日命中率趨勢',
-                                      markers=True)
-                        fig2.update_layout(yaxis_tickformat='.0%')
-                        st.plotly_chart(fig2, use_container_width=True)
-                    else:
-                        st.info("最近7日未有足夠數據")
-                else:
-                    st.info("未有比對數據")
-            else:
-                st.info("未有日期或命中數據")
-        else:
-            st.info("暫無預測記錄")
-    
-    # ====== 快速行動 ======
-    st.divider()
-    st.subheader("⚡ 快速行動")
-    col_action1, col_action2, col_action3, col_action4 = st.columns(4)
-    with col_action1:
-        if st.button("🔄 刷新儀表板", use_container_width=True):
-            st.rerun()
-    with col_action2:
-        if st.button("🤖 執行維護", use_container_width=True):
-            st.session_state.go_to_maintenance = True
-            st.rerun()
-    with col_action3:
-        if st.button("📥 下載備份", use_container_width=True):
-            # 下載所有重要檔案
-            files_to_backup = ['users.json', 'payment_proofs.json', 'accuracy.json', 'system_config.json']
-            for f in files_to_backup:
-                if os.path.exists(f):
-                    with open(f, 'r', encoding='utf-8') as file:
-                        data = file.read()
-                    st.download_button(
-                        label=f"下載 {f}",
-                        data=data,
-                        file_name=f,
-                        mime="application/json",
-                        key=f"backup_{f}"
-                    )
-    with col_action4:
-        if st.button("📋 查看完整報告", use_container_width=True):
-            st.session_state.show_full_report = True
-            st.rerun()
-    
-    # ====== 系統狀態 ======
-    st.divider()
-    st.subheader("📁 系統狀態")
-    files_status = {
-        'users.json': os.path.exists('users.json'),
-        'accuracy.json': os.path.exists('accuracy.json'),
-        'system_config.json': os.path.exists('system_config.json'),
-        'payment_proofs.json': os.path.exists('payment_proofs.json'),
-        'HKCJ_FULL_YEAR_DATA.csv': os.path.exists('HKCJ_FULL_YEAR_DATA.csv'),
-        'ALL_DATA_MERGED.csv': os.path.exists('ALL_DATA_MERGED.csv'),
-    }
-    col_file1, col_file2, col_file3, col_file4 = st.columns(4)
-    status_icons = ["✅" if v else "❌" for v in files_status.values()]
-    file_names = list(files_status.keys())
-    with col_file1:
-        for i in range(0, min(3, len(file_names))):
-            st.write(f"{status_icons[i]} {file_names[i]}")
-    with col_file2:
-        for i in range(3, min(6, len(file_names))):
-            st.write(f"{status_icons[i]} {file_names[i]}")
-    
-    config = load_system_config()
-    last_maintenance = config.get('last_weight_update', '從未維護')
-    st.caption(f"🕐 上次維護時間：{last_maintenance}")
-
 def admin_user_management():
     st.subheader("👥 用戶管理")
     with st.expander("➕ 新增用戶", expanded=False):
@@ -2468,207 +2264,8 @@ def admin_system_settings():
         else:
             st.error("❌ 儲存失敗，請檢查檔案權限。")
 
-def admin_payment_review():
-    st.subheader("📤 付款審核")
-    proofs_data = load_payment_proofs()
-    records = proofs_data.get('proof_records', [])
-    pending = [r for r in records if r.get('status') == 'pending']
-    approved = [r for r in records if r.get('status') == 'approved']
-    rejected = [r for r in records if r.get('status') == 'rejected']
-    total_income = sum(r.get('final_price', 0) for r in approved)
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("⏳ 待審核", len(pending))
-    col2.metric("✅ 已批准", len(approved))
-    col3.metric("❌ 已拒絕", len(rejected))
-    col4.metric("💰 總收入", f"${total_income:.2f}")
-    st.divider()
-    with st.expander("🔍 篩選與搜尋", expanded=True):
-        col_s1, col_s2, col_s3 = st.columns([2, 2, 1])
-        with col_s1:
-            search_term = st.text_input("搜尋用戶名稱", placeholder="輸入用戶名")
-        with col_s2:
-            status_filter = st.selectbox(
-                "狀態篩選",
-                ["全部", "pending", "approved", "rejected"],
-                index=1,
-                format_func=lambda x: {"pending": "待審核", "approved": "已批准", "rejected": "已拒絕", "全部": "全部"}.get(x, x)
-            )
-        with col_s3:
-            if status_filter in ["pending", "全部"] and len(pending) > 0:
-                if st.button("📦 批量批准全部待審"):
-                    for rec in pending:
-                        _approve_payment(rec, proofs_data)
-                    st.success(f"✅ 已批量批准 {len(pending)} 條記錄")
-                    st.rerun()
-    filtered = records.copy()
-    if search_term:
-        filtered = [r for r in filtered if search_term.lower() in r.get('username', '').lower()]
-    if status_filter != "全部":
-        filtered = [r for r in filtered if r.get('status') == status_filter]
-    if not filtered:
-        st.info("📭 沒有符合條件的記錄")
-        return
-    st.subheader(f"📋 共 {len(filtered)} 條記錄")
-    for idx, rec in enumerate(filtered):
-        original_idx = records.index(rec)
-        status = rec.get('status', 'pending')
-        username = rec.get('username', '未知')
-        with st.container():
-            cols = st.columns([2, 2, 1.5, 1.5, 2])
-            with cols[0]:
-                st.write(f"👤 **{username}**")
-                st.caption(f"ID: {rec.get('id', '')}")
-            with cols[1]:
-                plan_name = rec.get('plan_name', '未知方案')
-                price = rec.get('final_price', 0)
-                st.write(f"📌 {plan_name}")
-                st.write(f"💰 ${price:.2f}")
-                if rec.get('discount_applied'):
-                    st.caption(f"折扣: {rec.get('discount_desc', '')}")
-            with cols[2]:
-                uploaded_at = rec.get('uploaded_at', '')
-                if uploaded_at:
-                    try:
-                        dt = datetime.fromisoformat(uploaded_at)
-                        st.caption(f"📅 {dt.strftime('%Y-%m-%d %H:%M')}")
-                    except:
-                        st.caption(uploaded_at)
-                filename = rec.get('filename')
-                if filename:
-                    filepath = os.path.join(PAYMENT_PROOFS_DIR, filename)
-                    if os.path.exists(filepath):
-                        try:
-                            image = Image.open(filepath)
-                            st.image(image, width=120)
-                        except:
-                            st.caption("圖片無法載入")
-                    else:
-                        st.caption("圖片檔案缺失")
-            with cols[3]:
-                if status == "pending":
-                    st.warning("⏳ 待審核")
-                elif status == "approved":
-                    st.success("✅ 已批准")
-                    users = load_users()
-                    user_data = users.get(username, {})
-                    expiry = user_data.get('expiry_date')
-                    if expiry:
-                        try:
-                            exp_dt = pd.to_datetime(expiry)
-                            days_left = (exp_dt - datetime.now()).days
-                            st.caption(f"到期: {exp_dt.strftime('%Y-%m-%d')} ({days_left}天)")
-                        except:
-                            pass
-                elif status == "rejected":
-                    st.error("❌ 已拒絕")
-                else:
-                    st.info(status)
-                if rec.get('approved_by'):
-                    st.caption(f"操作人: {rec['approved_by']}")
-                if rec.get('approved_at'):
-                    try:
-                        dt = datetime.fromisoformat(rec['approved_at'])
-                        st.caption(f"操作時間: {dt.strftime('%Y-%m-%d %H:%M')}")
-                    except:
-                        pass
-            with cols[4]:
-                if status == "pending":
-                    if st.button("✅ 批准", key=f"approve_{original_idx}"):
-                        _approve_payment(rec, proofs_data)
-                        st.rerun()
-                    if st.button("❌ 拒絕", key=f"reject_{original_idx}"):
-                        _reject_payment(rec, proofs_data)
-                        st.rerun()
-                elif status == "approved":
-                    if st.button("↩️ 退款", key=f"refund_{original_idx}"):
-                        _refund_payment(rec, proofs_data)
-                        st.rerun()
-                else:
-                    st.write("已處理")
-            st.divider()
-    with st.expander("📜 操作日誌 (最近20條)"):
-        logs = load_logs()
-        log_entries = logs.get('logs', [])[-20:]
-        if log_entries:
-            for log in reversed(log_entries):
-                st.text(f"[{log['time']}] {log['admin']} - {log['action']}")
-        else:
-            st.info("暫無日誌")
-
-def _approve_payment(rec, proofs_data):
-    try:
-        rec['status'] = 'approved'
-        rec['approved_at'] = datetime.now().isoformat()
-        rec['approved_by'] = st.session_state.username
-        save_payment_proofs(proofs_data)
-        username = rec.get('username')
-        if not username:
-            st.error("❌ 記錄中缺少 username")
-            return
-        users = load_users()
-        if username not in users:
-            st.error(f"❌ 用戶 {username} 不存在")
-            return
-        plan = rec.get('plan', 'month')
-        days = get_plan_days(plan)
-        if days == 0:
-            days = 30
-        expiry = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
-        users[username]['is_paid'] = True
-        users[username]['group'] = 'VIP'
-        users[username]['paid_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        users[username]['expiry_date'] = expiry
-        users[username]['plan'] = plan
-        users[username]['predictions_limit'] = -1
-        if save_users(users):
-            st.success(f"✅ {username} 已升級為 VIP！")
-            st.success(f"📅 到期日：{expiry}")
-            log_admin_action(st.session_state.username, f"批准付款並升級 {username} 為 VIP（{plan}）")
-        else:
-            st.error("❌ 儲存 users.json 失敗")
-    except Exception as e:
-        st.error(f"❌ 錯誤：{e}")
-
-def _reject_payment(rec, proofs_data):
-    rec['status'] = 'rejected'
-    rec['approved_at'] = datetime.now().isoformat()
-    rec['approved_by'] = st.session_state.username
-    save_payment_proofs(proofs_data)
-    st.warning(f"❌ 已拒絕 {rec.get('username')} 的申請")
-    log_admin_action(st.session_state.username, f"拒絕付款申請：{rec.get('username')}")
-
-def _refund_payment(rec, proofs_data):
-    try:
-        users = load_users()
-        username = rec.get('username')
-        if not username:
-            st.error("❌ 記錄中缺少 username")
-            return
-        if username not in users:
-            st.error(f"❌ 用戶 {username} 不存在")
-            return
-        users[username]['is_paid'] = False
-        users[username]['group'] = 'free'
-        users[username]['expiry_date'] = None
-        users[username]['plan'] = None
-        users[username]['predictions_limit'] = CONFIG["free_limit"]
-        if save_users(users):
-            st.success(f"✅ 用戶 {username} 已降級為免費")
-        else:
-            st.error("❌ 儲存 users.json 失敗")
-            return
-        rec['status'] = 'rejected'
-        rec['refunded'] = True
-        rec['refunded_at'] = datetime.now().isoformat()
-        rec['refunded_by'] = st.session_state.username
-        save_payment_proofs(proofs_data)
-        st.success(f"✅ 已為 {username} 辦理退款")
-        log_admin_action(st.session_state.username, f"退款：{username}")
-    except Exception as e:
-        st.error(f"❌ 退款錯誤：{e}")
-
 # ============================================================
-# 後台頁面（已加入系統儀表板）
+# 後台頁面
 # ============================================================
 def admin_page():
     if 'admin_authenticated' not in st.session_state:
@@ -2709,7 +2306,6 @@ def admin_page():
     st.divider()
     
     tab_functions = {
-        "📊 儀表板": admin_dashboard,
         "👥 用戶管理": admin_user_management if CONFIG.get("module_user_management", True) else lambda: st.info("模組已關閉"),
         "📊 次數管理": admin_manage_predictions,
         "📊 數據分析": admin_analytics if CONFIG.get("module_analytics", True) else lambda: st.info("模組已關閉"),
@@ -2725,7 +2321,7 @@ def admin_page():
         "🔐 安全": admin_security if CONFIG.get("module_security", True) else lambda: st.info("模組已關閉"),
     }
     
-    base_tabs = ["📊 儀表板", "👥 用戶管理", "📊 次數管理", "📊 數據分析", "💰 財務", "🎟️ 優惠碼", 
+    base_tabs = ["👥 用戶管理", "📊 次數管理", "📊 數據分析", "💰 財務", "🎟️ 優惠碼", 
                  "📈 預測監控", "⏰ 訂閱管理", "📤 付款審核", "📡 監控", 
                  "📝 內容", "🤖 自動維護", "🤖 自動化", "🔐 安全"]
     
@@ -2866,9 +2462,6 @@ def main():
     elif not CONFIG["enable_registration"]:
         st.info("🔓 目前為公開模式，任何人皆可使用")
 
-    # ============================================================
-    # 🟢 模型自我學習 & 表現分析
-    # ============================================================
     st.markdown("---")
     st.subheader("🧠 模型自我學習 & 表現分析")
     acc = load_accuracy()
@@ -2942,9 +2535,6 @@ def main():
     else:
         st.info("暫時未有預測記錄，未能進行自我學習分析。請先執行預測。")
 
-    # ============================================================
-    # 🟢 賽事預測控制
-    # ============================================================
     st.markdown("---")
     st.subheader("🎯 賽事預測控制")
     col_date, col_race, col_btn = st.columns([2, 2, 1])
@@ -3157,9 +2747,6 @@ def main():
                         st.session_state.usage_count += 1
                         st.info("📝 預測已記錄到你的歷史")
 
-    # ============================================================
-    # 🟢 付款功能
-    # ============================================================
     st.markdown("---")
     st.subheader("💳 付款功能")
     
@@ -3212,9 +2799,6 @@ def main():
         st.session_state['test_payment'] = False
         show_paywall()
 
-    # ============================================================
-    # 🟢 今日賽程
-    # ============================================================
     st.subheader("📅 今日賽程")
     try:
         df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
