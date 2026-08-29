@@ -18,6 +18,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import random
 from PIL import Image
+from supabase import create_client, Client
 
 # ============================================================
 # 🔒 隱藏 Streamlit 平台 UI
@@ -2366,66 +2367,61 @@ def admin_finance():
             st.success("✅ 已記錄")
             st.rerun()
 
-def admin_promo_codes():
-    st.subheader("🎟️ 優惠碼管理")
-    promos = load_promos()
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write("現有優惠碼")
-        if promos:
-            df = pd.DataFrame.from_dict(promos, orient='index')
-            if 'discount_type' not in df.columns:
-                df['discount_type'] = 'percentage'
-            if 'discount_value' not in df.columns:
-                df['discount_value'] = 0
-            st.dataframe(df, use_container_width=True)
-        else:
-            st.info("暫無優惠碼")
-    with col2:
-        st.write("產生新優惠碼")
-        duration = st.number_input("有效期 (天)", min_value=1, value=30, key="promo_duration")
-        discount_type = st.selectbox("折扣類型", ["percentage", "fixed", "free"], key="promo_discount_type",
-                                     format_func=lambda x: {"percentage": "百分比（%折扣）", "fixed": "固定金額（減$）", "free": "完全免費"}.get(x, x))
-        discount_value = st.number_input("折扣數值", min_value=0, value=20, key="promo_discount_value", 
-                                         help="百分比：20 = 8折（減20%）；固定金額：減指定金額；免費：無效")
-        if st.button("產生優惠碼", key="gen_promo"):
-            code = generate_promo_code()
-            expiry = (datetime.now() + timedelta(days=duration)).isoformat()
-            promos[code] = {
-                "used": False,
-                "expiry": expiry,
-                "created_at": datetime.now().isoformat(),
-                "discount_type": discount_type,
-                "discount_value": discount_value
-            }
-            save_promos(promos)
-            st.success(f"✅ 優惠碼已產生：`{code}` 有效期 {duration} 天")
-            st.rerun()
-        
-        st.write("---")
-        st.write("套用優惠碼")
-        code_input = st.text_input("優惠碼", key="apply_promo_code")
-        username_input = st.text_input("用戶名稱", key="apply_promo_user")
-        if st.button("套用", key="apply_promo"):
-            if code_input not in promos:
-                st.error("優惠碼不存在")
-            elif promos[code_input].get('used', False):
-                st.error("優惠碼已被使用")
-            else:
-                users = load_users()
-                if username_input not in users:
-                    st.error("用戶不存在")
-                else:
-                    users[username_input]['is_paid'] = True
-                    users[username_input]['group'] = 'paid'
-                    users[username_input]['predictions_limit'] = -1
-                    promos[code_input]['used'] = True
-                    promos[code_input]['used_by'] = username_input
-                    save_users(users)
-                    save_promos(promos)
-                    log_admin_action(st.session_state.username, f"套用優惠碼 {code_input} 給 {username_input}")
-                    st.success("✅ 已升級用戶")
-                    st.rerun()
+# ============================================================
+# 優惠碼讀寫（Supabase + JSON 備份）
+# ============================================================
+def load_promos():
+    """從 Supabase 載入優惠碼，失敗時 fallback 到 JSON"""
+    if supabase_available:
+        try:
+            response = supabase.table("promo_codes").select("*").execute()
+            data = response.data
+            promos = {}
+            for row in data:
+                promos[row['code']] = {
+                    "used": row.get('used', False),
+                    "expiry": row.get('expiry', ''),
+                    "created_at": row.get('created_at', datetime.now().isoformat()),
+                    "discount_type": row.get('discount_type', 'percentage'),
+                    "discount_value": row.get('discount_value', 0),
+                    "used_by": row.get('used_by', None)
+                }
+            return promos
+        except Exception as e:
+            print(f"⚠️ Supabase 讀取失敗，使用 JSON 備份：{e}")
+    
+    # Fallback 到 JSON
+    return load_json(PROMO_FILE, {})
+
+def save_promos(promos):
+    """儲存優惠碼到 Supabase，同時備份到 JSON"""
+    success = True
+    
+    if supabase_available:
+        try:
+            for code, data in promos.items():
+                record = {
+                    "code": code,
+                    "used": data.get('used', False),
+                    "expiry": data.get('expiry', None),
+                    "created_at": data.get('created_at', datetime.now().isoformat()),
+                    "discount_type": data.get('discount_type', 'percentage'),
+                    "discount_value": data.get('discount_value', 0),
+                    "used_by": data.get('used_by', None)
+                }
+                supabase.table("promo_codes").upsert(record, on_conflict="code").execute()
+        except Exception as e:
+            print(f"⚠️ Supabase 儲存失敗：{e}")
+            success = False
+    
+    # 無論如何都備份到 JSON
+    try:
+        save_json(PROMO_FILE, promos)
+    except Exception as e:
+        print(f"⚠️ JSON 備份失敗：{e}")
+        success = False
+    
+    return success
 
 def admin_accuracy_monitor():
     st.subheader("📈 預測準確率監控")
