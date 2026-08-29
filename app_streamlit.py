@@ -1283,6 +1283,21 @@ def login_page():
                         st.session_state.page_mode = "login"
                         st.rerun()
 # ============================================================
+# 補齊付款證明相關函數（確保儀表板正常）
+# ============================================================
+PAYMENT_PROOFS_FILE = 'payment_proofs.json'
+PAYMENT_PROOFS_DIR = 'payment_proofs'
+
+if not os.path.exists(PAYMENT_PROOFS_DIR):
+    os.makedirs(PAYMENT_PROOFS_DIR)
+
+def load_payment_proofs():
+    return load_json(PAYMENT_PROOFS_FILE)
+
+def save_payment_proofs(data):
+    return save_json(PAYMENT_PROOFS_FILE, data)
+
+# ============================================================
 # AI 自我學習（完整）
 # ============================================================
 def update_accuracy_with_results():
@@ -1369,7 +1384,7 @@ def adjust_model_weights():
     }
 
 # ============================================================
-# 系統儀表板（新功能）
+# 系統儀表板（已修復）
 # ============================================================
 def admin_dashboard():
     st.subheader("📊 系統儀表板")
