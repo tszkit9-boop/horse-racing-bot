@@ -1328,6 +1328,21 @@ def save_payment_proofs(data):
     return save_json(PAYMENT_PROOFS_FILE, data)
 
 # ============================================================
+# 補齊付款證明相關函數（確保儀表板正常）
+# ============================================================
+PAYMENT_PROOFS_FILE = 'payment_proofs.json'
+PAYMENT_PROOFS_DIR = 'payment_proofs'
+
+if not os.path.exists(PAYMENT_PROOFS_DIR):
+    os.makedirs(PAYMENT_PROOFS_DIR)
+
+def load_payment_proofs():
+    return load_json(PAYMENT_PROOFS_FILE)
+
+def save_payment_proofs(data):
+    return save_json(PAYMENT_PROOFS_FILE, data)
+
+# ============================================================
 # AI 自我學習（完整）
 # ============================================================
 def update_accuracy_with_results():
@@ -1426,7 +1441,6 @@ def admin_dashboard():
     records = acc.get('records', [])
     payment_proofs = load_payment_proofs()
     
-    # 核心統計
     total_users = len(users)
     today = datetime.now().date()
     today_new_users = sum(1 for u in users.values() if u.get('created_at', '').startswith(str(today)))
@@ -1448,7 +1462,6 @@ def admin_dashboard():
     
     st.divider()
     
-    # 警示區
     st.subheader("⚠️ 待辦事項")
     col_w1, col_w2, col_w3 = st.columns(3)
     
@@ -1486,7 +1499,6 @@ def admin_dashboard():
     
     st.divider()
     
-    # 圖表區
     col_ch1, col_ch2 = st.columns(2)
     
     with col_ch1:
@@ -1531,7 +1543,6 @@ def admin_dashboard():
     
     st.divider()
     
-    # 快速行動
     st.subheader("🚀 快速行動")
     col_q1, col_q2, col_q3 = st.columns(3)
     with col_q1:
@@ -1561,22 +1572,19 @@ def admin_dashboard():
                 st.error(f"下載失敗：{e}")
 
 # ============================================================
-# 數據分析類（進階功能）
+# 數據分析類（進階功能 - 齊全）
 # ============================================================
 def admin_horse_ranking():
     st.subheader("🏇 馬匹勝率排行榜")
     
     acc = load_accuracy()
     records = acc.get('records', [])
-    
-    # 過濾有賽果嘅記錄
     valid_records = [r for r in records if r.get('is_hit') is not None]
     
     if not valid_records:
         st.info("暫時未有足夠數據（最少需要 1 場已比對嘅預測記錄）")
         return
     
-    # 按馬匹分組統計
     horse_stats = {}
     for rec in valid_records:
         horse = rec.get('horse', '未知馬匹')
@@ -1586,10 +1594,9 @@ def admin_horse_ranking():
         if rec.get('is_hit') == True:
             horse_stats[horse]['hit'] += 1
     
-    # 計算命中率
     horse_list = []
     for horse, stats in horse_stats.items():
-        if stats['total'] >= 2:  # 至少預測過 2 次先上榜
+        if stats['total'] >= 2:
             hit_rate = stats['hit'] / stats['total']
             horse_list.append({
                 '馬匹': horse,
@@ -1602,15 +1609,12 @@ def admin_horse_ranking():
         st.info("暫時未有足夠數據（需要每匹馬至少預測 2 次先上榜）")
         return
     
-    # 排序
     df_horse = pd.DataFrame(horse_list)
     df_horse = df_horse.sort_values('命中率', ascending=False).reset_index(drop=True)
     
-    # 顯示 Top 15
     st.subheader("🏆 勝率最高馬匹 Top 15")
     st.dataframe(df_horse.head(15), use_container_width=True)
     
-    # 圖表
     if len(df_horse) >= 3:
         fig = px.bar(
             df_horse.head(10), 
@@ -1627,83 +1631,334 @@ def admin_horse_ranking():
     
     st.caption(f"📊 共 {len(df_horse)} 匹馬符合上榜條件（最少預測 2 次）")
 
-def admin_advanced_analytics():
-    st.subheader("📈 進階數據分析")
+def admin_jockey_ranking():
+    st.subheader("👨‍🏫 騎師勝率排行榜")
     
     acc = load_accuracy()
     records = acc.get('records', [])
-    
-    if not records:
-        st.info("暫時未有預測記錄")
-        return
-    
-    # 過濾有賽果嘅記錄
     valid_records = [r for r in records if r.get('is_hit') is not None]
     
     if not valid_records:
-        st.info("暫時未有已比對賽果嘅記錄")
+        st.info("暫時未有足夠數據（最少需要 1 場已比對嘅預測記錄）")
+        return
+    
+    # 從記錄中提取騎師（需要用 run_prediction 嘅數據，但 accuracy.json 冇騎師）
+    # 改用 history 記錄（users.json 入面嘅預測記錄都冇騎師）
+    # 所以呢個功能需要從預測記錄中提取騎師，但 accuracy.json 冇騎師欄位
+    st.warning("⚠️ 騎師數據需要從排位表檔案 'HKCJ_FULL_YEAR_DATA.csv' 提取")
+    st.info("💡 建議：喺預測時記錄騎師名稱，先可以統計騎師勝率")
+    
+    # 嘗試從排位表提取
+    try:
+        df_racecard = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
+        df_racecard = standardize_columns_safe(df_racecard)
+        if 'jockey' in df_racecard.columns and 'horse_name' in df_racecard.columns:
+            # 建立馬匹 > 騎師對照表
+            horse_jockey_map = dict(zip(df_racecard['horse_name'], df_racecard['jockey']))
+            
+            jockey_stats = {}
+            for rec in valid_records:
+                horse = rec.get('horse', '')
+                jockey = horse_jockey_map.get(horse, '未知騎師')
+                if jockey not in jockey_stats:
+                    jockey_stats[jockey] = {'total': 0, 'hit': 0}
+                jockey_stats[jockey]['total'] += 1
+                if rec.get('is_hit') == True:
+                    jockey_stats[jockey]['hit'] += 1
+            
+            jockey_list = []
+            for jockey, stats in jockey_stats.items():
+                if stats['total'] >= 2 and jockey != '未知騎師':
+                    hit_rate = stats['hit'] / stats['total']
+                    jockey_list.append({
+                        '騎師': jockey,
+                        '總預測': stats['total'],
+                        '命中': stats['hit'],
+                        '命中率': hit_rate
+                    })
+            
+            if jockey_list:
+                df_jockey = pd.DataFrame(jockey_list)
+                df_jockey = df_jockey.sort_values('命中率', ascending=False).reset_index(drop=True)
+                st.subheader("🏆 勝率最高騎師 Top 10")
+                st.dataframe(df_jockey.head(10), use_container_width=True)
+                
+                if len(df_jockey) >= 3:
+                    fig = px.bar(
+                        df_jockey.head(8),
+                        x='騎師',
+                        y='命中率',
+                        title='Top 8 騎師命中率',
+                        color='命中率',
+                        color_continuous_scale='Greens',
+                        text=df_jockey.head(8)['命中率'].apply(lambda x: f'{x:.1%}')
+                    )
+                    fig.update_traces(textposition='outside')
+                    fig.update_layout(yaxis_tickformat='.0%', height=350)
+                    st.plotly_chart(fig, use_container_width=True)
+                st.caption(f"📊 共 {len(df_jockey)} 位騎師符合上榜條件（最少預測 2 次）")
+            else:
+                st.info("暫時未有足夠騎師數據（需要馬匹對應騎師資料）")
+        else:
+            st.info("排位表檔案缺少 'jockey' 或 'horse_name' 欄位")
+    except Exception as e:
+        st.info(f"無法讀取排位表：{e}")
+
+def admin_trainer_ranking():
+    st.subheader("👨‍🏫 練馬師勝率排行榜")
+    
+    acc = load_accuracy()
+    records = acc.get('records', [])
+    valid_records = [r for r in records if r.get('is_hit') is not None]
+    
+    if not valid_records:
+        st.info("暫時未有足夠數據（最少需要 1 場已比對嘅預測記錄）")
+        return
+    
+    st.warning("⚠️ 練馬師數據需要從排位表檔案 'HKCJ_FULL_YEAR_DATA.csv' 提取")
+    st.info("💡 建議：喺預測時記錄練馬師名稱，先可以統計練馬師勝率")
+    
+    try:
+        df_racecard = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
+        df_racecard = standardize_columns_safe(df_racecard)
+        if 'trainer' in df_racecard.columns and 'horse_name' in df_racecard.columns:
+            horse_trainer_map = dict(zip(df_racecard['horse_name'], df_racecard['trainer']))
+            
+            trainer_stats = {}
+            for rec in valid_records:
+                horse = rec.get('horse', '')
+                trainer = horse_trainer_map.get(horse, '未知練馬師')
+                if trainer not in trainer_stats:
+                    trainer_stats[trainer] = {'total': 0, 'hit': 0}
+                trainer_stats[trainer]['total'] += 1
+                if rec.get('is_hit') == True:
+                    trainer_stats[trainer]['hit'] += 1
+            
+            trainer_list = []
+            for trainer, stats in trainer_stats.items():
+                if stats['total'] >= 2 and trainer != '未知練馬師':
+                    hit_rate = stats['hit'] / stats['total']
+                    trainer_list.append({
+                        '練馬師': trainer,
+                        '總預測': stats['total'],
+                        '命中': stats['hit'],
+                        '命中率': hit_rate
+                    })
+            
+            if trainer_list:
+                df_trainer = pd.DataFrame(trainer_list)
+                df_trainer = df_trainer.sort_values('命中率', ascending=False).reset_index(drop=True)
+                st.subheader("🏆 勝率最高練馬師 Top 10")
+                st.dataframe(df_trainer.head(10), use_container_width=True)
+                
+                if len(df_trainer) >= 3:
+                    fig = px.bar(
+                        df_trainer.head(8),
+                        x='練馬師',
+                        y='命中率',
+                        title='Top 8 練馬師命中率',
+                        color='命中率',
+                        color_continuous_scale='Oranges',
+                        text=df_trainer.head(8)['命中率'].apply(lambda x: f'{x:.1%}')
+                    )
+                    fig.update_traces(textposition='outside')
+                    fig.update_layout(yaxis_tickformat='.0%', height=350)
+                    st.plotly_chart(fig, use_container_width=True)
+                st.caption(f"📊 共 {len(df_trainer)} 位練馬師符合上榜條件（最少預測 2 次）")
+            else:
+                st.info("暫時未有足夠練馬師數據（需要馬匹對應練馬師資料）")
+        else:
+            st.info("排位表檔案缺少 'trainer' 或 'horse_name' 欄位")
+    except Exception as e:
+        st.info(f"無法讀取排位表：{e}")
+
+def admin_course_analysis():
+    st.subheader("📊 場地/路程勝率分析")
+    
+    acc = load_accuracy()
+    records = acc.get('records', [])
+    valid_records = [r for r in records if r.get('is_hit') is not None]
+    
+    if not valid_records:
+        st.info("暫時未有足夠數據（最少需要 1 場已比對嘅預測記錄）")
+        return
+    
+    st.warning("⚠️ 場地/路程數據需要從排位表檔案 'HKCJ_FULL_YEAR_DATA.csv' 提取")
+    
+    try:
+        df_racecard = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
+        df_racecard = standardize_columns_safe(df_racecard)
+        
+        # 需要 race_no 同 distance 同 going 配對
+        if 'race_no' in df_racecard.columns and 'distance' in df_racecard.columns:
+            # 建立 race_no > distance 對照
+            race_distance_map = dict(zip(df_racecard['race_no'], df_racecard['distance']))
+            race_going_map = {}
+            if 'going' in df_racecard.columns:
+                race_going_map = dict(zip(df_racecard['race_no'], df_racecard['going']))
+            
+            distance_stats = {}
+            going_stats = {}
+            
+            for rec in valid_records:
+                race_no = rec.get('race')
+                distance = race_distance_map.get(race_no, '未知')
+                
+                # 路程統計
+                if distance not in distance_stats:
+                    distance_stats[distance] = {'total': 0, 'hit': 0}
+                distance_stats[distance]['total'] += 1
+                if rec.get('is_hit') == True:
+                    distance_stats[distance]['hit'] += 1
+                
+                # 場地統計
+                going = race_going_map.get(race_no, '未知')
+                if going not in going_stats:
+                    going_stats[going] = {'total': 0, 'hit': 0}
+                going_stats[going]['total'] += 1
+                if rec.get('is_hit') == True:
+                    going_stats[going]['hit'] += 1
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.subheader("🏇 路程勝率分析")
+                distance_list = []
+                for dist, stats in distance_stats.items():
+                    if stats['total'] >= 2:
+                        hit_rate = stats['hit'] / stats['total']
+                        distance_list.append({
+                            '路程': dist,
+                            '總預測': stats['total'],
+                            '命中': stats['hit'],
+                            '命中率': hit_rate
+                        })
+                if distance_list:
+                    df_dist = pd.DataFrame(distance_list)
+                    df_dist = df_dist.sort_values('命中率', ascending=False).reset_index(drop=True)
+                    st.dataframe(df_dist, use_container_width=True)
+                    
+                    if len(df_dist) >= 2:
+                        fig = px.bar(
+                            df_dist.head(8),
+                            x='路程',
+                            y='命中率',
+                            title='各路程命中率',
+                            color='命中率',
+                            color_continuous_scale='Purples',
+                            text=df_dist.head(8)['命中率'].apply(lambda x: f'{x:.1%}')
+                        )
+                        fig.update_traces(textposition='outside')
+                        fig.update_layout(yaxis_tickformat='.0%', height=300)
+                        st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("未有足夠路程數據（最少預測 2 次）")
+            
+            with col2:
+                st.subheader("🌤️ 場地勝率分析")
+                going_list = []
+                for going, stats in going_stats.items():
+                    if stats['total'] >= 2 and going != '未知':
+                        hit_rate = stats['hit'] / stats['total']
+                        going_list.append({
+                            '場地': going,
+                            '總預測': stats['total'],
+                            '命中': stats['hit'],
+                            '命中率': hit_rate
+                        })
+                if going_list:
+                    df_going = pd.DataFrame(going_list)
+                    df_going = df_going.sort_values('命中率', ascending=False).reset_index(drop=True)
+                    st.dataframe(df_going, use_container_width=True)
+                    
+                    if len(df_going) >= 2:
+                        fig = px.bar(
+                            df_going,
+                            x='場地',
+                            y='命中率',
+                            title='各場地命中率',
+                            color='命中率',
+                            color_continuous_scale='Blues',
+                            text=df_going['命中率'].apply(lambda x: f'{x:.1%}')
+                        )
+                        fig.update_traces(textposition='outside')
+                        fig.update_layout(yaxis_tickformat='.0%', height=300)
+                        st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("未有足夠場地數據（最少預測 2 次）")
+        else:
+            st.info("排位表檔案缺少 'race_no' 或 'distance' 欄位")
+    except Exception as e:
+        st.info(f"無法讀取排位表：{e}")
+
+def admin_monthly_report():
+    st.subheader("📅 每月命中率報告")
+    
+    acc = load_accuracy()
+    records = acc.get('records', [])
+    valid_records = [r for r in records if r.get('is_hit') is not None]
+    
+    if not valid_records:
+        st.info("暫時未有足夠數據（最少需要 1 場已比對嘅預測記錄）")
         return
     
     df = pd.DataFrame(valid_records)
+    if 'date' not in df.columns:
+        st.info("記錄中缺少日期欄位")
+        return
     
-    col1, col2, col3, col4 = st.columns(4)
-    total = len(df)
-    hit = df[df['is_hit'] == True].shape[0]
-    hit_rate = hit/total if total>0 else 0
+    df['date'] = pd.to_datetime(df['date'])
+    df['month'] = df['date'].dt.to_period('M')
+    df['month_str'] = df['month'].astype(str)
     
-    # 計算 ROI（假設每注 $10，賠率 4 倍）
-    roi = (hit * 10 * 4 - total * 10) / (total * 10) if total > 0 else 0
+    monthly = df.groupby('month_str').agg(
+        total=('is_hit', 'count'),
+        hit=('is_hit', lambda x: (x==True).sum())
+    ).reset_index()
+    monthly['hit_rate'] = monthly['hit'] / monthly['total']
+    monthly = monthly.sort_values('month_str')
     
-    col1.metric("📊 已比對記錄", total)
-    col2.metric("🎯 命中次數", hit)
-    col3.metric("📈 命中率", f"{hit_rate:.2%}")
-    col4.metric("💰 ROI", f"{roi:.2%}")
+    st.subheader("📊 每月命中率總表")
+    st.dataframe(monthly, use_container_width=True)
     
+    fig = px.bar(
+        monthly,
+        x='month_str',
+        y='hit_rate',
+        title='每月命中率',
+        color='hit_rate',
+        color_continuous_scale='RdYlGn',
+        text=monthly['hit_rate'].apply(lambda x: f'{x:.1%}')
+    )
+    fig.update_traces(textposition='outside')
+    fig.update_layout(yaxis_tickformat='.0%', height=350)
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # 下載 PDF 報告（用 CSV 代替，因為 Streamlit 唔直接支援 PDF）
     st.divider()
+    st.subheader("📥 下載報告")
     
-    # 命中率分布（按月）
-    if 'date' in df.columns:
-        df['date'] = pd.to_datetime(df['date'])
-        df['month'] = df['date'].dt.to_period('M')
-        monthly = df.groupby('month').agg(
-            total=('is_hit', 'count'),
-            hit=('is_hit', lambda x: (x==True).sum())
-        ).reset_index()
-        monthly['hit_rate'] = monthly['hit'] / monthly['total']
-        monthly['month_str'] = monthly['month'].astype(str)
-        
-        fig = px.line(
-            monthly, 
-            x='month_str', 
-            y='hit_rate', 
-            title='每月命中率走勢',
-            markers=True
-        )
-        fig.update_layout(yaxis_tickformat='.0%', height=300)
-        st.plotly_chart(fig, use_container_width=True)
+    # 下載 CSV
+    csv_data = monthly.to_csv(index=False)
+    st.download_button(
+        label="📥 下載每月命中率報告 (CSV)",
+        data=csv_data,
+        file_name=f"monthly_report_{datetime.now().strftime('%Y%m')}.csv",
+        mime="text/csv",
+        key="download_monthly_report"
+    )
     
-    # 預測次數分布（按用戶）
-    if 'username' in df.columns:
-        user_stats = df.groupby('username').agg(
-            total=('is_hit', 'count'),
-            hit=('is_hit', lambda x: (x==True).sum())
-        ).reset_index()
-        user_stats['hit_rate'] = user_stats['hit'] / user_stats['total']
-        user_stats = user_stats.sort_values('total', ascending=False).head(10)
-        
-        fig = px.bar(
-            user_stats,
-            x='username',
-            y='total',
-            title='用戶預測次數 Top 10',
-            color='hit_rate',
-            color_continuous_scale='Blues',
-            text='total'
-        )
-        fig.update_traces(textposition='outside')
-        fig.update_layout(height=300)
-        st.plotly_chart(fig, use_container_width=True)
-
+    # 下載 JSON
+    json_data = json.dumps(monthly.to_dict(orient='records'), ensure_ascii=False, indent=2)
+    st.download_button(
+        label="📥 下載每月命中率報告 (JSON)",
+        data=json_data,
+        file_name=f"monthly_report_{datetime.now().strftime('%Y%m')}.json",
+        mime="application/json",
+        key="download_monthly_report_json"
+    )
+    
+    st.caption("💡 提示：CSV 同 JSON 檔案可用 Excel 打開，或轉換成 PDF")
 # ============================================================
 # 後台管理（所有模組完整實作）
 # ============================================================
@@ -1966,13 +2221,11 @@ def admin_auto_maintenance():
         progress_bar = st.progress(0)
         status_text = st.empty()
         
-        # 1. 比對賽果
         status_text.text("🔄 比對賽果中...")
         updated, msg = update_accuracy_with_results()
         results.append(f"🔄 比對賽果：{msg}")
         progress_bar.progress(15)
         
-        # 2. 調整權重
         status_text.text("⚖️ 調整權重中...")
         try:
             weight_result = adjust_model_weights()
@@ -1981,7 +2234,6 @@ def admin_auto_maintenance():
             results.append(f"⚖️ 調整權重：失敗 - {str(e)}")
         progress_bar.progress(30)
         
-        # 3. 檢查過期會員
         status_text.text("⏰ 檢查過期會員中...")
         users = load_users()
         today = datetime.now()
@@ -2006,7 +2258,6 @@ def admin_auto_maintenance():
             results.append("⏰ 檢查過期會員：目前沒有過期會員")
         progress_bar.progress(45)
         
-        # 4. 同步用戶數據
         status_text.text("📊 同步用戶數據中...")
         try:
             if 'temp_new_users' in st.session_state:
@@ -2027,7 +2278,6 @@ def admin_auto_maintenance():
             results.append(f"📊 同步用戶數據：失敗 - {str(e)}")
         progress_bar.progress(60)
         
-        # 5. 檢查系統檔案
         status_text.text("📝 檢查系統檔案中...")
         files_to_check = [
             'users.json', 'system_config.json', 'finance.json',
@@ -2043,7 +2293,6 @@ def admin_auto_maintenance():
         results.append(f"📝 檢查系統檔案：{' | '.join(file_status[:5])}")
         progress_bar.progress(80)
         
-        # 6. 自動備份
         status_text.text("📥 自動備份中...")
         try:
             backup_data = {
@@ -2058,7 +2307,6 @@ def admin_auto_maintenance():
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             backup_filename = f"backup_{timestamp}.json"
             
-            # 嘗試儲存到檔案系統（可選）
             try:
                 with open(backup_filename, 'w', encoding='utf-8') as f:
                     f.write(backup_json)
@@ -2066,7 +2314,6 @@ def admin_auto_maintenance():
             except:
                 results.append("📥 自動備份：無法儲存到伺服器，但可下載")
             
-            # 提供下載按鈕
             st.download_button(
                 label=f"📥 下載備份 ({timestamp})",
                 data=backup_json,
@@ -2687,7 +2934,7 @@ def admin_system_settings():
             st.error("❌ 儲存失敗，請檢查檔案權限。")
 
 # ============================================================
-# 後台頁面（已加入數據分析類進階功能）
+# 後台頁面（已加入所有數據分析類功能）
 # ============================================================
 def admin_page():
     if 'admin_authenticated' not in st.session_state:
@@ -2733,7 +2980,10 @@ def admin_page():
         "📊 次數管理": admin_manage_predictions,
         "📊 數據分析": admin_analytics if CONFIG.get("module_analytics", True) else lambda: st.info("模組已關閉"),
         "🏇 馬匹排行榜": admin_horse_ranking,
-        "📈 進階分析": admin_advanced_analytics,
+        "👨‍🏫 騎師排行榜": admin_jockey_ranking,
+        "👨‍🏫 練馬師排行榜": admin_trainer_ranking,
+        "📊 場地/路程分析": admin_course_analysis,
+        "📅 每月報告": admin_monthly_report,
         "💰 財務": admin_finance if CONFIG.get("module_finance", True) else lambda: st.info("模組已關閉"),
         "🎟️ 優惠碼": admin_promo_codes if CONFIG.get("module_promo", True) else lambda: st.info("模組已關閉"),
         "📈 預測監控": admin_accuracy_monitor,
@@ -2746,9 +2996,12 @@ def admin_page():
         "🔐 安全": admin_security if CONFIG.get("module_security", True) else lambda: st.info("模組已關閉"),
     }
     
-    base_tabs = ["📊 儀表板", "👥 用戶管理", "📊 次數管理", "📊 數據分析", "🏇 馬匹排行榜", "📈 進階分析",
-                 "💰 財務", "🎟️ 優惠碼", "📈 預測監控", "⏰ 訂閱管理", "📤 付款審核", "📡 監控", 
-                 "📝 內容", "🤖 自動維護", "🤖 自動化", "🔐 安全"]
+    base_tabs = ["📊 儀表板", "👥 用戶管理", "📊 次數管理", "📊 數據分析", 
+                 "🏇 馬匹排行榜", "👨‍🏫 騎師排行榜", "👨‍🏫 練馬師排行榜", 
+                 "📊 場地/路程分析", "📅 每月報告",
+                 "💰 財務", "🎟️ 優惠碼", "📈 預測監控", "⏰ 訂閱管理", 
+                 "📤 付款審核", "📡 監控", "📝 內容", "🤖 自動維護", 
+                 "🤖 自動化", "🔐 安全"]
     
     if is_super_admin:
         tab_names = base_tabs + ["⚙️ 系統設定"]
