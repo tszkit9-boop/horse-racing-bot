@@ -1530,7 +1530,6 @@ def admin_user_management():
     except Exception as e:
         st.error(f"讀取檔案失敗：{e}")
 
-# ---------- 新增：次數管理 ----------
 def admin_manage_predictions():
     st.subheader("📊 管理用戶預測次數")
     users = load_users()
@@ -1538,7 +1537,6 @@ def admin_manage_predictions():
         st.info("暫無用戶")
         return
 
-    # 選擇用戶
     username_list = list(users.keys())
     selected_user = st.selectbox("選擇用戶", username_list, key="manage_predictions_user")
 
@@ -1547,7 +1545,6 @@ def admin_manage_predictions():
         current_limit = user_data.get('predictions_limit', CONFIG['free_limit'])
         current_usage = user_data.get('free_usage', 0)
 
-        # 顯示當前狀態
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("用戶", selected_user)
@@ -1558,7 +1555,6 @@ def admin_manage_predictions():
 
         st.divider()
 
-        # 操作選項
         action = st.radio(
             "選擇操作",
             ["增加次數", "減少次數", "設定為指定次數"],
@@ -1611,7 +1607,162 @@ def admin_manage_predictions():
         st.divider()
         st.caption("💡 提示：修改會即時生效，用戶無需重新登入")
 
-# ---------- 原有後台函數 ----------
+def admin_auto_maintenance():
+    st.subheader("🤖 自動維護")
+    st.info("一鍵執行所有維護任務，系統會自動幫你完成以下操作：")
+    
+    tasks = [
+        "🔄 比對賽果 + 更新統計",
+        "⚖️ 調整模型權重（根據命中率）",
+        "⏰ 檢查並終止過期會員",
+        "📊 同步用戶數據（session → 檔案）",
+        "📝 檢查系統檔案狀態"
+    ]
+    
+    for task in tasks:
+        st.write(f"• {task}")
+    
+    st.divider()
+    
+    if st.button("🚀 執行全部維護任務", type="primary", use_container_width=True):
+        results = []
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        # 1. 比對賽果
+        status_text.text("🔄 比對賽果中...")
+        updated, msg = update_accuracy_with_results()
+        results.append(f"🔄 比對賽果：{msg}")
+        progress_bar.progress(20)
+        
+        # 2. 調整權重
+        status_text.text("⚖️ 調整權重中...")
+        try:
+            weight_result = adjust_model_weights()
+            results.append(f"⚖️ 調整權重：XGB={weight_result['xgb_weight']}, Cat={weight_result['cat_weight']}（命中率 {weight_result['hit_rate']:.2%}）")
+        except Exception as e:
+            results.append(f"⚖️ 調整權重：失敗 - {str(e)}")
+        progress_bar.progress(40)
+        
+        # 3. 檢查過期會員
+        status_text.text("⏰ 檢查過期會員中...")
+        users = load_users()
+        today = datetime.now()
+        expired = []
+        for uid, u in users.items():
+            if u.get('group') == 'VIP' and u.get('expiry_date'):
+                try:
+                    exp = pd.to_datetime(u['expiry_date'])
+                    if exp < today:
+                        u['group'] = 'free'
+                        u['is_paid'] = False
+                        u['predictions_limit'] = CONFIG["free_limit"]
+                        u['plan'] = None
+                        u['note'] = (u.get('note', '') + f' [於 {today.strftime("%Y-%m-%d")} 自動降級]').strip()
+                        expired.append(uid)
+                except:
+                    pass
+        if expired:
+            save_users(users)
+            results.append(f"⏰ 檢查過期會員：已將 {len(expired)} 個過期會員降級：{', '.join(expired)}")
+        else:
+            results.append("⏰ 檢查過期會員：目前沒有過期會員")
+        progress_bar.progress(60)
+        
+        # 4. 同步用戶數據
+        status_text.text("📊 同步用戶數據中...")
+        try:
+            if 'temp_new_users' in st.session_state:
+                file_users = load_json(USER_DATA_FILE)
+                synced = 0
+                for username, user_data in st.session_state.temp_new_users.items():
+                    if username not in file_users:
+                        file_users[username] = user_data
+                        synced += 1
+                if synced > 0:
+                    save_json(USER_DATA_FILE, file_users)
+                    results.append(f"📊 同步用戶數據：已同步 {synced} 個新用戶到檔案")
+                else:
+                    results.append("📊 同步用戶數據：無需同步")
+            else:
+                results.append("📊 同步用戶數據：無需同步")
+        except Exception as e:
+            results.append(f"📊 同步用戶數據：失敗 - {str(e)}")
+        progress_bar.progress(80)
+        
+        # 5. 檢查系統檔案
+        status_text.text("📝 檢查系統檔案中...")
+        files_to_check = [
+            'users.json', 'system_config.json', 'finance.json',
+            'promo_codes.json', 'admin_log.json', 'accuracy.json',
+            'payment_proofs.json', 'HKCJ_FULL_YEAR_DATA.csv', 'ALL_DATA_MERGED.csv'
+        ]
+        file_status = []
+        for f in files_to_check:
+            exists = os.path.exists(f)
+            size = os.path.getsize(f) if exists else 0
+            status = "✅" if exists else "❌"
+            file_status.append(f"{status} {f} ({size} bytes)" if exists else f"{status} {f} (不存在)")
+        results.append(f"📝 檢查系統檔案：{' | '.join(file_status[:5])}")
+        progress_bar.progress(100)
+        
+        status_text.text("✅ 所有維護任務已完成！")
+        st.success("✅ 自動維護完成！")
+        
+        st.divider()
+        st.subheader("📋 執行結果")
+        for r in results:
+            st.write(r)
+        
+        acc = load_accuracy()
+        records = acc.get('records', [])
+        total = len([r for r in records if r.get('is_hit') is not None])
+        hit = sum(1 for r in records if r.get('is_hit') is True)
+        hit_rate = hit/total if total>0 else 0
+        if total > 0:
+            st.divider()
+            col1, col2, col3 = st.columns(3)
+            col1.metric("📊 已比對預測", total)
+            col2.metric("🎯 命中次數", hit)
+            col3.metric("📈 整體命中率", f"{hit_rate:.2%}")
+    
+    st.divider()
+    st.subheader("⚡ 單獨執行")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("🔄 比對賽果", use_container_width=True):
+            updated, msg = update_accuracy_with_results()
+            st.success(f"✅ {msg}")
+            st.rerun()
+    with col2:
+        if st.button("⚖️ 調整權重", use_container_width=True):
+            result = adjust_model_weights()
+            st.success(f"✅ XGB={result['xgb_weight']}, Cat={result['cat_weight']}（命中率 {result['hit_rate']:.2%}）")
+            st.rerun()
+    with col3:
+        if st.button("⏰ 終止過期會員", use_container_width=True):
+            users = load_users()
+            today = datetime.now()
+            expired = []
+            for uid, u in users.items():
+                if u.get('group') == 'VIP' and u.get('expiry_date'):
+                    try:
+                        exp = pd.to_datetime(u['expiry_date'])
+                        if exp < today:
+                            u['group'] = 'free'
+                            u['is_paid'] = False
+                            u['predictions_limit'] = CONFIG["free_limit"]
+                            u['plan'] = None
+                            expired.append(uid)
+                    except:
+                        pass
+            if expired:
+                save_users(users)
+                st.success(f"✅ 已將 {len(expired)} 個過期會員降級：{', '.join(expired)}")
+            else:
+                st.info("✅ 目前沒有過期會員")
+            st.rerun()
+
 def admin_analytics():
     st.subheader("📊 數據分析 & 用戶增長")
     users = load_users()
@@ -2114,7 +2265,7 @@ def admin_system_settings():
             st.error("❌ 儲存失敗，請檢查檔案權限。")
 
 # ============================================================
-# 後台頁面（已加入「次數管理」分頁）
+# 後台頁面（已加入自動維護分頁）
 # ============================================================
 def admin_page():
     if 'admin_authenticated' not in st.session_state:
@@ -2165,13 +2316,14 @@ def admin_page():
         "📤 付款審核": admin_payment_review,
         "📡 監控": admin_monitoring if CONFIG.get("module_monitoring", True) else lambda: st.info("模組已關閉"),
         "📝 內容": admin_content if CONFIG.get("module_content", True) else lambda: st.info("模組已關閉"),
+        "🤖 自動維護": admin_auto_maintenance,
         "🤖 自動化": admin_automation if CONFIG.get("module_automation", True) else lambda: st.info("模組已關閉"),
         "🔐 安全": admin_security if CONFIG.get("module_security", True) else lambda: st.info("模組已關閉"),
     }
     
     base_tabs = ["👥 用戶管理", "📊 次數管理", "📊 數據分析", "💰 財務", "🎟️ 優惠碼", 
                  "📈 預測監控", "⏰ 訂閱管理", "📤 付款審核", "📡 監控", 
-                 "📝 內容", "🤖 自動化", "🔐 安全"]
+                 "📝 內容", "🤖 自動維護", "🤖 自動化", "🔐 安全"]
     
     if is_super_admin:
         tab_names = base_tabs + ["⚙️ 系統設定"]
@@ -2387,7 +2539,7 @@ def main():
         st.info("暫時未有預測記錄，未能進行自我學習分析。請先執行預測。")
 
     # ============================================================
-    # 🟢 賽事預測控制（已移到付款功能前面）
+    # 🟢 賽事預測控制
     # ============================================================
     st.markdown("---")
     st.subheader("🎯 賽事預測控制")
@@ -2602,7 +2754,7 @@ def main():
                         st.info("📝 預測已記錄到你的歷史")
 
     # ============================================================
-    # 🟢 付款功能（已移到賽事預測控制後面）
+    # 🟢 付款功能
     # ============================================================
     st.markdown("---")
     st.subheader("💳 付款功能")
