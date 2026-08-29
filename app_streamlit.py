@@ -535,7 +535,7 @@ def admin_payment_review():
                 st.write(f"💰 ${price:.2f}")
                 if req.get('discount_desc'):
                     st.caption(f"折扣: {req.get('discount_desc', '')}")
-             with cols[2]:
+            with cols[2]:
             with cols[2]:
     submitted_at = req.get('submitted_at', '')
     if submitted_at:
