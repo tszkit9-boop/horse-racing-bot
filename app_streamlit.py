@@ -1313,6 +1313,21 @@ def save_payment_proofs(data):
     return save_json(PAYMENT_PROOFS_FILE, data)
 
 # ============================================================
+# 補齊付款證明相關函數（確保儀表板正常）
+# ============================================================
+PAYMENT_PROOFS_FILE = 'payment_proofs.json'
+PAYMENT_PROOFS_DIR = 'payment_proofs'
+
+if not os.path.exists(PAYMENT_PROOFS_DIR):
+    os.makedirs(PAYMENT_PROOFS_DIR)
+
+def load_payment_proofs():
+    return load_json(PAYMENT_PROOFS_FILE)
+
+def save_payment_proofs(data):
+    return save_json(PAYMENT_PROOFS_FILE, data)
+
+# ============================================================
 # AI 自我學習（完整）
 # ============================================================
 def update_accuracy_with_results():
@@ -1544,6 +1559,150 @@ def admin_dashboard():
                 )
             except Exception as e:
                 st.error(f"下載失敗：{e}")
+
+# ============================================================
+# 數據分析類（進階功能）
+# ============================================================
+def admin_horse_ranking():
+    st.subheader("🏇 馬匹勝率排行榜")
+    
+    acc = load_accuracy()
+    records = acc.get('records', [])
+    
+    # 過濾有賽果嘅記錄
+    valid_records = [r for r in records if r.get('is_hit') is not None]
+    
+    if not valid_records:
+        st.info("暫時未有足夠數據（最少需要 1 場已比對嘅預測記錄）")
+        return
+    
+    # 按馬匹分組統計
+    horse_stats = {}
+    for rec in valid_records:
+        horse = rec.get('horse', '未知馬匹')
+        if horse not in horse_stats:
+            horse_stats[horse] = {'total': 0, 'hit': 0}
+        horse_stats[horse]['total'] += 1
+        if rec.get('is_hit') == True:
+            horse_stats[horse]['hit'] += 1
+    
+    # 計算命中率
+    horse_list = []
+    for horse, stats in horse_stats.items():
+        if stats['total'] >= 2:  # 至少預測過 2 次先上榜
+            hit_rate = stats['hit'] / stats['total']
+            horse_list.append({
+                '馬匹': horse,
+                '總預測': stats['total'],
+                '命中': stats['hit'],
+                '命中率': hit_rate
+            })
+    
+    if not horse_list:
+        st.info("暫時未有足夠數據（需要每匹馬至少預測 2 次先上榜）")
+        return
+    
+    # 排序
+    df_horse = pd.DataFrame(horse_list)
+    df_horse = df_horse.sort_values('命中率', ascending=False).reset_index(drop=True)
+    
+    # 顯示 Top 15
+    st.subheader("🏆 勝率最高馬匹 Top 15")
+    st.dataframe(df_horse.head(15), use_container_width=True)
+    
+    # 圖表
+    if len(df_horse) >= 3:
+        fig = px.bar(
+            df_horse.head(10), 
+            x='馬匹', 
+            y='命中率', 
+            title='Top 10 馬匹命中率',
+            color='命中率',
+            color_continuous_scale='Blues',
+            text=df_horse.head(10)['命中率'].apply(lambda x: f'{x:.1%}')
+        )
+        fig.update_traces(textposition='outside')
+        fig.update_layout(yaxis_tickformat='.0%', height=400)
+        st.plotly_chart(fig, use_container_width=True)
+    
+    st.caption(f"📊 共 {len(df_horse)} 匹馬符合上榜條件（最少預測 2 次）")
+
+def admin_advanced_analytics():
+    st.subheader("📈 進階數據分析")
+    
+    acc = load_accuracy()
+    records = acc.get('records', [])
+    
+    if not records:
+        st.info("暫時未有預測記錄")
+        return
+    
+    # 過濾有賽果嘅記錄
+    valid_records = [r for r in records if r.get('is_hit') is not None]
+    
+    if not valid_records:
+        st.info("暫時未有已比對賽果嘅記錄")
+        return
+    
+    df = pd.DataFrame(valid_records)
+    
+    col1, col2, col3, col4 = st.columns(4)
+    total = len(df)
+    hit = df[df['is_hit'] == True].shape[0]
+    hit_rate = hit/total if total>0 else 0
+    
+    # 計算 ROI（假設每注 $10，賠率 4 倍）
+    roi = (hit * 10 * 4 - total * 10) / (total * 10) if total > 0 else 0
+    
+    col1.metric("📊 已比對記錄", total)
+    col2.metric("🎯 命中次數", hit)
+    col3.metric("📈 命中率", f"{hit_rate:.2%}")
+    col4.metric("💰 ROI", f"{roi:.2%}")
+    
+    st.divider()
+    
+    # 命中率分布（按月）
+    if 'date' in df.columns:
+        df['date'] = pd.to_datetime(df['date'])
+        df['month'] = df['date'].dt.to_period('M')
+        monthly = df.groupby('month').agg(
+            total=('is_hit', 'count'),
+            hit=('is_hit', lambda x: (x==True).sum())
+        ).reset_index()
+        monthly['hit_rate'] = monthly['hit'] / monthly['total']
+        monthly['month_str'] = monthly['month'].astype(str)
+        
+        fig = px.line(
+            monthly, 
+            x='month_str', 
+            y='hit_rate', 
+            title='每月命中率走勢',
+            markers=True
+        )
+        fig.update_layout(yaxis_tickformat='.0%', height=300)
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # 預測次數分布（按用戶）
+    if 'username' in df.columns:
+        user_stats = df.groupby('username').agg(
+            total=('is_hit', 'count'),
+            hit=('is_hit', lambda x: (x==True).sum())
+        ).reset_index()
+        user_stats['hit_rate'] = user_stats['hit'] / user_stats['total']
+        user_stats = user_stats.sort_values('total', ascending=False).head(10)
+        
+        fig = px.bar(
+            user_stats,
+            x='username',
+            y='total',
+            title='用戶預測次數 Top 10',
+            color='hit_rate',
+            color_continuous_scale='Blues',
+            text='total'
+        )
+        fig.update_traces(textposition='outside')
+        fig.update_layout(height=300)
+        st.plotly_chart(fig, use_container_width=True)
 
 # ============================================================
 # 後台管理（所有模組完整實作）
@@ -2528,7 +2687,7 @@ def admin_system_settings():
             st.error("❌ 儲存失敗，請檢查檔案權限。")
 
 # ============================================================
-# 後台頁面（已加入系統儀表板）
+# 後台頁面（已加入數據分析類進階功能）
 # ============================================================
 def admin_page():
     if 'admin_authenticated' not in st.session_state:
@@ -2573,6 +2732,8 @@ def admin_page():
         "👥 用戶管理": admin_user_management if CONFIG.get("module_user_management", True) else lambda: st.info("模組已關閉"),
         "📊 次數管理": admin_manage_predictions,
         "📊 數據分析": admin_analytics if CONFIG.get("module_analytics", True) else lambda: st.info("模組已關閉"),
+        "🏇 馬匹排行榜": admin_horse_ranking,
+        "📈 進階分析": admin_advanced_analytics,
         "💰 財務": admin_finance if CONFIG.get("module_finance", True) else lambda: st.info("模組已關閉"),
         "🎟️ 優惠碼": admin_promo_codes if CONFIG.get("module_promo", True) else lambda: st.info("模組已關閉"),
         "📈 預測監控": admin_accuracy_monitor,
@@ -2585,8 +2746,8 @@ def admin_page():
         "🔐 安全": admin_security if CONFIG.get("module_security", True) else lambda: st.info("模組已關閉"),
     }
     
-    base_tabs = ["📊 儀表板", "👥 用戶管理", "📊 次數管理", "📊 數據分析", "💰 財務", "🎟️ 優惠碼", 
-                 "📈 預測監控", "⏰ 訂閱管理", "📤 付款審核", "📡 監控", 
+    base_tabs = ["📊 儀表板", "👥 用戶管理", "📊 次數管理", "📊 數據分析", "🏇 馬匹排行榜", "📈 進階分析",
+                 "💰 財務", "🎟️ 優惠碼", "📈 預測監控", "⏰ 訂閱管理", "📤 付款審核", "📡 監控", 
                  "📝 內容", "🤖 自動維護", "🤖 自動化", "🔐 安全"]
     
     if is_super_admin:
