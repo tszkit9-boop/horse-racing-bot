@@ -1369,6 +1369,153 @@ def adjust_model_weights():
     }
 
 # ============================================================
+# 系統儀表板（新功能）
+# ============================================================
+def admin_dashboard():
+    st.subheader("📊 系統儀表板")
+    st.caption(f"最後更新：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    users = load_users()
+    acc = load_accuracy()
+    finance = load_finance()
+    records = acc.get('records', [])
+    payment_proofs = load_payment_proofs()
+    
+    # 核心統計
+    total_users = len(users)
+    today = datetime.now().date()
+    today_new_users = sum(1 for u in users.values() if u.get('created_at', '').startswith(str(today)))
+    total_income = finance.get('total_income', 0)
+    total_predictions = len(records)
+    pending_payments = len([p for p in payment_proofs.get('proof_records', []) if p.get('status') == 'pending'])
+    
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    col1.metric("👤 總用戶", total_users)
+    col2.metric("📈 今日新增", today_new_users)
+    col3.metric("💰 總收入", f"${total_income:.2f}")
+    col4.metric("📊 總預測", total_predictions)
+    
+    total = len([r for r in records if r.get('is_hit') is not None])
+    hit = sum(1 for r in records if r.get('is_hit') is True)
+    hit_rate = hit/total if total>0 else 0
+    col5.metric("🎯 命中率", f"{hit_rate:.2%}")
+    col6.metric("⏳ 待審核付款", pending_payments, delta="需處理" if pending_payments > 0 else None)
+    
+    st.divider()
+    
+    # 警示區
+    st.subheader("⚠️ 待辦事項")
+    col_w1, col_w2, col_w3 = st.columns(3)
+    
+    with col_w1:
+        if pending_payments > 0:
+            st.warning(f"⏳ 有 {pending_payments} 筆付款申請待審核")
+        else:
+            st.success("✅ 沒有待審核付款")
+    
+    with col_w2:
+        vip_expiring = []
+        for uid, u in users.items():
+            if u.get('group') == 'VIP' and u.get('expiry_date'):
+                try:
+                    exp = pd.to_datetime(u['expiry_date'])
+                    days_left = (exp - datetime.now()).days
+                    if 0 < days_left <= 3:
+                        vip_expiring.append(f"{uid}({days_left}天)")
+                except:
+                    pass
+        if vip_expiring:
+            st.warning(f"⚠️ 即將到期 VIP：{', '.join(vip_expiring)}")
+        else:
+            st.success("✅ 沒有即將到期 VIP")
+    
+    with col_w3:
+        files_missing = []
+        for f in ['users.json', 'system_config.json', 'accuracy.json', 'HKCJ_FULL_YEAR_DATA.csv', 'ALL_DATA_MERGED.csv']:
+            if not os.path.exists(f):
+                files_missing.append(f)
+        if files_missing:
+            st.error(f"❌ 缺少檔案：{', '.join(files_missing)}")
+        else:
+            st.success("✅ 所有系統檔案正常")
+    
+    st.divider()
+    
+    # 圖表區
+    col_ch1, col_ch2 = st.columns(2)
+    
+    with col_ch1:
+        st.subheader("📈 用戶增長（最近7日）")
+        if users:
+            df_users = pd.DataFrame.from_dict(users, orient='index')
+            if 'created_at' in df_users.columns:
+                df_users['created_at'] = pd.to_datetime(df_users['created_at'], errors='coerce')
+                df_users = df_users.dropna(subset=['created_at'])
+                df_users['date'] = df_users['created_at'].dt.date
+                last_7 = datetime.now().date() - timedelta(days=7)
+                df_recent = df_users[df_users['date'] >= last_7]
+                if not df_recent.empty:
+                    daily = df_recent.groupby('date').size().reset_index(name='new_users')
+                    daily = daily.sort_values('date')
+                    fig = px.bar(daily, x='date', y='new_users', title='每日新增用戶')
+                    fig.update_layout(height=250)
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("最近7日沒有新用戶")
+    
+    with col_ch2:
+        st.subheader("📊 命中率走勢（最近7日）")
+        if records:
+            df_records = pd.DataFrame(records)
+            if 'date' in df_records.columns and 'is_hit' in df_records.columns:
+                df_records['date'] = pd.to_datetime(df_records['date'])
+                df_records = df_records.dropna(subset=['date', 'is_hit'])
+                last_7 = datetime.now().date() - timedelta(days=7)
+                df_recent = df_records[df_records['date'].dt.date >= last_7]
+                if not df_recent.empty:
+                    daily = df_recent.groupby(df_recent['date'].dt.date).agg(
+                        total=('is_hit', 'count'),
+                        hit=('is_hit', lambda x: (x==True).sum())
+                    ).reset_index()
+                    daily['hit_rate'] = daily['hit'] / daily['total']
+                    fig = px.line(daily, x='date', y='hit_rate', title='每日命中率趨勢', markers=True)
+                    fig.update_layout(height=250, yaxis_tickformat='.0%')
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("最近7日沒有預測記錄")
+    
+    st.divider()
+    
+    # 快速行動
+    st.subheader("🚀 快速行動")
+    col_q1, col_q2, col_q3 = st.columns(3)
+    with col_q1:
+        if st.button("🔄 刷新數據", use_container_width=True):
+            st.rerun()
+    with col_q2:
+        if st.button("🤖 執行維護", use_container_width=True):
+            admin_auto_maintenance()
+    with col_q3:
+        if st.button("📥 下載所有數據", use_container_width=True):
+            try:
+                data = {
+                    "users": load_users(),
+                    "accuracy": load_accuracy(),
+                    "finance": load_finance(),
+                    "payment_proofs": load_payment_proofs()
+                }
+                json_str = json.dumps(data, ensure_ascii=False, indent=2)
+                st.download_button(
+                    label="✅ 下載 backup.json",
+                    data=json_str,
+                    file_name=f"backup_{datetime.now().strftime('%Y%m%d')}.json",
+                    mime="application/json",
+                    key="download_backup"
+                )
+            except Exception as e:
+                st.error(f"下載失敗：{e}")
+
+# ============================================================
 # 後台管理（所有模組完整實作）
 # ============================================================
 
@@ -2177,6 +2324,55 @@ def admin_security():
         else:
             st.error("用戶不存在")
 
+def admin_payment_review():
+    st.subheader("📤 付款審核")
+    pending = get_all_pending_requests()
+    if not pending:
+        st.info("✅ 目前沒有待審核嘅付款申請")
+        return
+    st.write(f"共 **{len(pending)}** 條待審核記錄")
+    for item in pending:
+        username = item['username']
+        req = item['request']
+        with st.container():
+            cols = st.columns([2, 2, 1.5, 1.5, 2])
+            with cols[0]:
+                st.write(f"👤 **{username}**")
+                st.caption(f"ID: {req.get('id', '')}")
+            with cols[1]:
+                plan_name = req.get('plan_name', '未知方案')
+                price = req.get('final_price', 0)
+                st.write(f"📌 {plan_name}")
+                st.write(f"💰 ${price:.2f}")
+                if req.get('discount_desc'):
+                    st.caption(f"折扣: {req.get('discount_desc', '')}")
+            with cols[2]:
+                submitted_at = req.get('submitted_at', '')
+                if submitted_at:
+                    try:
+                        dt = datetime.fromisoformat(submitted_at)
+                        st.caption(f"📅 {dt.strftime('%Y-%m-%d %H:%M')}")
+                    except:
+                        st.caption(submitted_at)
+            with cols[3]:
+                st.warning("⏳ 待審核")
+            with cols[4]:
+                if st.button("✅ 批准", key=f"approve_{req.get('id')}"):
+                    success, msg = approve_payment_request(username, req['id'], st.session_state.username)
+                    if success:
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+                if st.button("❌ 拒絕", key=f"reject_{req.get('id')}"):
+                    success, msg = reject_payment_request(username, req['id'], st.session_state.username)
+                    if success:
+                        st.warning(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+            st.divider()
+
 def admin_system_settings():
     users = load_users()
     admin_username = st.session_state.get('admin_username', 'admin')
@@ -2265,7 +2461,7 @@ def admin_system_settings():
             st.error("❌ 儲存失敗，請檢查檔案權限。")
 
 # ============================================================
-# 後台頁面
+# 後台頁面（已加入系統儀表板）
 # ============================================================
 def admin_page():
     if 'admin_authenticated' not in st.session_state:
@@ -2306,6 +2502,7 @@ def admin_page():
     st.divider()
     
     tab_functions = {
+        "📊 儀表板": admin_dashboard,
         "👥 用戶管理": admin_user_management if CONFIG.get("module_user_management", True) else lambda: st.info("模組已關閉"),
         "📊 次數管理": admin_manage_predictions,
         "📊 數據分析": admin_analytics if CONFIG.get("module_analytics", True) else lambda: st.info("模組已關閉"),
@@ -2321,7 +2518,7 @@ def admin_page():
         "🔐 安全": admin_security if CONFIG.get("module_security", True) else lambda: st.info("模組已關閉"),
     }
     
-    base_tabs = ["👥 用戶管理", "📊 次數管理", "📊 數據分析", "💰 財務", "🎟️ 優惠碼", 
+    base_tabs = ["📊 儀表板", "👥 用戶管理", "📊 次數管理", "📊 數據分析", "💰 財務", "🎟️ 優惠碼", 
                  "📈 預測監控", "⏰ 訂閱管理", "📤 付款審核", "📡 監控", 
                  "📝 內容", "🤖 自動維護", "🤖 自動化", "🔐 安全"]
     
@@ -2757,47 +2954,6 @@ def main():
         if st.button("前往登入"):
             st.session_state.page_mode = "login"
             st.rerun()
-
-    if st.session_state.get('role') == 'super_admin':
-        st.markdown("---")
-        st.subheader("⚡ 管理員快速測試")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("🚀 顯示付款牆（傳統）", type="secondary"):
-                st.session_state['test_payment'] = True
-                st.rerun()
-        
-        with col2:
-            test_plan = st.radio(
-                "選擇測試方案",
-                options=["day", "month", "quarter"],
-                format_func=lambda x: {"day": "☀️ 日費 $18", "month": "📆 月費 $128", "quarter": "📅 季費 $328"}[x],
-                key="test_plan_select",
-                horizontal=True
-            )
-            plan_price = {"day": 18, "month": 128, "quarter": 328}
-            test_price = plan_price[test_plan]
-            
-            if st.button(f"⚡ 直接提交測試付款（{get_plan_name(test_plan)} ${test_price}）", type="primary"):
-                username = st.session_state.username if st.session_state.get('logged_in') else "testuser"
-                success, msg = submit_payment_request(
-                    username=username,
-                    plan=test_plan,
-                    final_price=test_price,
-                    discount_desc="",
-                    promo_code_used=None
-                )
-                if success:
-                    st.success(f"✅ 測試記錄已寫入！用戶：{username}，方案：{get_plan_name(test_plan)} ${test_price}")
-                    st.info("請去側邊欄 → 後台審核 查看")
-                    st.write("📋 當前付款記錄總數：", len(st.session_state.payment_requests['requests']))
-                    st.json(st.session_state.payment_requests['requests'])
-                else:
-                    st.error(f"❌ 寫入失敗：{msg}")
-
-    if st.session_state.get('test_payment', False):
-        st.session_state['test_payment'] = False
-        show_paywall()
 
     st.subheader("📅 今日賽程")
     try:
