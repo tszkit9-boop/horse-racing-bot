@@ -311,16 +311,8 @@ def get_plan_price(plan):
 # 付款申請功能（存入 session_state）
 # ============================================================
 def submit_payment_request(username, plan, final_price, discount_desc, promo_code_used):
-    # 載入現有付款證明
-    proof = load_payment_proofs()
-    if 'proof_records' not in proof:
-        proof['proof_records'] = []
-    
-    # 產生新 ID
-    new_id = len(proof['proof_records']) + 1
-    
-    # 建立新申請
-    new_request = {
+    new_id = len(st.session_state.payment_requests['requests']) + 1
+    request = {
         "id": new_id,
         "username": username,
         "plan": plan,
@@ -331,53 +323,29 @@ def submit_payment_request(username, plan, final_price, discount_desc, promo_cod
         "submitted_at": datetime.now().isoformat(),
         "status": "pending"
     }
-    
-    # 存入 payment_proofs.json（持久化）
-    proof['proof_records'].append(new_request)
-    save_payment_proofs(proof)
-    
-    # 同時更新 session_state（保持相容）
-    if 'payment_requests' not in st.session_state:
-        st.session_state.payment_requests = {"requests": []}
-    st.session_state.payment_requests['requests'].append(new_request)
-    
+    st.session_state.payment_requests['requests'].append(request)
     return True, "申請已提交"
+
 def get_all_pending_requests():
-    # 從 payment_proofs.json 讀取
-    proof = load_payment_proofs()
     all_requests = []
-    
-    for req in proof.get('proof_records', []):
+    for req in st.session_state.payment_requests['requests']:
         if req.get('status') == 'pending':
             all_requests.append({
-                "username": req.get('username', ''),
+                "username": req['username'],
                 "request": req
             })
-    
-    # 同步 session_state
-    if 'payment_requests' not in st.session_state:
-        st.session_state.payment_requests = {"requests": []}
-    st.session_state.payment_requests['requests'] = proof.get('proof_records', [])
-    
     return all_requests
 
 def approve_payment_request(username, request_id, admin_username):
-    # 從 payment_proofs.json 讀取
-    proof = load_payment_proofs()
-    found = False
-    
-    for req in proof.get('proof_records', []):
+    for req in st.session_state.payment_requests['requests']:
         if req.get('id') == request_id and req.get('status') == 'pending':
-            found = True
             users = load_users()
             if username in users:
-                plan = req.get('plan', 'month')
+                plan = req['plan']
                 days = get_plan_days(plan)
                 if days == 0:
                     days = 30
                 expiry = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
-                
-                # 更新用戶
                 users[username]['is_paid'] = True
                 users[username]['group'] = 'VIP'
                 users[username]['paid_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -385,30 +353,20 @@ def approve_payment_request(username, request_id, admin_username):
                 users[username]['plan'] = plan
                 users[username]['predictions_limit'] = -1
                 save_users(users)
-                
-                # 更新付款記錄狀態（寫入 payment_proofs.json）
                 req['status'] = 'approved'
-                req['approved_by'] = admin_username
-                req['approved_at'] = datetime.now().isoformat()
-                save_payment_proofs(proof)
-                
-                # 同步 session_state
-                if 'payment_requests' in st.session_state:
-                    for sr in st.session_state.payment_requests['requests']:
-                        if sr.get('id') == request_id:
-                            sr['status'] = 'approved'
-                            sr['approved_by'] = admin_username
-                            sr['approved_at'] = datetime.now().isoformat()
-                            break
-                
                 log_admin_action(admin_username, f"批准付款並升級 {username} 為 VIP（{plan}）")
                 return True, f"已批准 {username} 的付款，到期日 {expiry}"
             else:
                 return False, "用戶不存在"
-    
-    if not found:
-        return False, "找不到該申請"
-    return False, "處理失敗"
+    return False, "找不到該申請"
+
+def reject_payment_request(username, request_id, admin_username):
+    for req in st.session_state.payment_requests['requests']:
+        if req.get('id') == request_id and req.get('status') == 'pending':
+            req['status'] = 'rejected'
+            log_admin_action(admin_username, f"拒絕 {username} 的付款申請")
+            return True, "已拒絕該申請"
+    return False, "找不到該申請"
 
 # ============================================================
 # 付款牆（統一付款界面，開放所有用戶）
@@ -1414,7 +1372,8 @@ def admin_dashboard():
     today_new_users = sum(1 for u in users.values() if u.get('created_at', '').startswith(str(today)))
     total_income = finance.get('total_income', 0)
     total_predictions = len(records)
-    pending_payments = len([p for p in st.session_state.payment_requests.get('requests', []) if p.get('status') == 'pending'])    
+    pending_payments = len([p for p in payment_proofs.get('proof_records', []) if p.get('status') == 'pending'])
+    
     col1, col2, col3, col4, col5, col6 = st.columns(6)
     col1.metric("👤 總用戶", total_users)
     col2.metric("📈 今日新增", today_new_users)
@@ -2804,13 +2763,13 @@ def admin_payment_review():
                         st.rerun()
                     else:
                         st.error(msg)
-              if st.button("❌ 拒絕", key=f"reject_{req.get('id')}"):
-    success, msg = reject_payment_request(username, req['id'], st.session_state.username)
-    if success:
-        st.warning(msg)
-        st.rerun()
-    else:
-        st.error(msg)
+                if st.button("❌ 拒絕", key=f"reject_{req.get('id')}"):
+                    success, msg = reject_payment_request(username, req['id'], st.session_state.username)
+                    if success:
+                        st.warning(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
             st.divider()
 
 def admin_system_settings():
