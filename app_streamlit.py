@@ -535,14 +535,15 @@ def admin_payment_review():
                 st.write(f"💰 ${price:.2f}")
                 if req.get('discount_desc'):
                     st.caption(f"折扣: {req.get('discount_desc', '')}")
+             with cols[2]:
             with cols[2]:
-              submitted_at = req.get('submitted_at', '')
-                 if submitted_at:
-                    try:
-                        dt = datetime.fromisoformat(submitted_at)
-                        st.caption(f"📅 {dt.strftime('%Y-%m-%d %H:%M')}")
-                    except:
-                        st.caption(submitted_at)
+    submitted_at = req.get('submitted_at', '')
+    if submitted_at:
+        try:
+            dt = datetime.fromisoformat(submitted_at)
+            st.caption(f"📅 {dt.strftime('%Y-%m-%d %H:%M')}")
+        except:
+            st.caption(submitted_at)
             with cols[3]:
                 st.warning("⏳ 待審核")
             with cols[4]:
