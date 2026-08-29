@@ -1272,12 +1272,17 @@ def update_accuracy_with_results():
     try:
         results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
         results_df = standardize_columns_safe(results_df)
+        
+        # ⭐ 修復：強制移除重複欄位（解決 cannot reindex on an axis with duplicate labels）
+        results_df = results_df.loc[:, ~results_df.columns.duplicated()]
+        
         required = ['race_date', 'race_no', 'horse_name', 'finish_position']
         for col in required:
             if col not in results_df.columns:
                 return 0, f"缺少必要欄位：{col}"
         results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
         results_df = results_df.dropna(subset=['race_date'])
+        
         updated = 0
         for rec in records:
             if rec.get('actual_result') is not None:
@@ -1287,11 +1292,13 @@ def update_accuracy_with_results():
             horse = rec.get('horse')
             if not date_str or not race_no or not horse:
                 continue
-            matched = results_df[
-                (results_df['race_date'].dt.strftime('%Y-%m-%d') == date_str) &
-                (results_df['race_no'] == race_no) &
-                (results_df['horse_name'] == horse)
-            ]
+            
+            # ⭐ 使用 .loc 避免 SettingWithCopyWarning
+            mask = (results_df['race_date'].dt.strftime('%Y-%m-%d') == date_str) & \
+                   (results_df['race_no'] == race_no) & \
+                   (results_df['horse_name'] == horse)
+            matched = results_df.loc[mask]
+            
             if not matched.empty:
                 pos = matched.iloc[0]['finish_position']
                 rec['actual_result'] = int(pos) if pd.notna(pos) else None
