@@ -1298,6 +1298,21 @@ def save_payment_proofs(data):
     return save_json(PAYMENT_PROOFS_FILE, data)
 
 # ============================================================
+# 補齊付款證明相關函數（確保儀表板正常）
+# ============================================================
+PAYMENT_PROOFS_FILE = 'payment_proofs.json'
+PAYMENT_PROOFS_DIR = 'payment_proofs'
+
+if not os.path.exists(PAYMENT_PROOFS_DIR):
+    os.makedirs(PAYMENT_PROOFS_DIR)
+
+def load_payment_proofs():
+    return load_json(PAYMENT_PROOFS_FILE)
+
+def save_payment_proofs(data):
+    return save_json(PAYMENT_PROOFS_FILE, data)
+
+# ============================================================
 # AI 自我學習（完整）
 # ============================================================
 def update_accuracy_with_results():
@@ -1384,7 +1399,7 @@ def adjust_model_weights():
     }
 
 # ============================================================
-# 系統儀表板（已修復）
+# 系統儀表板
 # ============================================================
 def admin_dashboard():
     st.subheader("📊 系統儀表板")
@@ -1778,7 +1793,8 @@ def admin_auto_maintenance():
         "⚖️ 調整模型權重（根據命中率）",
         "⏰ 檢查並終止過期會員",
         "📊 同步用戶數據（session → 檔案）",
-        "📝 檢查系統檔案狀態"
+        "📝 檢查系統檔案狀態",
+        "📥 自動備份所有數據"
     ]
     
     for task in tasks:
@@ -1795,7 +1811,7 @@ def admin_auto_maintenance():
         status_text.text("🔄 比對賽果中...")
         updated, msg = update_accuracy_with_results()
         results.append(f"🔄 比對賽果：{msg}")
-        progress_bar.progress(20)
+        progress_bar.progress(15)
         
         # 2. 調整權重
         status_text.text("⚖️ 調整權重中...")
@@ -1804,7 +1820,7 @@ def admin_auto_maintenance():
             results.append(f"⚖️ 調整權重：XGB={weight_result['xgb_weight']}, Cat={weight_result['cat_weight']}（命中率 {weight_result['hit_rate']:.2%}）")
         except Exception as e:
             results.append(f"⚖️ 調整權重：失敗 - {str(e)}")
-        progress_bar.progress(40)
+        progress_bar.progress(30)
         
         # 3. 檢查過期會員
         status_text.text("⏰ 檢查過期會員中...")
@@ -1829,7 +1845,7 @@ def admin_auto_maintenance():
             results.append(f"⏰ 檢查過期會員：已將 {len(expired)} 個過期會員降級：{', '.join(expired)}")
         else:
             results.append("⏰ 檢查過期會員：目前沒有過期會員")
-        progress_bar.progress(60)
+        progress_bar.progress(45)
         
         # 4. 同步用戶數據
         status_text.text("📊 同步用戶數據中...")
@@ -1850,7 +1866,7 @@ def admin_auto_maintenance():
                 results.append("📊 同步用戶數據：無需同步")
         except Exception as e:
             results.append(f"📊 同步用戶數據：失敗 - {str(e)}")
-        progress_bar.progress(80)
+        progress_bar.progress(60)
         
         # 5. 檢查系統檔案
         status_text.text("📝 檢查系統檔案中...")
@@ -1866,6 +1882,42 @@ def admin_auto_maintenance():
             status = "✅" if exists else "❌"
             file_status.append(f"{status} {f} ({size} bytes)" if exists else f"{status} {f} (不存在)")
         results.append(f"📝 檢查系統檔案：{' | '.join(file_status[:5])}")
+        progress_bar.progress(80)
+        
+        # 6. 自動備份
+        status_text.text("📥 自動備份中...")
+        try:
+            backup_data = {
+                "users": load_users(),
+                "accuracy": load_accuracy(),
+                "finance": load_finance(),
+                "payment_proofs": load_payment_proofs(),
+                "backup_time": datetime.now().isoformat(),
+                "version": "v14.0-用戶體驗版"
+            }
+            backup_json = json.dumps(backup_data, ensure_ascii=False, indent=2)
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_filename = f"backup_{timestamp}.json"
+            
+            # 嘗試儲存到檔案系統（可選）
+            try:
+                with open(backup_filename, 'w', encoding='utf-8') as f:
+                    f.write(backup_json)
+                results.append(f"📥 自動備份：已儲存到伺服器 ({backup_filename})")
+            except:
+                results.append("📥 自動備份：無法儲存到伺服器，但可下載")
+            
+            # 提供下載按鈕
+            st.download_button(
+                label=f"📥 下載備份 ({timestamp})",
+                data=backup_json,
+                file_name=backup_filename,
+                mime="application/json",
+                key=f"auto_backup_{timestamp}"
+            )
+            results.append(f"📥 自動備份：✅ 備份完成")
+        except Exception as e:
+            results.append(f"📥 自動備份：❌ 失敗 - {str(e)}")
         progress_bar.progress(100)
         
         status_text.text("✅ 所有維護任務已完成！")
