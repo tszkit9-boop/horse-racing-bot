@@ -97,6 +97,9 @@ DEFAULT_CONFIG = {
     "module_automation": True,
     "module_security": True,
     "module_promo": True,
+    # ⭐ 新增：虛擬幣設定
+    "daily_virtual_coin": 1000,
+    "virtual_coin_enabled": True,
 }
 
 def load_system_config():
@@ -265,6 +268,123 @@ def update_user_exp(username, is_hit=False):
     check_badges(username)
 
 # ============================================================
+# ⭐ 虛擬幣系統（新增）
+# ============================================================
+def claim_daily_virtual_coin(username):
+    """用戶每日領取虛擬幣"""
+    if not CONFIG.get("virtual_coin_enabled", True):
+        return 0, "虛擬幣功能已關閉"
+    
+    users = load_users()
+    if username not in users:
+        return 0, "用戶不存在"
+    
+    user = users[username]
+    today = datetime.now().strftime('%Y-%m-%d')
+    last_claim = user.get('last_claim_date', '')
+    
+    if last_claim == today:
+        return 0, "今日已領取"
+    
+    daily_amount = CONFIG.get("daily_virtual_coin", 1000)
+    user['virtual_balance'] = user.get('virtual_balance', 0) + daily_amount
+    user['last_claim_date'] = today
+    save_users(users)
+    
+    return daily_amount, f"已領取 ${daily_amount} 虛擬幣"
+
+def get_virtual_balance(username):
+    """獲取用戶虛擬幣結餘"""
+    users = load_users()
+    if username not in users:
+        return 0
+    return users[username].get('virtual_balance', 0)
+
+def place_bet(username, race_date, race_no, horse_name, bet_amount, bet_type="win"):
+    """用戶投注"""
+    users = load_users()
+    if username not in users:
+        return False, "用戶不存在"
+    
+    user = users[username]
+    balance = user.get('virtual_balance', 0)
+    
+    if bet_amount <= 0:
+        return False, "投注金額必須大於 0"
+    
+    if bet_amount > balance:
+        return False, f"餘額不足（餘額：${balance}）"
+    
+    # 扣錢
+    user['virtual_balance'] = balance - bet_amount
+    
+    # 記錄投注
+    if 'bets' not in user:
+        user['bets'] = []
+    
+    bet = {
+        "date": race_date,
+        "race": race_no,
+        "horse": horse_name,
+        "amount": bet_amount,
+        "bet_type": bet_type,
+        "placed_at": datetime.now().isoformat(),
+        "result": None,  # win / lose / pending
+        "payout": 0,
+        "odds": None,
+        "settled": False
+    }
+    user['bets'].append(bet)
+    save_users(users)
+    
+    return True, f"已投注 ${bet_amount} 喺 {horse_name}"
+
+def settle_bets(username, race_date, race_no, results_df):
+    """結算用戶投注（比對賽果）"""
+    users = load_users()
+    if username not in users:
+        return
+    
+    user = users[username]
+    bets = user.get('bets', [])
+    updated = False
+    
+    for bet in bets:
+        if bet.get('settled', False):
+            continue
+        if bet.get('date') != race_date or bet.get('race') != race_no:
+            continue
+        
+        horse = bet.get('horse')
+        # 搵賽果
+        matched = results_df[
+            (results_df['race_date'].dt.strftime('%Y-%m-%d') == race_date) &
+            (results_df['race_no'] == race_no) &
+            (results_df['horse_name'] == horse)
+        ]
+        
+        if not matched.empty:
+            pos = matched.iloc[0]['finish_position']
+            is_win = (pos == 1)
+            bet['result'] = 'win' if is_win else 'lose'
+            bet['settled'] = True
+            
+            if is_win:
+                # 簡單賠率：獨贏賠率（如果冇就當 4.0）
+                odds = matched.iloc[0].get('win_odds', 4.0)
+                if pd.isna(odds) or odds <= 0:
+                    odds = 4.0
+                bet['odds'] = float(odds)
+                payout = bet['amount'] * odds
+                bet['payout'] = payout
+                # 加返錢俾用戶
+                user['virtual_balance'] = user.get('virtual_balance', 0) + payout
+                updated = True
+    
+    if updated:
+        save_users(users)
+
+# ============================================================
 # 用戶系統
 # ============================================================
 def load_users():
@@ -293,7 +413,10 @@ def load_users():
                 "invite_count": 0,
                 "level": "👑 超級管理員",
                 "exp": 0,
-                "badges": []
+                "badges": [],
+                "virtual_balance": 10000,
+                "last_claim_date": "",
+                "bets": []
             }
         }
         save_users(users)
@@ -305,6 +428,12 @@ def load_users():
                 users["admin"]["level"] = "👑 超級管理員"
                 users["admin"]["exp"] = 0
                 users["admin"]["badges"] = []
+            if "virtual_balance" not in users["admin"]:
+                users["admin"]["virtual_balance"] = 10000
+            if "last_claim_date" not in users["admin"]:
+                users["admin"]["last_claim_date"] = ""
+            if "bets" not in users["admin"]:
+                users["admin"]["bets"] = []
         for uid, u in users.items():
             if 'plan' not in u: u['plan'] = None
             if 'paid_date' not in u: u['paid_date'] = None
@@ -331,6 +460,13 @@ def load_users():
                 u['exp'] = 0
             if 'badges' not in u:
                 u['badges'] = []
+            # ⭐ 虛擬幣
+            if 'virtual_balance' not in u:
+                u['virtual_balance'] = 1000
+            if 'last_claim_date' not in u:
+                u['last_claim_date'] = ''
+            if 'bets' not in u:
+                u['bets'] = []
         save_users(users)
     return users
 
@@ -759,11 +895,57 @@ def update_accuracy_with_results():
                         update_user_exp(username, is_hit=True)
                     # 檢查勳章
                     check_badges(username)
+                    
+                    # ⭐ 新增：結算投注
+                    settle_user_bets(username, date_str, rec.get('race'), results_df)
+                    
         if updated > 0:
             save_accuracy(acc)
         return updated, f"成功比對 {updated} 條記錄"
     except Exception as e:
         return 0, f"比對失敗：{str(e)}"
+
+def settle_user_bets(username, race_date, race_no, results_df):
+    """結算單一用戶嘅投注"""
+    users = load_users()
+    if username not in users:
+        return
+    
+    user = users[username]
+    bets = user.get('bets', [])
+    updated = False
+    
+    for bet in bets:
+        if bet.get('settled', False):
+            continue
+        if bet.get('date') != race_date or bet.get('race') != race_no:
+            continue
+        
+        horse = bet.get('horse')
+        matched = results_df[
+            (results_df['race_date'].dt.strftime('%Y-%m-%d') == race_date) &
+            (results_df['race_no'] == race_no) &
+            (results_df['horse_name'] == horse)
+        ]
+        
+        if not matched.empty:
+            pos = matched.iloc[0]['finish_position']
+            is_win = (pos == 1)
+            bet['result'] = 'win' if is_win else 'lose'
+            bet['settled'] = True
+            
+            if is_win:
+                odds = matched.iloc[0].get('win_odds', 4.0)
+                if pd.isna(odds) or odds <= 0:
+                    odds = 4.0
+                bet['odds'] = float(odds)
+                payout = bet['amount'] * odds
+                bet['payout'] = payout
+                user['virtual_balance'] = user.get('virtual_balance', 0) + payout
+                updated = True
+    
+    if updated:
+        save_users(users)
 
 def adjust_model_weights():
     acc = load_accuracy()
@@ -1280,6 +1462,195 @@ def get_user_stats(username):
         'plan': user.get('plan', None)
     }
 
+# ============================================================
+# ⭐ 投注模擬器 UI（用戶端）
+# ============================================================
+def show_betting_interface(username):
+    """顯示投注模擬器界面"""
+    if not username:
+        st.info("請先登入")
+        return
+    
+    users = load_users()
+    user = users.get(username, {})
+    balance = user.get('virtual_balance', 0)
+    
+    st.subheader("💰 投注模擬器")
+    st.caption("用虛擬幣體驗投注樂趣，唔使真錢！")
+    
+    # 顯示結餘
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("💎 虛擬幣結餘", f"${balance:,.0f}")
+    with col2:
+        # 每日領取
+        today = datetime.now().strftime('%Y-%m-%d')
+        last_claim = user.get('last_claim_date', '')
+        if last_claim != today and CONFIG.get("virtual_coin_enabled", True):
+            if st.button("🎁 領取每日獎勵", use_container_width=True):
+                amount, msg = claim_daily_virtual_coin(username)
+                if amount > 0:
+                    st.success(f"✅ {msg}")
+                    st.rerun()
+                else:
+                    st.info(msg)
+        else:
+            st.success("✅ 今日已領取")
+    with col3:
+        st.caption(f"📅 每日派發：${CONFIG.get('daily_virtual_coin', 1000)}")
+    
+    st.divider()
+    
+    # 投注區
+    st.subheader("📝 投注")
+    
+    # 選擇場次
+    col_date, col_race = st.columns(2)
+    with col_date:
+        bet_date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="bet_date")
+    with col_race:
+        bet_race = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="bet_race")
+    
+    if st.button("🔍 睇預測 & 投注", key="show_bet_options"):
+        date_str = bet_date.strftime('%Y-%m-%d')
+        with st.spinner("載入預測..."):
+            result, pool = run_prediction(date_str, bet_race)
+            if result is not None and not result.empty:
+                st.success(f"✅ {date_str} 第 {bet_race} 場")
+                
+                # 顯示預測結果
+                display_df = result[['馬匹名稱', '檔位', '預測勝率', '值博指數']].copy()
+                display_df['預測勝率'] = display_df['預測勝率'].apply(lambda x: f"{x:.2%}")
+                display_df['值博指數'] = display_df['值博指數'].apply(lambda x: f"{x:.4f}")
+                st.dataframe(display_df, use_container_width=True)
+                
+                # 投注表單
+                st.subheader("💸 落注")
+                with st.form(key="place_bet_form"):
+                    horse_options = result['馬匹名稱'].tolist()
+                    selected_horse = st.selectbox("揀馬", horse_options, key="bet_horse")
+                    bet_amount = st.number_input("投注金額", min_value=1, max_value=int(balance), value=min(100, int(balance)), step=10, key="bet_amount")
+                    
+                    col_btn1, col_btn2 = st.columns(2)
+                    with col_btn1:
+                        submit_bet = st.form_submit_button("✅ 確認投注", type="primary")
+                    with col_btn2:
+                        st.caption(f"餘額：${balance:,.0f}")
+                    
+                    if submit_bet:
+                        if bet_amount > balance:
+                            st.error(f"❌ 餘額不足（餘額：${balance:,.0f}）")
+                        else:
+                            success, msg = place_bet(username, date_str, bet_race, selected_horse, bet_amount)
+                            if success:
+                                st.success(f"✅ {msg}")
+                                st.rerun()
+                            else:
+                                st.error(f"❌ {msg}")
+            else:
+                st.warning("無法載入預測數據")
+    
+    st.divider()
+    
+    # 投注記錄
+    st.subheader("📋 我的投注記錄")
+    bets = user.get('bets', [])
+    if bets:
+        df_bets = pd.DataFrame(bets[-20:][::-1])
+        # 顯示精簡版
+        display_cols = ['date', 'race', 'horse', 'amount', 'result', 'payout']
+        available_cols = [col for col in display_cols if col in df_bets.columns]
+        st.dataframe(df_bets[available_cols], use_container_width=True)
+        
+        # 統計
+        total_bets = len(bets)
+        settled = [b for b in bets if b.get('settled', False)]
+        wins = [b for b in settled if b.get('result') == 'win']
+        
+        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+        col_s1.metric("📊 總投注", total_bets)
+        col_s2.metric("✅ 已結算", len(settled))
+        col_s3.metric("🏆 命中", len(wins))
+        col_s4.metric("📈 命中率", f"{len(wins)/len(settled)*100:.1f}%" if settled else "0%")
+    else:
+        st.info("📭 尚未有任何投注記錄")
+
+# ============================================================
+# ⭐ 排行榜（用戶端）
+# ============================================================
+def show_leaderboard():
+    """顯示投注排行榜"""
+    st.subheader("🏆 投注排行榜")
+    st.caption("排名基於虛擬投注表現")
+    
+    users = load_users()
+    leaderboard_data = []
+    
+    for username, user in users.items():
+        if username == "admin" and not user.get('bets'):
+            continue
+        bets = user.get('bets', [])
+        if not bets:
+            continue
+        
+        settled = [b for b in bets if b.get('settled', False)]
+        wins = [b for b in settled if b.get('result') == 'win']
+        total_bets = len(bets)
+        total_settled = len(settled)
+        total_wins = len(wins)
+        hit_rate = total_wins / total_settled if total_settled > 0 else 0
+        
+        # 計算盈利：派彩總和 - 投注總和
+        total_staked = sum(b.get('amount', 0) for b in bets)
+        total_payout = sum(b.get('payout', 0) for b in bets)
+        profit = total_payout - total_staked
+        
+        leaderboard_data.append({
+            "用戶": username,
+            "總投注": total_bets,
+            "命中": total_wins,
+            "命中率": hit_rate,
+            "盈利": profit,
+            "結餘": user.get('virtual_balance', 0)
+        })
+    
+    if not leaderboard_data:
+        st.info("📭 暫時未有投注記錄")
+        return
+    
+    df = pd.DataFrame(leaderboard_data)
+    df = df.sort_values('盈利', ascending=False).reset_index(drop=True)
+    
+    # 顯示排名
+    st.subheader("💰 總盈利榜")
+    df_display = df[['用戶', '盈利', '命中率', '總投注', '命中', '結餘']].copy()
+    df_display['盈利'] = df_display['盈利'].apply(lambda x: f"${x:,.0f}")
+    df_display['命中率'] = df_display['命中率'].apply(lambda x: f"{x:.1%}")
+    st.dataframe(df_display, use_container_width=True)
+    
+    # 圖表
+    if len(df) >= 2:
+        fig = px.bar(
+            df.head(10),
+            x='用戶',
+            y='盈利',
+            title='Top 10 用戶盈利',
+            color='盈利',
+            color_continuous_scale='RdYlGn',
+            text=df.head(10)['盈利'].apply(lambda x: f"${x:,.0f}")
+        )
+        fig.update_traces(textposition='outside')
+        fig.update_layout(height=350)
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # 命中率榜
+    st.subheader("🎯 命中率榜")
+    df_hit = df.sort_values('命中率', ascending=False).reset_index(drop=True)
+    df_hit_display = df_hit[['用戶', '命中率', '總投注', '命中', '盈利']].copy()
+    df_hit_display['命中率'] = df_hit_display['命中率'].apply(lambda x: f"{x:.1%}")
+    df_hit_display['盈利'] = df_hit_display['盈利'].apply(lambda x: f"${x:,.0f}")
+    st.dataframe(df_hit_display.head(10), use_container_width=True)
+
 def show_user_dashboard(username):
     if not username:
         return
@@ -1300,6 +1671,9 @@ def show_user_dashboard(username):
     badges = user_data.get('badges', [])
     next_level_exp = get_level_info(exp)[1]
     
+    # ⭐ 虛擬幣
+    virtual_balance = user_data.get('virtual_balance', 0)
+    
     if group == 'super_admin':
         level_display = "👑 超級管理員"
     elif group == 'VIP':
@@ -1310,7 +1684,7 @@ def show_user_dashboard(username):
         level_display = "🆓 免費用戶"
     
     st.markdown("---")
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("👤 用戶", username)
     col2.metric("🏷️ 級別", level_display)
     col3.metric("📊 總預測次數", stats['total_predictions'])
@@ -1321,6 +1695,7 @@ def show_user_dashboard(username):
         used = user_data.get('free_usage', 0)
         remain = max(0, limit - used)
         col4.metric("📊 剩餘場次", remain)
+    col5.metric("💰 虛擬幣", f"${virtual_balance:,.0f}")
     st.markdown("---")
     
     # 顯示等級/勳章
@@ -1550,7 +1925,10 @@ def login_page():
                             'invite_count': 0,
                             'level': '🥉 銅牌會員',
                             'exp': 0,
-                            'badges': []
+                            'badges': [],
+                            'virtual_balance': CONFIG.get('daily_virtual_coin', 1000),
+                            'last_claim_date': '',
+                            'bets': []
                         }
                         users[new_user] = new_user_data
                         save_users(users)
@@ -2139,7 +2517,10 @@ def admin_user_management():
                         "invite_count": 0,
                         "level": "🥉 銅牌會員",
                         "exp": 0,
-                        "badges": []
+                        "badges": [],
+                        "virtual_balance": CONFIG.get("daily_virtual_coin", 1000),
+                        "last_claim_date": '',
+                        "bets": []
                     }
                     save_users(users)
                     log_admin_action(st.session_state.username, f"新增用戶 {new_username}")
@@ -2160,7 +2541,7 @@ def admin_user_management():
     if 'badges' not in df.columns:
         df['badges'] = ''
     df['badges_count'] = df['badges'].apply(lambda x: len(x) if isinstance(x, list) else 0)
-    display_cols = ['username', 'group', 'level', 'exp', 'badges_count', 'total_usage', 'is_paid']
+    display_cols = ['username', 'group', 'level', 'exp', 'badges_count', 'total_usage', 'is_paid', 'virtual_balance']
     available_cols = [col for col in display_cols if col in df.columns]
     st.dataframe(df[available_cols], use_container_width=True)
     
@@ -2948,22 +3329,7 @@ def admin_automation():
         auto['remind_days'] = days
         save_json(AUTOMATION_FILE, auto)
         st.success("✅ 已儲存")
-
-def admin_automation():
-    st.subheader("🤖 自動化工具")
-    auto = load_json(AUTOMATION_FILE)
-    days = st.number_input(
-        "提前幾天提醒",
-        min_value=1,
-        value=auto.get('remind_days', 3),
-        key="remind_days_auto"
-    )
-    if st.button("儲存設定", key="save_remind_auto"):
-        auto['remind_days'] = days
-        save_json(AUTOMATION_FILE, auto)
-        st.success("✅ 已儲存")
-
-def admin_security():
+        def admin_security():
     st.subheader("🔐 安全與權限")
     st.write("操作日誌")
     logs = load_logs()
@@ -2987,6 +3353,9 @@ def admin_security():
         else:
             st.error("用戶不存在")
 
+# ============================================================
+# ⭐ 系統設定（加入虛擬幣設定）
+# ============================================================
 def admin_system_settings():
     users = load_users()
     admin_username = st.session_state.get('admin_username', 'admin')
@@ -3025,6 +3394,11 @@ def admin_system_settings():
         verification_expiry = st.number_input("驗證碼有效期 (分鐘)", min_value=1, value=config.get("verification_expiry", 5), step=1)
         currency = st.text_input("貨幣單位", value=config.get("currency", "HKD"))
         admin_password = st.text_input("管理員密碼", value=config.get("admin_password", "z54060437K"), type="password")
+        
+        # ⭐ 虛擬幣設定
+        st.markdown("#### 💰 虛擬幣設定")
+        virtual_coin_enabled = st.checkbox("啟用虛擬幣功能", value=config.get("virtual_coin_enabled", True))
+        daily_virtual_coin = st.number_input("每日派發虛擬幣金額", min_value=0, value=config.get("daily_virtual_coin", 1000), step=100)
         
         st.markdown("#### 🧩 後台模組開關")
         module_user_management = st.checkbox("用戶管理模組", value=config.get("module_user_management", True))
@@ -3065,6 +3439,9 @@ def admin_system_settings():
             "enable_invite_reward": enable_invite_reward,
             "invite_reward_inviter": invite_reward_inviter,
             "invite_reward_invitee": invite_reward_invitee,
+            # ⭐ 虛擬幣設定
+            "virtual_coin_enabled": virtual_coin_enabled,
+            "daily_virtual_coin": daily_virtual_coin,
         }
         if save_system_config(new_config):
             st.success("✅ 設定已儲存！頁面將會重新整理以套用新設定。")
@@ -3073,6 +3450,239 @@ def admin_system_settings():
             st.rerun()
         else:
             st.error("❌ 儲存失敗，請檢查檔案權限。")
+
+# ============================================================
+# ⭐ 後台用戶管理（更新版 — 加入虛擬幣調整）
+# ============================================================
+def admin_user_management():
+    st.subheader("👥 用戶管理")
+    with st.expander("➕ 新增用戶", expanded=False):
+        col1, col2 = st.columns(2)
+        with col1:
+            new_username = st.text_input("新用戶名", key="new_user_name")
+            new_password = st.text_input("密碼", type="password", key="new_user_pw")
+        with col2:
+            new_group = st.selectbox("群組", ["free", "paid", "VIP", "super_admin"], key="new_user_group")
+            new_is_paid = st.checkbox("付費狀態", value=False, key="new_user_paid")
+        if st.button("建立用戶", key="create_user_btn"):
+            if not new_username or not new_password:
+                st.warning("請填寫用戶名同密碼")
+            else:
+                users = load_users()
+                if new_username in users:
+                    st.error("❌ 用戶名已被使用")
+                else:
+                    users[new_username] = {
+                        "password": new_password,
+                        "is_paid": new_is_paid,
+                        "paid_date": None,
+                        "expiry_date": None,
+                        "free_usage": 0,
+                        "total_usage": 0,
+                        "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        "note": "手動新增",
+                        "group": new_group,
+                        "phone": "",
+                        "plan": None,
+                        "predictions_limit": -1 if new_group in ['super_admin', 'VIP'] else CONFIG["free_limit"],
+                        "history": [],
+                        "terms_agreed": datetime.now().isoformat(),
+                        "invite_code": new_username.upper() + str(random.randint(100, 999)),
+                        "invited_by": None,
+                        "invite_rewards": 0,
+                        "invite_count": 0,
+                        "level": "🥉 銅牌會員",
+                        "exp": 0,
+                        "badges": [],
+                        "virtual_balance": CONFIG.get("daily_virtual_coin", 1000),
+                        "last_claim_date": '',
+                        "bets": []
+                    }
+                    save_users(users)
+                    log_admin_action(st.session_state.username, f"新增用戶 {new_username}")
+                    st.success(f"✅ 用戶 {new_username} 已建立！")
+                    st.rerun()
+    
+    users = load_users()
+    if not users:
+        st.info("暫無用戶")
+        return
+    
+    st.write("現有用戶列表：")
+    df = pd.DataFrame.from_dict(users, orient='index')
+    if 'level' not in df.columns:
+        df['level'] = '🥉 銅牌會員'
+    if 'exp' not in df.columns:
+        df['exp'] = 0
+    if 'badges' not in df.columns:
+        df['badges'] = ''
+    df['badges_count'] = df['badges'].apply(lambda x: len(x) if isinstance(x, list) else 0)
+    # 顯示虛擬幣
+    if 'virtual_balance' not in df.columns:
+        df['virtual_balance'] = 0
+    display_cols = ['username', 'group', 'level', 'exp', 'badges_count', 'total_usage', 'is_paid', 'virtual_balance']
+    available_cols = [col for col in display_cols if col in df.columns]
+    st.dataframe(df[available_cols], use_container_width=True)
+    
+    st.divider()
+    st.subheader("🗑️ 刪除用戶")
+    del_user = st.selectbox("選擇要刪除嘅用戶", list(users.keys()), key="del_user_select")
+    if del_user:
+        if del_user == "admin":
+            st.warning("⚠️ 唔可以刪除 admin 帳號")
+        else:
+            confirm = st.checkbox(f"確認刪除 {del_user}？", key="confirm_del")
+            if confirm and st.button("🗑️ 確認刪除", key="del_user_btn"):
+                users.pop(del_user)
+                save_users(users)
+                log_admin_action(st.session_state.username, f"刪除用戶 {del_user}")
+                st.success(f"✅ 用戶 {del_user} 已刪除")
+                st.rerun()
+    
+    st.divider()
+    st.subheader("👁️ 查看用戶視角")
+    selected_user = st.selectbox("選擇要查看的用戶", list(users.keys()), key="view_user_select")
+    if selected_user:
+        user_data = users[selected_user]
+        st.markdown("---")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("👤 用戶", selected_user)
+        col2.metric("🏷️ 級別", user_data.get('group', 'free').upper())
+        col3.metric("📊 總預測次數", len(user_data.get('history', [])))
+        limit = user_data.get('predictions_limit', CONFIG['free_limit'])
+        if limit == -1:
+            col4.metric("📊 剩餘場次", "♾️ 無限")
+        else:
+            used = user_data.get('free_usage', 0)
+            remain = max(0, limit - used)
+            col4.metric("📊 剩餘場次", remain)
+        st.markdown("---")
+        st.subheader(f"📋 {selected_user} 嘅預測記錄")
+        history = user_data.get('history', [])
+        if history:
+            df_hist = pd.DataFrame(history[-20:][::-1])
+            st.dataframe(df_hist, use_container_width=True)
+        else:
+            st.info("呢個用戶暫時冇任何預測記錄")
+        if history:
+            st.subheader(f"🎯 {selected_user} 嘅準確度統計")
+            acc = load_accuracy()
+            records = acc.get('records', [])
+            user_records = [r for r in records if r.get('username') == selected_user]
+            if user_records:
+                df_rec = pd.DataFrame(user_records)
+                total = len(df_rec)
+                hit = df_rec[df_rec['is_hit'] == True].shape[0] if 'is_hit' in df_rec else 0
+                hit_rate = hit/total if total>0 else 0
+                roi = (hit * 400 - total * 100) / (total * 100) if total>0 else 0
+                col1, col2, col3 = st.columns(3)
+                col1.metric("總預測", total)
+                col2.metric("命中", hit)
+                col3.metric("命中率", f"{hit_rate:.2%}")
+                st.metric("ROI (模擬)", f"{roi:.2%}")
+                if 'date' in df_rec:
+                    df_rec['date'] = pd.to_datetime(df_rec['date'])
+                    daily = df_rec.groupby(df_rec['date'].dt.date).agg(
+                        total=('is_hit', 'count'),
+                        hit=('is_hit', lambda x: (x==True).sum())
+                    ).reset_index()
+                    daily['hit_rate'] = daily['hit'] / daily['total']
+                    fig = px.line(daily, x='date', y='hit_rate', title=f'{selected_user} 嘅命中率趨勢')
+                    st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("呢個用戶未有準確度數據（未對比賽果）")
+    
+    # 編輯用戶（包含等級/勳章/虛擬幣編輯）
+    with st.expander("✏️ 編輯用戶"):
+        username = st.selectbox("選擇要編輯的用戶", list(users.keys()), key="edit_user_select")
+        if username:
+            user = users[username]
+            
+            col_edit1, col_edit2 = st.columns(2)
+            with col_edit1:
+                new_group = st.selectbox("群組", ['free', 'paid', 'VIP', 'super_admin'], index=['free','paid','VIP','super_admin'].index(user.get('group','free')), key="edit_group")
+                new_is_paid = st.checkbox("付費狀態", value=user.get('is_paid', False), key="edit_is_paid")
+                new_password = st.text_input("新密碼（留空 = 不變）", type="password", key="edit_password", placeholder="輸入新密碼")
+            
+            with col_edit2:
+                # 編輯等級
+                level_options = ["🥉 銅牌會員", "🥈 銀牌會員", "🥇 金牌會員", "💎 鑽石會員", "👑 傳說會員", "👑 超級管理員"]
+                current_level = user.get('level', '🥉 銅牌會員')
+                if current_level not in level_options:
+                    level_options.append(current_level)
+                new_level = st.selectbox("🏅 等級", level_options, index=level_options.index(current_level) if current_level in level_options else 0, key="edit_level")
+                
+                # 編輯經驗值
+                new_exp = st.number_input("📊 經驗值", min_value=0, value=user.get('exp', 0), step=10, key="edit_exp")
+                
+                # 編輯勳章
+                all_badges = ["🏆 首勝", "🔥 三連勝", "⚡ 五連勝", "💯 百場預測", "🎯 命中大師", "👥 社交達人", "💰 付費會員", "🏇 馬匹專家"]
+                current_badges = user.get('badges', [])
+                new_badges = st.multiselect("🎖️ 勳章", all_badges, default=[b for b in current_badges if b in all_badges], key="edit_badges")
+            
+            # ⭐ 虛擬幣調整
+            st.markdown("---")
+            st.subheader("💰 虛擬幣調整")
+            col_coin1, col_coin2 = st.columns(2)
+            with col_coin1:
+                current_balance = user.get('virtual_balance', 0)
+                st.metric("當前結餘", f"${current_balance:,.0f}")
+            with col_coin2:
+                coin_adjust = st.number_input("調整金額（+ 加錢，- 扣錢）", value=0, step=100, key="coin_adjust")
+                if st.button("✅ 確認調整虛擬幣", key="apply_coin_adjust"):
+                    if coin_adjust != 0:
+                        new_balance = current_balance + coin_adjust
+                        if new_balance < 0:
+                            st.error("❌ 餘額不能為負數")
+                        else:
+                            users[username]['virtual_balance'] = new_balance
+                            save_users(users)
+                            log_admin_action(st.session_state.username, f"調整 {username} 虛擬幣：{coin_adjust:+d}（新餘額：{new_balance}）")
+                            st.success(f"✅ 已調整 {username} 的虛擬幣，新餘額：${new_balance:,.0f}")
+                            st.rerun()
+            
+            # 重置虛擬幣按鈕
+            if st.button("🔄 重置虛擬幣為 $1000", key="reset_coin"):
+                users[username]['virtual_balance'] = 1000
+                save_users(users)
+                log_admin_action(st.session_state.username, f"重置 {username} 虛擬幣為 1000")
+                st.success("✅ 已重置虛擬幣為 $1000")
+                st.rerun()
+            
+            note = st.text_area("備註", value=user.get('note', ''), key="edit_note")
+            
+            if st.button("💾 儲存變更", key="save_user_changes"):
+                users[username]['group'] = new_group
+                users[username]['is_paid'] = new_is_paid
+                users[username]['note'] = note
+                users[username]['level'] = new_level
+                users[username]['exp'] = new_exp
+                users[username]['badges'] = new_badges
+                if new_password:
+                    users[username]['password'] = new_password
+                if new_group in ['super_admin', 'VIP']:
+                    users[username]['predictions_limit'] = -1
+                else:
+                    users[username]['predictions_limit'] = CONFIG["free_limit"]
+                save_users(users)
+                log_admin_action(st.session_state.username, f"編輯用戶 {username}（等級：{new_level}，勳章：{len(new_badges)}個）")
+                st.success("✅ 已更新用戶資料！")
+                st.rerun()
+    
+    st.divider()
+    st.subheader("📥 數據匯出")
+    try:
+        with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
+            data = f.read()
+        st.download_button(
+            label="📥 下載 users.json",
+            data=data,
+            file_name="users.json",
+            mime="application/json",
+            key="download_users_json"
+        )
+    except Exception as e:
+        st.error(f"讀取檔案失敗：{e}")
 
 # ============================================================
 # 後台頁面
