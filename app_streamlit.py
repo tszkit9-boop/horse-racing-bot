@@ -2048,18 +2048,42 @@ def admin_user_management():
             else:
                 st.info("呢個用戶未有準確度數據（未對比賽果）")
     
-    with st.expander("✏️ 編輯用戶"):
+       with st.expander("✏️ 編輯用戶"):
         username = st.selectbox("選擇要編輯的用戶", list(users.keys()), key="edit_user_select")
         if username:
             user = users[username]
-            new_group = st.selectbox("群組", ['free', 'paid', 'VIP', 'super_admin'], index=['free','paid','VIP','super_admin'].index(user.get('group','free')), key="edit_group")
-            new_is_paid = st.checkbox("付費狀態", value=user.get('is_paid', False), key="edit_is_paid")
-            new_password = st.text_input("新密碼（留空 = 不變）", type="password", key="edit_password", placeholder="輸入新密碼")
+            
+            col_edit1, col_edit2 = st.columns(2)
+            with col_edit1:
+                new_group = st.selectbox("群組", ['free', 'paid', 'VIP', 'super_admin'], index=['free','paid','VIP','super_admin'].index(user.get('group','free')), key="edit_group")
+                new_is_paid = st.checkbox("付費狀態", value=user.get('is_paid', False), key="edit_is_paid")
+                new_password = st.text_input("新密碼（留空 = 不變）", type="password", key="edit_password", placeholder="輸入新密碼")
+            
+            with col_edit2:
+                # ⭐ 新增：編輯等級
+                level_options = ["🥉 銅牌會員", "🥈 銀牌會員", "🥇 金牌會員", "💎 鑽石會員", "👑 傳說會員", "👑 超級管理員"]
+                current_level = user.get('level', '🥉 銅牌會員')
+                if current_level not in level_options:
+                    level_options.append(current_level)
+                new_level = st.selectbox("🏅 等級", level_options, index=level_options.index(current_level) if current_level in level_options else 0, key="edit_level")
+                
+                # ⭐ 新增：編輯經驗值
+                new_exp = st.number_input("📊 經驗值", min_value=0, value=user.get('exp', 0), step=10, key="edit_exp")
+                
+                # ⭐ 新增：編輯勳章（多選）
+                all_badges = ["🏆 首勝", "🔥 三連勝", "⚡ 五連勝", "💯 百場預測", "🎯 命中大師", "👥 社交達人", "💰 付費會員", "🏇 馬匹專家"]
+                current_badges = user.get('badges', [])
+                new_badges = st.multiselect("🎖️ 勳章", all_badges, default=[b for b in current_badges if b in all_badges], key="edit_badges")
+            
             note = st.text_area("備註", value=user.get('note', ''), key="edit_note")
-            if st.button("儲存變更", key="save_user_changes"):
+            
+            if st.button("💾 儲存變更", key="save_user_changes"):
                 users[username]['group'] = new_group
                 users[username]['is_paid'] = new_is_paid
                 users[username]['note'] = note
+                users[username]['level'] = new_level
+                users[username]['exp'] = new_exp
+                users[username]['badges'] = new_badges
                 if new_password:
                     users[username]['password'] = new_password
                 if new_group in ['super_admin', 'VIP']:
@@ -2067,8 +2091,8 @@ def admin_user_management():
                 else:
                     users[username]['predictions_limit'] = CONFIG["free_limit"]
                 save_users(users)
-                log_admin_action(st.session_state.username, f"編輯用戶 {username}")
-                st.success("✅ 已更新")
+                log_admin_action(st.session_state.username, f"編輯用戶 {username}（等級：{new_level}，勳章：{len(new_badges)}個）")
+                st.success("✅ 已更新用戶資料！")
                 st.rerun()
     
     st.divider()
