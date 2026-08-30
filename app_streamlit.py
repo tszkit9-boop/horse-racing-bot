@@ -3799,6 +3799,10 @@ def main():
         st.session_state.show_history = False
     if 'admin_authenticated' not in st.session_state:
         st.session_state.admin_authenticated = False
+    if 'show_bet' not in st.session_state:
+        st.session_state.show_bet = False
+    if 'show_leaderboard' not in st.session_state:
+        st.session_state.show_leaderboard = False
 
     content = load_json(CONTENT_FILE)
     announcements = content.get('announcements', [])
@@ -3990,211 +3994,41 @@ def main():
     with col_btn:
         predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
 
-  with st.sidebar:
-        st.header("🎯 用戶資訊")
-        if CONFIG["enable_registration"] and st.session_state.logged_in:
-            st.write(f"👤 用戶：{st.session_state.username}")
+    # ============================================================
+    # 🎮 虛擬投注（賽事預測 同 付款功能 中間）
+    # ============================================================
+    if st.session_state.get('logged_in', False):
+        st.markdown("---")
+        st.subheader("🎮 虛擬投注")
+        st.caption("用虛擬幣體驗投注樂趣，唔使真錢！")
+        
+        col_v1, col_v2, col_v3 = st.columns([1, 1, 2])
+        with col_v1:
+            if st.button("💰 投注模擬器", use_container_width=True, key="btn_bet"):
+                st.session_state.show_bet = not st.session_state.get('show_bet', False)
+                st.session_state.show_leaderboard = False
+        with col_v2:
+            if st.button("🏆 排行榜", use_container_width=True, key="btn_leaderboard"):
+                st.session_state.show_leaderboard = not st.session_state.get('show_leaderboard', False)
+                st.session_state.show_bet = False
+        with col_v3:
+            # 顯示用戶虛擬幣結餘
             users = load_users()
             user_data = users.get(st.session_state.username, {})
-            limit = user_data.get('predictions_limit', CONFIG['free_limit'])
-            if limit == -1:
-                st.success("♾️ 無限預測次數")
-            else:
-                used = user_data.get('free_usage', 0)
-                remain = max(0, limit - used)
-                st.info(f"📊 剩餘免費場次：{remain} 場")
-            if st.button("📋 我的預測記錄", key="show_history_btn_side"):
-                st.session_state.show_history = not st.session_state.show_history
-            if st.button("🚪 登出", key="logout_btn_side"):
-                for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history']:
-                    if key in st.session_state:
-                        del st.session_state[key]
-                st.rerun()
-            
-            st.divider()
-            st.caption("💬 聯絡管理員")
-            st.markdown("Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
-            st.markdown("[🔗 點擊連結搵我哋](https://t.me/bryhjdjbrbxibvrjskofndhiebdpaq)")
-            
-            st.divider()
-            st.subheader("📌 導航")
-            is_super_admin = user_data.get('group') == 'super_admin'
-            
-            # ⭐ 確保 pages 列表有定義
-            pages = ["主頁面", "預測", "賽程", "馬匹查詢", "騎師查詢", "對比", "趨勢", "用戶儀表板", "預測歷史"]
-            if is_super_admin:
-                pages.append("後台管理")
-            
-            selected = st.selectbox("前往", pages, index=0, key="nav_select_side")
-            if selected != st.session_state.get('page', '主頁面'):
-                st.session_state.page = selected
-                st.rerun())
-
-    if CONFIG["enable_registration"] and st.session_state.logged_in and st.session_state.get('show_history', False):
-        st.subheader("📋 我的預測記錄")
-        show_prediction_history(st.session_state.username)
-        st.divider()
-
-    if predict_btn:
-        users = load_users()
-        user_data = users.get(st.session_state.username, {})
-        limit = user_data.get('predictions_limit', CONFIG['free_limit'])
-        used = user_data.get('free_usage', 0)
-        user_group = user_data.get('group', 'free')
+            balance = user_data.get('virtual_balance', 0)
+            st.info(f"💎 你嘅虛擬幣結餘：**${balance:,.0f}**")
         
-        if CONFIG.get("enable_vip_content", True):
-            is_vip = user_group in ['VIP', 'super_admin']
-        else:
-            is_vip = True
+        # 顯示投注介面
+        if st.session_state.get('show_bet', False):
+            show_betting_interface(st.session_state.username)
         
-        if CONFIG["enable_payment"] and limit != -1 and used >= limit:
-            show_paywall()
-        else:
-            date_str = date.strftime('%Y-%m-%d')
-            with st.spinner(f"執行預測 {date_str} 第 {race_no} 場..."):
-                result, pool = run_prediction(date_str, race_no)
-                if result is not None:
-                    st.success(f"✅ {date_str} 第 {race_no} 場 預測完成")
-                    
-                    top4 = result.head(4)
-                    top1 = top4.iloc[0]
-                    
-                    st.markdown("---")
-                    st.markdown(f"""
-                    <div style="background:linear-gradient(135deg,#1a237e,#0d47a1,#1565c0);border-radius:20px;padding:25px 30px;text-align:center;box-shadow:0 8px 32px rgba(21,101,192,0.4);border:2px solid rgba(255,215,0,0.3);position:relative;overflow:hidden;">
-                        <div style="position:absolute;top:-30px;right:-30px;font-size:100px;opacity:0.1;">🏆</div>
-                        <div style="position:absolute;bottom:-20px;left:-20px;font-size:80px;opacity:0.08;">⭐</div>
-                        <span style="font-size:16px;color:#ffd54f;font-weight:bold;letter-spacing:3px;background:rgba(255,215,0,0.15);padding:4px 16px;border-radius:20px;">🏆 獨贏首選</span><br>
-                        <span style="font-size:48px;color:#ffffff;font-weight:900;letter-spacing:3px;text-shadow:0 2px 8px rgba(0,0,0,0.3);display:inline-block;margin-top:8px;">{top1['馬匹名稱']}</span><br>
-                        <div style="display:flex;justify-content:center;gap:30px;margin-top:10px;flex-wrap:wrap;">
-                            <span style="font-size:18px;color:#bbdefb;">檔位 <b style="color:#ffffff;font-size:22px;">{top1['檔位']}</b></span>
-                            <span style="font-size:18px;color:#bbdefb;">勝率 <b style="color:#69f0ae;font-size:22px;">{top1['預測勝率']:.2%}</b></span>
-                            <span style="font-size:18px;color:#bbdefb;">值博指數 <b style="color:#ffd54f;font-size:22px;">{top1['值博指數']:.4f}</b></span>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    st.markdown("<h3 style='margin-top:25px;margin-bottom:10px;'>🔗 連贏推薦</h3>", unsafe_allow_html=True)
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.markdown(f"""
-                        <div style="background:linear-gradient(135deg,#e3f2fd,#bbdefb);border-radius:14px;padding:16px 20px;text-align:center;box-shadow:0 4px 12px rgba(13,71,161,0.15);border-left:5px solid #0d47a1;">
-                            <span style="font-size:28px;">🏇</span>
-                            <h4 style="margin:4px 0 2px 0;color:#0d47a1;">{top4.iloc[0]['馬匹名稱']}</h4>
-                            <div style="display:flex;justify-content:center;gap:20px;font-size:14px;color:#555;">
-                                <span>檔位 <b>{top4.iloc[0]['檔位']}</b></span>
-                                <span>勝率 <b style="color:#2e7d32;">{top4.iloc[0]['預測勝率']:.2%}</b></span>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    with col2:
-                        st.markdown(f"""
-                        <div style="background:linear-gradient(135deg,#e3f2fd,#bbdefb);border-radius:14px;padding:16px 20px;text-align:center;box-shadow:0 4px 12px rgba(13,71,161,0.15);border-left:5px solid #0d47a1;">
-                            <span style="font-size:28px;">🏇</span>
-                            <h4 style="margin:4px 0 2px 0;color:#0d47a1;">{top4.iloc[1]['馬匹名稱']}</h4>
-                            <div style="display:flex;justify-content:center;gap:20px;font-size:14px;color:#555;">
-                                <span>檔位 <b>{top4.iloc[1]['檔位']}</b></span>
-                                <span>勝率 <b style="color:#2e7d32;">{top4.iloc[1]['預測勝率']:.2%}</b></span>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    st.caption("💡 連贏：揀 2 隻馬，跑出前 2 名（不分順序）即中")
-                    
-                    if is_vip:
-                        st.markdown("<h3 style='margin-top:25px;margin-bottom:10px;'>🥉 三重彩推薦（4 隻複式）</h3>", unsafe_allow_html=True)
-                        cols = st.columns(4)
-                        colors = ['#fce4ec', '#f3e5f5', '#e8eaf6', '#e0f7fa']
-                        for i in range(4):
-                            row = top4.iloc[i]
-                            with cols[i]:
-                                st.markdown(f"""
-                                <div style="background:{colors[i]};border-radius:12px;padding:14px 10px;text-align:center;box-shadow:0 3px 10px rgba(0,0,0,0.08);border:1px solid rgba(0,0,0,0.05);">
-                                    <span style="font-size:24px;">🏇</span>
-                                    <h5 style="margin:2px 0;color:#333;font-size:15px;">{row['馬匹名稱']}</h5>
-                                    <div style="font-size:13px;color:#555;">檔位 <b>{row['檔位']}</b><br>勝率 <b style="color:#2e7d32;">{row['預測勝率']:.2%}</b></div>
-                                </div>
-                                """, unsafe_allow_html=True)
-                        st.caption("💡 三重彩：揀 3 隻馬，順序估中冠亞季軍。以上 4 隻馬可做複式三重彩（4 選 3）")
-                    else:
-                        st.markdown("""
-                        <div style="background:linear-gradient(135deg,#fff3e0,#ffe0b2);border-radius:16px;padding:30px 20px;text-align:center;border:2px dashed #ff6f00;margin:10px 0;">
-                            <span style="font-size:48px;">🔒</span>
-                            <h3 style="color:#e65100;margin:10px 0;">三重彩推薦</h3>
-                            <p style="color:#bf360c;font-size:16px;">此內容僅限 <b>VIP 會員</b> 查看</p>
-                            <p style="color:#888;font-size:14px;">升級 VIP 即可解鎖三重彩、四重彩等獨家彩池推薦</p>
-                            <div style="margin-top:15px;"><span style="background:#ff6f00;color:white;padding:8px 24px;border-radius:20px;font-weight:bold;font-size:14px;">💎 立即升級 VIP</span></div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    if is_vip:
-                        st.markdown("<h3 style='margin-top:25px;margin-bottom:10px;'>🏅 四重彩推薦（4 隻複式）</h3>", unsafe_allow_html=True)
-                        cols = st.columns(4)
-                        colors2 = ['#e8f5e9', '#e0f2f1', '#fff3e0', '#fbe9e7']
-                        for i in range(4):
-                            row = top4.iloc[i]
-                            with cols[i]:
-                                st.markdown(f"""
-                                <div style="background:{colors2[i]};border-radius:12px;padding:14px 10px;text-align:center;box-shadow:0 3px 10px rgba(0,0,0,0.08);border:1px solid rgba(0,0,0,0.05);">
-                                    <span style="font-size:24px;">🏇</span>
-                                    <h5 style="margin:2px 0;color:#333;font-size:15px;">{row['馬匹名稱']}</h5>
-                                    <div style="font-size:13px;color:#555;">檔位 <b>{row['檔位']}</b><br>勝率 <b style="color:#2e7d32;">{row['預測勝率']:.2%}</b></div>
-                                </div>
-                                """, unsafe_allow_html=True)
-                        st.caption("💡 四重彩：揀 4 隻馬，順序估中冠亞季殿軍。以上 4 隻馬可做複式四重彩（4 選 4）")
-                    else:
-                        st.markdown("""
-                        <div style="background:linear-gradient(135deg,#e8f5e9,#c8e6c9);border-radius:16px;padding:20px 20px;text-align:center;border:2px dashed #2e7d32;margin:10px 0;">
-                            <span style="font-size:36px;">🔒</span>
-                            <h4 style="color:#1b5e20;margin:5px 0;">四重彩推薦</h4>
-                            <p style="color:#555;font-size:14px;">升級 VIP 即可解鎖四重彩推薦</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    st.divider()
-                    st.markdown("""
-                    <h3 style='margin-bottom:10px;'>📋 總結投注建議</h3>
-                    <div style="background:linear-gradient(135deg,#f1f8e9,#dcedc8);border-radius:16px;padding:20px 24px;border:2px solid #2e7d32;box-shadow:0 4px 16px rgba(46,125,50,0.15);">
-                    """, unsafe_allow_html=True)
-                    
-                    if is_vip:
-                        st.markdown(f"""
-                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 30px;font-size:15px;">
-                            <div>🏆 <b>獨贏</b>：<span style="color:#1a237e;font-weight:bold;">{top4.iloc[0]['馬匹名稱']}</span></div>
-                            <div>🔗 <b>連贏</b>：<span style="color:#0d47a1;font-weight:bold;">{top4.iloc[0]['馬匹名稱']} + {top4.iloc[1]['馬匹名稱']}</span></div>
-                            <div style="grid-column:span 2;">🥉 <b>三重彩</b>：<span style="color:#4a148c;font-weight:bold;">{top4.iloc[0]['馬匹名稱']}、{top4.iloc[1]['馬匹名稱']}、{top4.iloc[2]['馬匹名稱']}、{top4.iloc[3]['馬匹名稱']}</span>（複式 4 選 3）</div>
-                            <div style="grid-column:span 2;">🏅 <b>四重彩</b>：<span style="color:#1b5e20;font-weight:bold;">{top4.iloc[0]['馬匹名稱']}、{top4.iloc[1]['馬匹名稱']}、{top4.iloc[2]['馬匹名稱']}、{top4.iloc[3]['馬匹名稱']}</span>（複式 4 選 4）</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        st.markdown(f"""
-                        <div style="font-size:15px;">
-                            <div>🏆 <b>獨贏</b>：<span style="color:#1a237e;font-weight:bold;">{top4.iloc[0]['馬匹名稱']}</span></div>
-                            <div>🔗 <b>連贏</b>：<span style="color:#0d47a1;font-weight:bold;">{top4.iloc[0]['馬匹名稱']} + {top4.iloc[1]['馬匹名稱']}</span></div>
-                            <div style="margin-top:12px;padding:12px;background:#fff3e0;border-radius:10px;text-align:center;border:1px dashed #ff6f00;">
-                                <span style="font-size:20px;">🔒</span>
-                                <span style="color:#e65100;font-weight:bold;"> 三重彩及四重彩推薦僅限 VIP 會員查看</span>
-                                <br><span style="font-size:13px;color:#888;">升級 VIP 即可解鎖完整投注建議</span>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    st.markdown("</div>", unsafe_allow_html=True)
-                    
-                    st.subheader("🎯 彩池推薦（詳細）")
-                    st.text(pool)
+        # 顯示排行榜
+        if st.session_state.get('show_leaderboard', False):
+            show_leaderboard()
+        
+        st.markdown("---")
 
-                    if CONFIG["enable_registration"] and st.session_state.logged_in:
-                        winner_name = top4.iloc[0]['馬匹名稱']
-                        prob = top4.iloc[0]['預測勝率']
-                        record_prediction(st.session_state.username, date_str, race_no, winner_name, prob)
-                        users = load_users()
-                        if st.session_state.username in users:
-                            users[st.session_state.username]['free_usage'] = users[st.session_state.username].get('free_usage', 0) + 1
-                            users[st.session_state.username]['total_usage'] = users[st.session_state.username].get('total_usage', 0) + 1
-                            save_users(users)
-                        st.session_state.usage_count += 1
-                        st.info("📝 預測已記錄到你的歷史")
-
+    # ====== 付款功能 ======
     st.markdown("---")
     st.subheader("💳 付款功能")
     
@@ -4206,6 +4040,7 @@ def main():
             st.session_state.page_mode = "login"
             st.rerun()
 
+    # ====== 今日賽程 ======
     st.subheader("📅 今日賽程")
     try:
         df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
@@ -4236,6 +4071,4 @@ def main():
         st.caption("🔐 數據來源：HKJC | 系統版本：v14.0-用戶體驗版")
     with col_f3:
         st.caption("💬 Telegram：@bryhjdjbrbxibvrjskofndhiebdpaq")
-
-if __name__ == '__main__':
     main()
