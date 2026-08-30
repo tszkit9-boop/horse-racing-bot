@@ -2467,7 +2467,6 @@ def admin_promo_codes():
                     st.rerun()
 
 def admin_accuracy_monitor():
-    def admin_accuracy_monitor():
     st.subheader("📈 預測準確率監控")
     acc = load_accuracy()
     records = acc.get('records', [])
@@ -2479,7 +2478,7 @@ def admin_accuracy_monitor():
         results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
         results_df = standardize_columns_safe(results_df)
         
-        # ⭐ 修復：移除重複欄位（解決 cannot assemble with duplicate keys）
+        # 修復：移除重複欄位（解決 cannot assemble with duplicate keys）
         results_df = results_df.loc[:, ~results_df.columns.duplicated()]
         
         if 'race_date' not in results_df.columns or 'race_no' not in results_df.columns or '馬名' not in results_df.columns or 'finish_position' not in results_df.columns:
