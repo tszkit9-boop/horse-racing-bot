@@ -97,7 +97,7 @@ DEFAULT_CONFIG = {
     "module_automation": True,
     "module_security": True,
     "module_promo": True,
-    # ⭐ 新增：虛擬幣設定
+    # ⭐ 虛擬幣設定
     "daily_virtual_coin": 1000,
     "virtual_coin_enabled": True,
 }
@@ -2613,7 +2613,7 @@ def admin_user_management():
             else:
                 st.info("呢個用戶未有準確度數據（未對比賽果）")
     
-    # 編輯用戶（包含等級/勳章編輯）
+    # 編輯用戶（包含等級/勳章/虛擬幣編輯）
     with st.expander("✏️ 編輯用戶"):
         username = st.selectbox("選擇要編輯的用戶", list(users.keys()), key="edit_user_select")
         if username:
@@ -2626,20 +2626,43 @@ def admin_user_management():
                 new_password = st.text_input("新密碼（留空 = 不變）", type="password", key="edit_password", placeholder="輸入新密碼")
             
             with col_edit2:
-                # 編輯等級
                 level_options = ["🥉 銅牌會員", "🥈 銀牌會員", "🥇 金牌會員", "💎 鑽石會員", "👑 傳說會員", "👑 超級管理員"]
                 current_level = user.get('level', '🥉 銅牌會員')
                 if current_level not in level_options:
                     level_options.append(current_level)
                 new_level = st.selectbox("🏅 等級", level_options, index=level_options.index(current_level) if current_level in level_options else 0, key="edit_level")
-                
-                # 編輯經驗值
                 new_exp = st.number_input("📊 經驗值", min_value=0, value=user.get('exp', 0), step=10, key="edit_exp")
-                
-                # 編輯勳章
                 all_badges = ["🏆 首勝", "🔥 三連勝", "⚡ 五連勝", "💯 百場預測", "🎯 命中大師", "👥 社交達人", "💰 付費會員", "🏇 馬匹專家"]
                 current_badges = user.get('badges', [])
                 new_badges = st.multiselect("🎖️ 勳章", all_badges, default=[b for b in current_badges if b in all_badges], key="edit_badges")
+            
+            # ⭐ 虛擬幣調整
+            st.markdown("---")
+            st.subheader("💰 虛擬幣調整")
+            col_coin1, col_coin2 = st.columns(2)
+            with col_coin1:
+                current_balance = user.get('virtual_balance', 0)
+                st.metric("當前結餘", f"${current_balance:,.0f}")
+            with col_coin2:
+                coin_adjust = st.number_input("調整金額（+ 加錢，- 扣錢）", value=0, step=100, key="coin_adjust")
+                if st.button("✅ 確認調整虛擬幣", key="apply_coin_adjust"):
+                    if coin_adjust != 0:
+                        new_balance = current_balance + coin_adjust
+                        if new_balance < 0:
+                            st.error("❌ 餘額不能為負數")
+                        else:
+                            users[username]['virtual_balance'] = new_balance
+                            save_users(users)
+                            log_admin_action(st.session_state.username, f"調整 {username} 虛擬幣：{coin_adjust:+d}（新餘額：{new_balance}）")
+                            st.success(f"✅ 已調整 {username} 的虛擬幣，新餘額：${new_balance:,.0f}")
+                            st.rerun()
+            
+            if st.button("🔄 重置虛擬幣為 $1000", key="reset_coin"):
+                users[username]['virtual_balance'] = 1000
+                save_users(users)
+                log_admin_action(st.session_state.username, f"重置 {username} 虛擬幣為 1000")
+                st.success("✅ 已重置虛擬幣為 $1000")
+                st.rerun()
             
             note = st.text_area("備註", value=user.get('note', ''), key="edit_note")
             
@@ -3996,7 +4019,6 @@ def main():
             st.divider()
             st.subheader("📌 導航")
             is_super_admin = user_data.get('group') == 'super_admin'
-            pages = ["主頁面", "預測", "賽程", "馬匹查詢", "騎師查詢", "對比", "趨勢", "用戶儀表板", "預測歷史"]
             if is_super_admin:
                 pages.append("後台管理")
             selected = st.selectbox("前往", pages, index=0, key="nav_select_side")
