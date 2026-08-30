@@ -308,11 +308,16 @@ def get_plan_price(plan):
     return 0
 
 # ============================================================
-# 付款申請功能（存入 session_state）
+# 付款申請功能（存入 session_state + payment_proofs.json）
 # ============================================================
 def submit_payment_request(username, plan, final_price, discount_desc, promo_code_used):
-    new_id = len(st.session_state.payment_requests['requests']) + 1
-    request = {
+    proof = load_payment_proofs()
+    if 'proof_records' not in proof:
+        proof['proof_records'] = []
+    
+    new_id = len(proof['proof_records']) + 1
+    
+    new_request = {
         "id": new_id,
         "username": username,
         "plan": plan,
@@ -323,29 +328,48 @@ def submit_payment_request(username, plan, final_price, discount_desc, promo_cod
         "submitted_at": datetime.now().isoformat(),
         "status": "pending"
     }
-    st.session_state.payment_requests['requests'].append(request)
+    
+    proof['proof_records'].append(new_request)
+    save_payment_proofs(proof)
+    
+    if 'payment_requests' not in st.session_state:
+        st.session_state.payment_requests = {"requests": []}
+    st.session_state.payment_requests['requests'].append(new_request)
+    
     return True, "申請已提交"
 
 def get_all_pending_requests():
+    proof = load_payment_proofs()
     all_requests = []
-    for req in st.session_state.payment_requests['requests']:
+    
+    for req in proof.get('proof_records', []):
         if req.get('status') == 'pending':
             all_requests.append({
-                "username": req['username'],
+                "username": req.get('username', ''),
                 "request": req
             })
+    
+    if 'payment_requests' not in st.session_state:
+        st.session_state.payment_requests = {"requests": []}
+    st.session_state.payment_requests['requests'] = proof.get('proof_records', [])
+    
     return all_requests
 
 def approve_payment_request(username, request_id, admin_username):
-    for req in st.session_state.payment_requests['requests']:
+    proof = load_payment_proofs()
+    found = False
+    
+    for req in proof.get('proof_records', []):
         if req.get('id') == request_id and req.get('status') == 'pending':
+            found = True
             users = load_users()
             if username in users:
-                plan = req['plan']
+                plan = req.get('plan', 'month')
                 days = get_plan_days(plan)
                 if days == 0:
                     days = 30
                 expiry = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+                
                 users[username]['is_paid'] = True
                 users[username]['group'] = 'VIP'
                 users[username]['paid_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -353,19 +377,50 @@ def approve_payment_request(username, request_id, admin_username):
                 users[username]['plan'] = plan
                 users[username]['predictions_limit'] = -1
                 save_users(users)
+                
                 req['status'] = 'approved'
+                req['approved_by'] = admin_username
+                req['approved_at'] = datetime.now().isoformat()
+                save_payment_proofs(proof)
+                
+                if 'payment_requests' in st.session_state:
+                    for sr in st.session_state.payment_requests['requests']:
+                        if sr.get('id') == request_id:
+                            sr['status'] = 'approved'
+                            sr['approved_by'] = admin_username
+                            sr['approved_at'] = datetime.now().isoformat()
+                            break
+                
                 log_admin_action(admin_username, f"批准付款並升級 {username} 為 VIP（{plan}）")
                 return True, f"已批准 {username} 的付款，到期日 {expiry}"
             else:
                 return False, "用戶不存在"
-    return False, "找不到該申請"
+    
+    if not found:
+        return False, "找不到該申請"
+    return False, "處理失敗"
 
 def reject_payment_request(username, request_id, admin_username):
-    for req in st.session_state.payment_requests['requests']:
+    proof = load_payment_proofs()
+    
+    for req in proof.get('proof_records', []):
         if req.get('id') == request_id and req.get('status') == 'pending':
             req['status'] = 'rejected'
+            req['rejected_by'] = admin_username
+            req['rejected_at'] = datetime.now().isoformat()
+            save_payment_proofs(proof)
+            
+            if 'payment_requests' in st.session_state:
+                for sr in st.session_state.payment_requests['requests']:
+                    if sr.get('id') == request_id:
+                        sr['status'] = 'rejected'
+                        sr['rejected_by'] = admin_username
+                        sr['rejected_at'] = datetime.now().isoformat()
+                        break
+            
             log_admin_action(admin_username, f"拒絕 {username} 的付款申請")
             return True, "已拒絕該申請"
+    
     return False, "找不到該申請"
 
 # ============================================================
@@ -374,14 +429,12 @@ def reject_payment_request(username, request_id, admin_username):
 def show_paywall():
     st.subheader("💳 選擇你嘅方案")
 
-    # 方案選項（水平 radio）
     plan_options = {
         "day": f"☀️ 日費  ${CONFIG['price_day']}   (1天)",
         "month": f"📆 月費  ${CONFIG['price_month']}  (30天)",
         "quarter": f"📅 季費  ${CONFIG['price_quarter']} (90天)"
     }
 
-    # 如果已經提交成功，顯示成功訊息
     if st.session_state.get('payment_just_submitted', False):
         st.success("✅ 付款申請已成功提交！管理員將盡快審核。")
         st.info("📩 提交後請 Telegram 通知管理員（可加快審核）")
@@ -437,7 +490,7 @@ def show_paywall():
             if promo_input:
                 try:
                     promos = load_promos()
-                    promo_data = promos.get(promo_input)
+                    promo_data = promos.get(promo_input.strip())
                     if promo_data and not promo_data.get('used', False):
                         expiry = promo_data.get('expiry')
                         if expiry:
@@ -455,7 +508,8 @@ def show_paywall():
                                     final_price = 0
                                     discount_desc = "全免！"
                                 final_price = round(final_price, 2)
-                                promo_code_used = promo_input
+                                promo_code_used = promo_input.strip()
+                                st.success(f"✅ 優惠碼已套用！折扣後價格：${final_price}")
                 except Exception as e:
                     st.warning(f"優惠碼處理出錯：{e}")
 
@@ -521,6 +575,111 @@ def admin_payment_review():
             st.divider()
 
 # ============================================================
+# 補齊付款證明相關函數（確保儀表板正常）
+# ============================================================
+PAYMENT_PROOFS_FILE = 'payment_proofs.json'
+PAYMENT_PROOFS_DIR = 'payment_proofs'
+
+if not os.path.exists(PAYMENT_PROOFS_DIR):
+    os.makedirs(PAYMENT_PROOFS_DIR)
+
+def load_payment_proofs():
+    return load_json(PAYMENT_PROOFS_FILE)
+
+def save_payment_proofs(data):
+    return save_json(PAYMENT_PROOFS_FILE, data)
+
+# ============================================================
+# AI 自我學習（完整）
+# ============================================================
+def update_accuracy_with_results():
+    acc = load_accuracy()
+    records = acc.get('records', [])
+    if not records:
+        return 0, "沒有預測記錄"
+    try:
+        results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
+        results_df = standardize_columns_safe(results_df)
+        results_df = results_df.loc[:, ~results_df.columns.duplicated()]
+        
+        required = ['race_date', 'race_no', 'horse_name', 'finish_position']
+        for col in required:
+            if col not in results_df.columns:
+                return 0, f"缺少必要欄位：{col}"
+        results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
+        results_df = results_df.dropna(subset=['race_date'])
+        
+        updated = 0
+        for rec in records:
+            if rec.get('actual_result') is not None:
+                continue
+            date_str = rec.get('date')
+            race_no = rec.get('race')
+            horse = rec.get('horse')
+            if not date_str or not race_no or not horse:
+                continue
+            
+            mask = (results_df['race_date'].dt.strftime('%Y-%m-%d') == date_str) & \
+                   (results_df['race_no'] == race_no) & \
+                   (results_df['horse_name'] == horse)
+            matched = results_df.loc[mask]
+            
+            if not matched.empty:
+                pos = matched.iloc[0]['finish_position']
+                rec['actual_result'] = int(pos) if pd.notna(pos) else None
+                rec['is_hit'] = (rec['actual_result'] == 1) if rec['actual_result'] is not None else None
+                updated += 1
+        if updated > 0:
+            save_accuracy(acc)
+        return updated, f"成功比對 {updated} 條記錄"
+    except Exception as e:
+        return 0, f"比對失敗：{str(e)}"
+
+def adjust_model_weights():
+    acc = load_accuracy()
+    records = acc.get('records', [])
+    total = len([r for r in records if r.get('is_hit') is not None])
+    hit = sum(1 for r in records if r.get('is_hit') is True)
+    hit_rate = hit / total if total > 0 else 0
+
+    config = load_system_config()
+    current_xgb = config.get('xgb_weight', 25)
+    current_cat = config.get('cat_weight', 1)
+
+    if hit_rate >= 0.6:
+        new_xgb = min(40, current_xgb + 3)
+        new_cat = max(1, current_cat - 1)
+    elif hit_rate >= 0.5:
+        new_xgb = min(35, current_xgb + 1)
+        new_cat = max(1, current_cat)
+    elif hit_rate >= 0.4:
+        new_xgb = max(15, current_xgb - 2)
+        new_cat = min(10, current_cat + 2)
+    elif hit_rate >= 0.3:
+        new_xgb = max(10, current_xgb - 5)
+        new_cat = min(15, current_cat + 5)
+    else:
+        new_xgb = max(5, current_xgb - 8)
+        new_cat = min(20, current_cat + 8)
+
+    new_xgb = max(1, min(50, new_xgb))
+    new_cat = max(1, min(30, new_cat))
+
+    config['xgb_weight'] = new_xgb
+    config['cat_weight'] = new_cat
+    config['last_weight_update'] = datetime.now().isoformat()
+    config['last_hit_rate'] = hit_rate
+    save_system_config(config)
+
+    return {
+        'xgb_weight': new_xgb,
+        'cat_weight': new_cat,
+        'hit_rate': hit_rate,
+        'total': total,
+        'hit': hit
+    }
+
+# ============================================================
 # 模型載入（完整）
 # ============================================================
 @st.cache_resource
@@ -538,7 +697,6 @@ def load_models():
     except:
         st.error("❌ 模型載入失敗")
         return None, None, None
-
 # ============================================================
 # 特徵工程（36 特徵，完整）
 # ============================================================
@@ -1246,113 +1404,6 @@ def login_page():
                         
                         st.session_state.page_mode = "login"
                         st.rerun()
-# ============================================================
-# 補齊付款證明相關函數（確保儀表板正常）
-# ============================================================
-PAYMENT_PROOFS_FILE = 'payment_proofs.json'
-PAYMENT_PROOFS_DIR = 'payment_proofs'
-
-if not os.path.exists(PAYMENT_PROOFS_DIR):
-    os.makedirs(PAYMENT_PROOFS_DIR)
-
-def load_payment_proofs():
-    return load_json(PAYMENT_PROOFS_FILE)
-
-def save_payment_proofs(data):
-    return save_json(PAYMENT_PROOFS_FILE, data)
-
-# ============================================================
-# AI 自我學習（完整）
-# ============================================================
-def update_accuracy_with_results():
-    acc = load_accuracy()
-    records = acc.get('records', [])
-    if not records:
-        return 0, "沒有預測記錄"
-    try:
-        results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
-        results_df = standardize_columns_safe(results_df)
-        
-        # ⭐ 修復：強制移除重複欄位（解決 cannot reindex on an axis with duplicate labels）
-        results_df = results_df.loc[:, ~results_df.columns.duplicated()]
-        
-        required = ['race_date', 'race_no', 'horse_name', 'finish_position']
-        for col in required:
-            if col not in results_df.columns:
-                return 0, f"缺少必要欄位：{col}"
-        results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
-        results_df = results_df.dropna(subset=['race_date'])
-        
-        updated = 0
-        for rec in records:
-            if rec.get('actual_result') is not None:
-                continue
-            date_str = rec.get('date')
-            race_no = rec.get('race')
-            horse = rec.get('horse')
-            if not date_str or not race_no or not horse:
-                continue
-            
-            # ⭐ 使用 .loc 避免 SettingWithCopyWarning
-            mask = (results_df['race_date'].dt.strftime('%Y-%m-%d') == date_str) & \
-                   (results_df['race_no'] == race_no) & \
-                   (results_df['horse_name'] == horse)
-            matched = results_df.loc[mask]
-            
-            if not matched.empty:
-                pos = matched.iloc[0]['finish_position']
-                rec['actual_result'] = int(pos) if pd.notna(pos) else None
-                rec['is_hit'] = (rec['actual_result'] == 1) if rec['actual_result'] is not None else None
-                updated += 1
-        if updated > 0:
-            save_accuracy(acc)
-        return updated, f"成功比對 {updated} 條記錄"
-    except Exception as e:
-        return 0, f"比對失敗：{str(e)}"
-
-def adjust_model_weights():
-    acc = load_accuracy()
-    records = acc.get('records', [])
-    total = len([r for r in records if r.get('is_hit') is not None])
-    hit = sum(1 for r in records if r.get('is_hit') is True)
-    hit_rate = hit / total if total > 0 else 0
-
-    config = load_system_config()
-    current_xgb = config.get('xgb_weight', 25)
-    current_cat = config.get('cat_weight', 1)
-
-    if hit_rate >= 0.6:
-        new_xgb = min(40, current_xgb + 3)
-        new_cat = max(1, current_cat - 1)
-    elif hit_rate >= 0.5:
-        new_xgb = min(35, current_xgb + 1)
-        new_cat = max(1, current_cat)
-    elif hit_rate >= 0.4:
-        new_xgb = max(15, current_xgb - 2)
-        new_cat = min(10, current_cat + 2)
-    elif hit_rate >= 0.3:
-        new_xgb = max(10, current_xgb - 5)
-        new_cat = min(15, current_cat + 5)
-    else:
-        new_xgb = max(5, current_xgb - 8)
-        new_cat = min(20, current_cat + 8)
-
-    new_xgb = max(1, min(50, new_xgb))
-    new_cat = max(1, min(30, new_cat))
-
-    config['xgb_weight'] = new_xgb
-    config['cat_weight'] = new_cat
-    config['last_weight_update'] = datetime.now().isoformat()
-    config['last_hit_rate'] = hit_rate
-    save_system_config(config)
-
-    return {
-        'xgb_weight': new_xgb,
-        'cat_weight': new_cat,
-        'hit_rate': hit_rate,
-        'total': total,
-        'hit': hit
-    }
 
 # ============================================================
 # 系統儀表板
@@ -1498,7 +1549,7 @@ def admin_dashboard():
                 st.error(f"下載失敗：{e}")
 
 # ============================================================
-# 數據分析類（進階功能 - 齊全）
+# 數據分析類（馬匹、騎師、練馬師、場地/路程）
 # ============================================================
 def admin_horse_ranking():
     st.subheader("🏇 馬匹勝率排行榜")
@@ -1568,18 +1619,13 @@ def admin_jockey_ranking():
         st.info("暫時未有足夠數據（最少需要 1 場已比對嘅預測記錄）")
         return
     
-    # 從記錄中提取騎師（需要用 run_prediction 嘅數據，但 accuracy.json 冇騎師）
-    # 改用 history 記錄（users.json 入面嘅預測記錄都冇騎師）
-    # 所以呢個功能需要從預測記錄中提取騎師，但 accuracy.json 冇騎師欄位
     st.warning("⚠️ 騎師數據需要從排位表檔案 'HKCJ_FULL_YEAR_DATA.csv' 提取")
     st.info("💡 建議：喺預測時記錄騎師名稱，先可以統計騎師勝率")
     
-    # 嘗試從排位表提取
     try:
         df_racecard = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
         df_racecard = standardize_columns_safe(df_racecard)
         if 'jockey' in df_racecard.columns and 'horse_name' in df_racecard.columns:
-            # 建立馬匹 > 騎師對照表
             horse_jockey_map = dict(zip(df_racecard['horse_name'], df_racecard['jockey']))
             
             jockey_stats = {}
@@ -1715,9 +1761,7 @@ def admin_course_analysis():
         df_racecard = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
         df_racecard = standardize_columns_safe(df_racecard)
         
-        # 需要 race_no 同 distance 同 going 配對
         if 'race_no' in df_racecard.columns and 'distance' in df_racecard.columns:
-            # 建立 race_no > distance 對照
             race_distance_map = dict(zip(df_racecard['race_no'], df_racecard['distance']))
             race_going_map = {}
             if 'going' in df_racecard.columns:
@@ -1730,14 +1774,12 @@ def admin_course_analysis():
                 race_no = rec.get('race')
                 distance = race_distance_map.get(race_no, '未知')
                 
-                # 路程統計
                 if distance not in distance_stats:
                     distance_stats[distance] = {'total': 0, 'hit': 0}
                 distance_stats[distance]['total'] += 1
                 if rec.get('is_hit') == True:
                     distance_stats[distance]['hit'] += 1
                 
-                # 場地統計
                 going = race_going_map.get(race_no, '未知')
                 if going not in going_stats:
                     going_stats[going] = {'total': 0, 'hit': 0}
@@ -1860,11 +1902,9 @@ def admin_monthly_report():
     fig.update_layout(yaxis_tickformat='.0%', height=350)
     st.plotly_chart(fig, use_container_width=True)
     
-    # 下載 PDF 報告（用 CSV 代替，因為 Streamlit 唔直接支援 PDF）
     st.divider()
     st.subheader("📥 下載報告")
     
-    # 下載 CSV
     csv_data = monthly.to_csv(index=False)
     st.download_button(
         label="📥 下載每月命中率報告 (CSV)",
@@ -1874,7 +1914,6 @@ def admin_monthly_report():
         key="download_monthly_report"
     )
     
-    # 下載 JSON
     json_data = json.dumps(monthly.to_dict(orient='records'), ensure_ascii=False, indent=2)
     st.download_button(
         label="📥 下載每月命中率報告 (JSON)",
@@ -1885,10 +1924,10 @@ def admin_monthly_report():
     )
     
     st.caption("💡 提示：CSV 同 JSON 檔案可用 Excel 打開，或轉換成 PDF")
-    # ============================================================
+
+# ============================================================
 # 後台管理（所有模組完整實作）
 # ============================================================
-
 def admin_user_management():
     st.subheader("👥 用戶管理")
     with st.expander("➕ 新增用戶", expanded=False):
@@ -2723,55 +2762,6 @@ def admin_security():
         else:
             st.error("用戶不存在")
 
-def admin_payment_review():
-    st.subheader("📤 付款審核")
-    pending = get_all_pending_requests()
-    if not pending:
-        st.info("✅ 目前沒有待審核嘅付款申請")
-        return
-    st.write(f"共 **{len(pending)}** 條待審核記錄")
-    for item in pending:
-        username = item['username']
-        req = item['request']
-        with st.container():
-            cols = st.columns([2, 2, 1.5, 1.5, 2])
-            with cols[0]:
-                st.write(f"👤 **{username}**")
-                st.caption(f"ID: {req.get('id', '')}")
-            with cols[1]:
-                plan_name = req.get('plan_name', '未知方案')
-                price = req.get('final_price', 0)
-                st.write(f"📌 {plan_name}")
-                st.write(f"💰 ${price:.2f}")
-                if req.get('discount_desc'):
-                    st.caption(f"折扣: {req.get('discount_desc', '')}")
-            with cols[2]:
-                submitted_at = req.get('submitted_at', '')
-                if submitted_at:
-                    try:
-                        dt = datetime.fromisoformat(submitted_at)
-                        st.caption(f"📅 {dt.strftime('%Y-%m-%d %H:%M')}")
-                    except:
-                        st.caption(submitted_at)
-            with cols[3]:
-                st.warning("⏳ 待審核")
-            with cols[4]:
-                if st.button("✅ 批准", key=f"approve_{req.get('id')}"):
-                    success, msg = approve_payment_request(username, req['id'], st.session_state.username)
-                    if success:
-                        st.success(msg)
-                        st.rerun()
-                    else:
-                        st.error(msg)
-                if st.button("❌ 拒絕", key=f"reject_{req.get('id')}"):
-                    success, msg = reject_payment_request(username, req['id'], st.session_state.username)
-                    if success:
-                        st.warning(msg)
-                        st.rerun()
-                    else:
-                        st.error(msg)
-            st.divider()
-
 def admin_system_settings():
     users = load_users()
     admin_username = st.session_state.get('admin_username', 'admin')
@@ -2860,7 +2850,7 @@ def admin_system_settings():
             st.error("❌ 儲存失敗，請檢查檔案權限。")
 
 # ============================================================
-# 後台頁面（已加入所有數據分析類功能）
+# 後台頁面
 # ============================================================
 def admin_page():
     if 'admin_authenticated' not in st.session_state:
