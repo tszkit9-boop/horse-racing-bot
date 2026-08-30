@@ -3798,6 +3798,32 @@ def main():
         # 顯示排行榜
         if st.session_state.get('show_leaderboard', False):
             show_leaderboard()
+
+        # ⭐ 管理員贈送虛擬幣（只有超級管理員可見）
+        if st.session_state.get('role') == 'super_admin':
+            st.markdown("---")
+            st.subheader("🎁 管理員贈送虛擬幣")
+            with st.form(key="admin_gift_form"):
+                col_g1, col_g2, col_g3 = st.columns([2, 1, 1])
+                with col_g1:
+                    target_user = st.selectbox("選擇用戶", list(load_users().keys()), key="gift_user")
+                with col_g2:
+                    gift_amount = st.number_input("金額", min_value=1, value=100, step=50, key="gift_amount")
+                with col_g3:
+                    submit_gift = st.form_submit_button("🎁 贈送")
+                if submit_gift:
+                    if target_user == st.session_state.username:
+                        st.error("❌ 唔可以送俾自己")
+                    else:
+                        users = load_users()
+                        if target_user in users:
+                            users[target_user]['virtual_balance'] = users[target_user].get('virtual_balance', 0) + gift_amount
+                            save_users(users)
+                            log_admin_action(st.session_state.username, f"贈送 ${gift_amount} 虛擬幣給 {target_user}")
+                            st.success(f"✅ 已贈送 ${gift_amount} 虛擬幣給 {target_user}")
+                            st.rerun()
+                        else:
+                            st.error("❌ 用戶不存在")
         
         st.markdown("---")
 
