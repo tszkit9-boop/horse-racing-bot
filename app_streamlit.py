@@ -165,106 +165,6 @@ if 'payment_requests' not in st.session_state:
     st.session_state.payment_requests = {"requests": []}
 
 # ============================================================
-# 用戶等級/勳章系統（輔助函數）
-# ============================================================
-def get_level_info(exp):
-    """根據經驗值回傳等級名稱同emoji"""
-    levels = [
-        (0, "🥉 銅牌會員"),
-        (100, "🥈 銀牌會員"),
-        (500, "🥇 金牌會員"),
-        (1500, "💎 鑽石會員"),
-        (5000, "👑 傳說會員")
-    ]
-    current_level = levels[0][1]
-    next_level_exp = None
-    for threshold, level_name in levels:
-        if exp >= threshold:
-            current_level = level_name
-        else:
-            next_level_exp = threshold
-            break
-    return current_level, next_level_exp
-
-def check_badges(username, hit_rate=None):
-    """檢查並更新用戶勳章"""
-    users = load_users()
-    if username not in users:
-        return
-    
-    user = users[username]
-    history = user.get('history', [])
-    badges = user.get('badges', [])
-    total_predictions = len(history)
-    hits = sum(1 for h in history if h.get('is_hit') is True)
-    hit_rate = hits / total_predictions if total_predictions > 0 else 0
-    
-    # 計算連續命中
-    consecutive_hits = 0
-    max_consecutive = 0
-    for h in history:
-        if h.get('is_hit') is True:
-            consecutive_hits += 1
-            max_consecutive = max(max_consecutive, consecutive_hits)
-        else:
-            consecutive_hits = 0
-    
-    # 勳章條件
-    badge_conditions = {
-        "🏆 首勝": (total_predictions >= 1 and hits >= 1, "第一次預測命中"),
-        "🔥 三連勝": (max_consecutive >= 3, "連續 3 次預測命中"),
-        "⚡ 五連勝": (max_consecutive >= 5, "連續 5 次預測命中"),
-        "💯 百場預測": (total_predictions >= 100, "累積預測 100 次"),
-        "🎯 命中大師": (total_predictions >= 20 and hit_rate >= 0.5, "命中率超過 50%"),
-        "👥 社交達人": (user.get('invite_count', 0) >= 5, "成功邀請 5 位朋友"),
-        "💰 付費會員": (user.get('is_paid', False) or user.get('group') == 'VIP', "首次付款升級 VIP"),
-        "🏇 馬匹專家": (len(set(h.get('horse') for h in history)) >= 5, "預測過 5 匹不同馬匹"),
-    }
-    
-    new_badges = []
-    for badge_name, (condition, description) in badge_conditions.items():
-        if condition and badge_name not in badges:
-            new_badges.append(badge_name)
-    
-    if new_badges:
-        badges.extend(new_badges)
-        user['badges'] = badges
-        save_users(users)
-    
-    return badges
-
-def update_user_exp(username, is_hit=False):
-    """更新用戶經驗值"""
-    users = load_users()
-    if username not in users:
-        return
-    
-    user = users[username]
-    exp = user.get('exp', 0)
-    
-    # 預測加 10 EXP
-    exp += 10
-    # 命中額外加 20 EXP
-    if is_hit:
-        exp += 20
-    
-    user['exp'] = exp
-    
-    # 更新等級
-    new_level, next_exp = get_level_info(exp)
-    if new_level != user.get('level', ''):
-        old_level = user.get('level', '')
-        user['level'] = new_level
-        # 如果升呢，加入日誌
-        if old_level != new_level:
-            log_admin_action("system", f"{username} 升級：{old_level} → {new_level}")
-    
-    save_users(users)
-    
-    # 檢查勳章
-    check_badges(username)
-
-# ============================================================
 # 用戶系統
 # ============================================================
 def load_users():
@@ -290,10 +190,7 @@ def load_users():
                 "invite_code": "ADMIN001",
                 "invited_by": None,
                 "invite_rewards": 0,
-                "invite_count": 0,
-                "level": "👑 超級管理員",
-                "exp": 0,
-                "badges": []
+                "invite_count": 0
             }
         }
         save_users(users)
@@ -301,10 +198,6 @@ def load_users():
         if "admin" in users:
             users["admin"]["group"] = "super_admin"
             users["admin"]["predictions_limit"] = -1
-            if "level" not in users["admin"]:
-                users["admin"]["level"] = "👑 超級管理員"
-                users["admin"]["exp"] = 0
-                users["admin"]["badges"] = []
         for uid, u in users.items():
             if 'plan' not in u: u['plan'] = None
             if 'paid_date' not in u: u['paid_date'] = None
@@ -325,12 +218,6 @@ def load_users():
                     u['predictions_limit'] = -1
                 else:
                     u['predictions_limit'] = CONFIG["free_limit"]
-            if 'level' not in u:
-                u['level'] = '🥉 銅牌會員'
-            if 'exp' not in u:
-                u['exp'] = 0
-            if 'badges' not in u:
-                u['badges'] = []
         save_users(users)
     return users
 
@@ -742,23 +629,6 @@ def update_accuracy_with_results():
                 rec['actual_result'] = int(pos) if pd.notna(pos) else None
                 rec['is_hit'] = (rec['actual_result'] == 1) if rec['actual_result'] is not None else None
                 updated += 1
-                
-                # ⭐ 新增：如果命中，更新用戶經驗值（額外加分）
-                if rec.get('is_hit') == True:
-                    username = rec.get('username')
-                    if username:
-                        # 先更新用戶歷史記錄入面嘅 is_hit
-                        users = load_users()
-                        if username in users:
-                            for h in users[username].get('history', []):
-                                if h.get('date') == rec.get('date') and h.get('race') == rec.get('race'):
-                                    h['is_hit'] = True
-                                    break
-                            save_users(users)
-                        # 更新經驗值（命中加額外 20 EXP）
-                        update_user_exp(username, is_hit=True)
-                    # 檢查勳章
-                    check_badges(username)
         if updated > 0:
             save_accuracy(acc)
         return updated, f"成功比對 {updated} 條記錄"
@@ -827,7 +697,6 @@ def load_models():
     except:
         st.error("❌ 模型載入失敗")
         return None, None, None
-
 # ============================================================
 # 特徵工程（36 特徵，完整）
 # ============================================================
@@ -1243,8 +1112,7 @@ def record_prediction(username, date_str, race_no, horse_name, predicted_prob=No
             'race': race_no,
             'horse': horse_name,
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'predicted_prob': predicted_prob,
-            'is_hit': None
+            'predicted_prob': predicted_prob
         })
         save_users(users)
         acc = load_accuracy()
@@ -1260,9 +1128,6 @@ def record_prediction(username, date_str, race_no, horse_name, predicted_prob=No
             'is_hit': None
         })
         save_accuracy(acc)
-        
-        # 每次預測加 10 EXP
-        update_user_exp(username, is_hit=False)
 
 def get_user_stats(username):
     users = load_users()
@@ -1294,25 +1159,19 @@ def show_user_dashboard(username):
     invite_count = user_data.get('invite_count', 0)
     invite_rewards = user_data.get('invite_rewards', 0)
     
-    # 等級/勳章
-    level = user_data.get('level', '🥉 銅牌會員')
-    exp = user_data.get('exp', 0)
-    badges = user_data.get('badges', [])
-    next_level_exp = get_level_info(exp)[1]
-    
     if group == 'super_admin':
-        level_display = "👑 超級管理員"
+        level = "👑 超級管理員"
     elif group == 'VIP':
-        level_display = "👑 VIP"
+        level = "👑 VIP"
     elif is_paid:
-        level_display = "💎 付費用戶"
+        level = "💎 付費用戶"
     else:
-        level_display = "🆓 免費用戶"
+        level = "🆓 免費用戶"
     
     st.markdown("---")
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("👤 用戶", username)
-    col2.metric("🏷️ 級別", level_display)
+    col2.metric("🏷️ 級別", level)
     col3.metric("📊 總預測次數", stats['total_predictions'])
     limit = user_data.get('predictions_limit', CONFIG['free_limit'])
     if limit == -1:
@@ -1322,34 +1181,6 @@ def show_user_dashboard(username):
         remain = max(0, limit - used)
         col4.metric("📊 剩餘場次", remain)
     st.markdown("---")
-    
-    # 顯示等級/勳章
-    st.subheader("🏅 用戶等級 & 勳章")
-    col_level1, col_level2, col_level3 = st.columns(3)
-    with col_level1:
-        st.metric("🏅 當前等級", level)
-    with col_level2:
-        if next_level_exp:
-            progress = min(100, int((exp / next_level_exp) * 100))
-            st.metric("📊 經驗值", f"{exp} / {next_level_exp}")
-            st.progress(progress / 100)
-            st.caption(f"進度：{progress}%")
-        else:
-            st.metric("📊 經驗值", f"{exp}（已滿級）")
-    with col_level3:
-        st.metric("🎖️ 勳章數量", len(badges))
-    
-    if badges:
-        st.write("🏅 已獲得勳章：")
-        badge_cols = st.columns(4)
-        for idx, badge in enumerate(badges):
-            with badge_cols[idx % 4]:
-                st.markdown(f"**{badge}**")
-    else:
-        st.info("📭 尚未獲得任何勳章，繼續預測解鎖更多成就！")
-    
-    st.markdown("---")
-    
     if plan:
         st.caption(f"📌 當前方案：{get_plan_name(plan)}")
     
@@ -1547,10 +1378,7 @@ def login_page():
                             'invite_code': new_user.upper() + str(random.randint(100, 999)),
                             'invited_by': invited_by,
                             'invite_rewards': 0,
-                            'invite_count': 0,
-                            'level': '🥉 銅牌會員',
-                            'exp': 0,
-                            'badges': []
+                            'invite_count': 0
                         }
                         users[new_user] = new_user_data
                         save_users(users)
@@ -2136,10 +1964,7 @@ def admin_user_management():
                         "invite_code": new_username.upper() + str(random.randint(100, 999)),
                         "invited_by": None,
                         "invite_rewards": 0,
-                        "invite_count": 0,
-                        "level": "🥉 銅牌會員",
-                        "exp": 0,
-                        "badges": []
+                        "invite_count": 0
                     }
                     save_users(users)
                     log_admin_action(st.session_state.username, f"新增用戶 {new_username}")
@@ -2153,16 +1978,7 @@ def admin_user_management():
     
     st.write("現有用戶列表：")
     df = pd.DataFrame.from_dict(users, orient='index')
-    if 'level' not in df.columns:
-        df['level'] = '🥉 銅牌會員'
-    if 'exp' not in df.columns:
-        df['exp'] = 0
-    if 'badges' not in df.columns:
-        df['badges'] = ''
-    df['badges_count'] = df['badges'].apply(lambda x: len(x) if isinstance(x, list) else 0)
-    display_cols = ['username', 'group', 'level', 'exp', 'badges_count', 'total_usage', 'is_paid']
-    available_cols = [col for col in display_cols if col in df.columns]
-    st.dataframe(df[available_cols], use_container_width=True)
+    st.dataframe(df, use_container_width=True)
     
     st.divider()
     st.subheader("🗑️ 刪除用戶")
@@ -2661,6 +2477,8 @@ def admin_accuracy_monitor():
     try:
         results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
         results_df = standardize_columns_safe(results_df)
+        
+        # 修復：移除重複欄位（解決 cannot assemble with duplicate keys）
         results_df = results_df.loc[:, ~results_df.columns.duplicated()]
         
         if 'race_date' not in results_df.columns or 'race_no' not in results_df.columns or '馬名' not in results_df.columns or 'finish_position' not in results_df.columns:
@@ -2923,8 +2741,9 @@ def admin_automation():
         auto['remind_days'] = days
         save_json(AUTOMATION_FILE, auto)
         st.success("✅ 已儲存")
-        def admin_security():
-     st.subheader("🔐 安全與權限")
+
+def admin_security():
+    st.subheader("🔐 安全與權限")
     st.write("操作日誌")
     logs = load_logs()
     if logs.get('logs'):
