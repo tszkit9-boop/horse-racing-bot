@@ -3990,7 +3990,7 @@ def main():
     with col_btn:
         predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
 
-    with st.sidebar:
+  with st.sidebar:
         st.header("🎯 用戶資訊")
         if CONFIG["enable_registration"] and st.session_state.logged_in:
             st.write(f"👤 用戶：{st.session_state.username}")
@@ -4019,12 +4019,16 @@ def main():
             st.divider()
             st.subheader("📌 導航")
             is_super_admin = user_data.get('group') == 'super_admin'
+            
+            # ⭐ 確保 pages 列表有定義
+            pages = ["主頁面", "預測", "賽程", "馬匹查詢", "騎師查詢", "對比", "趨勢", "用戶儀表板", "預測歷史"]
             if is_super_admin:
                 pages.append("後台管理")
+            
             selected = st.selectbox("前往", pages, index=0, key="nav_select_side")
             if selected != st.session_state.get('page', '主頁面'):
                 st.session_state.page = selected
-                st.rerun()
+                st.rerun())
 
     if CONFIG["enable_registration"] and st.session_state.logged_in and st.session_state.get('show_history', False):
         st.subheader("📋 我的預測記錄")
