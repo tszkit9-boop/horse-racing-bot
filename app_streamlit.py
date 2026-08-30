@@ -2922,8 +2922,7 @@ def admin_automation():
     if st.button("儲存設定", key="save_remind_auto"):
         auto['remind_days'] = days
         save_json(AUTOMATION_FILE, auto)
-        st.success("✅ 已儲存")
-        def admin_security():
+        st.success("✅ 已儲存")def admin_security():
     st.subheader("🔐 安全與權限")
     st.write("操作日誌")
     logs = load_logs()
