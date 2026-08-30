@@ -2122,21 +2122,6 @@ def admin_user_management():
         )
     except Exception as e:
         st.error(f"讀取檔案失敗：{e}")
-    
-    st.divider()
-    st.subheader("📥 數據匯出")
-    try:
-        with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
-            data = f.read()
-        st.download_button(
-            label="📥 下載 users.json",
-            data=data,
-            file_name="users.json",
-            mime="application/json",
-            key="download_users_json"
-        )
-    except Exception as e:
-        st.error(f"讀取檔案失敗：{e}")
 
 def admin_manage_predictions():
     st.subheader("📊 管理用戶預測次數")
