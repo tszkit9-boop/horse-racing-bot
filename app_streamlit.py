@@ -3330,7 +3330,8 @@ def admin_automation():
         save_json(AUTOMATION_FILE, auto)
         st.success("✅ 已儲存")
         def admin_security():
-st.subheader("🔐 安全與權限")
+   def admin_security():
+    st.subheader("🔐 安全與權限")
     st.write("操作日誌")
     logs = load_logs()
     if logs.get('logs'):
@@ -3517,7 +3518,6 @@ def admin_user_management():
     if 'badges' not in df.columns:
         df['badges'] = ''
     df['badges_count'] = df['badges'].apply(lambda x: len(x) if isinstance(x, list) else 0)
-    # 顯示虛擬幣
     if 'virtual_balance' not in df.columns:
         df['virtual_balance'] = 0
     display_cols = ['username', 'group', 'level', 'exp', 'badges_count', 'total_usage', 'is_paid', 'virtual_balance']
@@ -3605,17 +3605,12 @@ def admin_user_management():
                 new_password = st.text_input("新密碼（留空 = 不變）", type="password", key="edit_password", placeholder="輸入新密碼")
             
             with col_edit2:
-                # 編輯等級
                 level_options = ["🥉 銅牌會員", "🥈 銀牌會員", "🥇 金牌會員", "💎 鑽石會員", "👑 傳說會員", "👑 超級管理員"]
                 current_level = user.get('level', '🥉 銅牌會員')
                 if current_level not in level_options:
                     level_options.append(current_level)
                 new_level = st.selectbox("🏅 等級", level_options, index=level_options.index(current_level) if current_level in level_options else 0, key="edit_level")
-                
-                # 編輯經驗值
                 new_exp = st.number_input("📊 經驗值", min_value=0, value=user.get('exp', 0), step=10, key="edit_exp")
-                
-                # 編輯勳章
                 all_badges = ["🏆 首勝", "🔥 三連勝", "⚡ 五連勝", "💯 百場預測", "🎯 命中大師", "👥 社交達人", "💰 付費會員", "🏇 馬匹專家"]
                 current_badges = user.get('badges', [])
                 new_badges = st.multiselect("🎖️ 勳章", all_badges, default=[b for b in current_badges if b in all_badges], key="edit_badges")
@@ -3641,7 +3636,6 @@ def admin_user_management():
                             st.success(f"✅ 已調整 {username} 的虛擬幣，新餘額：${new_balance:,.0f}")
                             st.rerun()
             
-            # 重置虛擬幣按鈕
             if st.button("🔄 重置虛擬幣為 $1000", key="reset_coin"):
                 users[username]['virtual_balance'] = 1000
                 save_users(users)
