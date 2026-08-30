@@ -3330,7 +3330,7 @@ def admin_automation():
         save_json(AUTOMATION_FILE, auto)
         st.success("✅ 已儲存")
         def admin_security():
-    st.subheader("🔐 安全與權限")
+st.subheader("🔐 安全與權限")
     st.write("操作日誌")
     logs = load_logs()
     if logs.get('logs'):
