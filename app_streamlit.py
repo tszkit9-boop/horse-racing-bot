@@ -1159,19 +1159,25 @@ def show_user_dashboard(username):
     invite_count = user_data.get('invite_count', 0)
     invite_rewards = user_data.get('invite_rewards', 0)
     
+    # 等級/勳章
+    level = user_data.get('level', '🥉 銅牌會員')
+    exp = user_data.get('exp', 0)
+    badges = user_data.get('badges', [])
+    next_level_exp = get_level_info(exp)[1]
+    
     if group == 'super_admin':
-        level = "👑 超級管理員"
+        level_display = "👑 超級管理員"
     elif group == 'VIP':
-        level = "👑 VIP"
+        level_display = "👑 VIP"
     elif is_paid:
-        level = "💎 付費用戶"
+        level_display = "💎 付費用戶"
     else:
-        level = "🆓 免費用戶"
+        level_display = "🆓 免費用戶"
     
     st.markdown("---")
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("👤 用戶", username)
-    col2.metric("🏷️ 級別", level)
+    col2.metric("🏷️ 級別", level_display)
     col3.metric("📊 總預測次數", stats['total_predictions'])
     limit = user_data.get('predictions_limit', CONFIG['free_limit'])
     if limit == -1:
@@ -1181,6 +1187,34 @@ def show_user_dashboard(username):
         remain = max(0, limit - used)
         col4.metric("📊 剩餘場次", remain)
     st.markdown("---")
+    
+    # 顯示等級/勳章
+    st.subheader("🏅 用戶等級 & 勳章")
+    col_level1, col_level2, col_level3 = st.columns(3)
+    with col_level1:
+        st.metric("🏅 當前等級", level)
+    with col_level2:
+        if next_level_exp:
+            progress = min(100, int((exp / next_level_exp) * 100))
+            st.metric("📊 經驗值", f"{exp} / {next_level_exp}")
+            st.progress(progress / 100)
+            st.caption(f"進度：{progress}%")
+        else:
+            st.metric("📊 經驗值", f"{exp}（已滿級）")
+    with col_level3:
+        st.metric("🎖️ 勳章數量", len(badges))
+    
+    if badges:
+        st.write("🏅 已獲得勳章：")
+        badge_cols = st.columns(4)
+        for idx, badge in enumerate(badges):
+            with badge_cols[idx % 4]:
+                st.markdown(f"**{badge}**")
+    else:
+        st.info("📭 尚未獲得任何勳章，繼續預測解鎖更多成就！")
+    
+    st.markdown("---")
+    
     if plan:
         st.caption(f"📌 當前方案：{get_plan_name(plan)}")
     
