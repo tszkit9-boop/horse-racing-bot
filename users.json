@@ -19,7 +19,13 @@
     "invited_by": null,
     "invite_rewards": 0,
     "invite_count": 0,
-    "payment_requests": []
+    "payment_requests": [],
+    "level": "👑 超級管理員",
+    "exp": 0,
+    "badges": [],
+    "virtual_balance": 10000,
+    "last_claim_date": "",
+    "bets": []
   },
   "arkit": {
     "password": "z54060437K",
@@ -55,7 +61,13 @@
     "invited_by": null,
     "invite_rewards": 0,
     "invite_count": 0,
-    "payment_requests": []
+    "payment_requests": [],
+    "level": "🥉 銅牌會員",
+    "exp": 0,
+    "badges": [],
+    "virtual_balance": 1000,
+    "last_claim_date": "",
+    "bets": []
   },
   "wan0811": {
     "username": "wan0811",
@@ -76,6 +88,38 @@
     "invite_code": "WAN0811872",
     "invited_by": null,
     "invite_rewards": 0,
-    "invite_count": 0
+    "invite_count": 0,
+    "level": "🥉 銅牌會員",
+    "exp": 0,
+    "badges": [],
+    "virtual_balance": 1000,
+    "last_claim_date": "",
+    "bets": []
+  },
+  "sing": {
+    "password": "6056 7072",
+    "is_paid": false,
+    "paid_date": null,
+    "expiry_date": null,
+    "free_usage": 0,
+    "total_usage": 0,
+    "created_at": "2026-08-31 08:23:05",
+    "note": "手動新增",
+    "group": "free",
+    "phone": "",
+    "plan": null,
+    "predictions_limit": 2,
+    "history": [],
+    "terms_agreed": "2026-08-31T08:23:05.849200",
+    "invite_code": "SING385",
+    "invited_by": null,
+    "invite_rewards": 0,
+    "invite_count": 0,
+    "level": "🥉 銅牌會員",
+    "exp": 0,
+    "badges": [],
+    "virtual_balance": 1000,
+    "last_claim_date": "",
+    "bets": []
   }
 }
