@@ -1956,6 +1956,73 @@ def login_page():
                         st.rerun()
 
 # ============================================================
+# ⭐ 賽事日曆 + 倒數計時（輔助函數）
+# ============================================================
+def get_future_races():
+    """從排位表提取未來賽事日期"""
+    try:
+        df = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
+        df = standardize_columns_safe(df)
+        if 'race_date' in df.columns:
+            df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce')
+            df = df.dropna(subset=['race_date'])
+            today = datetime.now().date()
+            future = df[df['race_date'].dt.date >= today]
+            if not future.empty:
+                dates = future['race_date'].dt.date.unique()
+                dates = sorted(dates)
+                race_courses = []
+                for d in dates:
+                    course = future[future['race_date'].dt.date == d]['race_course'].iloc[0] if 'race_course' in future.columns else '賽馬'
+                    race_courses.append(course)
+                return dates, race_courses
+    except Exception as e:
+        print(f"讀取排位表失敗：{e}")
+    return [], []
+
+def display_race_calendar():
+    """顯示賽事日曆同倒數計時"""
+    dates, courses = get_future_races()
+    if not dates:
+        st.info("📭 暫時未有未來賽事資料")
+        return
+    
+    next_date = dates[0]
+    next_course = courses[0] if courses else "賽馬"
+    today = datetime.now().date()
+    delta = (next_date - today).days
+    
+    if delta > 0:
+        time_str = f"⏳ 仲有 **{delta} 天**"
+    elif delta == 0:
+        hours = (datetime.combine(next_date, datetime.min.time()) - datetime.now()).seconds // 3600
+        time_str = f"⏳ 今日開跑！仲有約 **{hours} 小時**"
+    else:
+        time_str = "⏳ 已過期"
+    
+    st.markdown(f"""
+    <div style="background: linear-gradient(135deg, #1a237e, #0d47a1); border-radius: 12px; padding: 15px 20px; color: white; margin-bottom: 15px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+            <div>
+                <span style="font-size: 20px;">🏇 下一場賽事</span><br>
+                <span style="font-size: 16px; opacity: 0.9;">{next_course}　📅 {next_date.strftime('%Y年%m月%d日')}</span>
+            </div>
+            <div style="font-size: 22px; font-weight: bold; background: rgba(255,255,255,0.15); padding: 8px 20px; border-radius: 30px;">
+                {time_str}
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if len(dates) > 1:
+        st.caption("📅 未來賽事一覽")
+        for i in range(1, min(len(dates), 4)):
+            d = dates[i]
+            c = courses[i] if i < len(courses) else "賽馬"
+            delta_i = (d - today).days
+            st.write(f"• {d.strftime('%Y-%m-%d')}　{c}　（還有 {delta_i} 天）")
+
+# ============================================================
 # 系統儀表板
 # ============================================================
 def admin_dashboard():
@@ -3555,7 +3622,7 @@ def admin_page():
             tab_functions[name]()
 
 # ============================================================
-# 主頁面（已將投注/排行榜移至主頁，並修正 pages 定義）
+# 主頁面（已加入賽事日曆、倒數計時、管理員贈送幣）
 # ============================================================
 def main():
     if 'logged_in' not in st.session_state:
@@ -3623,6 +3690,32 @@ def main():
         admin_page()
         return
 
+    # ====== 標題 ======
+    col1, col2, col3 = st.columns([5, 1, 1])
+    with col1:
+        st.title("🏇 賽馬預測系統")
+        st.markdown("AI 驅動・即時預測・彩池推薦")
+        st.caption(f"{datetime.now().strftime('%Y年%m月%d日')} · 36個特徵 · 三模型融合 · 六種彩池")
+    with col2:
+        if CONFIG["enable_admin"] and st.session_state.get("role") == "super_admin":
+            if st.button("🔐 後台", use_container_width=True, key="go_to_admin"):
+                st.session_state.show_admin = True
+                st.session_state.admin_authenticated = False
+                st.rerun()
+    with col3:
+        if st.session_state.get('logged_in', False):
+            if st.button("🚪 登出", use_container_width=True, key="logout_main"):
+                for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history']:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.rerun()
+
+    # ====== ⭐ 賽事日曆 + 倒數計時 ======
+    st.markdown("---")
+    display_race_calendar()
+    st.markdown("---")
+
+    # ====== 今日免費重心推介 ======
     if CONFIG.get("enable_daily_free_tip", True):
         try:
             df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
@@ -3659,25 +3752,6 @@ def main():
                         st.markdown("---")
         except:
             pass
-
-    col1, col2, col3 = st.columns([5, 1, 1])
-    with col1:
-        st.title("🏇 賽馬預測系統")
-        st.markdown("AI 驅動・即時預測・彩池推薦")
-        st.caption(f"{datetime.now().strftime('%Y年%m月%d日')} · 36個特徵 · 三模型融合 · 六種彩池")
-    with col2:
-        if CONFIG["enable_admin"] and st.session_state.get("role") == "super_admin":
-            if st.button("🔐 後台", use_container_width=True, key="go_to_admin"):
-                st.session_state.show_admin = True
-                st.session_state.admin_authenticated = False
-                st.rerun()
-    with col3:
-        if st.session_state.get('logged_in', False):
-            if st.button("🚪 登出", use_container_width=True, key="logout_main"):
-                for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history']:
-                    if key in st.session_state:
-                        del st.session_state[key]
-                st.rerun()
 
     if CONFIG["enable_registration"] and st.session_state.logged_in:
         show_user_dashboard(st.session_state.username)
@@ -3785,17 +3859,14 @@ def main():
                 st.session_state.show_leaderboard = not st.session_state.get('show_leaderboard', False)
                 st.session_state.show_bet = False
         with col_v3:
-            # 顯示用戶虛擬幣結餘
             users = load_users()
             user_data = users.get(st.session_state.username, {})
             balance = user_data.get('virtual_balance', 0)
             st.info(f"💎 你嘅虛擬幣結餘：**${balance:,.0f}**")
         
-        # 顯示投注介面
         if st.session_state.get('show_bet', False):
             show_betting_interface(st.session_state.username)
         
-        # 顯示排行榜
         if st.session_state.get('show_leaderboard', False):
             show_leaderboard()
 
