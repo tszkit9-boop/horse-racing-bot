@@ -1331,6 +1331,9 @@ def run_prediction(date_str, race_no):
     # 以下嘅 code 保持不變（由 df = standardize_columns_safe(df) 開始）
     # ...
 
+    # 以下嘅 code 保持不變（由 df = standardize_columns_safe(df) 開始）
+    # ...
+
     history = standardize_columns_safe(history)
     history = history.loc[:, ~history.columns.duplicated(keep='first')]
     history = ensure_series(history)
@@ -3828,6 +3831,55 @@ elif os.path.exists("racecard_uploaded.csv"):
     except:
         pass
 
+# ===== 自動偵測排位表可用日期 =====
+import os
+df_racecard = None
+if 'racecard_df' in st.session_state and st.session_state['racecard_df'] is not None:
+    df_racecard = st.session_state['racecard_df']
+elif os.path.exists("racecard_uploaded.csv"):
+    try:
+        df_racecard = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
+    except:
+        pass
+
+default_date = pd.to_datetime("2025-04-09")  # fallback
+if df_racecard is not None and '比賽日期' in df_racecard.columns:
+    # 轉為日期格式並取最新
+    df_racecard['比賽日期'] = pd.to_datetime(df_racecard['比賽日期'], errors='coerce')
+    valid_dates = df_racecard['比賽日期'].dropna()
+    if not valid_dates.empty:
+        default_date = valid_dates.max()  # 最新日期
+
+# ===== 自動偵測排位表可用日期 =====
+import os
+df_racecard = None
+if 'racecard_df' in st.session_state and st.session_state['racecard_df'] is not None:
+    df_racecard = st.session_state['racecard_df']
+elif os.path.exists("racecard_uploaded.csv"):
+    try:
+        df_racecard = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
+    except:
+        pass
+
+default_date = pd.to_datetime("2025-04-09")  # fallback
+if df_racecard is not None and '比賽日期' in df_racecard.columns:
+    # 轉為日期格式並取最新
+    df_racecard['比賽日期'] = pd.to_datetime(df_racecard['比賽日期'], errors='coerce')
+    valid_dates = df_racecard['比賽日期'].dropna()
+    if not valid_dates.empty:
+        default_date = valid_dates.max()  # 最新日期
+
+# ===== 自動偵測排位表可用日期 =====
+import os
+df_racecard = None
+if 'racecard_df' in st.session_state and st.session_state['racecard_df'] is not None:
+    df_racecard = st.session_state['racecard_df']
+elif os.path.exists("racecard_uploaded.csv"):
+    try:
+        df_racecard = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
+    except:
+        pass
+
 default_date = pd.to_datetime("2025-04-09")  # fallback
 if df_racecard is not None and '比賽日期' in df_racecard.columns:
     # 轉為日期格式並取最新
@@ -3846,7 +3898,6 @@ with col_race:
     else:
         max_race = 11
     race_no = st.selectbox("🏇 選擇場次", list(range(1, max_race + 1)), index=0, key="predict_race_mid")
-    with col_btn:
         predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
 
     # ============================================================
