@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*
 """
 賽馬預測系統 - 完整版（付款功能統一，開放所有用戶）
 """
@@ -1331,17 +1331,19 @@ def run_prediction(date_str, race_no):
         return None, "請先上傳排位表"
 
     # ===== 欄位名稱對應（支援中文欄位） =====
-    column_mapping = {
-        '馬號': 'horse_no',
-        '馬名': 'horse_name',
-        '檔位': 'draw',
-        '負磅': 'weight',
-        '騎師': 'jockey',
-        '練馬師': 'trainer',
-        '賠率': 'odds',
-        '場次': 'race_no',
-        '比賽日期': 'race_date'
-    }
+   column_mapping = {
+    '馬號': 'horse_no',
+    '馬名': 'horse_name',
+    '檔位': 'draw',
+    '負磅': 'weight',
+    '騎師': 'jockey',
+    '練馬師': 'trainer',
+    '賠率': 'odds',
+    '場次': 'race_no',
+    '比賽日期': 'race_date',
+    # 加呢行，將 horse_no 同時對應到 horse_id（如果預測邏輯用 horse_id）
+    'horse_no': 'horse_id'   # <-- 新增呢行
+}
     if '馬號' in df.columns:
         df.rename(columns=column_mapping, inplace=True)
 
