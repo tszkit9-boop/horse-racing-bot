@@ -4006,5 +4006,5 @@ def main():
     with col_f2:
         st.caption("🔐 數據來源：HKJC | 系統版本：v14.0-用戶體驗版")
     with col_f3:
-        st.caption("💬 Telegram：@bryhjdjbrbxibvrjskofndhiebdpaq"):
+        st.caption("💬 Telegram：@bryhjdjbrbxibvrjskofndhiebdpaq")
     main()
