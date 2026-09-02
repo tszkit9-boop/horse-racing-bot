@@ -1306,15 +1306,15 @@ def run_prediction(date_str, race_no):
     import pandas as pd
     import numpy as np
 
-    # ===== 1. DEBUG 確認函數被執行 =====
+    # ===== DEBUG 確認函數被執行 =====
     st.write("🔥 DEBUG: run_prediction 被呼叫，日期：", date_str, "場次：", race_no)
 
-    # ===== 2. 檢查檔案 =====
+    # ===== 檢查檔案 =====
     if not os.path.exists("racecard_uploaded.csv"):
         st.error("❌ 找不到 racecard_uploaded.csv，請上傳排位表")
         return None, None
 
-    # ===== 3. 讀取 CSV =====
+    # ===== 讀取 CSV =====
     try:
         df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
         st.success(f"✅ 成功讀取，共 {len(df)} 行")
@@ -1322,7 +1322,7 @@ def run_prediction(date_str, race_no):
         st.error(f"❌ 讀取失敗：{e}")
         return None, None
 
-    # ===== 4. 欄位映射（中文 → 英文） =====
+    # ===== 欄位映射（中文 → 英文） =====
     rename_map = {
         '馬名': 'horse_name',
         '檔位': 'draw',
@@ -1341,7 +1341,7 @@ def run_prediction(date_str, race_no):
     else:
         st.warning("⚠️ 找不到可對應嘅中文欄位")
 
-    # ===== 5. 日期處理 =====
+    # ===== 日期處理 =====
     if 'race_date' not in df.columns:
         st.error("❌ 缺少 '比賽日期' 欄位")
         return None, None
@@ -1350,7 +1350,7 @@ def run_prediction(date_str, race_no):
     df = df.dropna(subset=['race_date'])
     df['race_date_str'] = df['race_date'].dt.strftime('%Y-%m-%d')
 
-    # ===== 6. 篩選指定日期及場次 =====
+    # ===== 篩選指定日期及場次 =====
     filtered = df[(df['race_date_str'] == date_str) & (df['race_no'] == race_no)]
     if filtered.empty:
         st.error(f"❌ 沒有找到 {date_str} 第 {race_no} 場嘅數據")
@@ -1359,7 +1359,7 @@ def run_prediction(date_str, race_no):
 
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
-    # ===== 7. 產生預測結果（模擬數據，保證出結果） =====
+    # ===== 產生預測結果（模擬數據，保證出結果） =====
     np.random.seed(42)
     result_df = filtered[['horse_name', 'draw', 'weight', 'jockey', 'trainer']].copy()
     result_df['預測勝率'] = np.random.rand(len(result_df))
@@ -1369,7 +1369,7 @@ def run_prediction(date_str, race_no):
     )
     result_df = result_df.sort_values('預測勝率', ascending=False)
 
-    # ===== 8. 彩池推薦 =====
+    # ===== 彩池推薦 =====
     top1 = result_df.iloc[0]['horse_name'] if len(result_df) > 0 else ""
     top2 = result_df.iloc[1]['horse_name'] if len(result_df) > 1 else ""
     pool_text = f"🏆 獨贏：{top1}　位置：{top1}、{top2}"
