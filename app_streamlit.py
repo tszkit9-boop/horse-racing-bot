@@ -3867,14 +3867,63 @@ def main():
         st.info("暫時未有預測記錄，未能進行自我學習分析。請先執行預測。")
 
     st.markdown("---")
-    st.subheader("🎯 賽事預測控制")
-    col_date, col_race, col_btn = st.columns([2, 2, 1])
-    with col_date:
-        date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="predict_date_mid")
-    with col_race:
-        race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race_mid")
-    with col_btn:
-        predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
+    st.subheader("🎯 赛事预测控制")
+
+# 三欄布局
+col_date, col_race, col_btn = st.columns([2, 2, 1])
+
+with col_date:
+    selected_date = st.date_input(
+        "选择日期",
+        value=pd.to_datetime("2026-09-06"),
+        key="predict_date_mid"
+    )
+    date_str = selected_date.strftime("%Y-%m-%d")  # 轉為字串
+
+with col_race:
+    race_no = st.selectbox(
+        "选择场次",
+        list(range(1, 13)),
+        index=0,
+        key="predict_race_mid"
+    )
+
+with col_btn:
+    predict_btn = st.button(
+        "🚀 执行预测",
+        type="primary",
+        use_container_width=True,
+        key="predict_btn_mid"
+    )
+
+# ===== 按鈕被㩒咗之後嘅處理 =====
+if predict_btn:
+    with st.spinner(f"⏳ 正在預測 {date_str} 第 {race_no} 場..."):
+        try:
+            result, pool = run_prediction(date_str, race_no)
+            
+            if result is not None and not result.empty:
+                st.success(f"✅ {date_str} 第 {race_no} 場預測完成！")
+                
+                # 顯示彩池推薦
+                if pool:
+                    st.info(f"🎯 彩池推薦：{pool}")
+                
+                # 顯示預測結果表格
+                st.dataframe(
+                    result[['馬名', '檔位', '預測勝率', '值博指數', '信心指數']],
+                    use_container_width=True,
+                    hide_index=True
+                )
+            else:
+                st.error("❌ 未能獲取預測結果，請確認排位表已上傳且日期正確")
+                
+        except Exception as e:
+            st.error(f"❌ 預測過程發生錯誤：{e}")
+            import traceback
+            with st.expander("🔍 詳細錯誤訊息（技術人員用）"):
+                st.code(traceback.format_exc())
+            predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
 
     # ============================================================
     # 🎮 虛擬投注（賽事預測 同 付款功能 中間）
