@@ -1305,12 +1305,12 @@ def run_prediction(date_str, race_no):
     # ===== 直接從檔案載入排位表（唔靠 session_state） =====
     import os
     df = None
-    
+
     # 方法1：檢查 session_state 有冇
     if 'racecard_df' in st.session_state and st.session_state['racecard_df'] is not None:
         df = st.session_state['racecard_df']
         st.info("✅ 從 session_state 載入排位表")
-    
+
     # 方法2：如果 session_state 冇，直接讀檔案
     if df is None:
         if os.path.exists("racecard_uploaded.csv"):
@@ -1319,16 +1319,58 @@ def run_prediction(date_str, race_no):
                 st.success("✅ 從檔案載入排位表 (racecard_uploaded.csv)")
             except Exception as e:
                 st.error(f"讀取檔案失敗：{e}")
+                return None, f"讀取檔案失敗：{e}"
         else:
             st.error("❌ 找不到排位表檔案，請確認 racecard_uploaded.csv 已上傳")
             return None, "找不到排位表"
-    
+
     if df is None or df.empty:
         st.error("❌ 排位表為空")
         return None, "排位表為空"
-        
-        st.warning("請先上傳排位表")
-        return None, "請先上傳排位表"
+
+    # ===== 欄位名稱對應 =====
+    column_mapping = {
+        '馬號': 'horse_no',
+        '馬名': 'horse_name',
+        '檔位': 'draw',
+        '負磅': 'weight',
+        '騎師': 'jockey',
+        '練馬師': 'trainer',
+        '賠率': 'odds',
+        '場次': 'race_no',
+        '比賽日期': 'race_date'
+    }
+    if '馬號' in df.columns:
+        df.rename(columns=column_mapping, inplace=True)
+
+    # 額外：如果預測邏輯需要 horse_id
+    if 'horse_no' in df.columns and 'horse_id' not in df.columns:
+        df['horse_id'] = df['horse_no']
+
+    # ===== 標準化欄位 =====
+    df = standardize_columns_safe(df)
+    df = df.loc[:, ~df.columns.duplicated(keep='first')]
+    df = ensure_series(df)
+    df, _ = safe_parse_dates(df)
+    if df is None:
+        st.error("無法解析日期")
+        return None, "無法解析日期"
+
+    # ===== DEBUG：顯示處理後嘅數據 =====
+    st.write("🔍 DEBUG 訊息：")
+    st.write("1. 處理後欄位：", df.columns.tolist())
+    st.write("2. 所有場次：", sorted(df['race_no'].unique()))
+    st.write("3. 所有日期：", sorted(df['race_date'].unique()))
+    st.write("4. 你選擇嘅日期：", date_str)
+    st.write("5. 你選擇嘅場次：", race_no)
+
+    # 篩選數據
+    filtered_df = df[(df['race_date'] == date_str) & (df['race_no'] == race_no)]
+    st.write("6. 篩選後行數：", len(filtered_df))
+
+    if filtered_df.empty:
+        st.error("❌ 沒有找到匹配嘅數據，請檢查日期同場次")
+        return None, "沒有數據"
 
     # ===== 欄位名稱對應（支援中文欄位） =====
    column_mapping = {
