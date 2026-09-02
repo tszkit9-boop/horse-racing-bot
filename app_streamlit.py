@@ -1347,9 +1347,7 @@ def run_prediction(date_str, race_no):
     if filtered_df.empty:
         st.error("❌ 沒有找到匹配嘅數據，請檢查日期同場次")
         return None, "沒有數據"
-
-    # 繼續原本嘅預測邏輯（你之後嘅 code）
-    # ... 請將你原本嘅預測邏輯接喺呢度 ...
+        
     df = df.loc[:, ~df.columns.duplicated(keep='first')]
     df = ensure_series(df)
 
