@@ -3337,8 +3337,8 @@ def admin_content():
             st.warning("請填寫標題同內容")
     
     # === 上傳排位表（新加，只喺後台顯示） ===
- st.write("---")
- st.write("📤 上傳排位表")
+st.write("---")
+st.write("📤 上傳排位表")
 uploaded_file = st.file_uploader("選擇 CSV 排位表", type=["csv"], key="racecard_uploader")
 
 if uploaded_file is not None:
