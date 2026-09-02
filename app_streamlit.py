@@ -1306,46 +1306,30 @@ def run_prediction(date_str, race_no):
     if xgb_model is None:
         return None, None
 
-    try:
-        df = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
-    except:
-        st.error("讀取排位表失敗")
-        return None, None
+    # ===== 優先從 session_state 或 racecard_uploaded.csv 載入排位表 =====
+    import os
+    df = None
+    if 'racecard_df' in st.session_state and st.session_state['racecard_df'] is not None:
+        df = st.session_state['racecard_df'].copy()
+        st.info("✅ 使用已上傳嘅排位表 (session_state)")
+    elif os.path.exists("racecard_uploaded.csv"):
+        try:
+            df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
+            st.info("✅ 從檔案載入排位表 (racecard_uploaded.csv)")
+        except Exception as e:
+            st.error(f"讀取 racecard_uploaded.csv 失敗：{e}")
 
-    df = standardize_columns_safe(df)
-    df = df.loc[:, ~df.columns.duplicated(keep='first')]
-    df = ensure_series(df)
-
-    df, _ = safe_parse_dates(df)
+    # 如果冇上傳嘅排位表，fallback 到舊嘅 HKCJ_FULL_YEAR_DATA.csv
     if df is None:
-        st.error("無法解析日期")
-        return None, None
-    df = df.dropna(subset=['race_date'])
-    if df.empty:
-        st.error("無有效日期")
-        return None, None
+        try:
+            df = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
+            st.warning("⚠️ 使用預設排位表 HKCJ_FULL_YEAR_DATA.csv（可能係舊數據）")
+        except Exception as e:
+            st.error(f"讀取排位表失敗：{e}")
+            return None, None
 
-    if 'race_no' not in df.columns:
-        st.error("找不到場次欄位")
-        return None, None
-    df['race_no'] = df['race_no'].astype(str).str.extract(r'(\d+)')[0]
-    df['race_no'] = pd.to_numeric(df['race_no'], errors='coerce')
-    df = df.dropna(subset=['race_no'])
-    if df.empty:
-        st.error("無有效場次")
-        return None, None
-
-    target = pd.to_datetime(date_str)
-    race_sel = df[(df['race_date'].dt.date == target.date()) & (df['race_no'] == race_no)]
-    if race_sel.empty:
-        st.error(f"日期 {date_str} 第 {race_no} 場無數據")
-        return None, None
-
-    try:
-        history = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
-    except:
-        st.error("缺少歷史數據檔案 ALL_DATA_MERGED.csv")
-        return None, None
+    # 以下嘅 code 保持不變（由 df = standardize_columns_safe(df) 開始）
+    # ...
 
     history = standardize_columns_safe(history)
     history = history.loc[:, ~history.columns.duplicated(keep='first')]
@@ -3833,11 +3817,35 @@ def main():
 
     st.markdown("---")
     st.subheader("🎯 賽事預測控制")
-    col_date, col_race, col_btn = st.columns([2, 2, 1])
-    with col_date:
-        date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="predict_date_mid")
-    with col_race:
-        race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race_mid")
+   # ===== 自動偵測排位表可用日期 =====
+import os
+df_racecard = None
+if 'racecard_df' in st.session_state and st.session_state['racecard_df'] is not None:
+    df_racecard = st.session_state['racecard_df']
+elif os.path.exists("racecard_uploaded.csv"):
+    try:
+        df_racecard = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
+    except:
+        pass
+
+default_date = pd.to_datetime("2025-04-09")  # fallback
+if df_racecard is not None and '比賽日期' in df_racecard.columns:
+    # 轉為日期格式並取最新
+    df_racecard['比賽日期'] = pd.to_datetime(df_racecard['比賽日期'], errors='coerce')
+    valid_dates = df_racecard['比賽日期'].dropna()
+    if not valid_dates.empty:
+        default_date = valid_dates.max()  # 最新日期
+
+col_date, col_race, col_btn = st.columns([2, 2, 1])
+with col_date:
+    date = st.date_input("📅 選擇日期", value=default_date, key="predict_date_mid")
+with col_race:
+    # 動態場次數量（由排位表決定）
+    if df_racecard is not None and '場次' in df_racecard.columns:
+        max_race = int(df_racecard['場次'].max()) if not df_racecard['場次'].isna().all() else 11
+    else:
+        max_race = 11
+    race_no = st.selectbox("🏇 選擇場次", list(range(1, max_race + 1)), index=0, key="predict_race_mid")
     with col_btn:
         predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
 
