@@ -5286,43 +5286,50 @@ def show_betting_interface(username):
         bet_race = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="bet_race")
     
     if st.button("🔍 睇預測 & 投注", key="show_bet_options"):
-        date_str = bet_date.strftime('%Y-%m-%d')
-        with st.spinner("載入預測..."):
-            result, pool = run_prediction(date_str, bet_race)
-            if result is not None and not result.empty:
-                st.success(f"✅ {date_str} 第 {bet_race} 場")
+    date_str = bet_date.strftime('%Y-%m-%d')
+    with st.spinner("載入預測..."):
+        result, pool = run_prediction(date_str, bet_race)
+        if result is not None and not result.empty:
+            st.success(f"✅ {date_str} 第 {bet_race} 場")
+            
+            # 顯示預測結果（使用正確嘅欄位名）
+            display_df = result[['horse_name', 'draw', '預測勝率', '值博指數', '信心指數']].copy()
+            display_df.rename(columns={
+                'horse_name': '馬名',
+                'draw': '檔位',
+                '預測勝率': '預測勝率',
+                '值博指數': '值博指數',
+                '信心指數': '信心指數'
+            }, inplace=True)
+            display_df['預測勝率'] = display_df['預測勝率'].apply(lambda x: f"{x:.2%}")
+            display_df['值博指數'] = display_df['值博指數'].apply(lambda x: f"{x:.4f}")
+            st.dataframe(display_df, use_container_width=True)
+            
+            # 投注表單（以下保持不變）
+            st.subheader("💸 落注")
+            with st.form(key="place_bet_form"):
+                horse_options = result['horse_name'].tolist()
+                selected_horse = st.selectbox("揀馬", horse_options, key="bet_horse")
+                bet_amount = st.number_input("投注金額", min_value=1, max_value=int(balance), value=min(100, int(balance)), step=10, key="bet_amount")
                 
-                # 顯示預測結果
-                display_df = result[['馬匹名稱', '檔位', '預測勝率', '值博指數']].copy()
-                display_df['預測勝率'] = display_df['預測勝率'].apply(lambda x: f"{x:.2%}")
-                display_df['值博指數'] = display_df['值博指數'].apply(lambda x: f"{x:.4f}")
-                st.dataframe(display_df, use_container_width=True)
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    submit_bet = st.form_submit_button("✅ 確認投注", type="primary")
+                with col_btn2:
+                    st.caption(f"餘額：${balance:,.0f}")
                 
-                # 投注表單
-                st.subheader("💸 落注")
-                with st.form(key="place_bet_form"):
-                    horse_options = result['馬匹名稱'].tolist()
-                    selected_horse = st.selectbox("揀馬", horse_options, key="bet_horse")
-                    bet_amount = st.number_input("投注金額", min_value=1, max_value=int(balance), value=min(100, int(balance)), step=10, key="bet_amount")
-                    
-                    col_btn1, col_btn2 = st.columns(2)
-                    with col_btn1:
-                        submit_bet = st.form_submit_button("✅ 確認投注", type="primary")
-                    with col_btn2:
-                        st.caption(f"餘額：${balance:,.0f}")
-                    
-                    if submit_bet:
-                        if bet_amount > balance:
-                            st.error(f"❌ 餘額不足（餘額：${balance:,.0f}）")
+                if submit_bet:
+                    if bet_amount > balance:
+                        st.error(f"❌ 餘額不足（餘額：${balance:,.0f}）")
+                    else:
+                        success, msg = place_bet(username, date_str, bet_race, selected_horse, bet_amount)
+                        if success:
+                            st.success(f"✅ {msg}")
+                            st.rerun()
                         else:
-                            success, msg = place_bet(username, date_str, bet_race, selected_horse, bet_amount)
-                            if success:
-                                st.success(f"✅ {msg}")
-                                st.rerun()
-                            else:
-                                st.error(f"❌ {msg}")
-            else:
-                st.warning("無法載入預測數據")
+                            st.error(f"❌ {msg}")
+        else:
+            st.warning("無法載入預測數據")
     
     st.divider()
     
