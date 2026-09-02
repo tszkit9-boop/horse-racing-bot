@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*
+# -*- coding: utf-8 -*-
 """
 賽馬預測系統 - 完整版（付款功能統一，開放所有用戶）
 """
@@ -1302,110 +1302,17 @@ def generate_pool_recommendations(df, top_n=6):
     return rec
 
 def run_prediction(date_str, race_no):
-    # ===== 直接從檔案載入排位表 =====
-    import os
-    df = None
+    xgb_model, cat_model, rank_model = load_models()
+    if xgb_model is None:
+        return None, None
 
-    if 'racecard_df' in st.session_state and st.session_state['racecard_df'] is not None:
-        df = st.session_state['racecard_df']
-        st.info("✅ 從 session_state 載入排位表")
+    try:
+        df = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
+    except:
+        st.error("讀取排位表失敗")
+        return None, None
 
-    if df is None:
-        if os.path.exists("racecard_uploaded.csv"):
-            try:
-                df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
-                st.success("✅ 從檔案載入排位表 (racecard_uploaded.csv)")
-            except Exception as e:
-                st.error(f"讀取檔案失敗：{e}")
-                return None, f"讀取檔案失敗：{e}"
-        else:
-            st.error("❌ 找不到排位表檔案，請確認 racecard_uploaded.csv 已上傳")
-            return None, "找不到排位表"
-
-    if df is None or df.empty:
-        st.error("❌ 排位表為空")
-        return None, "排位表為空"
-
-    # ===== 欄位名稱對應 =====
-    column_mapping = {
-        '馬號': 'horse_no',
-        '馬名': 'horse_name',
-        '檔位': 'draw',
-        '負磅': 'weight',
-        '騎師': 'jockey',
-        '練馬師': 'trainer',
-        '賠率': 'odds',
-        '場次': 'race_no',
-        '比賽日期': 'race_date'
-    }
-    if '馬號' in df.columns:
-        df.rename(columns=column_mapping, inplace=True)
-
-    if 'horse_no' in df.columns and 'horse_id' not in df.columns:
-        df['horse_id'] = df['horse_no']
-
-    # ===== 標準化欄位 =====
     df = standardize_columns_safe(df)
-    df = df.loc[:, ~df.columns.duplicated(keep='first')]
-    df = ensure_series(df)
-    df, _ = safe_parse_dates(df)
-    if df is None:
-        st.error("無法解析日期")
-        return None, "無法解析日期"
-
-    # ===== DEBUG =====
-    st.write("🔍 DEBUG 訊息：")
-    st.write("1. 處理後欄位：", df.columns.tolist())
-    st.write("2. 所有場次：", sorted(df['race_no'].unique()))
-    st.write("3. 所有日期：", sorted(df['race_date'].unique()))
-    st.write("4. 你選擇嘅日期：", date_str)
-    st.write("5. 你選擇嘅場次：", race_no)
-
-    filtered_df = df[(df['race_date'] == date_str) & (df['race_no'] == race_no)]
-    st.write("6. 篩選後行數：", len(filtered_df))
-
-    if filtered_df.empty:
-        st.error("❌ 沒有找到匹配嘅數據，請檢查日期同場次")
-        return None, "沒有數據"
-
-    # ===== 繼續你原本嘅預測邏輯（請將你嘅 code 接喺下面） =====
-    # 注意：以下只係示範，你必須將你原本嘅預測邏輯放喺呢度
-    # 例如：
-    # model = load_model()
-    # result = model.predict(filtered_df)
-    # return result, "彩池推薦"
-
-    # 暫時回傳一個簡單結果，等你確認執行到呢度
-    st.success("✅ 排位表處理完成，請將你嘅預測邏輯接上")
-    return filtered_df, "測試訊息"
-    if '馬號' in df.columns:
-        df.rename(columns=column_mapping, inplace=True)
-
-    # ===== 標準化欄位 =====
-    df = standardize_columns_safe(df)
-    df = df.loc[:, ~df.columns.duplicated(keep='first')]
-    df = ensure_series(df)
-    df, _ = safe_parse_dates(df)
-    if df is None:
-        st.error("無法解析日期")
-        return None, "無法解析日期"
-
-    # ===== DEBUG：顯示處理後嘅數據 =====
-    st.write("🔍 DEBUG 訊息：")
-    st.write("1. 處理後欄位：", df.columns.tolist())
-    st.write("2. 所有場次：", sorted(df['race_no'].unique()))
-    st.write("3. 所有日期：", sorted(df['race_date'].unique()))
-    st.write("4. 你選擇嘅日期：", date_str)
-    st.write("5. 你選擇嘅場次：", race_no)
-
-    # 篩選數據
-    filtered_df = df[(df['race_date'] == date_str) & (df['race_no'] == race_no)]
-    st.write("6. 篩選後行數：", len(filtered_df))
-
-    if filtered_df.empty:
-        st.error("❌ 沒有找到匹配嘅數據，請檢查日期同場次")
-        return None, "沒有數據"
-        
     df = df.loc[:, ~df.columns.duplicated(keep='first')]
     df = ensure_series(df)
 
@@ -3925,63 +3832,14 @@ def main():
         st.info("暫時未有預測記錄，未能進行自我學習分析。請先執行預測。")
 
     st.markdown("---")
-    st.subheader("🎯 赛事预测控制")
-
-# 三欄布局
-col_date, col_race, col_btn = st.columns([2, 2, 1])
-
-with col_date:
-    selected_date = st.date_input(
-        "选择日期",
-        value=pd.to_datetime("2026-09-06"),
-        key="predict_date_mid"
-    )
-    date_str = selected_date.strftime("%Y-%m-%d")  # 轉為字串
-
-with col_race:
-    race_no = st.selectbox(
-        "选择场次",
-        list(range(1, 13)),
-        index=0,
-        key="predict_race_mid"
-    )
-
-with col_btn:
-    predict_btn = st.button(
-        "🚀 执行预测",
-        type="primary",
-        use_container_width=True,
-        key="predict_btn_mid"
-    )
-
-# ===== 按鈕被㩒咗之後嘅處理 =====
-if predict_btn:
-    with st.spinner(f"⏳ 正在預測 {date_str} 第 {race_no} 場..."):
-        try:
-            result, pool = run_prediction(date_str, race_no)
-            
-            if result is not None and not result.empty:
-                st.success(f"✅ {date_str} 第 {race_no} 場預測完成！")
-                
-                # 顯示彩池推薦
-                if pool:
-                    st.info(f"🎯 彩池推薦：{pool}")
-                
-                # 顯示預測結果表格
-                st.dataframe(
-                    result[['馬名', '檔位', '預測勝率', '值博指數', '信心指數']],
-                    use_container_width=True,
-                    hide_index=True
-                )
-            else:
-                st.error("❌ 未能獲取預測結果，請確認排位表已上傳且日期正確")
-                
-        except Exception as e:
-            st.error(f"❌ 預測過程發生錯誤：{e}")
-            import traceback
-            with st.expander("🔍 詳細錯誤訊息（技術人員用）"):
-                st.code(traceback.format_exc())
-            predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
+    st.subheader("🎯 賽事預測控制")
+    col_date, col_race, col_btn = st.columns([2, 2, 1])
+    with col_date:
+        date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="predict_date_mid")
+    with col_race:
+        race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race_mid")
+    with col_btn:
+        predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
 
     # ============================================================
     # 🎮 虛擬投注（賽事預測 同 付款功能 中間）
