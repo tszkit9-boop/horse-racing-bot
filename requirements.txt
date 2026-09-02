@@ -1,10 +1,5 @@
-pandas>=1.5.0
-numpy>=1.24.0
-requests>=2.28.0
-xgboost>=1.7.0
-catboost>=1.2.0
-scikit-learn>=1.2.0
-scipy>=1.9.0
-lightgbm>=4.0.0
-matplotlib>=3.6.0
-streamlit>=1.20.0
+selenium
+webdriver-manager
+pandas
+beautifulsoup4
+requests
