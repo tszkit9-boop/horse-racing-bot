@@ -1305,10 +1305,7 @@ def run_prediction(date_str, race_no):
     import os
     import pandas as pd
     import numpy as np
-
-    # ===== DEBUG =====
-    st.write("🔥 DEBUG: run_prediction 被呼叫，日期：", date_str, "場次：", race_no)
-
+    
     # ===== 檢查檔案 =====
     if not os.path.exists("racecard_uploaded.csv"):
         st.error("❌ 找不到 racecard_uploaded.csv，請上傳排位表")
@@ -7568,7 +7565,7 @@ def main():
 
     if predict_btn:
         date_str = date.strftime("%Y-%m-%d")
-        st.write("🔥 DEBUG: 按鈕被㩒咗，日期：", date_str, "場次：", race_no)
+     
         with st.spinner(f"⏳ 正在預測 {date_str} 第 {race_no} 場..."):
             try:
                 result, pool = run_prediction(date_str, race_no)
