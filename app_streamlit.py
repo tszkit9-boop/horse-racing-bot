@@ -1306,10 +1306,22 @@ def run_prediction(date_str, race_no):
     if xgb_model is None:
         return None, None
 
-    try:
-        df = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')   
-        # ===== 將中文欄位名轉為英文 =====
-        df.rename(columns={
+    # ===== 讀取 racecard_uploaded.csv =====
+    import os
+    df = None
+    if os.path.exists("racecard_uploaded.csv"):
+        try:
+            df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
+            st.success("✅ 使用排位表：racecard_uploaded.csv")
+        except Exception as e:
+            st.error(f"讀取 racecard_uploaded.csv 失敗：{e}")
+            return None, None
+    else:
+        st.error("❌ 找不到 racecard_uploaded.csv，請確認檔案已上傳")
+        return None, None
+
+    # ===== 將中文欄位名轉為英文 =====
+    df.rename(columns={
         '馬名': 'horse_name',
         '檔位': 'draw',
         '場次': 'race_no',
@@ -1320,10 +1332,8 @@ def run_prediction(date_str, race_no):
         '馬號': 'horse_id',
         '賠率': 'win_odds'
     }, inplace=True)
-    except:
-        st.error("讀取排位表失敗")
-        return None, None
 
+    # 以下嘅 code 保持不變（由 df = standardize_columns_safe(df) 開始）
     df = standardize_columns_safe(df)
     df = df.loc[:, ~df.columns.duplicated(keep='first')]
     df = ensure_series(df)
