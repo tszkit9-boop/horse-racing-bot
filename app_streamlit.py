@@ -1302,16 +1302,14 @@ def generate_pool_recommendations(df, top_n=6):
     return rec
 
 def run_prediction(date_str, race_no):
-    # ===== 直接從檔案載入排位表（唔靠 session_state） =====
+    # ===== 直接從檔案載入排位表 =====
     import os
     df = None
 
-    # 方法1：檢查 session_state 有冇
     if 'racecard_df' in st.session_state and st.session_state['racecard_df'] is not None:
         df = st.session_state['racecard_df']
         st.info("✅ 從 session_state 載入排位表")
 
-    # 方法2：如果 session_state 冇，直接讀檔案
     if df is None:
         if os.path.exists("racecard_uploaded.csv"):
             try:
@@ -1343,7 +1341,6 @@ def run_prediction(date_str, race_no):
     if '馬號' in df.columns:
         df.rename(columns=column_mapping, inplace=True)
 
-    # 額外：如果預測邏輯需要 horse_id
     if 'horse_no' in df.columns and 'horse_id' not in df.columns:
         df['horse_id'] = df['horse_no']
 
@@ -1356,7 +1353,7 @@ def run_prediction(date_str, race_no):
         st.error("無法解析日期")
         return None, "無法解析日期"
 
-    # ===== DEBUG：顯示處理後嘅數據 =====
+    # ===== DEBUG =====
     st.write("🔍 DEBUG 訊息：")
     st.write("1. 處理後欄位：", df.columns.tolist())
     st.write("2. 所有場次：", sorted(df['race_no'].unique()))
@@ -1364,7 +1361,6 @@ def run_prediction(date_str, race_no):
     st.write("4. 你選擇嘅日期：", date_str)
     st.write("5. 你選擇嘅場次：", race_no)
 
-    # 篩選數據
     filtered_df = df[(df['race_date'] == date_str) & (df['race_no'] == race_no)]
     st.write("6. 篩選後行數：", len(filtered_df))
 
@@ -1372,20 +1368,16 @@ def run_prediction(date_str, race_no):
         st.error("❌ 沒有找到匹配嘅數據，請檢查日期同場次")
         return None, "沒有數據"
 
-    # ===== 欄位名稱對應（支援中文欄位） =====
-     column_mapping = {
-    '馬號': 'horse_no',
-    '馬名': 'horse_name',
-    '檔位': 'draw',
-    '負磅': 'weight',
-    '騎師': 'jockey',
-    '練馬師': 'trainer',
-    '賠率': 'odds',
-    '場次': 'race_no',
-    '比賽日期': 'race_date',
-    # 加呢行，將 horse_no 同時對應到 horse_id（如果預測邏輯用 horse_id）
-    'horse_no': 'horse_id'   # <-- 新增呢行
-}
+    # ===== 繼續你原本嘅預測邏輯（請將你嘅 code 接喺下面） =====
+    # 注意：以下只係示範，你必須將你原本嘅預測邏輯放喺呢度
+    # 例如：
+    # model = load_model()
+    # result = model.predict(filtered_df)
+    # return result, "彩池推薦"
+
+    # 暫時回傳一個簡單結果，等你確認執行到呢度
+    st.success("✅ 排位表處理完成，請將你嘅預測邏輯接上")
+    return filtered_df, "測試訊息"
     if '馬號' in df.columns:
         df.rename(columns=column_mapping, inplace=True)
 
