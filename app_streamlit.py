@@ -3575,6 +3575,9 @@ def admin_system_settings():
         else:
             st.error("❌ 儲存失敗，請檢查檔案權限。")
 
+# ============================================================
+# 後台管理主頁面
+# ============================================================
 def admin_page():
     if 'admin_authenticated' not in st.session_state:
         st.session_state.admin_authenticated = False
@@ -3653,6 +3656,9 @@ def admin_page():
         with tabs[i]:
             tab_functions[name]()
 
+# ============================================================
+# 主程式入口
+# ============================================================
 def main():
     if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
@@ -3962,5 +3968,8 @@ def main():
     with col_f3:
         st.caption("💬 Telegram：@bryhjdjbrbxibvrjskofndhiebdpaq")
 
+# ============================================================
+# 程式執行點
+# ============================================================
 if __name__ == '__main__':
-    main()
+    main()=
