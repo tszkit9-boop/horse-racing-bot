@@ -3356,7 +3356,7 @@ def admin_content():
             st.info("暫無歷史記錄")
     
     st.write("---")
- st.write("上傳排位表")
+st.write("上傳排位表")
 uploaded_file = st.file_uploader("選擇 CSV 排位表", type=["csv"])
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
