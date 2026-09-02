@@ -2998,7 +2998,7 @@ def admin_auto_maintenance():
             expired = []
             for uid, u in users.items():
                 if u.get('group') == 'VIP' and u.get('expiry_date'):
-                    try:
+                   try:
                         exp = pd.to_datetime(u['expiry_date'])
                         if exp < today:
                             u['group'] = 'free'
@@ -3898,7 +3898,7 @@ with col_race:
     else:
         max_race = 11
     race_no = st.selectbox("🏇 選擇場次", list(range(1, max_race + 1)), index=0, key="predict_race_mid")
-        predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
+    predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
 
     # ============================================================
     # 🎮 虛擬投注（賽事預測 同 付款功能 中間）
