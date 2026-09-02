@@ -662,7 +662,7 @@ def show_paywall():
         st.info("📩 提交後請 Telegram 通知管理員（可加快審核）")
         st.markdown("💬 Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
         if 'payment_detail' in st.session_state:
-            st.write(st.session_state['payment_detail'])
+            st.session_state['payment_detail'])
         if st.button("返回主頁"):
             for key in ['payment_just_submitted', 'payment_detail']:
                 if key in st.session_state:
@@ -3355,13 +3355,7 @@ def admin_content():
         else:
             st.info("暫無歷史記錄")
     
-    st.write("---")
-    st.write("上傳排位表")
-    uploaded = st.file_uploader("選擇 CSV 排位表", type=['csv'], key="upload_racecard")
-    if uploaded:
-        with open('HKCJ_FULL_YEAR_DATA.csv', 'wb') as f:
-            f.write(uploaded.getbuffer())
-        st.success("✅ 排位表已更新")
+        st.write("上傳排位表")
 
 def admin_automation():
     st.subheader("🤖 自動化工具")
@@ -3882,7 +3876,7 @@ def main():
             else:
                 for course in day_races['race_course'].unique():
                     races = day_races[day_races['race_course'] == course]['race_no'].unique()
-                    st.write(f"🏟️ **{course}**：第 {', '.join(map(str, sorted(races)))} 場")
+                    f"🏟️ **{course}**：第 {', '.join(map(str, sorted(races)))} 場")
         else:
             st.info("今日沒有賽事")
     except:
