@@ -1302,9 +1302,31 @@ def generate_pool_recommendations(df, top_n=6):
     return rec
 
 def run_prediction(date_str, race_no):
-    # 從 session_state 拎排位表
-    df = st.session_state.get('racecard_df')
+    # ===== 直接從檔案載入排位表（唔靠 session_state） =====
+    import os
+    df = None
+    
+    # 方法1：檢查 session_state 有冇
+    if 'racecard_df' in st.session_state and st.session_state['racecard_df'] is not None:
+        df = st.session_state['racecard_df']
+        st.info("✅ 從 session_state 載入排位表")
+    
+    # 方法2：如果 session_state 冇，直接讀檔案
     if df is None:
+        if os.path.exists("racecard_uploaded.csv"):
+            try:
+                df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
+                st.success("✅ 從檔案載入排位表 (racecard_uploaded.csv)")
+            except Exception as e:
+                st.error(f"讀取檔案失敗：{e}")
+        else:
+            st.error("❌ 找不到排位表檔案，請確認 racecard_uploaded.csv 已上傳")
+            return None, "找不到排位表"
+    
+    if df is None or df.empty:
+        st.error("❌ 排位表為空")
+        return None, "排位表為空"
+        
         st.warning("請先上傳排位表")
         return None, "請先上傳排位表"
 
