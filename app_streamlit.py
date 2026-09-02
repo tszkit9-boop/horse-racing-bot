@@ -1306,18 +1306,16 @@ def run_prediction(date_str, race_no):
     if xgb_model is None:
         return None, None
 
-    # ===== 讀取 racecard_uploaded.csv =====
+    # ===== 直接讀取 racecard_uploaded.csv =====
     import os
-    df = None
-    if os.path.exists("racecard_uploaded.csv"):
-        try:
-            df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
-            st.success("✅ 使用排位表：racecard_uploaded.csv")
-        except Exception as e:
-            st.error(f"讀取 racecard_uploaded.csv 失敗：{e}")
-            return None, None
-    else:
+    if not os.path.exists("racecard_uploaded.csv"):
         st.error("❌ 找不到 racecard_uploaded.csv，請確認檔案已上傳")
+        return None, None
+
+    try:
+        df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
+    except Exception as e:
+        st.error(f"讀取 racecard_uploaded.csv 失敗：{e}")
         return None, None
 
     # ===== 將中文欄位名轉為英文 =====
@@ -1333,7 +1331,7 @@ def run_prediction(date_str, race_no):
         '賠率': 'win_odds'
     }, inplace=True)
 
-    # 以下嘅 code 保持不變（由 df = standardize_columns_safe(df) 開始）
+    # ===== 以下係原有嘅特徵工程同預測邏輯（保持不變） =====
     df = standardize_columns_safe(df)
     df = df.loc[:, ~df.columns.duplicated(keep='first')]
     df = ensure_series(df)
@@ -1418,11 +1416,11 @@ def run_prediction(date_str, race_no):
 
     prob_xgb = xgb_model.predict_proba(X)[:, 1]
     prob_cat = cat_model.predict_proba(X)[:, 1]
-    
+
     xgb_w = CONFIG.get('xgb_weight', 25)
     cat_w = CONFIG.get('cat_weight', 1)
     prob_final = (prob_xgb * xgb_w + prob_cat * cat_w) / (xgb_w + cat_w)
-    
+
     rank_score = rank_model.predict(X)
 
     result = race_sel[['中文名', 'draw', 'win_odds']].copy()
