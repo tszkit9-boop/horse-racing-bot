@@ -3656,4 +3656,323 @@ def admin_page():
 # ============================================================
 # 主頁面（已加入賽事日曆、倒數計時、管理員贈送幣）
 # ============================================================
-   def main():
+def main():
+    if 'logged_in' not in st.session_state:
+        st.session_state.logged_in = False
+    if 'username' not in st.session_state:
+        st.session_state.username = None
+    if 'role' not in st.session_state:
+        st.session_state.role = 'free'
+    if 'usage_count' not in st.session_state:
+        st.session_state.usage_count = 0
+    if 'show_admin' not in st.session_state:
+        st.session_state.show_admin = False
+    if 'show_history' not in st.session_state:
+        st.session_state.show_history = False
+    if 'admin_authenticated' not in st.session_state:
+        st.session_state.admin_authenticated = False
+    if 'show_bet' not in st.session_state:
+        st.session_state.show_bet = False
+    if 'show_leaderboard' not in st.session_state:
+        st.session_state.show_leaderboard = False
+
+    content = load_json(CONTENT_FILE)
+    announcements = content.get('announcements', [])
+    today = datetime.now().date()
+    active_anns = []
+    for ann in announcements:
+        if ann.get('status') != 'active':
+            continue
+        start = datetime.strptime(ann['start_date'], '%Y-%m-%d').date()
+        if start > today:
+            continue
+        end = ann.get('end_date')
+        if end:
+            end_date = datetime.strptime(end, '%Y-%m-%d').date()
+            if end_date < today:
+                continue
+        target = ann.get('target', '全部用戶')
+        if target != '全部用戶':
+            if not st.session_state.get('logged_in', False):
+                continue
+            user = load_users().get(st.session_state.username, {})
+            group = user.get('group', 'free')
+            if target == '付費用戶' and group not in ['paid', 'VIP', 'super_admin']:
+                continue
+            if target == 'VIP' and group not in ['VIP', 'super_admin']:
+                continue
+            if target == '免費用戶' and group != 'free':
+                continue
+        active_anns.append(ann)
+
+    for ann in active_anns:
+        ann_type = ann.get('type', '一般')
+        if ann_type == '緊急':
+            st.error(f"🚨 {ann['title']}：{ann['content']}")
+        elif ann_type == '重要':
+            st.warning(f"⚠️ {ann['title']}：{ann['content']}")
+        else:
+            st.info(f"💡 {ann['title']}：{ann['content']}")
+
+    if CONFIG["enable_registration"] and not st.session_state.logged_in:
+        login_page()
+        return
+
+    if st.session_state.show_admin and CONFIG["enable_admin"]:
+        admin_page()
+        return
+
+    # ====== 標題 ======
+    col1, col2, col3 = st.columns([5, 1, 1])
+    with col1:
+        st.title("🏇 賽馬預測系統")
+        st.markdown("AI 驅動・即時預測・彩池推薦")
+        st.caption(f"{datetime.now().strftime('%Y年%m月%d日')} · 36個特徵 · 三模型融合 · 六種彩池")
+    with col2:
+        if CONFIG["enable_admin"] and st.session_state.get("role") == "super_admin":
+            if st.button("🔐 後台", use_container_width=True, key="go_to_admin"):
+                st.session_state.show_admin = True
+                st.session_state.admin_authenticated = False
+                st.rerun()
+    with col3:
+        if st.session_state.get('logged_in', False):
+            if st.button("🚪 登出", use_container_width=True, key="logout_main"):
+                for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history']:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.rerun()
+
+    # ====== ⭐ 賽事日曆 + 倒數計時 ======
+    st.markdown("---")
+    display_race_calendar()
+    st.markdown("---")
+
+    # ====== 今日免費重心推介 ======
+    if CONFIG.get("enable_daily_free_tip", True):
+        try:
+            df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
+            df_sched = standardize_columns_safe(df_sched)
+            if 'race_date' in df_sched.columns:
+                df_sched['race_date'] = pd.to_datetime(df_sched['race_date'], errors='coerce')
+                df_sched = df_sched.dropna(subset=['race_date'])
+                today_dt = datetime.now().date()
+                day_races = df_sched[df_sched['race_date'].dt.date == today_dt]
+                if not day_races.empty:
+                    first_race = day_races.sort_values('race_no').iloc[0]
+                    race_date_str = first_race['race_date'].strftime('%Y-%m-%d')
+                    race_no = int(first_race['race_no'])
+                    result, pool = run_prediction(race_date_str, race_no)
+                    if result is not None and not result.empty:
+                        top1 = result.iloc[0]
+                        st.markdown("---")
+                        st.markdown("### 🌟 今日免費重心推介")
+                        st.markdown(f"""
+                        <div style="background: linear-gradient(135deg, #fff8e1, #ffecb3);border-radius:16px;padding:15px 20px;border:2px solid #ffb300;box-shadow:0 2px 8px rgba(255,179,0,0.2);">
+                            <div style="display:flex;align-items:center;gap:15px;flex-wrap:wrap;">
+                                <span style="font-size:28px;">🏇</span>
+                                <div>
+                                    <span style="font-size:18px;font-weight:bold;">{top1['馬匹名稱']}</span>
+                                    <span style="font-size:14px;color:#555;">（第 {race_no} 場）</span><br>
+                                    <span style="font-size:14px;color:#888;">勝率 <b style="color:#2e7d32;">{top1['預測勝率']:.2%}</b>　檔位 {top1['檔位']}</span>
+                                </div>
+                                <div style="margin-left:auto;">
+                                    <span style="background:#ff6f00;color:white;padding:4px 14px;border-radius:20px;font-size:12px;">🎯 每日重心</span>
+                                </div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        st.markdown("---")
+        except:
+            pass
+
+    if CONFIG["enable_registration"] and st.session_state.logged_in:
+        show_user_dashboard(st.session_state.username)
+    elif not CONFIG["enable_registration"]:
+        st.info("🔓 目前為公開模式，任何人皆可使用")
+
+    st.markdown("---")
+    st.subheader("🧠 模型自我學習 & 表現分析")
+    acc = load_accuracy()
+    records = acc.get('records', [])
+    if records:
+        total = len([r for r in records if r.get('is_hit') is not None])
+        hit = sum(1 for r in records if r.get('is_hit') is True)
+        hit_rate = hit/total if total>0 else 0
+        roi = (hit * 400 - total * 100) / (total * 100) if total>0 else 0
+        config = load_system_config()
+        xgb_w = config.get('xgb_weight', 25)
+        cat_w = config.get('cat_weight', 1)
+        
+        col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+        col_stat1.metric("📊 總預測", total)
+        col_stat2.metric("🎯 命中次數", hit)
+        col_stat3.metric("📈 命中率", f"{hit_rate:.2%}")
+        col_stat4.metric("💰 ROI (模擬)", f"{roi:.2%}")
+        
+        if len(records) >= 10:
+            recent = records[-10:]
+            hit_seq = [1 if r.get('is_hit') is True else 0 for r in recent]
+            st.caption("📊 最近 10 場命中情況： " + "".join(["✅" if h else "❌" for h in hit_seq]))
+        
+        st.caption(f"⚙️ 當前模型融合權重：XGBoost **{xgb_w}** : CatBoost **{cat_w}**")
+        
+        with st.expander("📊 特徵重要性分析（CatBoost）"):
+            try:
+                cat_model = CatBoostClassifier()
+                cat_model.load_model('hk_catboost_model.cbm')
+                importances = cat_model.get_feature_importance()
+                feature_names = EXPECTED_FEATURES
+                if len(importances) == len(feature_names):
+                    df_imp = pd.DataFrame({
+                        '特徵': feature_names,
+                        '重要性': importances
+                    }).sort_values('重要性', ascending=False).head(15)
+                    fig = px.bar(df_imp, x='重要性', y='特徵', orientation='h', 
+                                title='Top 15 特徵重要性',
+                                color='重要性', color_continuous_scale='Blues')
+                    fig.update_layout(height=400)
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("特徵數量不匹配")
+            except Exception as e:
+                st.info(f"無法載入 CatBoost 模型：{e}")
+        
+        with st.expander("📈 命中率趨勢圖"):
+            if records:
+                df_records = pd.DataFrame(records)
+                if 'date' in df_records.columns and 'is_hit' in df_records.columns:
+                    df_records['date'] = pd.to_datetime(df_records['date'])
+                    df_records = df_records.dropna(subset=['date', 'is_hit'])
+                    if not df_records.empty:
+                        daily = df_records.groupby(df_records['date'].dt.date).agg(
+                            total=('is_hit', 'count'),
+                            hit=('is_hit', lambda x: (x==True).sum())
+                        ).reset_index()
+                        daily['hit_rate'] = daily['hit'] / daily['total']
+                        fig2 = px.line(daily, x='date', y='hit_rate', 
+                                       title='每日命中率趨勢',
+                                       markers=True)
+                        fig2.update_layout(yaxis_tickformat='.0%')
+                        st.plotly_chart(fig2, use_container_width=True)
+                    else:
+                        st.info("未有足夠數據")
+                else:
+                    st.info("未有日期或命中數據")
+            else:
+                st.info("暫時未有預測記錄")
+    else:
+        st.info("暫時未有預測記錄，未能進行自我學習分析。請先執行預測。")
+
+    st.markdown("---")
+    st.subheader("🎯 賽事預測控制")
+    col_date, col_race, col_btn = st.columns([2, 2, 1])
+    with col_date:
+        date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="predict_date_mid")
+    with col_race:
+        race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race_mid")
+    with col_btn:
+        predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
+
+    # ============================================================
+    # 🎮 虛擬投注（賽事預測 同 付款功能 中間）
+    # ============================================================
+    if st.session_state.get('logged_in', False):
+        st.markdown("---")
+        st.subheader("🎮 虛擬投注")
+        st.caption("用虛擬幣體驗投注樂趣，唔使真錢！")
+        
+        col_v1, col_v2, col_v3 = st.columns([1, 1, 2])
+        with col_v1:
+            if st.button("💰 投注模擬器", use_container_width=True, key="btn_bet"):
+                st.session_state.show_bet = not st.session_state.get('show_bet', False)
+                st.session_state.show_leaderboard = False
+        with col_v2:
+            if st.button("🏆 排行榜", use_container_width=True, key="btn_leaderboard"):
+                st.session_state.show_leaderboard = not st.session_state.get('show_leaderboard', False)
+                st.session_state.show_bet = False
+        with col_v3:
+            users = load_users()
+            user_data = users.get(st.session_state.username, {})
+            balance = user_data.get('virtual_balance', 0)
+            st.info(f"💎 你嘅虛擬幣結餘：**${balance:,.0f}**")
+        
+        if st.session_state.get('show_bet', False):
+            show_betting_interface(st.session_state.username)
+        
+        if st.session_state.get('show_leaderboard', False):
+            show_leaderboard()
+
+        # ⭐ 管理員贈送虛擬幣（只有超級管理員可見）
+        if st.session_state.get('role') == 'super_admin':
+            st.markdown("---")
+            st.subheader("🎁 管理員贈送虛擬幣")
+            with st.form(key="admin_gift_form"):
+                col_g1, col_g2, col_g3 = st.columns([2, 1, 1])
+                with col_g1:
+                    target_user = st.selectbox("選擇用戶", list(load_users().keys()), key="gift_user")
+                with col_g2:
+                    gift_amount = st.number_input("金額", min_value=1, value=100, step=50, key="gift_amount")
+                with col_g3:
+                    submit_gift = st.form_submit_button("🎁 贈送")
+                if submit_gift:
+                    if target_user == st.session_state.username:
+                        st.error("❌ 唔可以送俾自己")
+                    else:
+                        users = load_users()
+                        if target_user in users:
+                            users[target_user]['virtual_balance'] = users[target_user].get('virtual_balance', 0) + gift_amount
+                            save_users(users)
+                            log_admin_action(st.session_state.username, f"贈送 ${gift_amount} 虛擬幣給 {target_user}")
+                            st.success(f"✅ 已贈送 ${gift_amount} 虛擬幣給 {target_user}")
+                            st.rerun()
+                        else:
+                            st.error("❌ 用戶不存在")
+        
+        st.markdown("---")
+
+    # ====== 付款功能 ======
+    st.markdown("---")
+    st.subheader("💳 付款功能")
+    
+    if st.session_state.get('logged_in'):
+        show_paywall()
+    else:
+        st.info("請先登入以使用付款功能")
+        if st.button("前往登入"):
+            st.session_state.page_mode = "login"
+            st.rerun()
+
+    # ====== 今日賽程 ======
+    st.subheader("📅 今日賽程")
+    try:
+        df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
+        df_sched = standardize_columns_safe(df_sched)
+        if 'race_date' in df_sched.columns:
+            df_sched['race_date'] = pd.to_datetime(df_sched['race_date'], errors='coerce')
+            df_sched = df_sched.dropna(subset=['race_date'])
+            today = datetime.now().date()
+            day_races = df_sched[df_sched['race_date'].dt.date == today]
+            if day_races.empty:
+                st.info("今日沒有賽事")
+            else:
+                for course in day_races['race_course'].unique():
+                    races = day_races[day_races['race_course'] == course]['race_no'].unique()
+                    st.write(f"🏟️ **{course}**：第 {', '.join(map(str, sorted(races)))} 場")
+        else:
+            st.info("今日沒有賽事")
+    except:
+        st.info("今日沒有賽事")
+
+    st.divider()
+    st.warning("⚠️ **免責聲明**：本系統提供之預測僅供參考，不構成投注建議。賽馬活動涉及風險，用戶應量力而為，本系統不對任何投注損失負責。用戶必須年滿18歲。使用本服務即表示同意以上條款。")
+    
+    col_f1, col_f2, col_f3 = st.columns(3)
+    with col_f1:
+        st.caption(f"🕐 最後更新：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    with col_f2:
+        st.caption("🔐 數據來源：HKJC | 系統版本：v14.0-用戶體驗版")
+    with col_f3:
+        st.caption("💬 Telegram：@bryhjdjbrbxibvrjskofndhiebdpaq")
+
+if __name__ == '__main__':
+    main()
