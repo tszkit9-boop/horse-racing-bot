@@ -5003,9 +5003,6 @@ def run_prediction(date_str, race_no):
     import pandas as pd
     import numpy as np
 
-    # ===== DEBUG =====
-    st.write("🔥 DEBUG: run_prediction 被呼叫，日期：", date_str, "場次：", race_no)
-
     # ===== 檢查檔案 =====
     if not os.path.exists("racecard_uploaded.csv"):
         st.error("❌ 找不到 racecard_uploaded.csv，請上傳排位表")
