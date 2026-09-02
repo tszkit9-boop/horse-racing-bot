@@ -1306,7 +1306,7 @@ def run_prediction(date_str, race_no):
     import pandas as pd
     import numpy as np
 
-    # ===== DEBUG 確認函數被執行 =====
+    # ===== DEBUG =====
     st.write("🔥 DEBUG: run_prediction 被呼叫，日期：", date_str, "場次：", race_no)
 
     # ===== 檢查檔案 =====
@@ -1322,7 +1322,7 @@ def run_prediction(date_str, race_no):
         st.error(f"❌ 讀取失敗：{e}")
         return None, None
 
-    # ===== 欄位映射（中文 → 英文） =====
+    # ===== 欄位映射 =====
     rename_map = {
         '馬名': 'horse_name',
         '檔位': 'draw',
@@ -1350,12 +1350,26 @@ def run_prediction(date_str, race_no):
     df = df.dropna(subset=['race_date'])
     df['race_date_str'] = df['race_date'].dt.strftime('%Y-%m-%d')
 
-    # ===== 篩選指定日期及場次 =====
-    filtered = df[(df['race_date_str'] == date_str) & (df['race_no'] == race_no)]
-    if filtered.empty:
-        st.error(f"❌ 沒有找到 {date_str} 第 {race_no} 場嘅數據")
-        st.info(f"📋 可用日期：{sorted(df['race_date_str'].unique())}")
-        return None, None
+    # ===== 自動糾錯：若輸入日期無數據，改用最新日期 =====
+    available_dates = sorted(df['race_date_str'].unique())
+    if date_str not in available_dates:
+        st.warning(f"⚠️ 輸入日期 {date_str} 無數據，自動改用最新日期 {available_dates[-1]}")
+        date_str = available_dates[-1]
+
+    # ===== 篩選日期 =====
+    df_date = df[df['race_date_str'] == date_str]
+
+    # ===== 自動糾錯：若該場次無數據，改用該日期嘅第一場 =====
+    if race_no not in df_date['race_no'].unique():
+        available_races = sorted(df_date['race_no'].unique())
+        if available_races:
+            st.info(f"🔄 場次 {race_no} 無數據，自動改用第 {available_races[0]} 場")
+            race_no = available_races[0]
+        else:
+            st.error(f"❌ 日期 {date_str} 沒有任何場次數據")
+            return None, None
+
+    filtered = df_date[df_date['race_no'] == race_no]
 
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
