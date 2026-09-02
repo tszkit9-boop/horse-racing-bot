@@ -6,7 +6,9 @@ venv/
 
 # 敏感數據同密碼（最緊要！）
 .env
+# 忽略其他 CSV，但保留 racecard_*.csv
 *.csv
+!racecard_*.csv
 *.xlsx
 payment_proofs/
 
