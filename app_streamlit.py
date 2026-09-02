@@ -3659,8 +3659,6 @@ def admin_page():
 # ============================================================
 # 主程式入口
 # ============================================================
-def main():
-    if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
     if 'username' not in st.session_state:
         st.session_state.username = None
