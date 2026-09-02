@@ -2,9 +2,7 @@ name: 自動更新排位表（含賠率）
 
 on:
   schedule:
-    # 香港時間 星期三 17:00 -> UTC 09:00
     - cron: '0 9 * * 3'
-    # 香港時間 星期六、日 11:00 -> UTC 03:00
     - cron: '0 3 * * 6,0'
   workflow_dispatch:
 
@@ -37,12 +35,12 @@ jobs:
 
       - name: 執行爬蟲（自動使用今日日期）
         run: |
-          python scrape_racecard_selenium.py
+          python scrape_racecard_selenium.py   # ← 正確檔案名
 
       - name: 提交變更
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add racecard_*.csv
+          git add racecard_*.csv              # ← 正確 pattern
           git commit -m "自動更新排位表 $(date +'%Y-%m-%d %H:%M')" || echo "冇變更"
           git push
