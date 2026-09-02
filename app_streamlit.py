@@ -1300,7 +1300,7 @@ def generate_pool_recommendations(df, top_n=6):
     for _, i, j, k, l in quartet[:3]:
         rec += f"  {horse_names[i]} > {horse_names[j]} > {horse_names[k]} > {horse_names[l]}\n"
     return rec
-
+st.write("🔥 DEBUG: run_prediction 被執行了")
 def run_prediction(date_str, race_no):
     xgb_model, cat_model, rank_model = load_models()
     if xgb_model is None:
