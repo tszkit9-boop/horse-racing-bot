@@ -3680,7 +3680,7 @@ def main():
         st.session_state.show_leaderboard = False
 
     # ============================================================
-    # 載入公告（先 load 定，後面會顯示）
+    # 載入公告
     # ============================================================
     content = load_json(CONTENT_FILE)
     announcements = content.get('announcements', [])
