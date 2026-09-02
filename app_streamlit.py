@@ -1373,7 +1373,7 @@ def run_prediction(date_str, race_no):
         return None, "沒有數據"
 
     # ===== 欄位名稱對應（支援中文欄位） =====
-   column_mapping = {
+     column_mapping = {
     '馬號': 'horse_no',
     '馬名': 'horse_name',
     '檔位': 'draw',
