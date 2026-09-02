@@ -3904,6 +3904,20 @@ with col_race:
 with col_btn:
     predict_btn = st.button("執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
 
+if predict_btn:
+    with st.spinner("⏳ 正在預測..."):
+        try:
+            result, pool = run_prediction(date.strftime("%Y-%m-%d"), race_no)
+            if result is not None and not result.empty:
+                st.success("✅ 預測完成！")
+                st.dataframe(result, use_container_width=True)
+                if pool:
+                    st.info(pool)
+            else:
+                st.error("❌ 預測失敗，請檢查排位表")
+        except Exception as e:
+            st.error(f"❌ 錯誤：{e}")
+
     # ============================================================
     # 🎮 虛擬投注（賽事預測 同 付款功能 中間）
     # ============================================================
