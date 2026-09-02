@@ -3907,13 +3907,36 @@ def main():
 
     st.markdown("---")
     st.subheader("🎯 賽事預測控制")
-    col_date, col_race, col_btn = st.columns([2, 2, 1])
-    with col_date:
-        date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="predict_date_mid")
-    with col_race:
-        race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race_mid")
-    with col_btn:
-        predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
+st.subheader("赛事预测控制")
+
+col_date, col_race, col_btn = st.columns([2, 2, 1])
+
+with col_date:
+    date = st.date_input("选择日期", value=pd.to_datetime("2026-09-06"), key="predict_date_mid")
+
+with col_race:
+    race_no = st.selectbox("选择场次", list(range(1, 12)), index=0, key="predict_race_mid")
+
+with col_btn:
+    predict_btn = st.button("执行预测", type="primary", use_container_width=True, key="predict_btn_mid")
+
+if predict_btn:
+    date_str = date.strftime("%Y-%m-%d")
+    st.write("🔥 DEBUG: 按鈕被㩒咗，日期：", date_str, "場次：", race_no)
+    with st.spinner(f"⏳ 正在預測 {date_str} 第 {race_no} 場..."):
+        try:
+            result, pool = run_prediction(date_str, race_no)
+            if result is not None and not result.empty:
+                st.success(f"✅ {date_str} 第 {race_no} 場預測完成！")
+                if pool:
+                    st.info(f"🎯 {pool}")
+                st.dataframe(result, use_container_width=True)
+            else:
+                st.error("❌ 未能獲取預測結果，請檢查排位表")
+        except Exception as e:
+            st.error(f"❌ 預測過程發生錯誤：{e}")
+            import traceback
+            st.code(traceback.format_exc())
 
     # ============================================================
     # 🎮 虛擬投注（賽事預測 同 付款功能 中間）
