@@ -1544,20 +1544,19 @@ def show_betting_interface(username):
     if not username:
         st.info("請先登入")
         return
-    
+
     users = load_users()
     user = users.get(username, {})
     balance = user.get('virtual_balance', 0)
-    
+
     st.subheader("💰 投注模擬器")
     st.caption("用虛擬幣體驗投注樂趣，唔使真錢！")
-    
+
     # 顯示結餘
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("💎 虛擬幣結餘", f"${balance:,.0f}")
     with col2:
-        # 每日領取
         today = datetime.now().strftime('%Y-%m-%d')
         last_claim = user.get('last_claim_date', '')
         if last_claim != today and CONFIG.get("virtual_coin_enabled", True):
@@ -1572,45 +1571,48 @@ def show_betting_interface(username):
             st.success("✅ 今日已領取")
     with col3:
         st.caption(f"📅 每日派發：${CONFIG.get('daily_virtual_coin', 1000)}")
-    
+
     st.divider()
-    
+
     # 投注區
     st.subheader("📝 投注")
-    
-    # 選擇場次
+
     col_date, col_race = st.columns(2)
     with col_date:
         bet_date = st.date_input("📅 選擇日期", value=pd.to_datetime("2026-09-06"), key="bet_date")
     with col_race:
         bet_race = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="bet_race")
-    
+
     if st.button("🔍 睇預測 & 投注", key="show_bet_options"):
         date_str = bet_date.strftime('%Y-%m-%d')
         with st.spinner("載入預測..."):
             result, pool = run_prediction(date_str, bet_race)
             if result is not None and not result.empty:
                 st.success(f"✅ {date_str} 第 {bet_race} 場")
-                
-                # 顯示預測結果
-                display_df = result[['馬匹名稱', '檔位', '預測勝率', '值博指數']].copy()
+
+                # 顯示預測結果（使用正確嘅欄位名）
+                display_df = result[['horse_name', 'draw', '預測勝率', '值博指數', '信心指數']].copy()
+                display_df.rename(columns={
+                    'horse_name': '馬名',
+                    'draw': '檔位'
+                }, inplace=True)
                 display_df['預測勝率'] = display_df['預測勝率'].apply(lambda x: f"{x:.2%}")
                 display_df['值博指數'] = display_df['值博指數'].apply(lambda x: f"{x:.4f}")
                 st.dataframe(display_df, use_container_width=True)
-                
+
                 # 投注表單
                 st.subheader("💸 落注")
                 with st.form(key="place_bet_form"):
-                    horse_options = result['馬匹名稱'].tolist()
+                    horse_options = result['horse_name'].tolist()
                     selected_horse = st.selectbox("揀馬", horse_options, key="bet_horse")
                     bet_amount = st.number_input("投注金額", min_value=1, max_value=int(balance), value=min(100, int(balance)), step=10, key="bet_amount")
-                    
+
                     col_btn1, col_btn2 = st.columns(2)
                     with col_btn1:
                         submit_bet = st.form_submit_button("✅ 確認投注", type="primary")
                     with col_btn2:
                         st.caption(f"餘額：${balance:,.0f}")
-                    
+
                     if submit_bet:
                         if bet_amount > balance:
                             st.error(f"❌ 餘額不足（餘額：${balance:,.0f}）")
@@ -1623,24 +1625,22 @@ def show_betting_interface(username):
                                 st.error(f"❌ {msg}")
             else:
                 st.warning("無法載入預測數據")
-    
+
     st.divider()
-    
+
     # 投注記錄
     st.subheader("📋 我的投注記錄")
     bets = user.get('bets', [])
     if bets:
         df_bets = pd.DataFrame(bets[-20:][::-1])
-        # 顯示精簡版
         display_cols = ['date', 'race', 'horse', 'amount', 'result', 'payout']
         available_cols = [col for col in display_cols if col in df_bets.columns]
         st.dataframe(df_bets[available_cols], use_container_width=True)
-        
-        # 統計
+
         total_bets = len(bets)
         settled = [b for b in bets if b.get('settled', False)]
         wins = [b for b in settled if b.get('result') == 'win']
-        
+
         col_s1, col_s2, col_s3, col_s4 = st.columns(4)
         col_s1.metric("📊 總投注", total_bets)
         col_s2.metric("✅ 已結算", len(settled))
