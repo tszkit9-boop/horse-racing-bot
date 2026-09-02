@@ -2,7 +2,9 @@ name: 自動更新排位表（含賠率）
 
 on:
   schedule:
+    # 香港時間 星期三 17:00 -> UTC 09:00
     - cron: '0 9 * * 3'
+    # 香港時間 星期六、日 11:00 -> UTC 03:00
     - cron: '0 3 * * 6,0'
   workflow_dispatch:
 
@@ -37,7 +39,7 @@ jobs:
         run: |
           TODAY=$(date +'%Y-%m-%d')
           echo "今日日期: $TODAY"
-          python scrape_racecard_selenium.py --date $TODAY   # ← 已修正串法，並傳入日期
+          python scrape_racecard_selenium.py --date $TODAY
 
       - name: 提交變更
         run: |
