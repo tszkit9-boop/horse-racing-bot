@@ -1323,13 +1323,7 @@ def run_prediction(date_str, race_no):
     }
     if '馬號' in df.columns:
         df.rename(columns=column_mapping, inplace=True)
-
-    try:
-        df = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
-    except:
-        st.error("讀取排位表失敗")
-        return None, None
-
+        
     df = standardize_columns_safe(df)
     df = df.loc[:, ~df.columns.duplicated(keep='first')]
     df = ensure_series(df)
