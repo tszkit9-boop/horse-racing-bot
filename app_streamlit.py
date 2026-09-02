@@ -1307,7 +1307,19 @@ def run_prediction(date_str, race_no):
         return None, None
 
     try:
-        df = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
+        df = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')   
+        # ===== 將中文欄位名轉為英文 =====
+        df.rename(columns={
+        '馬名': 'horse_name',
+        '檔位': 'draw',
+        '場次': 'race_no',
+        '比賽日期': 'race_date',
+        '騎師': 'jockey',
+        '練馬師': 'trainer',
+        '負磅': 'weight',
+        '馬號': 'horse_id',
+        '賠率': 'win_odds'
+    }, inplace=True)
     except:
         st.error("讀取排位表失敗")
         return None, None
