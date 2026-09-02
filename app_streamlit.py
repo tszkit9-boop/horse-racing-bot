@@ -3337,17 +3337,20 @@ def admin_content():
             st.warning("請填寫標題同內容")
     
     # === 上傳排位表（新加，只喺後台顯示） ===
-    st.write("---")
-    st.write("📤 上傳排位表")
-    uploaded_file = st.file_uploader("選擇 CSV 排位表", type=["csv"], key="racecard_uploader")
-    if uploaded_file is not None:
-        try:
-            df = pd.read_csv(uploaded_file)
-            st.session_state['racecard_df'] = df
-            df.to_csv("racecard_uploaded.csv", index=False, encoding='utf-8-sig')
-            st.success("✅ 排位表已更新並永久保存！")
-        except Exception as e:
-            st.error(f"上傳失敗：{e}")
+ st.write("---")
+ st.write("📤 上傳排位表")
+uploaded_file = st.file_uploader("選擇 CSV 排位表", type=["csv"], key="racecard_uploader")
+
+if uploaded_file is not None:
+    st.write("📄 已選擇檔案：" + uploaded_file.name)  # 顯示揀咗咩檔案
+    try:
+        df = pd.read_csv(uploaded_file)
+        st.write("✅ 成功讀取 CSV，共 " + str(len(df)) + " 行")  # 顯示讀取成功
+        st.session_state['racecard_df'] = df
+        df.to_csv("racecard_uploaded.csv", index=False, encoding='utf-8-sig')
+        st.success("✅ 排位表已更新並永久保存！")
+    except Exception as e:
+        st.error(f"❌ 上傳失敗：{e}")
             
 def admin_automation():
     st.subheader("🤖 自動化工具")
