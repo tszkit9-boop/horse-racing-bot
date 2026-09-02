@@ -1314,7 +1314,6 @@ def run_prediction(date_str, race_no):
     # ===== 讀取 CSV =====
     try:
         df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
-        st.success(f"✅ 成功讀取，共 {len(df)} 行")
     except Exception as e:
         st.error(f"❌ 讀取失敗：{e}")
         return None, None
@@ -1334,8 +1333,7 @@ def run_prediction(date_str, race_no):
     existing = [col for col in rename_map if col in df.columns]
     if existing:
         df.rename(columns={col: rename_map[col] for col in existing}, inplace=True)
-        st.info(f"🔄 已對應欄位：{', '.join(existing)}")
-    else:
+   else:
         st.warning("⚠️ 找不到可對應嘅中文欄位")
 
     # ===== 日期處理 =====
