@@ -3398,9 +3398,9 @@ def admin_content():
         else:
             st.info("暫無歷史記錄")
     
-    st.write("上傳排位表")
+st.write("上傳排位表")
     uploaded_file = st.file_uploader("選擇 CSV 排位表", type=["csv"])
-    if uploaded_file is not None:
+if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
     st.session_state['racecard_df'] = df
     df.to_csv("racecard_uploaded.csv", index=False, encoding='utf-8-sig')
