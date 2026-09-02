@@ -35,12 +35,14 @@ jobs:
 
       - name: 執行爬蟲（自動使用今日日期）
         run: |
-          python scrape_racecard_selenium.py   # ← 正確檔案名
+          TODAY=$(date +'%Y-%m-%d')
+          echo "今日日期: $TODAY"
+          python scrape_racecard_selenium.py --date $TODAY   # ← 已修正串法，並傳入日期
 
       - name: 提交變更
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add racecard_*.csv              # ← 正確 pattern
-          git commit -m "更新排位表 $(date +'%Y-%m-%d %H:%M')" || echo "冇變更"
+          git add racecard_*.csv
+          git commit -m "自動更新排位表 $(date +'%Y-%m-%d %H:%M')" || echo "冇變更"
           git push
