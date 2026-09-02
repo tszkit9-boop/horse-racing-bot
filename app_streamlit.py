@@ -3891,14 +3891,18 @@ def main():
         st.info("暫時未有預測記錄，未能進行自我學習分析。請先執行預測。")
 
     st.markdown("---")
-    st.subheader("🎯 賽事預測控制")
-    col_date, col_race, col_btn = st.columns([2, 2, 1])
-    with col_date:
-date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="predict_date_mid")
+st.subheader("🐎 賽事預測控制")
+
+col_date, col_race, col_btn = st.columns([2, 2, 1])
+
+with col_date:
+    date = st.date_input("選擇日期", value=pd.to_datetime("2026-09-06"), key="predict_date_mid")
+
 with col_race:
-race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race_mid")
+    race_no = st.selectbox("選擇場次", list(range(1, 12)), index=0, key="predict_race_mid")
+
 with col_btn:
-predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
+    predict_btn = st.button("執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
 
     # ============================================================
     # 🎮 虛擬投注（賽事預測 同 付款功能 中間）
