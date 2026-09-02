@@ -1373,7 +1373,7 @@ def run_prediction(date_str, race_no):
     top2 = result_df.iloc[1]['horse_name'] if len(result_df) > 1 else ""
     pool_text = f"🏆 獨贏：{top1}　位置：{top1}、{top2}"
 
-    return result_df, pool_textt
+    return result_df, pool_text
 
     df, _ = safe_parse_dates(df)
     if df is None:
