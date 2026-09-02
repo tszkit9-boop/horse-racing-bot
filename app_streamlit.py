@@ -1333,7 +1333,7 @@ def run_prediction(date_str, race_no):
     existing = [col for col in rename_map if col in df.columns]
     if existing:
         df.rename(columns={col: rename_map[col] for col in existing}, inplace=True)
-   else:
+    else:
         st.warning("⚠️ 找不到可對應嘅中文欄位")
 
     # ===== 日期處理 =====
@@ -5009,7 +5009,7 @@ def run_prediction(date_str, race_no):
     # ===== 讀取 CSV =====
     try:
         df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
-        st.success(f"✅ 成功讀取，共 {len(df)} 行")
+        # 已移除成功讀取訊息
     except Exception as e:
         st.error(f"❌ 讀取失敗：{e}")
         return None, None
@@ -5029,7 +5029,7 @@ def run_prediction(date_str, race_no):
     existing = [col for col in rename_map if col in df.columns]
     if existing:
         df.rename(columns={col: rename_map[col] for col in existing}, inplace=True)
-        st.info(f"🔄 已對應欄位：{', '.join(existing)}")
+        # 已移除欄位對應訊息
     else:
         st.warning("⚠️ 找不到可對應嘅中文欄位")
 
@@ -5065,7 +5065,7 @@ def run_prediction(date_str, race_no):
 
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
-    # ===== 產生預測結果（模擬數據，保證出結果） =====
+    # ===== 產生預測結果（模擬數據） =====
     np.random.seed(42)
     result_df = filtered[['horse_name', 'draw', 'weight', 'jockey', 'trainer']].copy()
     result_df['預測勝率'] = np.random.rand(len(result_df))
