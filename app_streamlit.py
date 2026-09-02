@@ -1302,23 +1302,27 @@ def generate_pool_recommendations(df, top_n=6):
     return rec
 
 def run_prediction(date_str, race_no):
+    st.write("🔥 DEBUG: run_prediction 被執行，日期：", date_str, "場次：", race_no)
+
     xgb_model, cat_model, rank_model = load_models()
     if xgb_model is None:
+        st.error("❌ 模型載入失敗")
         return None, None
 
-    # ===== 直接讀取 racecard_uploaded.csv =====
+    # ===== 讀取 racecard_uploaded.csv =====
     import os
     if not os.path.exists("racecard_uploaded.csv"):
-        st.error("❌ 找不到 racecard_uploaded.csv，請確認檔案已上傳")
+        st.error("❌ 找不到 racecard_uploaded.csv")
         return None, None
 
     try:
         df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
+        st.success("✅ 成功讀取 racecard_uploaded.csv，共 {} 行".format(len(df)))
     except Exception as e:
-        st.error(f"讀取 racecard_uploaded.csv 失敗：{e}")
+        st.error(f"❌ 讀取失敗：{e}")
         return None, None
 
-    # ===== 將中文欄位名轉為英文 =====
+    # ===== 欄位映射 =====
     df.rename(columns={
         '馬名': 'horse_name',
         '檔位': 'draw',
@@ -1331,10 +1335,15 @@ def run_prediction(date_str, race_no):
         '賠率': 'win_odds'
     }, inplace=True)
 
-    # ===== 以下係原有嘅特徵工程同預測邏輯（保持不變） =====
-    df = standardize_columns_safe(df)
-    df = df.loc[:, ~df.columns.duplicated(keep='first')]
-    df = ensure_series(df)
+    st.write("🔍 欄位名稱：", df.columns.tolist())
+
+    # ===== 之後嘅 code 繼續（你原本嘅特徵工程同預測） =====
+    # 為咗簡化，我暫時只回傳測試數據，等你 confirm 讀取成功
+    result_df = df[['horse_name', 'draw']].copy()
+    result_df['預測勝率'] = 0.5
+    result_df['值博指數'] = 1.0
+    result_df['信心指數'] = '中'
+    return result_df, "測試彩池推薦"
 
     df, _ = safe_parse_dates(df)
     if df is None:
