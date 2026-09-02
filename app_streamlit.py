@@ -1056,7 +1056,7 @@ NAME_MAPPING = {
     'injury_90d': '過去90日內有傷患',
     'total_injuries': '傷患總次數',
     'injury_severity': '傷患嚴重程度'
-]
+}
 
 def standardize_columns_safe(df):
     rename_map = {
