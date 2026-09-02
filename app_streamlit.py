@@ -3006,7 +3006,7 @@ def admin_auto_maintenance():
                             u['predictions_limit'] = CONFIG["free_limit"]
                             u['plan'] = None
                             expired.append(uid)
-                    except:
+                      except:
                         pass
             if expired:
                 save_users(users)
