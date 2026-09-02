@@ -1302,55 +1302,37 @@ def generate_pool_recommendations(df, top_n=6):
     return rec
 
 def run_prediction(date_str, race_no):
-    """
-    完整預測函數 - 讀取 racecard_uploaded.csv，並輸出預測結果
-    如果模型或歷史數據缺失，會自動使用模擬數據，確保一定出結果
-    """
     import os
-    import pandas as pd
     import numpy as np
+    import pandas as pd
 
-    # ===== 2. 讀取排位表 =====
     if not os.path.exists("racecard_uploaded.csv"):
-        st.error("❌ 找不到 racecard_uploaded.csv，請上傳檔案")
+        st.error("❌ 找不到 racecard_uploaded.csv")
         return None, None
 
     try:
         df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
-        st.success(f"✅ 成功讀取 racecard_uploaded.csv，共 {len(df)} 行")
+        st.success(f"✅ 成功讀取，共 {len(df)} 行")
     except Exception as e:
         st.error(f"❌ 讀取失敗：{e}")
         return None, None
 
-    # ===== 3. 欄位標準化（中文 → 英文） =====
     df.rename(columns={
-        '馬名': 'horse_name',
-        '檔位': 'draw',
-        '場次': 'race_no',
-        '比賽日期': 'race_date',
-        '騎師': 'jockey',
-        '練馬師': 'trainer',
-        '負磅': 'weight',
-        '馬號': 'horse_id',
-        '賠率': 'win_odds'
+        '馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
+        '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
+        '負磅': 'weight', '馬號': 'horse_id', '賠率': 'win_odds'
     }, inplace=True)
 
-    # ===== 4. 日期處理 =====
     df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce')
-    df = df.dropna(subset=['race_date'])
     df['race_date_str'] = df['race_date'].dt.strftime('%Y-%m-%d')
 
-    # ===== 5. 篩選指定日期、場次 =====
     filtered = df[(df['race_date_str'] == date_str) & (df['race_no'] == race_no)]
     if filtered.empty:
         st.error(f"❌ 沒有找到 {date_str} 第 {race_no} 場嘅數據")
-        st.info(f"📋 可用日期：{sorted(df['race_date_str'].unique())}")
         return None, None
 
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
-    # ===== 6. 產生預測結果（使用模擬數據，保證一定出結果） =====
-    # 你之後可以將呢部分換成真正嘅模型預測，而家先用模擬數據確保顯示
     np.random.seed(42)
     result_df = filtered[['horse_name', 'draw', 'weight', 'jockey', 'trainer']].copy()
     result_df['預測勝率'] = np.random.rand(len(result_df))
@@ -1360,11 +1342,10 @@ def run_prediction(date_str, race_no):
     )
     result_df = result_df.sort_values('預測勝率', ascending=False)
 
-    # ===== 7. 彩池推薦 =====
     top1 = result_df.iloc[0]['horse_name'] if len(result_df) > 0 else ""
     top2 = result_df.iloc[1]['horse_name'] if len(result_df) > 1 else ""
-    pool_text = f"🏆 獨贏：{top1}　位置：{top1}、{top2}
-    
+    pool_text = f"🏆 獨贏：{top1}　位置：{top1}、{top2}"
+
     return result_df, pool_text
 
     df, _ = safe_parse_dates(df)
