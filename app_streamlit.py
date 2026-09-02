@@ -1302,6 +1302,24 @@ def generate_pool_recommendations(df, top_n=6):
     return rec
 
 def run_prediction(date_str, race_no):
+    # ===== 欄位名稱對應（支援中文欄位） =====
+# 將 CSV 嘅中文欄位名對應返程式碼預期嘅英文名
+column_mapping = {
+    '馬號': 'horse_no',
+    '馬名': 'horse_name',
+    '檔位': 'draw',
+    '負磅': 'weight',
+    '騎師': 'jockey',
+    '練馬師': 'trainer',
+    '賠率': 'odds',
+    '場次': 'race_no',
+    '比賽日期': 'race_date'
+}
+# 如果 CSV 入面嘅欄位係中文，就 rename 做英文
+if df is not None:
+    # 檢查第一欄係咪中文，如果係就 rename
+    if '馬號' in df.columns:
+        df.rename(columns=column_mapping, inplace=True)
     xgb_model, cat_model, rank_model = load_models()
     if xgb_model is None:
         return None, None
