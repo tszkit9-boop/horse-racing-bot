@@ -4,17 +4,19 @@ __pycache__/
 .venv/
 venv/
 
-# 敏感數據同密碼（最緊要！）
+# 敏感數據同密碼
 .env
-# 忽略其他 CSV，但保留 racecard_*.csv
-*.csv
-!racecard_*.csv
 *.xlsx
 payment_proofs/
 
-# Logs 同埋編輯器
+# Logs 同編輯器
 logs/
 *.log
 .vscode/
 .idea/
 .DS_Store
+
+# CSV：忽略所有 CSV，但放行 racecard_*.csv 同 raccard_*.csv（兼容兩種串法）
+*.csv
+!racecard_*.csv
+!raccard_*.csv
