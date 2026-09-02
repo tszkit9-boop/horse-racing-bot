@@ -1310,9 +1310,6 @@ def run_prediction(date_str, race_no):
     import pandas as pd
     import numpy as np
 
-    # ===== 1. DEBUG 訊息（確認函數被呼叫） =====
-    st.write("🔥 DEBUG: run_prediction 被執行，日期：", date_str, "場次：", race_no)
-
     # ===== 2. 讀取排位表 =====
     if not os.path.exists("racecard_uploaded.csv"):
         st.error("❌ 找不到 racecard_uploaded.csv，請上傳檔案")
@@ -1366,13 +1363,8 @@ def run_prediction(date_str, race_no):
     # ===== 7. 彩池推薦 =====
     top1 = result_df.iloc[0]['horse_name'] if len(result_df) > 0 else ""
     top2 = result_df.iloc[1]['horse_name'] if len(result_df) > 1 else ""
-    pool_text = f"🏆 獨贏：{top1}　位置：{top1}、{top2}"
-
-    # ===== 8. 顯示排位表欄位（除錯用） =====
-    with st.expander("🔍 技術資訊（可忽略）"):
-        st.write("欄位名稱：", df.columns.tolist())
-        st.write("可用日期：", sorted(df['race_date_str'].unique()))
-
+    pool_text = f"🏆 獨贏：{top1}　位置：{top1}、{top2}
+    
     return result_df, pool_text
 
     df, _ = safe_parse_dates(df)
