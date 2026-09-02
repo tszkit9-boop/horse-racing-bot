@@ -17,6 +17,15 @@ from catboost import CatBoostClassifier
 import plotly.express as px
 import plotly.graph_objects as go
 import random
+# ============================================================
+# 自動載入已儲存嘅排位表（如果存在）
+# ============================================================
+if 'racecard_df' not in st.session_state:
+    if os.path.exists("racecard_uploaded.csv"):
+        try:
+            st.session_state['racecard_df'] = pd.read_csv("racecard_uploaded.csv")
+        except Exception as e:
+            print(f"載入排位表失敗：{e}")
 from PIL import Image
 
 # ============================================================
@@ -1047,7 +1056,7 @@ NAME_MAPPING = {
     'injury_90d': '過去90日內有傷患',
     'total_injuries': '傷患總次數',
     'injury_severity': '傷患嚴重程度'
-}
+]
 
 def standardize_columns_safe(df):
     rename_map = {
@@ -3428,8 +3437,8 @@ def admin_content():
             st.info("暫無歷史記錄")
     
     st.write("---")
-    st.write("上傳排位表")
-  uploaded_file = st.file_uploader("選CSV排位表", type=["csv"])
+st.write("上傳排位表")
+uploaded_file = st.file_uploader("選擇 CSV 排位表", type=["csv"])
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
     st.session_state['racecard_df'] = df
