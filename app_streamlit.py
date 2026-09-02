@@ -97,7 +97,7 @@ DEFAULT_CONFIG = {
     "module_automation": True,
     "module_security": True,
     "module_promo": True,
-    # ⭐ 新增：虛擬幣設定
+    # ⭐ 虛擬幣設定
     "daily_virtual_coin": 1000,
     "virtual_coin_enabled": True,
 }
@@ -1956,6 +1956,73 @@ def login_page():
                         st.rerun()
 
 # ============================================================
+# ⭐ 賽事日曆 + 倒數計時（輔助函數）
+# ============================================================
+def get_future_races():
+    """從排位表提取未來賽事日期"""
+    try:
+        df = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
+        df = standardize_columns_safe(df)
+        if 'race_date' in df.columns:
+            df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce')
+            df = df.dropna(subset=['race_date'])
+            today = datetime.now().date()
+            future = df[df['race_date'].dt.date >= today]
+            if not future.empty:
+                dates = future['race_date'].dt.date.unique()
+                dates = sorted(dates)
+                race_courses = []
+                for d in dates:
+                    course = future[future['race_date'].dt.date == d]['race_course'].iloc[0] if 'race_course' in future.columns else '賽馬'
+                    race_courses.append(course)
+                return dates, race_courses
+    except Exception as e:
+        print(f"讀取排位表失敗：{e}")
+    return [], []
+
+def display_race_calendar():
+    """顯示賽事日曆同倒數計時"""
+    dates, courses = get_future_races()
+    if not dates:
+        st.info("📭 暫時未有未來賽事資料")
+        return
+    
+    next_date = dates[0]
+    next_course = courses[0] if courses else "賽馬"
+    today = datetime.now().date()
+    delta = (next_date - today).days
+    
+    if delta > 0:
+        time_str = f"⏳ 仲有 **{delta} 天**"
+    elif delta == 0:
+        hours = (datetime.combine(next_date, datetime.min.time()) - datetime.now()).seconds // 3600
+        time_str = f"⏳ 今日開跑！仲有約 **{hours} 小時**"
+    else:
+        time_str = "⏳ 已過期"
+    
+    st.markdown(f"""
+    <div style="background: linear-gradient(135deg, #1a237e, #0d47a1); border-radius: 12px; padding: 15px 20px; color: white; margin-bottom: 15px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+            <div>
+                <span style="font-size: 20px;">🏇 下一場賽事</span><br>
+                <span style="font-size: 16px; opacity: 0.9;">{next_course}　📅 {next_date.strftime('%Y年%m月%d日')}</span>
+            </div>
+            <div style="font-size: 22px; font-weight: bold; background: rgba(255,255,255,0.15); padding: 8px 20px; border-radius: 30px;">
+                {time_str}
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if len(dates) > 1:
+        st.caption("📅 未來賽事一覽")
+        for i in range(1, min(len(dates), 4)):
+            d = dates[i]
+            c = courses[i] if i < len(courses) else "賽馬"
+            delta_i = (d - today).days
+            st.write(f"• {d.strftime('%Y-%m-%d')}　{c}　（還有 {delta_i} 天）")
+
+# ============================================================
 # 系統儀表板
 # ============================================================
 def admin_dashboard():
@@ -2613,7 +2680,7 @@ def admin_user_management():
             else:
                 st.info("呢個用戶未有準確度數據（未對比賽果）")
     
-    # 編輯用戶（包含等級/勳章編輯）
+    # 編輯用戶（包含等級/勳章/虛擬幣編輯）
     with st.expander("✏️ 編輯用戶"):
         username = st.selectbox("選擇要編輯的用戶", list(users.keys()), key="edit_user_select")
         if username:
@@ -2626,20 +2693,43 @@ def admin_user_management():
                 new_password = st.text_input("新密碼（留空 = 不變）", type="password", key="edit_password", placeholder="輸入新密碼")
             
             with col_edit2:
-                # 編輯等級
                 level_options = ["🥉 銅牌會員", "🥈 銀牌會員", "🥇 金牌會員", "💎 鑽石會員", "👑 傳說會員", "👑 超級管理員"]
                 current_level = user.get('level', '🥉 銅牌會員')
                 if current_level not in level_options:
                     level_options.append(current_level)
                 new_level = st.selectbox("🏅 等級", level_options, index=level_options.index(current_level) if current_level in level_options else 0, key="edit_level")
-                
-                # 編輯經驗值
                 new_exp = st.number_input("📊 經驗值", min_value=0, value=user.get('exp', 0), step=10, key="edit_exp")
-                
-                # 編輯勳章
                 all_badges = ["🏆 首勝", "🔥 三連勝", "⚡ 五連勝", "💯 百場預測", "🎯 命中大師", "👥 社交達人", "💰 付費會員", "🏇 馬匹專家"]
                 current_badges = user.get('badges', [])
                 new_badges = st.multiselect("🎖️ 勳章", all_badges, default=[b for b in current_badges if b in all_badges], key="edit_badges")
+            
+            # ⭐ 虛擬幣調整
+            st.markdown("---")
+            st.subheader("💰 虛擬幣調整")
+            col_coin1, col_coin2 = st.columns(2)
+            with col_coin1:
+                current_balance = user.get('virtual_balance', 0)
+                st.metric("當前結餘", f"${current_balance:,.0f}")
+            with col_coin2:
+                coin_adjust = st.number_input("調整金額（+ 加錢，- 扣錢）", value=0, step=100, key="coin_adjust")
+                if st.button("✅ 確認調整虛擬幣", key="apply_coin_adjust"):
+                    if coin_adjust != 0:
+                        new_balance = current_balance + coin_adjust
+                        if new_balance < 0:
+                            st.error("❌ 餘額不能為負數")
+                        else:
+                            users[username]['virtual_balance'] = new_balance
+                            save_users(users)
+                            log_admin_action(st.session_state.username, f"調整 {username} 虛擬幣：{coin_adjust:+d}（新餘額：{new_balance}）")
+                            st.success(f"✅ 已調整 {username} 的虛擬幣，新餘額：${new_balance:,.0f}")
+                            st.rerun()
+            
+            if st.button("🔄 重置虛擬幣為 $1000", key="reset_coin"):
+                users[username]['virtual_balance'] = 1000
+                save_users(users)
+                log_admin_action(st.session_state.username, f"重置 {username} 虛擬幣為 1000")
+                st.success("✅ 已重置虛擬幣為 $1000")
+                st.rerun()
             
             note = st.text_area("備註", value=user.get('note', ''), key="edit_note")
             
@@ -3329,8 +3419,8 @@ def admin_automation():
         auto['remind_days'] = days
         save_json(AUTOMATION_FILE, auto)
         st.success("✅ 已儲存")
-        def admin_security():
-st.subheader("🔐 安全與權限")
+def admin_security():
+    st.subheader("🔐 安全與權限")
     st.write("操作日誌")
     logs = load_logs()
     if logs.get('logs'):
@@ -3439,7 +3529,6 @@ def admin_system_settings():
             "enable_invite_reward": enable_invite_reward,
             "invite_reward_inviter": invite_reward_inviter,
             "invite_reward_invitee": invite_reward_invitee,
-            # ⭐ 虛擬幣設定
             "virtual_coin_enabled": virtual_coin_enabled,
             "daily_virtual_coin": daily_virtual_coin,
         }
@@ -3450,239 +3539,6 @@ def admin_system_settings():
             st.rerun()
         else:
             st.error("❌ 儲存失敗，請檢查檔案權限。")
-
-# ============================================================
-# ⭐ 後台用戶管理（更新版 — 加入虛擬幣調整）
-# ============================================================
-def admin_user_management():
-    st.subheader("👥 用戶管理")
-    with st.expander("➕ 新增用戶", expanded=False):
-        col1, col2 = st.columns(2)
-        with col1:
-            new_username = st.text_input("新用戶名", key="new_user_name")
-            new_password = st.text_input("密碼", type="password", key="new_user_pw")
-        with col2:
-            new_group = st.selectbox("群組", ["free", "paid", "VIP", "super_admin"], key="new_user_group")
-            new_is_paid = st.checkbox("付費狀態", value=False, key="new_user_paid")
-        if st.button("建立用戶", key="create_user_btn"):
-            if not new_username or not new_password:
-                st.warning("請填寫用戶名同密碼")
-            else:
-                users = load_users()
-                if new_username in users:
-                    st.error("❌ 用戶名已被使用")
-                else:
-                    users[new_username] = {
-                        "password": new_password,
-                        "is_paid": new_is_paid,
-                        "paid_date": None,
-                        "expiry_date": None,
-                        "free_usage": 0,
-                        "total_usage": 0,
-                        "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                        "note": "手動新增",
-                        "group": new_group,
-                        "phone": "",
-                        "plan": None,
-                        "predictions_limit": -1 if new_group in ['super_admin', 'VIP'] else CONFIG["free_limit"],
-                        "history": [],
-                        "terms_agreed": datetime.now().isoformat(),
-                        "invite_code": new_username.upper() + str(random.randint(100, 999)),
-                        "invited_by": None,
-                        "invite_rewards": 0,
-                        "invite_count": 0,
-                        "level": "🥉 銅牌會員",
-                        "exp": 0,
-                        "badges": [],
-                        "virtual_balance": CONFIG.get("daily_virtual_coin", 1000),
-                        "last_claim_date": '',
-                        "bets": []
-                    }
-                    save_users(users)
-                    log_admin_action(st.session_state.username, f"新增用戶 {new_username}")
-                    st.success(f"✅ 用戶 {new_username} 已建立！")
-                    st.rerun()
-    
-    users = load_users()
-    if not users:
-        st.info("暫無用戶")
-        return
-    
-    st.write("現有用戶列表：")
-    df = pd.DataFrame.from_dict(users, orient='index')
-    if 'level' not in df.columns:
-        df['level'] = '🥉 銅牌會員'
-    if 'exp' not in df.columns:
-        df['exp'] = 0
-    if 'badges' not in df.columns:
-        df['badges'] = ''
-    df['badges_count'] = df['badges'].apply(lambda x: len(x) if isinstance(x, list) else 0)
-    # 顯示虛擬幣
-    if 'virtual_balance' not in df.columns:
-        df['virtual_balance'] = 0
-    display_cols = ['username', 'group', 'level', 'exp', 'badges_count', 'total_usage', 'is_paid', 'virtual_balance']
-    available_cols = [col for col in display_cols if col in df.columns]
-    st.dataframe(df[available_cols], use_container_width=True)
-    
-    st.divider()
-    st.subheader("🗑️ 刪除用戶")
-    del_user = st.selectbox("選擇要刪除嘅用戶", list(users.keys()), key="del_user_select")
-    if del_user:
-        if del_user == "admin":
-            st.warning("⚠️ 唔可以刪除 admin 帳號")
-        else:
-            confirm = st.checkbox(f"確認刪除 {del_user}？", key="confirm_del")
-            if confirm and st.button("🗑️ 確認刪除", key="del_user_btn"):
-                users.pop(del_user)
-                save_users(users)
-                log_admin_action(st.session_state.username, f"刪除用戶 {del_user}")
-                st.success(f"✅ 用戶 {del_user} 已刪除")
-                st.rerun()
-    
-    st.divider()
-    st.subheader("👁️ 查看用戶視角")
-    selected_user = st.selectbox("選擇要查看的用戶", list(users.keys()), key="view_user_select")
-    if selected_user:
-        user_data = users[selected_user]
-        st.markdown("---")
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("👤 用戶", selected_user)
-        col2.metric("🏷️ 級別", user_data.get('group', 'free').upper())
-        col3.metric("📊 總預測次數", len(user_data.get('history', [])))
-        limit = user_data.get('predictions_limit', CONFIG['free_limit'])
-        if limit == -1:
-            col4.metric("📊 剩餘場次", "♾️ 無限")
-        else:
-            used = user_data.get('free_usage', 0)
-            remain = max(0, limit - used)
-            col4.metric("📊 剩餘場次", remain)
-        st.markdown("---")
-        st.subheader(f"📋 {selected_user} 嘅預測記錄")
-        history = user_data.get('history', [])
-        if history:
-            df_hist = pd.DataFrame(history[-20:][::-1])
-            st.dataframe(df_hist, use_container_width=True)
-        else:
-            st.info("呢個用戶暫時冇任何預測記錄")
-        if history:
-            st.subheader(f"🎯 {selected_user} 嘅準確度統計")
-            acc = load_accuracy()
-            records = acc.get('records', [])
-            user_records = [r for r in records if r.get('username') == selected_user]
-            if user_records:
-                df_rec = pd.DataFrame(user_records)
-                total = len(df_rec)
-                hit = df_rec[df_rec['is_hit'] == True].shape[0] if 'is_hit' in df_rec else 0
-                hit_rate = hit/total if total>0 else 0
-                roi = (hit * 400 - total * 100) / (total * 100) if total>0 else 0
-                col1, col2, col3 = st.columns(3)
-                col1.metric("總預測", total)
-                col2.metric("命中", hit)
-                col3.metric("命中率", f"{hit_rate:.2%}")
-                st.metric("ROI (模擬)", f"{roi:.2%}")
-                if 'date' in df_rec:
-                    df_rec['date'] = pd.to_datetime(df_rec['date'])
-                    daily = df_rec.groupby(df_rec['date'].dt.date).agg(
-                        total=('is_hit', 'count'),
-                        hit=('is_hit', lambda x: (x==True).sum())
-                    ).reset_index()
-                    daily['hit_rate'] = daily['hit'] / daily['total']
-                    fig = px.line(daily, x='date', y='hit_rate', title=f'{selected_user} 嘅命中率趨勢')
-                    st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("呢個用戶未有準確度數據（未對比賽果）")
-    
-    # 編輯用戶（包含等級/勳章/虛擬幣編輯）
-    with st.expander("✏️ 編輯用戶"):
-        username = st.selectbox("選擇要編輯的用戶", list(users.keys()), key="edit_user_select")
-        if username:
-            user = users[username]
-            
-            col_edit1, col_edit2 = st.columns(2)
-            with col_edit1:
-                new_group = st.selectbox("群組", ['free', 'paid', 'VIP', 'super_admin'], index=['free','paid','VIP','super_admin'].index(user.get('group','free')), key="edit_group")
-                new_is_paid = st.checkbox("付費狀態", value=user.get('is_paid', False), key="edit_is_paid")
-                new_password = st.text_input("新密碼（留空 = 不變）", type="password", key="edit_password", placeholder="輸入新密碼")
-            
-            with col_edit2:
-                # 編輯等級
-                level_options = ["🥉 銅牌會員", "🥈 銀牌會員", "🥇 金牌會員", "💎 鑽石會員", "👑 傳說會員", "👑 超級管理員"]
-                current_level = user.get('level', '🥉 銅牌會員')
-                if current_level not in level_options:
-                    level_options.append(current_level)
-                new_level = st.selectbox("🏅 等級", level_options, index=level_options.index(current_level) if current_level in level_options else 0, key="edit_level")
-                
-                # 編輯經驗值
-                new_exp = st.number_input("📊 經驗值", min_value=0, value=user.get('exp', 0), step=10, key="edit_exp")
-                
-                # 編輯勳章
-                all_badges = ["🏆 首勝", "🔥 三連勝", "⚡ 五連勝", "💯 百場預測", "🎯 命中大師", "👥 社交達人", "💰 付費會員", "🏇 馬匹專家"]
-                current_badges = user.get('badges', [])
-                new_badges = st.multiselect("🎖️ 勳章", all_badges, default=[b for b in current_badges if b in all_badges], key="edit_badges")
-            
-            # ⭐ 虛擬幣調整
-            st.markdown("---")
-            st.subheader("💰 虛擬幣調整")
-            col_coin1, col_coin2 = st.columns(2)
-            with col_coin1:
-                current_balance = user.get('virtual_balance', 0)
-                st.metric("當前結餘", f"${current_balance:,.0f}")
-            with col_coin2:
-                coin_adjust = st.number_input("調整金額（+ 加錢，- 扣錢）", value=0, step=100, key="coin_adjust")
-                if st.button("✅ 確認調整虛擬幣", key="apply_coin_adjust"):
-                    if coin_adjust != 0:
-                        new_balance = current_balance + coin_adjust
-                        if new_balance < 0:
-                            st.error("❌ 餘額不能為負數")
-                        else:
-                            users[username]['virtual_balance'] = new_balance
-                            save_users(users)
-                            log_admin_action(st.session_state.username, f"調整 {username} 虛擬幣：{coin_adjust:+d}（新餘額：{new_balance}）")
-                            st.success(f"✅ 已調整 {username} 的虛擬幣，新餘額：${new_balance:,.0f}")
-                            st.rerun()
-            
-            # 重置虛擬幣按鈕
-            if st.button("🔄 重置虛擬幣為 $1000", key="reset_coin"):
-                users[username]['virtual_balance'] = 1000
-                save_users(users)
-                log_admin_action(st.session_state.username, f"重置 {username} 虛擬幣為 1000")
-                st.success("✅ 已重置虛擬幣為 $1000")
-                st.rerun()
-            
-            note = st.text_area("備註", value=user.get('note', ''), key="edit_note")
-            
-            if st.button("💾 儲存變更", key="save_user_changes"):
-                users[username]['group'] = new_group
-                users[username]['is_paid'] = new_is_paid
-                users[username]['note'] = note
-                users[username]['level'] = new_level
-                users[username]['exp'] = new_exp
-                users[username]['badges'] = new_badges
-                if new_password:
-                    users[username]['password'] = new_password
-                if new_group in ['super_admin', 'VIP']:
-                    users[username]['predictions_limit'] = -1
-                else:
-                    users[username]['predictions_limit'] = CONFIG["free_limit"]
-                save_users(users)
-                log_admin_action(st.session_state.username, f"編輯用戶 {username}（等級：{new_level}，勳章：{len(new_badges)}個）")
-                st.success("✅ 已更新用戶資料！")
-                st.rerun()
-    
-    st.divider()
-    st.subheader("📥 數據匯出")
-    try:
-        with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
-            data = f.read()
-        st.download_button(
-            label="📥 下載 users.json",
-            data=data,
-            file_name="users.json",
-            mime="application/json",
-            key="download_users_json"
-        )
-    except Exception as e:
-        st.error(f"讀取檔案失敗：{e}")
 
 # ============================================================
 # 後台頁面
@@ -3766,7 +3622,7 @@ def admin_page():
             tab_functions[name]()
 
 # ============================================================
-# 主頁面
+# 主頁面（已加入賽事日曆、倒數計時、管理員贈送幣）
 # ============================================================
 def main():
     if 'logged_in' not in st.session_state:
@@ -3783,6 +3639,10 @@ def main():
         st.session_state.show_history = False
     if 'admin_authenticated' not in st.session_state:
         st.session_state.admin_authenticated = False
+    if 'show_bet' not in st.session_state:
+        st.session_state.show_bet = False
+    if 'show_leaderboard' not in st.session_state:
+        st.session_state.show_leaderboard = False
 
     content = load_json(CONTENT_FILE)
     announcements = content.get('announcements', [])
@@ -3830,6 +3690,32 @@ def main():
         admin_page()
         return
 
+    # ====== 標題 ======
+    col1, col2, col3 = st.columns([5, 1, 1])
+    with col1:
+        st.title("🏇 賽馬預測系統")
+        st.markdown("AI 驅動・即時預測・彩池推薦")
+        st.caption(f"{datetime.now().strftime('%Y年%m月%d日')} · 36個特徵 · 三模型融合 · 六種彩池")
+    with col2:
+        if CONFIG["enable_admin"] and st.session_state.get("role") == "super_admin":
+            if st.button("🔐 後台", use_container_width=True, key="go_to_admin"):
+                st.session_state.show_admin = True
+                st.session_state.admin_authenticated = False
+                st.rerun()
+    with col3:
+        if st.session_state.get('logged_in', False):
+            if st.button("🚪 登出", use_container_width=True, key="logout_main"):
+                for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history']:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.rerun()
+
+    # ====== ⭐ 賽事日曆 + 倒數計時 ======
+    st.markdown("---")
+    display_race_calendar()
+    st.markdown("---")
+
+    # ====== 今日免費重心推介 ======
     if CONFIG.get("enable_daily_free_tip", True):
         try:
             df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
@@ -3866,25 +3752,6 @@ def main():
                         st.markdown("---")
         except:
             pass
-
-    col1, col2, col3 = st.columns([5, 1, 1])
-    with col1:
-        st.title("🏇 賽馬預測系統")
-        st.markdown("AI 驅動・即時預測・彩池推薦")
-        st.caption(f"{datetime.now().strftime('%Y年%m月%d日')} · 36個特徵 · 三模型融合 · 六種彩池")
-    with col2:
-        if CONFIG["enable_admin"] and st.session_state.get("role") == "super_admin":
-            if st.button("🔐 後台", use_container_width=True, key="go_to_admin"):
-                st.session_state.show_admin = True
-                st.session_state.admin_authenticated = False
-                st.rerun()
-    with col3:
-        if st.session_state.get('logged_in', False):
-            if st.button("🚪 登出", use_container_width=True, key="logout_main"):
-                for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history']:
-                    if key in st.session_state:
-                        del st.session_state[key]
-                st.rerun()
 
     if CONFIG["enable_registration"] and st.session_state.logged_in:
         show_user_dashboard(st.session_state.username)
@@ -3974,208 +3841,64 @@ def main():
     with col_btn:
         predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
 
-    with st.sidebar:
-        st.header("🎯 用戶資訊")
-        if CONFIG["enable_registration"] and st.session_state.logged_in:
-            st.write(f"👤 用戶：{st.session_state.username}")
+    # ============================================================
+    # 🎮 虛擬投注（賽事預測 同 付款功能 中間）
+    # ============================================================
+    if st.session_state.get('logged_in', False):
+        st.markdown("---")
+        st.subheader("🎮 虛擬投注")
+        st.caption("用虛擬幣體驗投注樂趣，唔使真錢！")
+        
+        col_v1, col_v2, col_v3 = st.columns([1, 1, 2])
+        with col_v1:
+            if st.button("💰 投注模擬器", use_container_width=True, key="btn_bet"):
+                st.session_state.show_bet = not st.session_state.get('show_bet', False)
+                st.session_state.show_leaderboard = False
+        with col_v2:
+            if st.button("🏆 排行榜", use_container_width=True, key="btn_leaderboard"):
+                st.session_state.show_leaderboard = not st.session_state.get('show_leaderboard', False)
+                st.session_state.show_bet = False
+        with col_v3:
             users = load_users()
             user_data = users.get(st.session_state.username, {})
-            limit = user_data.get('predictions_limit', CONFIG['free_limit'])
-            if limit == -1:
-                st.success("♾️ 無限預測次數")
-            else:
-                used = user_data.get('free_usage', 0)
-                remain = max(0, limit - used)
-                st.info(f"📊 剩餘免費場次：{remain} 場")
-            if st.button("📋 我的預測記錄", key="show_history_btn_side"):
-                st.session_state.show_history = not st.session_state.show_history
-            if st.button("🚪 登出", key="logout_btn_side"):
-                for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history']:
-                    if key in st.session_state:
-                        del st.session_state[key]
-                st.rerun()
-            
-            st.divider()
-            st.caption("💬 聯絡管理員")
-            st.markdown("Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
-            st.markdown("[🔗 點擊連結搵我哋](https://t.me/bryhjdjbrbxibvrjskofndhiebdpaq)")
-            
-            st.divider()
-            st.subheader("📌 導航")
-            is_super_admin = user_data.get('group') == 'super_admin'
-            pages = ["主頁面", "預測", "賽程", "馬匹查詢", "騎師查詢", "對比", "趨勢", "用戶儀表板", "預測歷史"]
-            if is_super_admin:
-                pages.append("後台管理")
-            selected = st.selectbox("前往", pages, index=0, key="nav_select_side")
-            if selected != st.session_state.get('page', '主頁面'):
-                st.session_state.page = selected
-                st.rerun()
-
-    if CONFIG["enable_registration"] and st.session_state.logged_in and st.session_state.get('show_history', False):
-        st.subheader("📋 我的預測記錄")
-        show_prediction_history(st.session_state.username)
-        st.divider()
-
-    if predict_btn:
-        users = load_users()
-        user_data = users.get(st.session_state.username, {})
-        limit = user_data.get('predictions_limit', CONFIG['free_limit'])
-        used = user_data.get('free_usage', 0)
-        user_group = user_data.get('group', 'free')
+            balance = user_data.get('virtual_balance', 0)
+            st.info(f"💎 你嘅虛擬幣結餘：**${balance:,.0f}**")
         
-        if CONFIG.get("enable_vip_content", True):
-            is_vip = user_group in ['VIP', 'super_admin']
-        else:
-            is_vip = True
+        if st.session_state.get('show_bet', False):
+            show_betting_interface(st.session_state.username)
         
-        if CONFIG["enable_payment"] and limit != -1 and used >= limit:
-            show_paywall()
-        else:
-            date_str = date.strftime('%Y-%m-%d')
-            with st.spinner(f"執行預測 {date_str} 第 {race_no} 場..."):
-                result, pool = run_prediction(date_str, race_no)
-                if result is not None:
-                    st.success(f"✅ {date_str} 第 {race_no} 場 預測完成")
-                    
-                    top4 = result.head(4)
-                    top1 = top4.iloc[0]
-                    
-                    st.markdown("---")
-                    st.markdown(f"""
-                    <div style="background:linear-gradient(135deg,#1a237e,#0d47a1,#1565c0);border-radius:20px;padding:25px 30px;text-align:center;box-shadow:0 8px 32px rgba(21,101,192,0.4);border:2px solid rgba(255,215,0,0.3);position:relative;overflow:hidden;">
-                        <div style="position:absolute;top:-30px;right:-30px;font-size:100px;opacity:0.1;">🏆</div>
-                        <div style="position:absolute;bottom:-20px;left:-20px;font-size:80px;opacity:0.08;">⭐</div>
-                        <span style="font-size:16px;color:#ffd54f;font-weight:bold;letter-spacing:3px;background:rgba(255,215,0,0.15);padding:4px 16px;border-radius:20px;">🏆 獨贏首選</span><br>
-                        <span style="font-size:48px;color:#ffffff;font-weight:900;letter-spacing:3px;text-shadow:0 2px 8px rgba(0,0,0,0.3);display:inline-block;margin-top:8px;">{top1['馬匹名稱']}</span><br>
-                        <div style="display:flex;justify-content:center;gap:30px;margin-top:10px;flex-wrap:wrap;">
-                            <span style="font-size:18px;color:#bbdefb;">檔位 <b style="color:#ffffff;font-size:22px;">{top1['檔位']}</b></span>
-                            <span style="font-size:18px;color:#bbdefb;">勝率 <b style="color:#69f0ae;font-size:22px;">{top1['預測勝率']:.2%}</b></span>
-                            <span style="font-size:18px;color:#bbdefb;">值博指數 <b style="color:#ffd54f;font-size:22px;">{top1['值博指數']:.4f}</b></span>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    st.markdown("<h3 style='margin-top:25px;margin-bottom:10px;'>🔗 連贏推薦</h3>", unsafe_allow_html=True)
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.markdown(f"""
-                        <div style="background:linear-gradient(135deg,#e3f2fd,#bbdefb);border-radius:14px;padding:16px 20px;text-align:center;box-shadow:0 4px 12px rgba(13,71,161,0.15);border-left:5px solid #0d47a1;">
-                            <span style="font-size:28px;">🏇</span>
-                            <h4 style="margin:4px 0 2px 0;color:#0d47a1;">{top4.iloc[0]['馬匹名稱']}</h4>
-                            <div style="display:flex;justify-content:center;gap:20px;font-size:14px;color:#555;">
-                                <span>檔位 <b>{top4.iloc[0]['檔位']}</b></span>
-                                <span>勝率 <b style="color:#2e7d32;">{top4.iloc[0]['預測勝率']:.2%}</b></span>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    with col2:
-                        st.markdown(f"""
-                        <div style="background:linear-gradient(135deg,#e3f2fd,#bbdefb);border-radius:14px;padding:16px 20px;text-align:center;box-shadow:0 4px 12px rgba(13,71,161,0.15);border-left:5px solid #0d47a1;">
-                            <span style="font-size:28px;">🏇</span>
-                            <h4 style="margin:4px 0 2px 0;color:#0d47a1;">{top4.iloc[1]['馬匹名稱']}</h4>
-                            <div style="display:flex;justify-content:center;gap:20px;font-size:14px;color:#555;">
-                                <span>檔位 <b>{top4.iloc[1]['檔位']}</b></span>
-                                <span>勝率 <b style="color:#2e7d32;">{top4.iloc[1]['預測勝率']:.2%}</b></span>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    st.caption("💡 連贏：揀 2 隻馬，跑出前 2 名（不分順序）即中")
-                    
-                    if is_vip:
-                        st.markdown("<h3 style='margin-top:25px;margin-bottom:10px;'>🥉 三重彩推薦（4 隻複式）</h3>", unsafe_allow_html=True)
-                        cols = st.columns(4)
-                        colors = ['#fce4ec', '#f3e5f5', '#e8eaf6', '#e0f7fa']
-                        for i in range(4):
-                            row = top4.iloc[i]
-                            with cols[i]:
-                                st.markdown(f"""
-                                <div style="background:{colors[i]};border-radius:12px;padding:14px 10px;text-align:center;box-shadow:0 3px 10px rgba(0,0,0,0.08);border:1px solid rgba(0,0,0,0.05);">
-                                    <span style="font-size:24px;">🏇</span>
-                                    <h5 style="margin:2px 0;color:#333;font-size:15px;">{row['馬匹名稱']}</h5>
-                                    <div style="font-size:13px;color:#555;">檔位 <b>{row['檔位']}</b><br>勝率 <b style="color:#2e7d32;">{row['預測勝率']:.2%}</b></div>
-                                </div>
-                                """, unsafe_allow_html=True)
-                        st.caption("💡 三重彩：揀 3 隻馬，順序估中冠亞季軍。以上 4 隻馬可做複式三重彩（4 選 3）")
-                    else:
-                        st.markdown("""
-                        <div style="background:linear-gradient(135deg,#fff3e0,#ffe0b2);border-radius:16px;padding:30px 20px;text-align:center;border:2px dashed #ff6f00;margin:10px 0;">
-                            <span style="font-size:48px;">🔒</span>
-                            <h3 style="color:#e65100;margin:10px 0;">三重彩推薦</h3>
-                            <p style="color:#bf360c;font-size:16px;">此內容僅限 <b>VIP 會員</b> 查看</p>
-                            <p style="color:#888;font-size:14px;">升級 VIP 即可解鎖三重彩、四重彩等獨家彩池推薦</p>
-                            <div style="margin-top:15px;"><span style="background:#ff6f00;color:white;padding:8px 24px;border-radius:20px;font-weight:bold;font-size:14px;">💎 立即升級 VIP</span></div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    if is_vip:
-                        st.markdown("<h3 style='margin-top:25px;margin-bottom:10px;'>🏅 四重彩推薦（4 隻複式）</h3>", unsafe_allow_html=True)
-                        cols = st.columns(4)
-                        colors2 = ['#e8f5e9', '#e0f2f1', '#fff3e0', '#fbe9e7']
-                        for i in range(4):
-                            row = top4.iloc[i]
-                            with cols[i]:
-                                st.markdown(f"""
-                                <div style="background:{colors2[i]};border-radius:12px;padding:14px 10px;text-align:center;box-shadow:0 3px 10px rgba(0,0,0,0.08);border:1px solid rgba(0,0,0,0.05);">
-                                    <span style="font-size:24px;">🏇</span>
-                                    <h5 style="margin:2px 0;color:#333;font-size:15px;">{row['馬匹名稱']}</h5>
-                                    <div style="font-size:13px;color:#555;">檔位 <b>{row['檔位']}</b><br>勝率 <b style="color:#2e7d32;">{row['預測勝率']:.2%}</b></div>
-                                </div>
-                                """, unsafe_allow_html=True)
-                        st.caption("💡 四重彩：揀 4 隻馬，順序估中冠亞季殿軍。以上 4 隻馬可做複式四重彩（4 選 4）")
-                    else:
-                        st.markdown("""
-                        <div style="background:linear-gradient(135deg,#e8f5e9,#c8e6c9);border-radius:16px;padding:20px 20px;text-align:center;border:2px dashed #2e7d32;margin:10px 0;">
-                            <span style="font-size:36px;">🔒</span>
-                            <h4 style="color:#1b5e20;margin:5px 0;">四重彩推薦</h4>
-                            <p style="color:#555;font-size:14px;">升級 VIP 即可解鎖四重彩推薦</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    st.divider()
-                    st.markdown("""
-                    <h3 style='margin-bottom:10px;'>📋 總結投注建議</h3>
-                    <div style="background:linear-gradient(135deg,#f1f8e9,#dcedc8);border-radius:16px;padding:20px 24px;border:2px solid #2e7d32;box-shadow:0 4px 16px rgba(46,125,50,0.15);">
-                    """, unsafe_allow_html=True)
-                    
-                    if is_vip:
-                        st.markdown(f"""
-                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 30px;font-size:15px;">
-                            <div>🏆 <b>獨贏</b>：<span style="color:#1a237e;font-weight:bold;">{top4.iloc[0]['馬匹名稱']}</span></div>
-                            <div>🔗 <b>連贏</b>：<span style="color:#0d47a1;font-weight:bold;">{top4.iloc[0]['馬匹名稱']} + {top4.iloc[1]['馬匹名稱']}</span></div>
-                            <div style="grid-column:span 2;">🥉 <b>三重彩</b>：<span style="color:#4a148c;font-weight:bold;">{top4.iloc[0]['馬匹名稱']}、{top4.iloc[1]['馬匹名稱']}、{top4.iloc[2]['馬匹名稱']}、{top4.iloc[3]['馬匹名稱']}</span>（複式 4 選 3）</div>
-                            <div style="grid-column:span 2;">🏅 <b>四重彩</b>：<span style="color:#1b5e20;font-weight:bold;">{top4.iloc[0]['馬匹名稱']}、{top4.iloc[1]['馬匹名稱']}、{top4.iloc[2]['馬匹名稱']}、{top4.iloc[3]['馬匹名稱']}</span>（複式 4 選 4）</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        st.markdown(f"""
-                        <div style="font-size:15px;">
-                            <div>🏆 <b>獨贏</b>：<span style="color:#1a237e;font-weight:bold;">{top4.iloc[0]['馬匹名稱']}</span></div>
-                            <div>🔗 <b>連贏</b>：<span style="color:#0d47a1;font-weight:bold;">{top4.iloc[0]['馬匹名稱']} + {top4.iloc[1]['馬匹名稱']}</span></div>
-                            <div style="margin-top:12px;padding:12px;background:#fff3e0;border-radius:10px;text-align:center;border:1px dashed #ff6f00;">
-                                <span style="font-size:20px;">🔒</span>
-                                <span style="color:#e65100;font-weight:bold;"> 三重彩及四重彩推薦僅限 VIP 會員查看</span>
-                                <br><span style="font-size:13px;color:#888;">升級 VIP 即可解鎖完整投注建議</span>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    st.markdown("</div>", unsafe_allow_html=True)
-                    
-                    st.subheader("🎯 彩池推薦（詳細）")
-                    st.text(pool)
+        if st.session_state.get('show_leaderboard', False):
+            show_leaderboard()
 
-                    if CONFIG["enable_registration"] and st.session_state.logged_in:
-                        winner_name = top4.iloc[0]['馬匹名稱']
-                        prob = top4.iloc[0]['預測勝率']
-                        record_prediction(st.session_state.username, date_str, race_no, winner_name, prob)
+        # ⭐ 管理員贈送虛擬幣（只有超級管理員可見）
+        if st.session_state.get('role') == 'super_admin':
+            st.markdown("---")
+            st.subheader("🎁 管理員贈送虛擬幣")
+            with st.form(key="admin_gift_form"):
+                col_g1, col_g2, col_g3 = st.columns([2, 1, 1])
+                with col_g1:
+                    target_user = st.selectbox("選擇用戶", list(load_users().keys()), key="gift_user")
+                with col_g2:
+                    gift_amount = st.number_input("金額", min_value=1, value=100, step=50, key="gift_amount")
+                with col_g3:
+                    submit_gift = st.form_submit_button("🎁 贈送")
+                if submit_gift:
+                    if target_user == st.session_state.username:
+                        st.error("❌ 唔可以送俾自己")
+                    else:
                         users = load_users()
-                        if st.session_state.username in users:
-                            users[st.session_state.username]['free_usage'] = users[st.session_state.username].get('free_usage', 0) + 1
-                            users[st.session_state.username]['total_usage'] = users[st.session_state.username].get('total_usage', 0) + 1
+                        if target_user in users:
+                            users[target_user]['virtual_balance'] = users[target_user].get('virtual_balance', 0) + gift_amount
                             save_users(users)
-                        st.session_state.usage_count += 1
-                        st.info("📝 預測已記錄到你的歷史")
+                            log_admin_action(st.session_state.username, f"贈送 ${gift_amount} 虛擬幣給 {target_user}")
+                            st.success(f"✅ 已贈送 ${gift_amount} 虛擬幣給 {target_user}")
+                            st.rerun()
+                        else:
+                            st.error("❌ 用戶不存在")
+        
+        st.markdown("---")
 
+    # ====== 付款功能 ======
     st.markdown("---")
     st.subheader("💳 付款功能")
     
@@ -4187,6 +3910,7 @@ def main():
             st.session_state.page_mode = "login"
             st.rerun()
 
+    # ====== 今日賽程 ======
     st.subheader("📅 今日賽程")
     try:
         df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
