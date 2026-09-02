@@ -17,15 +17,6 @@ from catboost import CatBoostClassifier
 import plotly.express as px
 import plotly.graph_objects as go
 import random
-# ============================================================
-# 自動載入已儲存嘅排位表（如果存在）
-# ============================================================
-if 'racecard_df' not in st.session_state:
-    if os.path.exists("racecard_uploaded.csv"):
-        try:
-            st.session_state['racecard_df'] = pd.read_csv("racecard_uploaded.csv")
-        except Exception as e:
-            print(f"載入排位表失敗：{e}")
 from PIL import Image
 
 # ============================================================
@@ -108,10 +99,6 @@ DEFAULT_CONFIG = {
     "module_promo": True,
     "daily_virtual_coin": 1000,
     "virtual_coin_enabled": True,
-    # ⭐ 新增：多層級邀請獎勵 & IP 限制
-    "enable_multi_level_invite": True,
-    "invite_reward_per_level": 1,
-    "enable_ip_restriction": True,
 }
 
 def load_system_config():
@@ -266,37 +253,6 @@ def update_user_exp(username, is_hit=False):
     
     save_users(users)
     check_badges(username)
-
-# ============================================================
-# ⭐ 獲取用戶 IP（防止同 IP 重複註冊）
-# ============================================================
-def get_client_ip():
-    try:
-        if hasattr(st, 'context') and hasattr(st.context, 'headers'):
-            headers = st.context.headers
-            if headers:
-                forwarded = headers.get('X-Forwarded-For')
-                if forwarded:
-                    return forwarded.split(',')[0].strip()
-                real_ip = headers.get('X-Real-IP')
-                if real_ip:
-                    return real_ip
-                remote = headers.get('Remote-Addr')
-                if remote:
-                    return remote
-        import os
-        forwarded = os.environ.get('HTTP_X_FORWARDED_FOR')
-        if forwarded:
-            return forwarded.split(',')[0].strip()
-        real_ip = os.environ.get('HTTP_X_REAL_IP')
-        if real_ip:
-            return real_ip
-        remote = os.environ.get('REMOTE_ADDR')
-        if remote:
-            return remote
-    except Exception as e:
-        print(f"⚠️ 獲取 IP 失敗：{e}")
-    return "unknown"
 
 # ============================================================
 # ⭐ 虛擬幣系統
@@ -540,6 +496,38 @@ def get_plan_price(plan):
     elif plan == 'month': return CONFIG['price_month']
     elif plan == 'quarter': return CONFIG['price_quarter']
     return 0
+
+# ============================================================
+# ⭐ 獲取用戶 IP（防止同 IP 重複註冊）
+# ============================================================
+def get_client_ip():
+    """獲取用戶真實 IP（支援 Streamlit Cloud 代理）"""
+    try:
+        if hasattr(st, 'context') and hasattr(st.context, 'headers'):
+            headers = st.context.headers
+            if headers:
+                forwarded = headers.get('X-Forwarded-For')
+                if forwarded:
+                    return forwarded.split(',')[0].strip()
+                real_ip = headers.get('X-Real-IP')
+                if real_ip:
+                    return real_ip
+                remote = headers.get('Remote-Addr')
+                if remote:
+                    return remote
+        import os
+        forwarded = os.environ.get('HTTP_X_FORWARDED_FOR')
+        if forwarded:
+            return forwarded.split(',')[0].strip()
+        real_ip = os.environ.get('HTTP_X_REAL_IP')
+        if real_ip:
+            return real_ip
+        remote = os.environ.get('REMOTE_ADDR')
+        if remote:
+            return remote
+    except Exception as e:
+        print(f"⚠️ 獲取 IP 失敗：{e}")
+    return "unknown"
 
 # ============================================================
 # 付款申請功能
@@ -1741,7 +1729,7 @@ def show_prediction_history(username):
     st.dataframe(df, use_container_width=True)
 
 # ============================================================
-# 登入/註冊（包含多層級邀請獎勵 + IP 防止重複註冊）
+# 登入/註冊（包含 IP 防止重複註冊）
 # ============================================================
 def login_page():
     st.title("🔐 登入 / 註冊")
@@ -1854,22 +1842,18 @@ def login_page():
                     if new_user in users:
                         st.error("❌ 用戶名稱已被使用")
                     else:
-                        # ⭐ IP 檢查（受開關控制）
-                        config = load_system_config()
-                        client_ip = "unknown"
-                        if config.get("enable_ip_restriction", True):
-                            client_ip = get_client_ip()
-                            ip_exists = False
-                            if client_ip != "unknown":
-                                for uid, u in users.items():
-                                    if u.get('registered_ip') == client_ip:
-                                        ip_exists = True
-                                        break
-                                if ip_exists:
-                                    st.error(f"❌ 此 IP（{client_ip}）已經註冊過帳號，請使用原有帳號登入。")
-                                    return
+                        # ⭐ 防止同 IP 重複註冊
+                        client_ip = get_client_ip()
+                        ip_exists = False
+                        if client_ip != "unknown":
+                            for uid, u in users.items():
+                                if u.get('registered_ip') == client_ip:
+                                    ip_exists = True
+                                    break
+                            if ip_exists:
+                                st.error(f"❌ 此 IP（{client_ip}）已經註冊過帳號，請使用原有帳號登入。")
+                                return
                         
-                        # 處理邀請碼
                         invited_by = None
                         if CONFIG.get("enable_invite_reward", True) and invite_code_input:
                             for uid, u in users.items():
@@ -1879,7 +1863,6 @@ def login_page():
                             if not invited_by:
                                 st.warning("⚠️ 邀請碼無效，請確認後再試。")
                         
-                        # 建立新用戶
                         new_user_data = {
                             'password': new_pass,
                             'phone': phone,
@@ -1910,63 +1893,22 @@ def login_page():
                         users[new_user] = new_user_data
                         save_users(users)
                         
-                        # ⭐ 多層級邀請獎勵（受開關控制）
                         if CONFIG.get("enable_invite_reward", True) and invited_by:
-                            config = load_system_config()
-                            if config.get("enable_multi_level_invite", True):
-                                reward_per_level = config.get("invite_reward_per_level", 1)
-                                current_inviter = invited_by
-                                level = 0
-                                total_upper_rewards = 0
-                                upper_list = []
-                                
-                                while current_inviter:
-                                    inviter_data = users.get(current_inviter)
-                                    if not inviter_data:
-                                        break
-                                    
-                                    if inviter_data.get('predictions_limit', -1) != -1:
-                                        inviter_data['predictions_limit'] += reward_per_level
-                                        total_upper_rewards += reward_per_level
-                                    
-                                    inviter_data['invite_count'] = inviter_data.get('invite_count', 0) + 1
-                                    inviter_data['invite_rewards'] = inviter_data.get('invite_rewards', 0) + reward_per_level
-                                    upper_list.append(current_inviter)
-                                    
-                                    current_inviter = inviter_data.get('invited_by')
-                                    level += 1
-                                    if level > 50:
-                                        break
-                                
-                                # 新用戶獎勵
+                            inviter = users.get(invited_by)
+                            if inviter:
+                                reward_inviter = CONFIG.get("invite_reward_inviter", 1)
                                 reward_invitee = CONFIG.get("invite_reward_invitee", 1)
-                                if new_user_data.get('predictions_limit', -1) != -1:
+                                if inviter['predictions_limit'] != -1:
+                                    inviter['predictions_limit'] += reward_inviter
+                                inviter['invite_count'] = inviter.get('invite_count', 0) + 1
+                                inviter['invite_rewards'] = inviter.get('invite_rewards', 0) + reward_inviter
+                                if new_user_data['predictions_limit'] != -1:
                                     new_user_data['predictions_limit'] += reward_invitee
                                 new_user_data['invite_rewards'] = reward_invitee
                                 save_users(users)
-                                
-                                if upper_list:
-                                    st.success(f"✅ 註冊成功！你獲得 {reward_invitee} 次免費預測獎勵！")
-                                    st.info(f"📢 已通知 {len(upper_list)} 位上級：{', '.join(upper_list)}（各獲得 {reward_per_level} 次獎勵）")
-                                else:
-                                    st.success("✅ 註冊成功！你獲得 1 次免費預測獎勵！")
+                                st.success(f"✅ 註冊成功！你同邀請人各獲得 {reward_invitee} 次免費預測獎勵！")
                             else:
-                                # 原有單級獎勵
-                                inviter = users.get(invited_by)
-                                if inviter:
-                                    reward_inviter = CONFIG.get("invite_reward_inviter", 1)
-                                    reward_invitee = CONFIG.get("invite_reward_invitee", 1)
-                                    if inviter['predictions_limit'] != -1:
-                                        inviter['predictions_limit'] += reward_inviter
-                                    inviter['invite_count'] = inviter.get('invite_count', 0) + 1
-                                    inviter['invite_rewards'] = inviter.get('invite_rewards', 0) + reward_inviter
-                                    if new_user_data['predictions_limit'] != -1:
-                                        new_user_data['predictions_limit'] += reward_invitee
-                                    new_user_data['invite_rewards'] = reward_invitee
-                                    save_users(users)
-                                    st.success(f"✅ 註冊成功！你同邀請人各獲得 {reward_invitee} 次免費預測獎勵！")
-                                else:
-                                    st.success("✅ 註冊成功！")
+                                st.success("✅ 註冊成功！")
                         else:
                             st.success("✅ 註冊成功！")
                         
@@ -2767,29 +2709,6 @@ def admin_user_management():
                 st.rerun()
     
     st.divider()
-    
-    # ⭐ 新增：邀請獎勵 & IP 限制設定
-    with st.expander("⚙️ 邀請獎勵 & IP 限制設定"):
-        st.info("呢度控制邀請獎勵同 IP 註冊限制嘅全局開關")
-        
-        config = load_system_config()
-        
-        col_s1, col_s2 = st.columns(2)
-        with col_s1:
-            enable_multi = st.checkbox("啟用多層級邀請獎勵", value=config.get("enable_multi_level_invite", True))
-            enable_ip = st.checkbox("啟用 IP 重複註冊限制", value=config.get("enable_ip_restriction", True))
-        with col_s2:
-            reward_per_level = st.number_input("每層獎勵次數", min_value=0, max_value=10, value=config.get("invite_reward_per_level", 1), step=1)
-        
-        if st.button("💾 儲存邀請/IP 設定", key="save_invite_settings"):
-            config['enable_multi_level_invite'] = enable_multi
-            config['enable_ip_restriction'] = enable_ip
-            config['invite_reward_per_level'] = reward_per_level
-            save_system_config(config)
-            st.success("✅ 設定已儲存")
-            st.rerun()
-    
-    st.divider()
     st.subheader("📥 數據匯出")
     try:
         with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
@@ -3437,13 +3356,12 @@ def admin_content():
             st.info("暫無歷史記錄")
     
     st.write("---")
-st.write("上傳排位表")
-uploaded_file = st.file_uploader("選擇 CSV 排位表", type=["csv"])
-if uploaded_file is not None:
-    df = pd.read_csv(uploaded_file)
-    st.session_state['racecard_df'] = df
-    df.to_csv("racecard_uploaded.csv", index=False, encoding='utf-8-sig')
-    st.success("排位表已更新並永久保存！")
+    st.write("上傳排位表")
+    uploaded = st.file_uploader("選擇 CSV 排位表", type=['csv'], key="upload_racecard")
+    if uploaded:
+        with open('HKCJ_FULL_YEAR_DATA.csv', 'wb') as f:
+            f.write(uploaded.getbuffer())
+        st.success("✅ 排位表已更新")
 
 def admin_automation():
     st.subheader("🤖 自動化工具")
@@ -3482,6 +3400,9 @@ def admin_security():
         else:
             st.error("用戶不存在")
 
+# ============================================================
+# ⭐ 系統設定（加入虛擬幣設定）
+# ============================================================
 def admin_system_settings():
     users = load_users()
     admin_username = st.session_state.get('admin_username', 'admin')
@@ -3521,6 +3442,7 @@ def admin_system_settings():
         currency = st.text_input("貨幣單位", value=config.get("currency", "HKD"))
         admin_password = st.text_input("管理員密碼", value=config.get("admin_password", "z54060437K"), type="password")
         
+        # ⭐ 虛擬幣設定
         st.markdown("#### 💰 虛擬幣設定")
         virtual_coin_enabled = st.checkbox("啟用虛擬幣功能", value=config.get("virtual_coin_enabled", True))
         daily_virtual_coin = st.number_input("每日派發虛擬幣金額", min_value=0, value=config.get("daily_virtual_coin", 1000), step=100)
@@ -3574,9 +3496,9 @@ def admin_system_settings():
             st.rerun()
         else:
             st.error("❌ 儲存失敗，請檢查檔案權限。")
-            
+
 # ============================================================
-# 後台管理主頁面
+# 後台頁面
 # ============================================================
 def admin_page():
     if 'admin_authenticated' not in st.session_state:
@@ -3657,8 +3579,10 @@ def admin_page():
             tab_functions[name]()
 
 # ============================================================
-# 主程式入口
+# 主頁面（已加入賽事日曆、倒數計時、管理員贈送幣）
 # ============================================================
+def main():
+    if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
     if 'username' not in st.session_state:
         st.session_state.username = None
@@ -3723,6 +3647,7 @@ def admin_page():
         admin_page()
         return
 
+    # ====== 標題 ======
     col1, col2, col3 = st.columns([5, 1, 1])
     with col1:
         st.title("🏇 賽馬預測系統")
@@ -3742,10 +3667,12 @@ def admin_page():
                         del st.session_state[key]
                 st.rerun()
 
+    # ====== ⭐ 賽事日曆 + 倒數計時 ======
     st.markdown("---")
     display_race_calendar()
     st.markdown("---")
 
+    # ====== 今日免費重心推介 ======
     if CONFIG.get("enable_daily_free_tip", True):
         try:
             df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
@@ -3871,6 +3798,9 @@ def admin_page():
     with col_btn:
         predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
 
+    # ============================================================
+    # 🎮 虛擬投注（賽事預測 同 付款功能 中間）
+    # ============================================================
     if st.session_state.get('logged_in', False):
         st.markdown("---")
         st.subheader("🎮 虛擬投注")
@@ -3897,6 +3827,7 @@ def admin_page():
         if st.session_state.get('show_leaderboard', False):
             show_leaderboard()
 
+        # ⭐ 管理員贈送虛擬幣（只有超級管理員可見）
         if st.session_state.get('role') == 'super_admin':
             st.markdown("---")
             st.subheader("🎁 管理員贈送虛擬幣")
@@ -3924,6 +3855,7 @@ def admin_page():
         
         st.markdown("---")
 
+    # ====== 付款功能 ======
     st.markdown("---")
     st.subheader("💳 付款功能")
     
@@ -3935,6 +3867,7 @@ def admin_page():
             st.session_state.page_mode = "login"
             st.rerun()
 
+    # ====== 今日賽程 ======
     st.subheader("📅 今日賽程")
     try:
         df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
@@ -3966,8 +3899,5 @@ def admin_page():
     with col_f3:
         st.caption("💬 Telegram：@bryhjdjbrbxibvrjskofndhiebdpaq")
 
-# ============================================================
-# 程式執行點
-# ============================================================
 if __name__ == '__main__':
     main()
