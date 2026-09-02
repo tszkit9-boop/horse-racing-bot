@@ -1302,7 +1302,6 @@ def generate_pool_recommendations(df, top_n=6):
     return rec
 
 def run_prediction(date_str, race_no):
-    """執行預測"""
     # 從 session_state 拎排位表
     df = st.session_state.get('racecard_df')
     if df is None:
@@ -1323,25 +1322,34 @@ def run_prediction(date_str, race_no):
     }
     if '馬號' in df.columns:
         df.rename(columns=column_mapping, inplace=True)
-        
+
+    # ===== 標準化欄位 =====
     df = standardize_columns_safe(df)
-# ===== DEBUG：顯示處理後嘅數據 =====
-st.write("🔍 DEBUG 訊息：")
-st.write("1. 處理後欄位：", df.columns.tolist())
-st.write("2. 所有場次：", sorted(df['race_no'].unique()))
-st.write("3. 所有日期：", sorted(df['race_date'].unique()))
-st.write("4. 你選擇嘅日期：", date_str)
-st.write("5. 你選擇嘅場次：", race_no)
+    df = df.loc[:, ~df.columns.duplicated(keep='first')]
+    df = ensure_series(df)
+    df, _ = safe_parse_dates(df)
+    if df is None:
+        st.error("無法解析日期")
+        return None, "無法解析日期"
 
-# 篩選數據
-filtered_df = df[(df['race_date'] == date_str) & (df['race_no'] == race_no)]
-st.write("6. 篩選後行數：", len(filtered_df))
+    # ===== DEBUG：顯示處理後嘅數據 =====
+    st.write("🔍 DEBUG 訊息：")
+    st.write("1. 處理後欄位：", df.columns.tolist())
+    st.write("2. 所有場次：", sorted(df['race_no'].unique()))
+    st.write("3. 所有日期：", sorted(df['race_date'].unique()))
+    st.write("4. 你選擇嘅日期：", date_str)
+    st.write("5. 你選擇嘅場次：", race_no)
 
-if filtered_df.empty:
-    st.error("❌ 沒有找到匹配嘅數據，請檢查日期同場次")
-    return None, "沒有數據"
+    # 篩選數據
+    filtered_df = df[(df['race_date'] == date_str) & (df['race_no'] == race_no)]
+    st.write("6. 篩選後行數：", len(filtered_df))
 
-# 繼續原本嘅預測邏輯...
+    if filtered_df.empty:
+        st.error("❌ 沒有找到匹配嘅數據，請檢查日期同場次")
+        return None, "沒有數據"
+
+    # 繼續原本嘅預測邏輯（你之後嘅 code）
+    # ... 請將你原本嘅預測邏輯接喺呢度 ...
     df = df.loc[:, ~df.columns.duplicated(keep='first')]
     df = ensure_series(df)
 
