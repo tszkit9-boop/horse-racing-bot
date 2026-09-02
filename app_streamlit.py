@@ -3398,13 +3398,13 @@ def admin_content():
         else:
             st.info("暫無歷史記錄")
     
-    st.write("---")
-    st.write("上傳排位表")
-    uploaded = st.file_uploader("選擇 CSV 排位表", type=['csv'], key="upload_racecard")
-    if uploaded:
-        with open('HKCJ_FULL_YEAR_DATA.csv', 'wb') as f:
-            f.write(uploaded.getbuffer())
-        st.success("✅ 排位表已更新")
+  st.write("上傳排位表")
+uploaded_file = st.file_uploader("選擇 CSV 排位表", type=["csv"])
+if uploaded_file is not None:
+    df = pd.read_csv(uploaded_file)
+    st.session_state['racecard_df'] = df
+    df.to_csv("racecard_uploaded.csv", index=False, encoding='utf-8-sig')
+    st.success("排位表已更新並永久保存！")
 
 def admin_automation():
     st.subheader("🤖 自動化工具")
