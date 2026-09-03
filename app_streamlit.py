@@ -2194,7 +2194,7 @@ def admin_dashboard():
                 st.download_button(    
     # ===== AI 命中率手動更新 =====
     col_upd1, col_upd2 = st.columns([1, 3])
-    with col_upd1:
+with col_upd1:
         if st.button("🔄 更新 AI 命中率", use_container_width=True):
             hit_count, msg = update_ai_accuracy()
             st.success(f"✅ 比對完成：{msg}")
