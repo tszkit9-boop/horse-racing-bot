@@ -1305,9 +1305,7 @@ def run_prediction(date_str, race_no):
     import os
     import pandas as pd
     import numpy as np
-    import json
-    from datetime import datetime
-
+    
     # ===== 檢查檔案 =====
     if not os.path.exists("racecard_uploaded.csv"):
         st.error("❌ 找不到 racecard_uploaded.csv，請上傳排位表")
@@ -1367,9 +1365,10 @@ def run_prediction(date_str, race_no):
             return None, None
 
     filtered = df_date[df_date['race_no'] == race_no]
+
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
-    # ===== 產生預測結果（模擬數據） =====
+    # ===== 產生預測結果（模擬數據，保證出結果） =====
     np.random.seed(42)
     result_df = filtered[['horse_name', 'draw', 'weight', 'jockey', 'trainer']].copy()
     result_df['預測勝率'] = np.random.rand(len(result_df))
@@ -1383,36 +1382,6 @@ def run_prediction(date_str, race_no):
     top1 = result_df.iloc[0]['horse_name'] if len(result_df) > 0 else ""
     top2 = result_df.iloc[1]['horse_name'] if len(result_df) > 1 else ""
     pool_text = f"🏆 獨贏：{top1}　位置：{top1}、{top2}"
-
-    # ============================================================
-    # ⭐ 儲存 AI 預測（所有場次永久保留）
-    # ============================================================
-    ai_file = "ai_predictions.json"
-    ai_data = {}
-    if os.path.exists(ai_file):
-        try:
-            with open(ai_file, 'r', encoding='utf-8') as f:
-                ai_data = json.load(f)
-        except:
-            ai_data = {}
-
-    key = f"{date_str}_{race_no}"
-    ai_data[key] = {
-        "date": date_str,
-        "race": race_no,
-        "top_horse": result_df.iloc[0]['horse_name'],
-        "top_prob": float(result_df.iloc[0]['預測勝率']),
-        "all_horses": result_df['horse_name'].tolist(),
-        "predicted_at": datetime.now().isoformat()
-    }
-    with open(ai_file, 'w', encoding='utf-8') as f:
-        json.dump(ai_data, f, ensure_ascii=False, indent=2)
-
-    # ===== 自動 commit 上 GitHub（永久保留） =====
-    try:
-        commit_to_github(ai_file, f"更新 AI 預測 {date_str} 第 {race_no} 場")
-    except Exception as e:
-        print(f"Commit 失敗：{e}")
 
     return result_df, pool_text
 
@@ -7586,20 +7555,26 @@ def main():
     with col_race:
         race_no = st.selectbox("選擇場次", list(range(1, 12)), index=0, key="predict_race_mid")
 
-with col_btn:
-    predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
-    
-if predict_btn:
-    date_str = date.strftime("%Y-%m-%d")
-    with st.spinner(f"⏳ 正在預測 {date_str} 第 {race_no} 場..."):
-        result, pool = run_prediction(date_str, race_no)
-        if result is not None and not result.empty:
-            st.success(f"✅ {date_str} 第 {race_no} 場預測完成！")
-            if pool:
-                st.info(f"🎯 {pool}")
-            st.dataframe(result, use_container_width=True)
-        else:
-            st.error("❌ 未能獲取預測結果，請檢查排位表")
+    with col_btn:
+        predict_btn = st.button("執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
+
+    if predict_btn:
+        date_str = date.strftime("%Y-%m-%d")
+     
+        with st.spinner(f"⏳ 正在預測 {date_str} 第 {race_no} 場..."):
+            try:
+                result, pool = run_prediction(date_str, race_no)
+                if result is not None and not result.empty:
+                    st.success(f"✅ {date_str} 第 {race_no} 場預測完成！")
+                    if pool:
+                        st.info(f"🎯 {pool}")
+                    st.dataframe(result, use_container_width=True)
+                else:
+                    st.error("❌ 未能獲取預測結果，請檢查排位表")
+            except Exception as e:
+                st.error(f"❌ 預測過程發生錯誤：{e}")
+                import traceback
+                st.code(traceback.format_exc())
 
     # ============================================================
     # 🎮 虛擬投注（賽事預測 同 付款功能 中間）
@@ -7732,112 +7707,7 @@ if predict_btn:
             else:
                 st.info("暫時未有預測記錄")
     else:
-        st.info("暫時未有預測記錄，未能進行自我學習分析。請先執行預測。") 
-    # ============================================================
-    # 🤖 AI 預測表現（公開顯示 - 永久保留所有場次）
-    # ============================================================
-    st.markdown("---")
-    st.subheader("🤖 AI 預測表現（公開）")
-
-    # 載入 AI 預測記錄
-    ai_file = "ai_predictions.json"
-    ai_data = {}
-    if os.path.exists(ai_file):
-        try:
-            with open(ai_file, 'r', encoding='utf-8') as f:
-                ai_data = json.load(f)
-        except:
-            ai_data = {}
-
-    # 載入賽果
-    results_df = None
-    if os.path.exists("ALL_DATA_MERGED.csv"):
-        try:
-            results_df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig')
-            results_df = standardize_columns_safe(results_df)
-            if 'race_date' in results_df.columns:
-                results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
-                results_df['race_date_str'] = results_df['race_date'].dt.strftime('%Y-%m-%d')
-            if 'horse_name' not in results_df.columns and '馬名' in results_df.columns:
-                results_df.rename(columns={'馬名': 'horse_name'}, inplace=True)
-            if 'finish_position' not in results_df.columns and '名次' in results_df.columns:
-                results_df.rename(columns={'名次': 'finish_position'}, inplace=True)
-        except:
-            results_df = None
-
-    if not ai_data:
-        st.info("📭 暫時未有 AI 預測記錄，請先執行預測。")
-    else:
-        total_predictions = len(ai_data)
-        hit_count = 0
-        hit_details = []
-
-        if results_df is not None and not results_df.empty:
-            for key, pred in ai_data.items():
-                date_str_item = pred.get('date')
-                race_no_item = pred.get('race')
-                top_horse = pred.get('top_horse')
-                if not date_str_item or not race_no_item or not top_horse:
-                    continue
-                matched = results_df[
-                    (results_df['race_date_str'] == date_str_item) &
-                    (results_df['race_no'] == race_no_item) &
-                    (results_df['horse_name'] == top_horse)
-                ]
-                if not matched.empty:
-                    finish_pos = matched.iloc[0].get('finish_position')
-                    if pd.notna(finish_pos) and finish_pos == 1:
-                        hit_count += 1
-                        hit_details.append({"日期": date_str_item, "場次": race_no_item, "馬": top_horse, "結果": "✅ 命中"})
-                    else:
-                        hit_details.append({"日期": date_str_item, "場次": race_no_item, "馬": top_horse, "結果": "❌ 失準"})
-                else:
-                    hit_details.append({"日期": date_str_item, "場次": race_no_item, "馬": top_horse, "結果": "⏳ 待比對"})
-        else:
-            for key, pred in ai_data.items():
-                hit_details.append({
-                    "日期": pred.get('date'),
-                    "場次": pred.get('race'),
-                    "馬": pred.get('top_horse'),
-                    "結果": "⏳ 待比對（請上傳賽果）"
-                })
-            hit_count = None
-
-        # 顯示統計數據
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("📊 已預測場次", total_predictions)
-        with col2:
-            if hit_count is not None:
-                st.metric("🎯 命中場次", hit_count)
-            else:
-                st.metric("🎯 命中場次", "N/A")
-        with col3:
-            if hit_count is not None and total_predictions > 0:
-                hit_rate = hit_count / total_predictions
-                st.metric("📈 整體命中率", f"{hit_rate:.1%}")
-            else:
-                st.metric("📈 整體命中率", "待定（需上傳賽果）")
-
-        # 顯示全部對比記錄（所有場次，冇數量限制）
-        if hit_details:
-            st.subheader("📋 所有預測 vs 賽果記錄（共 {} 場）".format(len(hit_details)))
-            df_hit = pd.DataFrame(hit_details[::-1])  # 由新到舊顯示全部
-            
-            def color_result(val):
-                if "✅" in val:
-                    return "background-color: #d4edda; color: #155724;"
-                elif "❌" in val:
-                    return "background-color: #f8d7da; color: #721c24;"
-                else:
-                    return "background-color: #fff3cd; color: #856404;"
-            
-            st.dataframe(df_hit.style.applymap(color_result, subset=['結果']), use_container_width=True, hide_index=True)
-
-        if results_df is None:
-            st.info("💡 請上傳賽果 CSV（ALL_DATA_MERGED.csv）以開始比對 AI 預測表現。")
-
-        st.caption("📌 所有預測記錄會自動儲存到 GitHub，永久保留，跨部署都唔會消失。")
+        st.info("暫時未有預測記錄，未能進行自我學習分析。請先執行預測。")
 
     # ============================================================
     # 7️⃣ 📅 今日賽程
