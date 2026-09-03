@@ -1394,6 +1394,7 @@ def run_prediction(date_str, race_no):
         "predicted_at": datetime.now().isoformat()
     }
     with open(ai_file, 'w', encoding='utf-8') as f:
+        st.success(f"✅ AI 預測已儲存到 {ai_file}，key={key}")
         json.dump(ai_data, f, ensure_ascii=False, indent=2)
 
     # ===== 自動 commit 上 GitHub（永久保留） =====
