@@ -7593,17 +7593,18 @@ if predict_btn:
                 if pool:
                     st.info(f"🎯 {pool}")
                 st.dataframe(result, use_container_width=True)
-                
-                # ===== 🧪 檢查 ai_predictions.json 是否寫入 =====
-                import json
+
+                # ===== 簡單檢查 ai_predictions.json =====
+                # 如果檔案存在，顯示內容（確認儲存成功）
                 if os.path.exists("ai_predictions.json"):
                     with open("ai_predictions.json", "r", encoding='utf-8') as f:
+                        import json
                         ai_content = json.load(f)
                     st.write("📄 ai_predictions.json 內容：")
-                    st.json(ai_content)
+                    st.write(ai_content)  # 用 st.write 顯示，避免 st.json 可能嘅問題
                 else:
-                    st.error("❌ ai_predictions.json 唔存在！")
-                
+                    st.info("📭 ai_predictions.json 尚未建立（可能未執行過預測）")
+
                 # 強制刷新頁面，令 AI 表現區塊重新讀取數據
                 st.rerun()
             else:
