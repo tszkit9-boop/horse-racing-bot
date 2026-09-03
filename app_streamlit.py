@@ -7577,44 +7577,20 @@ def main():
         config = load_system_config()
         xgb_w = config.get('xgb_weight', 25)
         cat_w = config.get('cat_weight', 1)
-
+        
         col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
         col_stat1.metric("📊 總預測", total)
         col_stat2.metric("🎯 命中次數", hit)
         col_stat3.metric("📈 命中率", f"{hit_rate:.2%}")
         col_stat4.metric("💰 ROI (模擬)", f"{roi:.2%}")
-
+        
         if len(records) >= 10:
             recent = records[-10:]
             hit_seq = [1 if r.get('is_hit') is True else 0 for r in recent]
-            st.caption("📊 最近 10 場命中情況： " + "".join(["✅" if h else "❌" for h in hit_seq]))    
-    # ============================================================
-    # 🤖 AI 預測表現（公開）
-    # ============================================================
-    st.markdown("---")
-    st.subheader("🤖 AI 預測表現（公開）")
-
-    ai_file = "ai_predictions.json"
-    ai_data = {}
-    if os.path.exists(ai_file):
-        try:
-            with open(ai_file, 'r', encoding='utf-8') as f:
-                ai_data = json.load(f)
-        except:
-            ai_data = {}
-
-    if not ai_data:
-        st.info("📭 暫時未有 AI 預測記錄，請先執行預測。")
-    else:
-        total = len(ai_data)
-        st.metric("📊 已預測場次", total)
-        # 顯示最近5條
-        st.write("📋 最近預測記錄：")
-        for key, val in list(ai_data.items())[-5:][::-1]:
-            st.write(f"📅 {val['date']} 第 {val['race']} 場 → 🏇 {val['top_horse']}（勝率 {val['top_prob']:.1%}）")
-
+            st.caption("📊 最近 10 場命中情況： " + "".join(["✅" if h else "❌" for h in hit_seq]))
+        
         st.caption(f"⚙️ 當前模型融合權重：XGBoost **{xgb_w}** : CatBoost **{cat_w}**")
-
+        
         with st.expander("📊 特徵重要性分析（CatBoost）"):
             try:
                 cat_model = CatBoostClassifier()
@@ -7626,7 +7602,7 @@ def main():
                         '特徵': feature_names,
                         '重要性': importances
                     }).sort_values('重要性', ascending=False).head(15)
-                    fig = px.bar(df_imp, x='重要性', y='特徵', orientation='h',
+                    fig = px.bar(df_imp, x='重要性', y='特徵', orientation='h', 
                                 title='Top 15 特徵重要性',
                                 color='重要性', color_continuous_scale='Blues')
                     fig.update_layout(height=400)
@@ -7635,7 +7611,7 @@ def main():
                     st.info("特徵數量不匹配")
             except Exception as e:
                 st.info(f"無法載入 CatBoost 模型：{e}")
-
+        
         with st.expander("📈 命中率趨勢圖"):
             if records:
                 df_records = pd.DataFrame(records)
@@ -7648,7 +7624,7 @@ def main():
                             hit=('is_hit', lambda x: (x==True).sum())
                         ).reset_index()
                         daily['hit_rate'] = daily['hit'] / daily['total']
-                        fig2 = px.line(daily, x='date', y='hit_rate',
+                        fig2 = px.line(daily, x='date', y='hit_rate', 
                                        title='每日命中率趨勢',
                                        markers=True)
                         fig2.update_layout(yaxis_tickformat='.0%')
@@ -7661,7 +7637,6 @@ def main():
                 st.info("暫時未有預測記錄")
     else:
         st.info("暫時未有預測記錄，未能進行自我學習分析。請先執行預測。")
-
     # ============================================================
     # 7️⃣ 📅 今日賽程
     # ============================================================
