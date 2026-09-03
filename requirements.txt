@@ -1,5 +1,28 @@
+# ===== 核心套件 =====
+streamlit
+pandas
+numpy
+plotly
+Pillow
+
+# ===== AI / 機器學習 =====
+scikit-learn
+xgboost
+catboost
+
+# ===== 數據處理 =====
+openpyxl
+
+# ===== 爬蟲相關 =====
+requests
+beautifulsoup4
 selenium
 webdriver-manager
-pandas
-beautifulsoup4
-requests
+lxml
+
+# ===== 自動化 / 系統 =====
+python-dotenv
+
+# ===== 數據庫（可選） =====
+# supabase
+# psycopg2-binary
