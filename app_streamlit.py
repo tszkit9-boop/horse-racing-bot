@@ -1306,6 +1306,7 @@ def run_prediction(date_str, race_no):
     import pandas as pd
     import numpy as np
     import json
+    from datetime import datetime
 
     # ===== 檢查檔案 =====
     if not os.path.exists("racecard_uploaded.csv"):
@@ -1334,6 +1335,8 @@ def run_prediction(date_str, race_no):
     existing = [col for col in rename_map if col in df.columns]
     if existing:
         df.rename(columns={col: rename_map[col] for col in existing}, inplace=True)
+    else:
+        st.warning("⚠️ 找不到可對應嘅中文欄位")
 
     # ===== 日期處理 =====
     if 'race_date' not in df.columns:
@@ -1344,14 +1347,16 @@ def run_prediction(date_str, race_no):
     df = df.dropna(subset=['race_date'])
     df['race_date_str'] = df['race_date'].dt.strftime('%Y-%m-%d')
 
-    # ===== 自動糾錯 =====
+    # ===== 自動糾錯：若輸入日期無數據，改用最新日期 =====
     available_dates = sorted(df['race_date_str'].unique())
     if date_str not in available_dates:
         st.warning(f"⚠️ 輸入日期 {date_str} 無數據，自動改用最新日期 {available_dates[-1]}")
         date_str = available_dates[-1]
 
+    # ===== 篩選日期 =====
     df_date = df[df['race_date_str'] == date_str]
 
+    # ===== 自動糾錯：若該場次無數據，改用該日期嘅第一場 =====
     if race_no not in df_date['race_no'].unique():
         available_races = sorted(df_date['race_no'].unique())
         if available_races:
@@ -1364,7 +1369,7 @@ def run_prediction(date_str, race_no):
     filtered = df_date[df_date['race_no'] == race_no]
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
-    # ===== 產生預測結果 =====
+    # ===== 產生預測結果（模擬數據） =====
     np.random.seed(42)
     result_df = filtered[['horse_name', 'draw', 'weight', 'jockey', 'trainer']].copy()
     result_df['預測勝率'] = np.random.rand(len(result_df))
@@ -1374,7 +1379,14 @@ def run_prediction(date_str, race_no):
     )
     result_df = result_df.sort_values('預測勝率', ascending=False)
 
-    # ===== 儲存 AI 預測（所有場次永久保留） =====
+    # ===== 彩池推薦 =====
+    top1 = result_df.iloc[0]['horse_name'] if len(result_df) > 0 else ""
+    top2 = result_df.iloc[1]['horse_name'] if len(result_df) > 1 else ""
+    pool_text = f"🏆 獨贏：{top1}　位置：{top1}、{top2}"
+
+    # ============================================================
+    # ⭐ 儲存 AI 預測（所有場次永久保留）
+    # ============================================================
     ai_file = "ai_predictions.json"
     ai_data = {}
     if os.path.exists(ai_file):
@@ -1394,7 +1406,6 @@ def run_prediction(date_str, race_no):
         "predicted_at": datetime.now().isoformat()
     }
     with open(ai_file, 'w', encoding='utf-8') as f:
-        st.success(f"✅ AI 預測已儲存到 {ai_file}，key={key}")
         json.dump(ai_data, f, ensure_ascii=False, indent=2)
 
     # ===== 自動 commit 上 GitHub（永久保留） =====
@@ -1402,11 +1413,6 @@ def run_prediction(date_str, race_no):
         commit_to_github(ai_file, f"更新 AI 預測 {date_str} 第 {race_no} 場")
     except Exception as e:
         print(f"Commit 失敗：{e}")
-
-    # ===== 彩池推薦 =====
-    top1 = result_df.iloc[0]['horse_name'] if len(result_df) > 0 else ""
-    top2 = result_df.iloc[1]['horse_name'] if len(result_df) > 1 else ""
-    pool_text = f"🏆 獨贏：{top1}　位置：{top1}、{top2}"
 
     return result_df, pool_text
 
