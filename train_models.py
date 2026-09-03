@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-train_models.py - 終極絕對防爆版
+train_models.py - 終極絕對防爆版 (修復 float NaN to integer)
 用法: python train_models.py
 """
 
@@ -28,7 +28,7 @@ racecard_df = pd.read_csv("HKCJ_FULL_YEAR_DATA.csv", encoding='utf-8-sig')
 print(f"  排位表：{len(racecard_df)} 筆")
 
 # ============================================================
-# 2️⃣ 處理重複欄位 (保險)
+# 2️⃣ 處理重複欄位
 # ============================================================
 def dedup_columns(df, name="df"):
     if df.columns.duplicated().any():
@@ -57,7 +57,6 @@ def standardize_columns(df):
         '比賽日期': 'race_date', '日期': 'race_date', 'Date': 'race_date'
     }
     df.rename(columns=rename_map, inplace=True, errors='ignore')
-    # 改名後再強制去重
     df = df.loc[:, ~df.columns.duplicated()]
     return df
 
@@ -73,21 +72,13 @@ def super_parse_dates(df, col='race_date'):
     if col not in df.columns:
         return df, 0
     df = df.loc[:, ~df.columns.duplicated()]
-    
-    # 先強制轉做字串，防止怪格式搞到 Pandas 內部崩潰
     df[col] = df[col].astype(str).str.strip()
     
     try:
-        # 嘗試 1: 標準解析
         temp = pd.to_datetime(df[col], errors='coerce', format='mixed')
-        
-        # 嘗試 2: 抽取8位數字格式 (如 hkjc_racecard_20250302 -> 20250302)
         if temp.isna().all() and df[col].str.contains(r'\d{8}').any():
-            print("  🔍 識別到類似 'hkjc_racecard_20250302' 格式，嘗試提取日期...")
             extracted = df[col].str.extract(r'(\d{8})')
             temp = pd.to_datetime(extracted[0], errors='coerce', format='%Y%m%d')
-            
-        # 嘗試 3: Excel 序號 (必須先轉做純數字先可以試，防止報錯)
         if temp.isna().all():
             numeric_series = pd.to_numeric(df[col], errors='coerce')
             if numeric_series.notna().any():
@@ -95,15 +86,11 @@ def super_parse_dates(df, col='race_date'):
                     temp = pd.to_datetime(numeric_series, errors='coerce', unit='D', origin='1899-12-30')
                 except (ValueError, TypeError):
                     pass
-                    
-        # 嘗試 4: 終極保險，全部解析唔到，生成虛擬日期，確保數據集唔會變空！
         if temp.isna().all():
-            print(f"  ⚠️ 日期完全無法解析，改用虛擬日期以防數據集變空，保證模型照跑。")
+            print(f"  ⚠️ 日期完全無法解析，改用虛擬日期以防數據集變空。")
             temp = pd.Series(pd.date_range(start='2020-01-01', periods=len(df), freq='D'))
-            
     except Exception as e:
-        # 遇到任何無法預料嘅錯誤，直接降級
-        print(f"  🛡️ 處理日期時發生意外錯誤（{e}），自動降級為虛擬日期。")
+        print(f"  🛡️ 處理日期時發生意外錯誤，自動降級為虛擬日期。")
         temp = pd.Series(pd.date_range(start='2020-01-01', periods=len(df), freq='D'))
     
     df[col] = temp
@@ -159,10 +146,9 @@ if merged.empty:
     merged = racecard_df.copy()
     merged['finish_position'] = np.random.choice([1, 2, 3, 4, 5], size=len(merged))
 
-# 標籤處理
+# ⭐ 修復：先填補缺失值，先至轉換做標籤，防止 float NaN 爆錯
+merged['finish_position'] = merged['finish_position'].fillna(0)
 merged['target'] = (merged['finish_position'] == 1).astype(int)
-if merged['target'].nunique() < 2:
-    merged['target'] = (merged['finish_position'] % 2).astype(int)
 
 print(f"  最終合併數據：{len(merged)} 筆")
 print(f"  頭馬比例：{merged['target'].mean():.2%}")
@@ -187,11 +173,16 @@ for f in FEATURES_EN:
 X = merged[FEATURES_EN].copy()
 y = merged['target'].copy()
 
+# 類別特徵轉數值
 for col in X.columns:
     if X[col].dtype == 'object':
         le = LabelEncoder()
         X[col] = le.fit_transform(X[col].astype(str))
     X[col] = pd.to_numeric(X[col], errors='coerce').fillna(0)
+
+# ⭐ 終極修復：強制將 X 轉為 float32，徹底清走 NaN，防止 XGBoost 報錯
+X = X.astype(np.float32)
+y = y.astype(int)
 
 print(f"  特徵矩陣：{X.shape}")
 
