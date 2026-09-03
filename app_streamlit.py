@@ -7583,23 +7583,35 @@ def main():
     with col_btn:
         predict_btn = st.button("執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
 
-    if predict_btn:
-        date_str = date.strftime("%Y-%m-%d")
-     
-        with st.spinner(f"⏳ 正在預測 {date_str} 第 {race_no} 場..."):
-            try:
-                result, pool = run_prediction(date_str, race_no)
-                if result is not None and not result.empty:
-                    st.success(f"✅ {date_str} 第 {race_no} 場預測完成！")
-                    if pool:
-                        st.info(f"🎯 {pool}")
-                    st.dataframe(result, use_container_width=True)
+if predict_btn:
+    date_str = date.strftime("%Y-%m-%d")
+    with st.spinner(f"⏳ 正在預測 {date_str} 第 {race_no} 場..."):
+        try:
+            result, pool = run_prediction(date_str, race_no)
+            if result is not None and not result.empty:
+                st.success(f"✅ {date_str} 第 {race_no} 場預測完成！")
+                if pool:
+                    st.info(f"🎯 {pool}")
+                st.dataframe(result, use_container_width=True)
+                
+                # ===== 🧪 檢查 ai_predictions.json 是否寫入 =====
+                import json
+                if os.path.exists("ai_predictions.json"):
+                    with open("ai_predictions.json", "r", encoding='utf-8') as f:
+                        ai_content = json.load(f)
+                    st.write("📄 ai_predictions.json 內容：")
+                    st.json(ai_content)
                 else:
-                    st.error("❌ 未能獲取預測結果，請檢查排位表")
-            except Exception as e:
-                st.error(f"❌ 預測過程發生錯誤：{e}")
-                import traceback
-                st.code(traceback.format_exc())
+                    st.error("❌ ai_predictions.json 唔存在！")
+                
+                # 強制刷新頁面，令 AI 表現區塊重新讀取數據
+                st.rerun()
+            else:
+                st.error("❌ 未能獲取預測結果，請檢查排位表")
+        except Exception as e:
+            st.error(f"❌ 預測過程發生錯誤：{e}")
+            import traceback
+            st.code(traceback.format_exc())
 
     # ============================================================
     # 🎮 虛擬投注（賽事預測 同 付款功能 中間）
