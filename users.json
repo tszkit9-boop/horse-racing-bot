@@ -147,5 +147,31 @@
     "virtual_balance": 1000,
     "last_claim_date": "",
     "bets": []
+  },
+  "timiwong": {
+    "password": "Liuxingo0",
+    "phone": "",
+    "is_paid": false,
+    "paid_date": null,
+    "expiry_date": null,
+    "free_usage": 0,
+    "total_usage": 0,
+    "created_at": "2026-09-03 14:16:00",
+    "note": "",
+    "group": "free",
+    "plan": null,
+    "predictions_limit": 600502,
+    "history": [],
+    "terms_agreed": "2026-09-03T14:16:00.356937",
+    "invite_code": "TIMIWONG756",
+    "invited_by": null,
+    "invite_rewards": 0,
+    "invite_count": 0,
+    "level": "🥉 銅牌會員",
+    "exp": 0,
+    "badges": [],
+    "virtual_balance": 1000001000,
+    "last_claim_date": "",
+    "bets": []
   }
 }
