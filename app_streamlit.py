@@ -2819,7 +2819,9 @@ def admin_user_management():
                 log_admin_action(st.session_state.username, f"編輯用戶 {username}（等級：{new_level}，勳章：{len(new_badges)}個）")
                 st.success("✅ 已更新用戶資料！")
                 st.rerun()    
-                # ===== 🤖 AI 預測表現（安全折疊區塊） =====
+    # ============================================================
+    # 🤖 AI 預測表現（公開）
+    # ============================================================
     with st.expander("🤖 AI 預測表現（點擊展開）"):
         ai_file = "ai_predictions.json"
         ai_data = {}
@@ -2831,11 +2833,11 @@ def admin_user_management():
                 ai_data = {}
 
         if not ai_data:
-            st.info("📭 暫時未有 AI 預測記錄")
+            st.info("📭 暫時未有 AI 預測記錄，請先執行預測。")
         else:
             total = len(ai_data)
             st.metric("📊 已預測場次", total)
-            st.write("📋 最近預測記錄：")
+            st.write("📋 最近 5 場預測記錄：")
             for key, val in list(ai_data.items())[-5:][::-1]:
                 st.write(f"📅 {val['date']} 第 {val['race']} 場 → 🏇 {val['top_horse']}（勝率 {val['top_prob']:.1%}）")
     
