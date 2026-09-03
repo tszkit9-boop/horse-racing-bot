@@ -1,0 +1,38 @@
+name: 自動重新訓練模型
+
+on:
+  schedule:
+    # 香港時間 星期日 08:00 (UTC 00:00)
+    - cron: '0 0 * * 0'
+  workflow_dispatch:   # 容許手動觸發
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 檢出程式碼
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 設定 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安裝依賴
+        run: |
+          pip install --upgrade pip
+          pip install pandas numpy scikit-learn xgboost catboost
+
+      - name: 執行訓練
+        run: |
+          python train_models.py
+
+      - name: 提交變更
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add hk_racing_model.pkl hk_catboost_model.cbm model_info.json
+          git commit -m "自動重新訓練模型 $(date +'%Y-%m-%d %H:%M')" || echo "冇變更"
+          git push
