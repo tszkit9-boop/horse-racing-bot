@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-train_models.py - 自動訓練 XGBoost + CatBoost 模型（強健版+終極修復）
+train_models.py - 自動訓練 XGBoost + CatBoost 模型（終極防崩潰版）
 用法: python train_models.py
 """
 
@@ -24,11 +24,9 @@ print("📊 讀取數據...")
 
 results_df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig')
 print(f"  賽果數據：{len(results_df)} 筆")
-print(f"  賽果欄位數量：{len(results_df.columns)}")
 
 racecard_df = pd.read_csv("HKCJ_FULL_YEAR_DATA.csv", encoding='utf-8-sig')
 print(f"  排位表：{len(racecard_df)} 筆")
-print(f"  排位表欄位數量：{len(racecard_df.columns)}")
 
 # ============================================================
 # 2️⃣ 處理重複欄位
@@ -40,7 +38,6 @@ def dedup_columns(df, name="df"):
         dup_cols = df.columns[df.columns.duplicated()].tolist()
         print(f"  {name} 發現重複欄位：{dup_cols[:5]}...")
         df = df.loc[:, ~df.columns.duplicated(keep='first')]
-        print(f"  {name} 已移除重複欄位，現有 {len(df.columns)} 個欄位")
     return df
 
 racecard_df = dedup_columns(racecard_df, "排位表")
@@ -79,7 +76,7 @@ def standardize_columns(df):
                 df.rename(columns={col: 'race_date'}, inplace=True)
                 break
     
-    # ✅ 終極修復1：改名後再強制去重，防止多個欄位變成同一個名
+    # 改名後再強制去重
     df = df.loc[:, ~df.columns.duplicated()]
     
     return df
@@ -110,7 +107,6 @@ for col in ['race_date', 'race_no', 'finish_position']:
         ok = False
 
 if not ok:
-    print("  請檢查 CSV 檔案欄位名是否正確")
     exit(1)
 
 # 決定合併 key
@@ -127,14 +123,12 @@ else:
             break
     if merge_key is None:
         print("❌ 無法找到合併 key")
-        print(f"   排位表欄位：{racecard_df.columns.tolist()}")
-        print(f"   賽果欄位：{results_df.columns.tolist()}")
         exit(1)
 
 print(f"  合併 key：{merge_key}")
 
 # ============================================================
-# 5️⃣ 日期處理（強健版）
+# 5️⃣ 日期處理（終極防崩潰版）
 # ============================================================
 print("📅 處理日期...")
 
@@ -142,53 +136,51 @@ def safe_parse_dates(df, col='race_date'):
     if col not in df.columns:
         return df, 0
     
-    # ✅ 終極修復2：處理日期前，先保證欄位無重複
+    # 先清理重複欄位
     df = df.loc[:, ~df.columns.duplicated()]
     
-    original = df[col].copy()
-    df[col] = pd.to_datetime(df[col], errors='coerce')
+    # 強制轉成字串再解析，兼容多種格式（包括純數字）
+    try:
+        # pandas 2.0 以上支援 format='mixed'
+        df[col] = pd.to_datetime(df[col].astype(str), errors='coerce', format='mixed')
+    except TypeError:
+        # 舊版本 pandas 不支援，用默認方式
+        df[col] = pd.to_datetime(df[col].astype(str), errors='coerce')
+    
     invalid = df[col].isna().sum()
     if invalid > 0:
-        print(f"  ⚠️ 發現 {invalid} 個無效日期，將被刪除")
-        df = df.dropna(subset=[col])
+        print(f"  ⚠️ 發現 {invalid} 個無效日期")
+        # 🛡️ 終極保底：如果全部日期都無效，就保留原數據，避免數據集變空！
+        if len(df) > invalid:
+            df = df.dropna(subset=[col])
+        else:
+            print(f"  🛡️ 警告：{col} 欄位全部無效，保留原數據以免數據集為空")
+            
     return df, invalid
 
 racecard_df, invalid1 = safe_parse_dates(racecard_df)
 results_df, invalid2 = safe_parse_dates(results_df)
 
-print(f"  排位表有效日期：{len(racecard_df)} 筆（刪除 {invalid1} 筆無效）")
-print(f"  賽果有效日期：{len(results_df)} 筆（刪除 {invalid2} 筆無效）")
+print(f"  排位表有效日期：{len(racecard_df)} 筆")
+print(f"  賽果有效日期：{len(results_df)} 筆")
 
 if racecard_df.empty or results_df.empty:
     print("❌ 其中一個數據集為空，無法繼續")
     exit(1)
 
 # ============================================================
-# 6️⃣ 合併數據（詳細除錯）
+# 6️⃣ 合併數據
 # ============================================================
 print("🔗 合併數據...")
 
-# 確保類型一致
 racecard_df['race_no'] = racecard_df['race_no'].astype(str)
 results_df['race_no'] = results_df['race_no'].astype(str)
 
-# 確保 key 存在
 for k in [merge_key, 'race_date', 'race_no']:
-    if k not in racecard_df.columns:
-        print(f"❌ 排位表缺少 '{k}'")
-        exit(1)
-    if k not in results_df.columns:
-        print(f"❌ 賽果缺少 '{k}'")
+    if k not in racecard_df.columns or k not in results_df.columns:
+        print(f"❌ 缺少合併欄位 '{k}'")
         exit(1)
 
-print(f"  排位表數據形狀：{racecard_df.shape}")
-print(f"  賽果數據形狀：{results_df.shape}")
-
-# 顯示合併 key 的樣本
-print(f"  排位表 {merge_key} 樣本：{racecard_df[merge_key].head(3).tolist()}")
-print(f"  賽果 {merge_key} 樣本：{results_df[merge_key].head(3).tolist()}")
-
-# 合併
 merged = racecard_df.merge(
     results_df[['race_date', 'race_no', merge_key, 'finish_position']],
     on=['race_date', 'race_no', merge_key],
@@ -197,13 +189,7 @@ merged = racecard_df.merge(
 print(f"  合併後：{len(merged)} 筆記錄")
 
 if merged.empty:
-    print("❌ 合併後無數據")
-    print("  可能原因：")
-    print("  1. 兩個檔案嘅日期範圍冇重疊")
-    print("  2. 馬匹名稱/ID 對唔上")
-    print("  3. 場次編號格式唔同")
-    print(f"  排位表日期範圍：{racecard_df['race_date'].min()} ~ {racecard_df['race_date'].max()}")
-    print(f"  賽果日期範圍：{results_df['race_date'].min()} ~ {results_df['race_date'].max()}")
+    print("❌ 合併後無數據，請檢查兩個檔案的日期範圍及馬匹ID是否有重疊")
     exit(1)
 
 # 標籤
@@ -221,7 +207,6 @@ for f in extra:
     if f in merged.columns and f not in FEATURES_EN:
         FEATURES_EN.append(f)
 
-# 確保所有特徵存在
 for f in FEATURES_EN:
     if f not in merged.columns:
         merged[f] = 0
@@ -231,7 +216,6 @@ for f in FEATURES_EN:
 X = merged[FEATURES_EN].copy()
 y = merged['target'].copy()
 
-# 類別特徵轉數值
 for col in X.columns:
     if X[col].dtype == 'object':
         le = LabelEncoder()
@@ -287,10 +271,6 @@ with open('hk_racing_model.pkl', 'wb') as f:
     pickle.dump(xgb_model, f)
 
 cat_model.save_model('hk_catboost_model.cbm')
-
-print("✅ 模型已儲存：")
-print("  - hk_racing_model.pkl")
-print("  - hk_catboost_model.cbm")
 
 info = {
     "trained_at": datetime.now().isoformat(),
