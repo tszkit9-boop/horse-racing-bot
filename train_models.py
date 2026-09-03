@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-train_models.py - 自動訓練 XGBoost + CatBoost 模型（強健版）
+train_models.py - 自動訓練 XGBoost + CatBoost 模型（強健版+終極修復）
 用法: python train_models.py
 """
 
@@ -79,6 +79,9 @@ def standardize_columns(df):
                 df.rename(columns={col: 'race_date'}, inplace=True)
                 break
     
+    # ✅ 終極修復1：改名後再強制去重，防止多個欄位變成同一個名
+    df = df.loc[:, ~df.columns.duplicated()]
+    
     return df
 
 racecard_df = standardize_columns(racecard_df)
@@ -138,6 +141,10 @@ print("📅 處理日期...")
 def safe_parse_dates(df, col='race_date'):
     if col not in df.columns:
         return df, 0
+    
+    # ✅ 終極修復2：處理日期前，先保證欄位無重複
+    df = df.loc[:, ~df.columns.duplicated()]
+    
     original = df[col].copy()
     df[col] = pd.to_datetime(df[col], errors='coerce')
     invalid = df[col].isna().sum()
