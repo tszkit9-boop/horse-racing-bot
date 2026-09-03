@@ -7580,7 +7580,7 @@ def main():
     with col_race:
         race_no = st.selectbox("選擇場次", list(range(1, 12)), index=0, key="predict_race_mid")
 
-    with col_btn:
+with col_btn:
     predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
     
     if predict_btn:
