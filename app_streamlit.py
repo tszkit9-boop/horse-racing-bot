@@ -3670,9 +3670,10 @@ def admin_page():
         "🤖 自動維護": admin_auto_maintenance,
         "🤖 自動化": admin_automation if CONFIG.get("module_automation", True) else lambda: st.info("模組已關閉"),
         "🔐 安全": admin_security if CONFIG.get("module_security", True) else lambda: st.info("模組已關閉"),
+        "📊 AI 表現": admin_ai_performance
     }
     
-    base_tabs = ["📊 儀表板", "👥 用戶管理", "📊 次數管理", "📊 數據分析", 
+    base_tabs = ["📊 儀表板", "👥 用戶管理", ... , "🔐 安全", "📊 AI 表現"]
                  "🏇 馬匹排行榜", "👨‍🏫 騎師排行榜", "👨‍🏫 練馬師排行榜", 
                  "📊 場地/路程分析", "📅 每月報告",
                  "💰 財務", "🎟️ 優惠碼", "📈 預測監控", "⏰ 訂閱管理", 
