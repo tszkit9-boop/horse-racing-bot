@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-train_models.py - 自動訓練模型（修正重複欄位問題）
+train_models.py - 自動訓練 XGBoost + CatBoost 模型（處理重複欄位）
+用法: python train_models.py
 """
 
 import pandas as pd
@@ -23,21 +24,28 @@ print("📊 讀取數據...")
 
 results_df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig')
 print(f"  賽果數據：{len(results_df)} 筆")
-print(f"  賽果欄位：{results_df.columns.tolist()}")
+print(f"  賽果欄位數量：{len(results_df.columns)}")
 
 racecard_df = pd.read_csv("HKCJ_FULL_YEAR_DATA.csv", encoding='utf-8-sig')
 print(f"  排位表：{len(racecard_df)} 筆")
-print(f"  排位表欄位：{racecard_df.columns.tolist()}")
+print(f"  排位表欄位數量：{len(racecard_df.columns)}")
 
 # ============================================================
-# 2️⃣ 刪除重複欄位（保留第一個）
+# 2️⃣ 處理重複欄位（只保留第一個）
 # ============================================================
-print("🧹 刪除重複欄位...")
-racecard_df = racecard_df.loc[:, ~racecard_df.columns.duplicated(keep='first')]
-results_df = results_df.loc[:, ~results_df.columns.duplicated(keep='first')]
+print("🔧 處理重複欄位...")
 
-print(f"  排位表去重後欄位：{racecard_df.columns.tolist()}")
-print(f"  賽果去重後欄位：{results_df.columns.tolist()}")
+def dedup_columns(df, name="df"):
+    """移除重複欄位，只保留第一個"""
+    if df.columns.duplicated().any():
+        dup_cols = df.columns[df.columns.duplicated()].tolist()
+        print(f"  {name} 發現重複欄位：{dup_cols}")
+        df = df.loc[:, ~df.columns.duplicated(keep='first')]
+        print(f"  {name} 已移除重複欄位，現有 {len(df.columns)} 個欄位")
+    return df
+
+racecard_df = dedup_columns(racecard_df, "排位表")
+results_df = dedup_columns(results_df, "賽果")
 
 # ============================================================
 # 3️⃣ 標準化欄位
@@ -45,23 +53,35 @@ print(f"  賽果去重後欄位：{results_df.columns.tolist()}")
 print("🔧 標準化欄位...")
 
 def standardize_columns(df):
+    """統一欄位名：中文轉英文"""
     rename_map = {
         '騎師': 'jockey', '練馬師': 'trainer', '路程': 'distance',
         '場地': 'going', '檔位': 'draw', '評分': 'rtg',
         '馬匹編號': 'horse_id', '馬匹ID': 'horse_id', '馬號': 'horse_id',
         '馬匹id': 'horse_id', 'horse': 'horse_id',
         '場次': 'race_no', '馬場': 'race_course',
-        '實際負磅': 'act_wt', '實際負磅': 'act_wt',
+        '實際負磅': 'act_wt', '負磅': 'act_wt',
         '名次': 'finish_position', '最終名次': 'finish_position',
         '馬名': 'horse_name', '馬匹名稱': 'horse_name',
-        '賠率': 'win_odds', '獨贏賠率': 'win_odds',
-        '比賽日期': 'race_date', '日期': 'race_date',
-        'RaceDate': 'race_date', 'RaceNo': 'race_no', 'Pla': 'finish_position',
-        'Name': 'horse_name', 'Dr.': 'draw', 'Trainer': 'trainer',
-        'Jockey': 'jockey', 'Declar.Horse wt.': 'act_wt',
-        'Win Odds': 'win_odds', 'Act.Wt.': 'act_wt', 'Dist.': 'distance'
+        '賠率': 'win_odds', '獨贏賠率': 'win_odds', 'Win Odds': 'win_odds',
+        '比賽日期': 'race_date', '日期': 'race_date', 'Date': 'race_date'
     }
     df.rename(columns=rename_map, inplace=True, errors='ignore')
+    
+    # 如果仲係冇 horse_name，搵任何包含「名」或「馬」嘅欄位
+    if 'horse_name' not in df.columns:
+        for col in df.columns:
+            if '名' in col or '馬' in col:
+                if 'horse' not in col.lower():
+                    df.rename(columns={col: 'horse_name'}, inplace=True)
+                    break
+    
+    if 'race_date' not in df.columns:
+        for col in df.columns:
+            if 'date' in col.lower() or '日期' in col:
+                df.rename(columns={col: 'race_date'}, inplace=True)
+                break
+    
     return df
 
 racecard_df = standardize_columns(racecard_df)
@@ -71,75 +91,49 @@ print(f"  排位表標準化後欄位：{racecard_df.columns.tolist()}")
 print(f"  賽果標準化後欄位：{results_df.columns.tolist()}")
 
 # ============================================================
-# 4️⃣ 確認必要欄位
+# 4️⃣ 檢查必要欄位
 # ============================================================
-# 排位表必須有：race_date, race_no, horse_id 或 horse_name
-if 'horse_name' in racecard_df.columns:
-    race_key = 'horse_name'
-elif 'horse_id' in racecard_df.columns:
-    race_key = 'horse_id'
+print("🔍 檢查必要欄位...")
+
+# 排位表必要欄位
+required_racecard = ['race_date', 'race_no']
+for col in required_racecard:
+    if col not in racecard_df.columns:
+        print(f"❌ 排位表缺少 '{col}' 欄位")
+        exit(1)
+
+# 賽果必要欄位
+required_results = ['race_date', 'race_no', 'finish_position']
+for col in required_results:
+    if col not in results_df.columns:
+        print(f"❌ 賽果缺少 '{col}' 欄位")
+        exit(1)
+
+# 決定合併 key
+if 'horse_name' in racecard_df.columns and 'horse_name' in results_df.columns:
+    merge_key = 'horse_name'
+elif 'horse_id' in racecard_df.columns and 'horse_id' in results_df.columns:
+    merge_key = 'horse_id'
 else:
-    print("❌ 排位表缺少 horse_name 或 horse_id")
-    exit(1)
-
-if 'horse_name' in results_df.columns:
-    result_key = 'horse_name'
-elif 'horse_id' in results_df.columns:
-    result_key = 'horse_id'
-else:
-    print("❌ 賽果表缺少 horse_name 或 horse_id")
-    exit(1)
-
-print(f"  排位表使用 key：{race_key}")
-print(f"  賽果表使用 key：{result_key}")
-
-# 統一 key 名
-if race_key != result_key:
-    # 嘗試將兩者統一為 horse_id（如果兩者都有 horse_id）
-    if 'horse_id' in racecard_df.columns and 'horse_id' in results_df.columns:
-        race_key = 'horse_id'
-        result_key = 'horse_id'
-    elif 'horse_name' in racecard_df.columns and 'horse_name' in results_df.columns:
-        race_key = 'horse_name'
-        result_key = 'horse_name'
+    # 嘗試搵共通欄位
+    common_cols = set(racecard_df.columns) & set(results_df.columns)
+    possible_keys = [c for c in ['horse_id', 'horse_name', '馬名', '馬匹編號'] if c in common_cols]
+    if possible_keys:
+        merge_key = possible_keys[0]
+        print(f"  使用共通欄位 '{merge_key}' 做合併 key")
     else:
-        # 強行將兩者改為相同名稱（選擇存在嘅一個）
-        if race_key == 'horse_id' and result_key == 'horse_name':
-            # 如果賽果表有 horse_name，嘗試將 racecard 嘅 horse_id 映射到 horse_name
-            # 但冇 mapping，直接將 racecard 嘅 horse_id rename 為 horse_name（但可能唔啱）
-            # 最穩陣：要求兩者都有 horse_id 或 horse_name
-            print("❌ 排位表同賽果表嘅 key 唔一致，無法合併")
-            exit(1)
-        elif race_key == 'horse_name' and result_key == 'horse_id':
-            # 同上
-            print("❌ 排位表同賽果表嘅 key 唔一致，無法合併")
-            exit(1)
+        print(f"❌ 無法找到合併 key")
+        print(f"   排位表欄位：{racecard_df.columns.tolist()}")
+        print(f"   賽果欄位：{results_df.columns.tolist()}")
+        exit(1)
 
-# 確保兩邊用同一個 key
-if race_key != result_key:
-    print("❌ 無法統一合併 key，請確認檔案欄位")
-    exit(1)
-
-print(f"  使用合併 key：{race_key}")
-
-# 檢查日期欄位
-if 'race_date' not in racecard_df.columns or 'race_date' not in results_df.columns:
-    print("❌ 缺少日期欄位")
-    exit(1)
-
-# 檢查場次欄位
-if 'race_no' not in racecard_df.columns or 'race_no' not in results_df.columns:
-    print("❌ 缺少場次欄位")
-    exit(1)
-
-# 賽果必須有 finish_position
-if 'finish_position' not in results_df.columns:
-    print("❌ 賽果缺少 finish_position 欄位")
-    exit(1)
+print(f"  合併 key：{merge_key}")
 
 # ============================================================
 # 5️⃣ 日期處理
 # ============================================================
+print("📅 處理日期...")
+
 racecard_df['race_date'] = pd.to_datetime(racecard_df['race_date'], errors='coerce')
 results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
 
@@ -150,29 +144,30 @@ print(f"  排位表有效日期：{len(racecard_df)} 筆")
 print(f"  賽果有效日期：{len(results_df)} 筆")
 
 # ============================================================
-# 6️⃣ 合併數據（用指定 key）
+# 6️⃣ 合併數據
 # ============================================================
 print("🔗 合併數據...")
 
-# 確保合併 key 嘅類型一致
+# 確保類型一致
 racecard_df['race_no'] = racecard_df['race_no'].astype(str)
 results_df['race_no'] = results_df['race_no'].astype(str)
-racecard_df[race_key] = racecard_df[race_key].astype(str)
-results_df[race_key] = results_df[race_key].astype(str)
 
-merge_keys = ['race_date', 'race_no', race_key]
-results_keep = ['race_date', 'race_no', race_key, 'finish_position']
+# 選取合併所需欄位
+merge_keys = ['race_date', 'race_no', merge_key]
+results_keep = ['race_date', 'race_no', merge_key, 'finish_position']
 
-# 合併前檢查重複
-print(f"  排位表合併前重複 count：{racecard_df.duplicated(subset=merge_keys).sum()}")
-print(f"  賽果合併前重複 count：{results_df.duplicated(subset=results_keep).sum()}")
+# 確保所有 key 存在
+for k in merge_keys:
+    if k not in racecard_df.columns:
+        print(f"❌ 排位表缺少 key：{k}")
+        exit(1)
+    if k not in results_df.columns:
+        print(f"❌ 賽果缺少 key：{k}")
+        exit(1)
 
-# 移除重複（保留最後一個）
-racecard_df = racecard_df.drop_duplicates(subset=merge_keys, keep='last')
-results_df = results_df.drop_duplicates(subset=results_keep, keep='last')
-
-print(f"  排位表去重後：{len(racecard_df)} 筆")
-print(f"  賽果去重後：{len(results_df)} 筆")
+print(f"  合併 keys：{merge_keys}")
+print(f"  排位表數據形狀：{racecard_df.shape}")
+print(f"  賽果數據形狀：{results_df.shape}")
 
 merged = racecard_df.merge(
     results_df[results_keep],
@@ -182,36 +177,38 @@ merged = racecard_df.merge(
 print(f"  合併後：{len(merged)} 筆記錄")
 
 if merged.empty:
-    print("❌ 無數據可訓練，請確認 CSV 檔案齊全及日期匹配")
+    print("❌ 無數據可訓練")
+    print("  可能原因：日期或馬匹名稱對唔上")
     exit(1)
 
-# 標籤：頭馬（finish_position == 1）
+# 標籤
 merged['target'] = (merged['finish_position'] == 1).astype(int)
 
 # ============================================================
-# 7️⃣ 特徵工程（選取現有欄位）
+# 7️⃣ 特徵工程
 # ============================================================
 print("🔧 特徵工程...")
 
-# 定義想要用嘅特徵（根據現有欄位盡量填）
-FEATURES = ['draw', 'act_wt', 'distance', 'rtg', 'win_odds']
-# 補上其他可能存在嘅特徵
-extra = ['jockey', 'trainer', 'going', 'race_course']
-for f in extra:
-    if f in merged.columns and f not in FEATURES:
-        FEATURES.append(f)
+FEATURES_EN = [
+    'draw', 'act_wt', 'distance', 'rtg', 'win_odds'
+]
 
-# 確保所有特徵欄位存在
-for f in FEATURES:
+# 補上其他可能存在嘅特徵
+extra_features = ['weight', 'jockey', 'trainer', 'going', 'race_course']
+for f in extra_features:
+    if f in merged.columns and f not in FEATURES_EN:
+        FEATURES_EN.append(f)
+
+for f in FEATURES_EN:
     if f not in merged.columns:
         merged[f] = 0
     else:
         merged[f] = merged[f].fillna(0)
 
-X = merged[FEATURES].copy()
+X = merged[FEATURES_EN].copy()
 y = merged['target'].copy()
 
-# 將類別特徵轉為數值
+# 類別特徵轉數值
 for col in X.columns:
     if X[col].dtype == 'object':
         le = LabelEncoder()
@@ -278,7 +275,9 @@ info = {
     "xgb_accuracy": xgb_acc,
     "cat_accuracy": cat_acc,
     "train_samples": len(X_train),
-    "test_samples": len(X_test)
+    "test_samples": len(X_test),
+    "features_used": FEATURES_EN,
+    "merge_key": merge_key
 }
 with open("model_info.json", "w", encoding='utf-8') as f:
     import json
