@@ -7505,7 +7505,28 @@ def main():
             except Exception as e:
                 st.error(f"❌ 預測過程發生錯誤：{e}")
                 import traceback
-                st.code(traceback.format_exc())
+                st.code(traceback.format_exc())    
+    # ============================================================
+    # 🤖 AI 預測表現（公開）
+    # ============================================================
+    with st.expander("🤖 AI 預測表現（點擊展開）"):
+        ai_file = "ai_predictions.json"
+        ai_data = {}
+        if os.path.exists(ai_file):
+            try:
+                with open(ai_file, 'r', encoding='utf-8') as f:
+                    ai_data = json.load(f)
+            except:
+                ai_data = {}
+
+        if not ai_data:
+            st.info("📭 暫時未有 AI 預測記錄，請先執行預測。")
+        else:
+            total = len(ai_data)
+            st.metric("📊 已預測場次", total)
+            st.write("📋 最近 5 場預測記錄：")
+            for key, val in list(ai_data.items())[-5:][::-1]:
+                st.write(f"📅 {val['date']} 第 {val['race']} 場 → 🏇 {val['top_horse']}（勝率 {val['top_prob']:.1%}）")
 
     # ============================================================
     # 🎮 虛擬投注（賽事預測 同 付款功能 中間）
