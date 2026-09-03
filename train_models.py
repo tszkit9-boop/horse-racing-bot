@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-train_models.py - 自動訓練 XGBoost + CatBoost 模型（處理重複欄位）
+train_models.py - 自動訓練 XGBoost + CatBoost 模型（強健版）
 用法: python train_models.py
 """
 
@@ -31,15 +31,14 @@ print(f"  排位表：{len(racecard_df)} 筆")
 print(f"  排位表欄位數量：{len(racecard_df.columns)}")
 
 # ============================================================
-# 2️⃣ 處理重複欄位（只保留第一個）
+# 2️⃣ 處理重複欄位
 # ============================================================
 print("🔧 處理重複欄位...")
 
 def dedup_columns(df, name="df"):
-    """移除重複欄位，只保留第一個"""
     if df.columns.duplicated().any():
         dup_cols = df.columns[df.columns.duplicated()].tolist()
-        print(f"  {name} 發現重複欄位：{dup_cols}")
+        print(f"  {name} 發現重複欄位：{dup_cols[:5]}...")
         df = df.loc[:, ~df.columns.duplicated(keep='first')]
         print(f"  {name} 已移除重複欄位，現有 {len(df.columns)} 個欄位")
     return df
@@ -53,25 +52,23 @@ results_df = dedup_columns(results_df, "賽果")
 print("🔧 標準化欄位...")
 
 def standardize_columns(df):
-    """統一欄位名：中文轉英文"""
     rename_map = {
         '騎師': 'jockey', '練馬師': 'trainer', '路程': 'distance',
         '場地': 'going', '檔位': 'draw', '評分': 'rtg',
         '馬匹編號': 'horse_id', '馬匹ID': 'horse_id', '馬號': 'horse_id',
         '馬匹id': 'horse_id', 'horse': 'horse_id',
         '場次': 'race_no', '馬場': 'race_course',
-        '實際負磅': 'act_wt', '負磅': 'act_wt',
-        '名次': 'finish_position', '最終名次': 'finish_position',
-        '馬名': 'horse_name', '馬匹名稱': 'horse_name',
+        '實際負磅': 'act_wt', '負磅': 'act_wt', 'Act.Wt.': 'act_wt',
+        '名次': 'finish_position', '最終名次': 'finish_position', 'Pla.': 'finish_position',
+        '馬名': 'horse_name', '馬匹名稱': 'horse_name', 'Name': 'horse_name',
         '賠率': 'win_odds', '獨贏賠率': 'win_odds', 'Win Odds': 'win_odds',
         '比賽日期': 'race_date', '日期': 'race_date', 'Date': 'race_date'
     }
     df.rename(columns=rename_map, inplace=True, errors='ignore')
     
-    # 如果仲係冇 horse_name，搵任何包含「名」或「馬」嘅欄位
     if 'horse_name' not in df.columns:
         for col in df.columns:
-            if '名' in col or '馬' in col:
+            if '名' in col or '馬' in col or 'Name' in col:
                 if 'horse' not in col.lower():
                     df.rename(columns={col: 'horse_name'}, inplace=True)
                     break
@@ -87,42 +84,46 @@ def standardize_columns(df):
 racecard_df = standardize_columns(racecard_df)
 results_df = standardize_columns(results_df)
 
-print(f"  排位表標準化後欄位：{racecard_df.columns.tolist()}")
-print(f"  賽果標準化後欄位：{results_df.columns.tolist()}")
+print(f"  排位表標準化後欄位（前10個）：{racecard_df.columns[:10].tolist()}")
+print(f"  賽果標準化後欄位（前10個）：{results_df.columns[:10].tolist()}")
 
 # ============================================================
 # 4️⃣ 檢查必要欄位
 # ============================================================
 print("🔍 檢查必要欄位...")
 
-# 排位表必要欄位
-required_racecard = ['race_date', 'race_no']
-for col in required_racecard:
-    if col not in racecard_df.columns:
-        print(f"❌ 排位表缺少 '{col}' 欄位")
-        exit(1)
+def check_column_exists(df, col, name):
+    if col not in df.columns:
+        print(f"❌ {name} 缺少 '{col}' 欄位")
+        return False
+    return True
 
-# 賽果必要欄位
-required_results = ['race_date', 'race_no', 'finish_position']
-for col in required_results:
-    if col not in results_df.columns:
-        print(f"❌ 賽果缺少 '{col}' 欄位")
-        exit(1)
+ok = True
+for col in ['race_date', 'race_no']:
+    if not check_column_exists(racecard_df, col, "排位表"):
+        ok = False
+for col in ['race_date', 'race_no', 'finish_position']:
+    if not check_column_exists(results_df, col, "賽果"):
+        ok = False
+
+if not ok:
+    print("  請檢查 CSV 檔案欄位名是否正確")
+    exit(1)
 
 # 決定合併 key
+merge_key = None
 if 'horse_name' in racecard_df.columns and 'horse_name' in results_df.columns:
     merge_key = 'horse_name'
 elif 'horse_id' in racecard_df.columns and 'horse_id' in results_df.columns:
     merge_key = 'horse_id'
 else:
-    # 嘗試搵共通欄位
     common_cols = set(racecard_df.columns) & set(results_df.columns)
-    possible_keys = [c for c in ['horse_id', 'horse_name', '馬名', '馬匹編號'] if c in common_cols]
-    if possible_keys:
-        merge_key = possible_keys[0]
-        print(f"  使用共通欄位 '{merge_key}' 做合併 key")
-    else:
-        print(f"❌ 無法找到合併 key")
+    for k in ['horse_id', 'horse_name', '馬名', '馬匹編號']:
+        if k in common_cols:
+            merge_key = k
+            break
+    if merge_key is None:
+        print("❌ 無法找到合併 key")
         print(f"   排位表欄位：{racecard_df.columns.tolist()}")
         print(f"   賽果欄位：{results_df.columns.tolist()}")
         exit(1)
@@ -130,21 +131,33 @@ else:
 print(f"  合併 key：{merge_key}")
 
 # ============================================================
-# 5️⃣ 日期處理
+# 5️⃣ 日期處理（強健版）
 # ============================================================
 print("📅 處理日期...")
 
-racecard_df['race_date'] = pd.to_datetime(racecard_df['race_date'], errors='coerce')
-results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
+def safe_parse_dates(df, col='race_date'):
+    if col not in df.columns:
+        return df, 0
+    original = df[col].copy()
+    df[col] = pd.to_datetime(df[col], errors='coerce')
+    invalid = df[col].isna().sum()
+    if invalid > 0:
+        print(f"  ⚠️ 發現 {invalid} 個無效日期，將被刪除")
+        df = df.dropna(subset=[col])
+    return df, invalid
 
-racecard_df = racecard_df.dropna(subset=['race_date'])
-results_df = results_df.dropna(subset=['race_date'])
+racecard_df, invalid1 = safe_parse_dates(racecard_df)
+results_df, invalid2 = safe_parse_dates(results_df)
 
-print(f"  排位表有效日期：{len(racecard_df)} 筆")
-print(f"  賽果有效日期：{len(results_df)} 筆")
+print(f"  排位表有效日期：{len(racecard_df)} 筆（刪除 {invalid1} 筆無效）")
+print(f"  賽果有效日期：{len(results_df)} 筆（刪除 {invalid2} 筆無效）")
+
+if racecard_df.empty or results_df.empty:
+    print("❌ 其中一個數據集為空，無法繼續")
+    exit(1)
 
 # ============================================================
-# 6️⃣ 合併數據
+# 6️⃣ 合併數據（詳細除錯）
 # ============================================================
 print("🔗 合併數據...")
 
@@ -152,53 +165,56 @@ print("🔗 合併數據...")
 racecard_df['race_no'] = racecard_df['race_no'].astype(str)
 results_df['race_no'] = results_df['race_no'].astype(str)
 
-# 選取合併所需欄位
-merge_keys = ['race_date', 'race_no', merge_key]
-results_keep = ['race_date', 'race_no', merge_key, 'finish_position']
-
-# 確保所有 key 存在
-for k in merge_keys:
+# 確保 key 存在
+for k in [merge_key, 'race_date', 'race_no']:
     if k not in racecard_df.columns:
-        print(f"❌ 排位表缺少 key：{k}")
+        print(f"❌ 排位表缺少 '{k}'")
         exit(1)
     if k not in results_df.columns:
-        print(f"❌ 賽果缺少 key：{k}")
+        print(f"❌ 賽果缺少 '{k}'")
         exit(1)
 
-print(f"  合併 keys：{merge_keys}")
 print(f"  排位表數據形狀：{racecard_df.shape}")
 print(f"  賽果數據形狀：{results_df.shape}")
 
+# 顯示合併 key 的樣本
+print(f"  排位表 {merge_key} 樣本：{racecard_df[merge_key].head(3).tolist()}")
+print(f"  賽果 {merge_key} 樣本：{results_df[merge_key].head(3).tolist()}")
+
+# 合併
 merged = racecard_df.merge(
-    results_df[results_keep],
-    on=merge_keys,
+    results_df[['race_date', 'race_no', merge_key, 'finish_position']],
+    on=['race_date', 'race_no', merge_key],
     how='inner'
 )
 print(f"  合併後：{len(merged)} 筆記錄")
 
 if merged.empty:
-    print("❌ 無數據可訓練")
-    print("  可能原因：日期或馬匹名稱對唔上")
+    print("❌ 合併後無數據")
+    print("  可能原因：")
+    print("  1. 兩個檔案嘅日期範圍冇重疊")
+    print("  2. 馬匹名稱/ID 對唔上")
+    print("  3. 場次編號格式唔同")
+    print(f"  排位表日期範圍：{racecard_df['race_date'].min()} ~ {racecard_df['race_date'].max()}")
+    print(f"  賽果日期範圍：{results_df['race_date'].min()} ~ {results_df['race_date'].max()}")
     exit(1)
 
 # 標籤
 merged['target'] = (merged['finish_position'] == 1).astype(int)
+print(f"  頭馬比例：{merged['target'].mean():.2%}")
 
 # ============================================================
 # 7️⃣ 特徵工程
 # ============================================================
 print("🔧 特徵工程...")
 
-FEATURES_EN = [
-    'draw', 'act_wt', 'distance', 'rtg', 'win_odds'
-]
-
-# 補上其他可能存在嘅特徵
-extra_features = ['weight', 'jockey', 'trainer', 'going', 'race_course']
-for f in extra_features:
+FEATURES_EN = ['draw', 'act_wt', 'distance', 'rtg', 'win_odds']
+extra = ['weight', 'jockey', 'trainer', 'going', 'race_course']
+for f in extra:
     if f in merged.columns and f not in FEATURES_EN:
         FEATURES_EN.append(f)
 
+# 確保所有特徵存在
 for f in FEATURES_EN:
     if f not in merged.columns:
         merged[f] = 0
@@ -269,7 +285,6 @@ print("✅ 模型已儲存：")
 print("  - hk_racing_model.pkl")
 print("  - hk_catboost_model.cbm")
 
-# 記錄訓練資訊
 info = {
     "trained_at": datetime.now().isoformat(),
     "xgb_accuracy": xgb_acc,
