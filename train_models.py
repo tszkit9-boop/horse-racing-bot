@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-train_models.py - 自動訓練 XGBoost + CatBoost 模型
+train_models.py - 自動訓練 XGBoost + CatBoost 模型（修正欄位映射）
 用法: python train_models.py
 """
 
@@ -31,12 +31,12 @@ racecard_df = pd.read_csv("HKCJ_FULL_YEAR_DATA.csv", encoding='utf-8-sig')
 print(f"  排位表：{len(racecard_df)} 筆")
 
 # ============================================================
-# 2️⃣ 合併數據（特徵 + 標籤）
+# 2️⃣ 標準化欄位（自動偵測中文/英文）
 # ============================================================
-print("🔗 合併數據...")
+print("🔧 標準化欄位...")
 
-# 標準化欄位（跟 app_streamlit.py 一致）
 def standardize_columns(df):
+    """統一欄位名：中文轉英文，確保必要欄位存在"""
     rename_map = {
         '騎師': 'jockey', '練馬師': 'trainer', '路程': 'distance',
         '場地': 'going', '檔位': 'draw', '評分': 'rtg',
@@ -45,34 +45,68 @@ def standardize_columns(df):
         '場次': 'race_no', '馬場': 'race_course',
         '實際負磅': 'act_wt',
         '名次': 'finish_position', '最終名次': 'finish_position',
-        '馬名': 'horse_name',
+        '馬名': 'horse_name',   # 確保「馬名」轉為「horse_name」
         '賠率': 'win_odds', '獨贏賠率': 'win_odds',
-        '比賽日期': 'race_date'
+        '比賽日期': 'race_date', '日期': 'race_date'
     }
     df.rename(columns=rename_map, inplace=True, errors='ignore')
+    
+    # 如果仲係冇 horse_name，嘗試搵任何包含「馬名」嘅欄位
+    if 'horse_name' not in df.columns:
+        for col in df.columns:
+            if '名' in col and 'horse' not in col.lower():
+                df.rename(columns={col: 'horse_name'}, inplace=True)
+                break
+    
+    # 確保日期欄位
+    if 'race_date' not in df.columns:
+        for col in df.columns:
+            if 'date' in col.lower() or '日期' in col:
+                df.rename(columns={col: 'race_date'}, inplace=True)
+                break
+    
     return df
 
 racecard_df = standardize_columns(racecard_df)
 results_df = standardize_columns(results_df)
 
-# ---- ⭐ 完整修復代碼開始 ⭐ ----
+# 檢查必須欄位
+required_racecard = ['race_date', 'race_no', 'horse_name']
+required_results = ['race_date', 'race_no', 'horse_name', 'finish_position']
 
-# 1. 徹底清除兩個 DataFrame 所有重複嘅欄位名（保留第一個）
-# 呢步係為了解決 race_no 同 race_date 重複嘅問題
-racecard_df = racecard_df.loc[:, ~racecard_df.columns.duplicated()]
-results_df = results_df.loc[:, ~results_df.columns.duplicated()]
+missing_racecard = [c for c in required_racecard if c not in racecard_df.columns]
+missing_results = [c for c in required_results if c not in results_df.columns]
 
-# 2. 重置索引，防止合併時產生錯亂
-racecard_df = racecard_df.reset_index(drop=True)
-results_df = results_df.reset_index(drop=True)
+if missing_racecard:
+    print(f"❌ 排位表缺少欄位：{missing_racecard}")
+    print(f"   現有欄位：{racecard_df.columns.tolist()}")
+    exit(1)
 
-# 3. 安全地將 race_date 轉換成日期格式 (遇到壞數據會變成 NaT，唔會搞到程式死機)
+if missing_results:
+    print(f"❌ 賽果表缺少欄位：{missing_results}")
+    print(f"   現有欄位：{results_df.columns.tolist()}")
+    exit(1)
+
+# 日期格式
 racecard_df['race_date'] = pd.to_datetime(racecard_df['race_date'], errors='coerce')
 results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
 
-# ---- ⭐ 完整修復代碼結束 ⭐ ----
+# 刪除無效日期
+racecard_df = racecard_df.dropna(subset=['race_date'])
+results_df = results_df.dropna(subset=['race_date'])
 
-# 合併：用 race_date, race_no, horse_name 做 key
+print(f"  排位表有效日期：{len(racecard_df)} 筆")
+print(f"  賽果有效日期：{len(results_df)} 筆")
+
+# ============================================================
+# 3️⃣ 合併數據
+# ============================================================
+print("🔗 合併數據...")
+
+# 確保合併 key 嘅類型一致
+racecard_df['race_no'] = racecard_df['race_no'].astype(str)
+results_df['race_no'] = results_df['race_no'].astype(str)
+
 merged = racecard_df.merge(
     results_df[['race_date', 'race_no', 'horse_name', 'finish_position']],
     on=['race_date', 'race_no', 'horse_name'],
@@ -81,14 +115,14 @@ merged = racecard_df.merge(
 print(f"  合併後：{len(merged)} 筆記錄")
 
 if merged.empty:
-    print("❌ 無數據可訓練，請確認 CSV 檔案齊全")
+    print("❌ 無數據可訓練，請確認 CSV 檔案齊全及日期匹配")
     exit(1)
 
 # 標籤：頭馬（finish_position == 1）
 merged['target'] = (merged['finish_position'] == 1).astype(int)
 
 # ============================================================
-# 3️⃣ 特徵工程（跟 app_streamlit.py 一致）
+# 4️⃣ 特徵工程
 # ============================================================
 print("🔧 特徵工程...")
 
@@ -109,11 +143,7 @@ FEATURES_EN = [
     'total_injuries', 'injury_severity'
 ]
 
-# 由於完整特徵工程需要歷史數據，呢度簡化為只使用已有欄位
-# 實際應用時，應複製 app_streamlit.py 入面嘅 compute_stats 邏輯
-# 但為咗訓練能夠執行，我哋盡量用現有欄位
-
-# 確保所有 FEATURES_EN 都存在
+# 確保所有特徵欄位存在
 for f in FEATURES_EN:
     if f not in merged.columns:
         merged[f] = 0
@@ -133,7 +163,7 @@ for col in X.columns:
 print(f"  特徵矩陣：{X.shape}")
 
 # ============================================================
-# 4️⃣ 分割訓練/測試集
+# 5️⃣ 分割訓練/測試集
 # ============================================================
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42, stratify=y
@@ -141,7 +171,7 @@ X_train, X_test, y_train, y_test = train_test_split(
 print(f"  訓練集：{len(X_train)} 筆，測試集：{len(X_test)} 筆")
 
 # ============================================================
-# 5️⃣ 訓練 XGBoost 模型
+# 6️⃣ 訓練 XGBoost
 # ============================================================
 print("🚀 訓練 XGBoost 模型...")
 xgb_model = xgb.XGBClassifier(
@@ -157,7 +187,7 @@ xgb_acc = xgb_model.score(X_test, y_test)
 print(f"  XGBoost 測試準確度：{xgb_acc:.2%}")
 
 # ============================================================
-# 6️⃣ 訓練 CatBoost 模型
+# 7️⃣ 訓練 CatBoost
 # ============================================================
 print("🚀 訓練 CatBoost 模型...")
 cat_model = CatBoostClassifier(
@@ -172,7 +202,7 @@ cat_acc = cat_model.score(X_test, y_test)
 print(f"  CatBoost 測試準確度：{cat_acc:.2%}")
 
 # ============================================================
-# 7️⃣ 儲存模型
+# 8️⃣ 儲存模型
 # ============================================================
 print("💾 儲存模型...")
 with open('hk_racing_model.pkl', 'wb') as f:
@@ -184,7 +214,7 @@ print("✅ 模型已儲存：")
 print("  - hk_racing_model.pkl")
 print("  - hk_catboost_model.cbm")
 
-# 記錄訓練資訊（可選）
+# 記錄訓練資訊
 info = {
     "trained_at": datetime.now().isoformat(),
     "xgb_accuracy": xgb_acc,
@@ -197,3 +227,4 @@ with open("model_info.json", "w", encoding='utf-8') as f:
     json.dump(info, f, ensure_ascii=False, indent=2)
 
 print("📝 訓練資訊已儲存到 model_info.json")
+print("🎉 自動訓練完成！")
