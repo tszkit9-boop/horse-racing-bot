@@ -3673,19 +3673,19 @@ def admin_page():
         "📊 AI 表現": admin_ai_performance
     }
     
-base_tabs = ["📊 儀表板", "👥 用戶管理", "📊 次數管理", "📊 數據分析", 
-             "🏇 馬匹排行榜", "👨‍🏫 騎師排行榜", "👨‍🏫 練馬師排行榜", 
-             "📊 場地/路程分析", "📅 每月報告",
-             "💰 財務", "🎟️ 優惠碼", "📈 預測監控", "⏰ 訂閱管理", 
-             "📤 付款審核", "📡 監控", "📝 內容", "🤖 自動維護", 
-             "🤖 自動化", "🔐 安全"]
-    
+    base_tabs = ["📊 儀表板", "👥 用戶管理", "📊 次數管理", "📊 數據分析", 
+                 "🏇 馬匹排行榜", "👨‍🏫 騎師排行榜", "👨‍🏫 練馬師排行榜", 
+                 "📊 場地/路程分析", "📅 每月報告",
+                 "💰 財務", "🎟️ 優惠碼", "📈 預測監控", "⏰ 訂閱管理", 
+                 "📤 付款審核", "📡 監控", "📝 內容", "🤖 自動維護", 
+                 "🤖 自動化", "🔐 安全"]
+
     if is_super_admin:
         tab_names = base_tabs + ["⚙️ 系統設定"]
         tab_functions["⚙️ 系統設定"] = admin_system_settings
     else:
         tab_names = base_tabs
-    
+
     tabs = st.tabs(tab_names)
     for i, name in enumerate(tab_names):
         with tabs[i]:
