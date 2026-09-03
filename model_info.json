@@ -1,0 +1,19 @@
+{
+  "trained_at": "2026-09-03T18:08:23.248617",
+  "xgb_accuracy": 0.8990825688073395,
+  "cat_accuracy": 0.9013761467889908,
+  "train_samples": 1744,
+  "test_samples": 436,
+  "features_used": [
+    "draw",
+    "act_wt",
+    "distance",
+    "rtg",
+    "win_odds",
+    "jockey",
+    "trainer",
+    "going",
+    "race_course"
+  ],
+  "merge_key": "horse_id"
+}
