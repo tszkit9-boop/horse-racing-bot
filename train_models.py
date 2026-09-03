@@ -56,7 +56,19 @@ racecard_df = standardize_columns(racecard_df)
 results_df = standardize_columns(results_df)
 
 # 確保日期格式
+# ---- 完整修復代碼開始 ----
+
+# 1. 檢查並刪除所有重複嘅欄位名（保留第一個出現嘅）
+# 呢步可以徹底解決 "cannot assemble with duplicate keys" 嘅問題
+racecard_df = racecard_df.loc[:, ~racecard_df.columns.duplicated()]
+
+# 2. 重置索引，防止因為索引重複而產生其他合併錯誤
+racecard_df = racecard_df.reset_index(drop=True)
+
+# 3. 安全地將 race_date 轉換成日期格式 (遇到無法解析嘅日期會變成 NaT，而唔會令程式崩潰)
 racecard_df['race_date'] = pd.to_datetime(racecard_df['race_date'], errors='coerce')
+
+# ---- 完整修復代碼結束 ----
 results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
 
 # 合併：用 race_date, race_no, horse_name 做 key
