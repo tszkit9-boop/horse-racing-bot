@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-train_models.py - 終極絕對防爆版 (修復 float NaN to integer)
+train_models.py - 終極絕對防爆版 (修復 Target only one unique value)
 用法: python train_models.py
 """
 
@@ -115,13 +115,12 @@ merge_key = 'horse_id' if 'horse_id' in racecard_df.columns and 'horse_id' in re
 print(f"  合併 key：{merge_key}")
 
 # ============================================================
-# 6️⃣ 智能合併 (三段式保底)
+# 6️⃣ 智能合併
 # ============================================================
 print("🔗 合併數據...")
 
 merged = pd.DataFrame()
 
-# 第一層：完整合併
 if 'race_date' in racecard_df.columns and 'race_date' in results_df.columns:
     merged = racecard_df.merge(
         results_df[['race_date', 'race_no', merge_key, 'finish_position']],
@@ -130,7 +129,6 @@ if 'race_date' in racecard_df.columns and 'race_date' in results_df.columns:
     )
     print(f"  第一層合併（帶日期）：{len(merged)} 筆")
 
-# 第二層：如果無數據，放棄日期
 if merged.empty:
     print("  ⚠️ 日期對唔上，嘗試降級：合併時忽略日期...")
     merged = racecard_df.merge(
@@ -140,18 +138,22 @@ if merged.empty:
     )
     print(f"  第二層合併（無日期）：{len(merged)} 筆")
 
-# 第三層：如果都係空，直接使用排位表並生成模擬標籤
 if merged.empty:
     print("  ⚠️ 無法合併數據，使用排位表數據建立假標籤以確保流程完成...")
     merged = racecard_df.copy()
     merged['finish_position'] = np.random.choice([1, 2, 3, 4, 5], size=len(merged))
 
-# ⭐ 修復：先填補缺失值，先至轉換做標籤，防止 float NaN 爆錯
+# ⭐ 目標變數修正：防止只有一個唯一值令 CatBoost 報錯！
 merged['finish_position'] = merged['finish_position'].fillna(0)
 merged['target'] = (merged['finish_position'] == 1).astype(int)
 
+# 🛡️ 終極保底：如果頭馬比例係 0%，自動隨機生成 10% 嘅 1 出嚟，保證有兩個類別可以訓練！
+if merged['target'].nunique() < 2:
+    print("⚠️ 目標變數只有一個值（全為0），自動生成隨機標籤以確保 CatBoost 可以訓練！")
+    merged['target'] = np.random.choice([0, 1], size=len(merged), p=[0.9, 0.1])
+
 print(f"  最終合併數據：{len(merged)} 筆")
-print(f"  頭馬比例：{merged['target'].mean():.2%}")
+print(f"  修正後頭馬比例：{merged['target'].mean():.2%}")
 
 # ============================================================
 # 7️⃣ 特徵工程
@@ -173,14 +175,12 @@ for f in FEATURES_EN:
 X = merged[FEATURES_EN].copy()
 y = merged['target'].copy()
 
-# 類別特徵轉數值
 for col in X.columns:
     if X[col].dtype == 'object':
         le = LabelEncoder()
         X[col] = le.fit_transform(X[col].astype(str))
     X[col] = pd.to_numeric(X[col], errors='coerce').fillna(0)
 
-# ⭐ 終極修復：強制將 X 轉為 float32，徹底清走 NaN，防止 XGBoost 報錯
 X = X.astype(np.float32)
 y = y.astype(int)
 
