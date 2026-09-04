@@ -2,12 +2,14 @@ name: 自動更新賽果
 
 on:
   schedule:
-    - cron: '0 0 * * *'   # 香港時間 08:00 (UTC 00:00)
-  workflow_dispatch:   # 容許手動觸發
+    - cron: '0 0 * * 0,1,4'   # 星期日、一、四 香港時間 08:00
+  workflow_dispatch:
 
 jobs:
   update-results:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: 檢出程式碼
         uses: actions/checkout@v4
@@ -19,7 +21,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 安裝 Chrome 瀏覽器
+      - name: 安裝 Chrome
         run: |
           sudo apt-get update
           sudo apt-get install -y wget unzip
@@ -27,11 +29,9 @@ jobs:
           sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list'
           sudo apt-get update
           sudo apt-get install -y google-chrome-stable
-          google-chrome --version
 
-      - name: 安裝 Python 依賴
+      - name: 安裝依賴
         run: |
-          pip install --upgrade pip
           pip install pandas selenium webdriver-manager
 
       - name: 執行賽果爬蟲
