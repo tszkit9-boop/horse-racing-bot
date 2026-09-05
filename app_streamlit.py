@@ -1318,33 +1318,18 @@ def run_prediction(date_str, race_no):
     import pandas as pd
     import numpy as np
     import json
-    import pickle
     from datetime import datetime
-    from catboost import CatBoostClassifier
 
-    # ============================================================
-    # 🔍 診斷訊息（一定會顯示）
-    # ============================================================
-    st.markdown("---")
-    st.markdown("### 🔍 診斷資訊")
-    
-    # 檢查模型檔案是否存在
-    model_exists = os.path.exists("hk_racing_model.pkl") and os.path.exists("hk_catboost_model.cbm")
-    st.write(f"📂 模型檔案存在：{'✅ 是' if model_exists else '❌ 否'}")
-
-    # ===== 檢查排位表 =====
     if not os.path.exists("racecard_uploaded.csv"):
         st.error("❌ 找不到 racecard_uploaded.csv")
         return None, None
 
-    # ===== 讀取 CSV =====
     try:
         df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
     except Exception as e:
         st.error(f"❌ 讀取失敗：{e}")
         return None, None
 
-    # ===== 欄位映射 =====
     rename_map = {
         '馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
         '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
@@ -1380,66 +1365,12 @@ def run_prediction(date_str, race_no):
     filtered = df_date[df_date['race_no'] == race_no]
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
-    # ============================================================
-    # 🧠 載入模型
-    # ============================================================
-    model_loaded = False
-    try:
-        with open('hk_racing_model.pkl', 'rb') as f:
-            xgb_model = pickle.load(f)
-        cat_model = CatBoostClassifier()
-        cat_model.load_model('hk_catboost_model.cbm')
-        model_loaded = True
-        st.success("✅ 真正 AI 模型已載入")
-    except Exception as e:
-        st.warning(f"⚠️ 模型載入失敗：{e}")
-        st.write("📌 將使用賠率估算")
+    # 賠率估算
+    win_odds = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0)
+    win_odds = win_odds.replace(0, 4.0)
+    inv_odds = 1 / win_odds
+    final_pred = inv_odds / inv_odds.sum()
 
-    # ============================================================
-    # 🔧 特徵工程
-    # ============================================================
-    features = pd.DataFrame()
-    features['draw'] = pd.to_numeric(filtered['draw'], errors='coerce').fillna(0)
-    features['act_wt'] = pd.to_numeric(filtered['weight'], errors='coerce').fillna(0)
-    features['win_odds'] = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0)
-    
-    # 補齊其他特徵（簡化版）
-    for f in ['distance', 'rtg', 'avg_rank_last3', 'jockey_win_rate_50',
-              'trainer_win_rate_50', 'distance_win_rate', 'distance_avg_rank',
-              'weight_change', 'jockey_trainer_win_rate', 'course_win_rate',
-              'course_avg_rank', 'days_since_last_run', 'odds_rank_in_race',
-              'rtg_change', 'jockey_horse_win_rate', 'races_last14days',
-              'going_win_rate', 'trial_win_rate', 'sire_win_rate',
-              'sire_course_win_rate', 'early_pace', 'finish_speed',
-              'last_trial_rank', 'last_trial_time', 'jockey_win_rate_5',
-              'jockey_win_rate_10', 'draw_win_rate', 'days_since_injury',
-              'injury_30d', 'injury_60d', 'injury_90d', 'total_injuries',
-              'injury_severity']:
-        features[f] = 0
-
-    # ============================================================
-    # 🧠 預測
-    # ============================================================
-    if model_loaded:
-        try:
-            pred = xgb_model.predict_proba(features)[:, 1]
-            cat_pred = cat_model.predict_proba(features)[:, 1]
-            final_pred = (pred * 0.7 + cat_pred * 0.3)
-            st.success("✅ 真正 AI 模型預測完成")
-        except Exception as e:
-            st.warning(f"⚠️ 模型預測失敗：{e}")
-            model_loaded = False
-
-    if not model_loaded:
-        win_odds = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0)
-        win_odds = win_odds.replace(0, 4.0)
-        inv_odds = 1 / win_odds
-        final_pred = inv_odds / inv_odds.sum()
-        st.info("💡 使用賠率估算（模型未啟用）")
-
-    # ============================================================
-    # 📊 結果
-    # ============================================================
     result_df = filtered[['horse_name', 'draw', 'weight', 'jockey', 'trainer']].copy()
     result_df['預測勝率'] = final_pred
     result_df['值博指數'] = result_df['預測勝率'] * 10
@@ -1448,7 +1379,6 @@ def run_prediction(date_str, race_no):
     )
     result_df = result_df.sort_values('預測勝率', ascending=False)
 
-    # ===== 儲存 AI 預測 =====
     ai_file = "ai_predictions.json"
     ai_data = {}
     if os.path.exists(ai_file):
@@ -1469,11 +1399,6 @@ def run_prediction(date_str, race_no):
     }
     with open(ai_file, 'w', encoding='utf-8') as f:
         json.dump(ai_data, f, ensure_ascii=False, indent=2)
-
-    try:
-        commit_to_github(ai_file, f"更新 AI 預測 {date_str} 第 {race_no} 場")
-    except:
-        pass
 
     top1 = result_df.iloc[0]['horse_name'] if len(result_df) > 0 else ""
     top2 = result_df.iloc[1]['horse_name'] if len(result_df) > 1 else ""
