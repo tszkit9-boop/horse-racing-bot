@@ -1322,7 +1322,7 @@ def run_prediction(date_str, race_no):
     from datetime import datetime
     from catboost import CatBoostClassifier
 
-    # ===== 🧪 DEBUG：顯示當前模式 =====
+    # ===== 🧪 診斷訊息 =====
     st.markdown("### 🔍 診斷資訊")
     st.write("📌 正在執行 run_prediction()")
 
@@ -1384,7 +1384,7 @@ def run_prediction(date_str, race_no):
         cat_model = CatBoostClassifier()
         cat_model.load_model('hk_catboost_model.cbm')
         model_loaded = True
-        st.info("✅ 真正 AI 模型已載入")
+        st.success("✅ 真正 AI 模型已載入")
     except Exception as e:
         st.warning(f"⚠️ 模型載入失敗：{e}")
 
@@ -1409,14 +1409,14 @@ def run_prediction(date_str, race_no):
 
     # 準備特徵 DataFrame
     target_date = pd.to_datetime(date_str)
-    
+
     # 基本特徵
     features = pd.DataFrame()
     features['draw'] = pd.to_numeric(filtered['draw'], errors='coerce').fillna(0)
     features['act_wt'] = pd.to_numeric(filtered['weight'], errors='coerce').fillna(0)
     features['win_odds'] = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0)
     features['horse_id'] = filtered.get('horse_id', filtered.index).astype(str)
-    
+
     # 如果有歷史數據，計算完整特徵
     if has_history and history is not None and not history.empty:
         try:
@@ -1451,10 +1451,7 @@ def run_prediction(date_str, race_no):
     # ============================================================
     # 🧠 用模型預測
     # ============================================================
-       if model_loaded:
-        st.success("✅ 模型已載入（真正 AI 模型）")
-    else:
-        st.warning("⚠️ 模型未載入（將使用賠率估算）")
+    if model_loaded:
         try:
             pred = xgb_model.predict_proba(features)[:, 1]
             cat_pred = cat_model.predict_proba(features)[:, 1]
@@ -1478,8 +1475,9 @@ def run_prediction(date_str, race_no):
     result_df = filtered[['horse_name', 'draw', 'weight', 'jockey', 'trainer']].copy()
     result_df['預測勝率'] = final_pred
     result_df['值博指數'] = result_df['預測勝率'] * 10
+    # 調低信心指數門檻，令更多顯示為高
     result_df['信心指數'] = result_df['預測勝率'].apply(
-        lambda x: '⭐⭐⭐ 高' if x > 0.5 else '⭐⭐ 中' if x > 0.3 else '⭐ 低'
+        lambda x: '⭐⭐⭐ 高' if x > 0.2 else '⭐⭐ 中' if x > 0.1 else '⭐ 低'
     )
     result_df = result_df.sort_values('預測勝率', ascending=False)
 
@@ -1514,7 +1512,6 @@ def run_prediction(date_str, race_no):
     top2 = result_df.iloc[1]['horse_name'] if len(result_df) > 1 else ""
     pool_text = f"🏆 獨贏：{top1}　位置：{top1}、{top2}"
     return result_df, pool_text
-
 # ============================================================
 # 用戶功能（完整）
 # ============================================================
