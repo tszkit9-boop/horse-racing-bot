@@ -1306,13 +1306,11 @@ def run_prediction(date_str, race_no):
     import pandas as pd
     import numpy as np
     import json
-    import pickle
     from datetime import datetime
-    from catboost import CatBoostClassifier
 
     # ===== 檢查排位表 =====
     if not os.path.exists("racecard_uploaded.csv"):
-        st.error("❌ 找不到 racecard_uploaded.csv，請上傳排位表")
+        st.error("❌ 找不到 racecard_uploaded.csv")
         return None, None
 
     # ===== 讀取 CSV =====
@@ -1324,94 +1322,49 @@ def run_prediction(date_str, race_no):
 
     # ===== 欄位映射 =====
     rename_map = {
-        '馬名': 'horse_name',
-        '檔位': 'draw',
-        '場次': 'race_no',
-        '比賽日期': 'race_date',
-        '騎師': 'jockey',
-        '練馬師': 'trainer',
-        '負磅': 'weight',
-        '馬號': 'horse_id',
-        '賠率': 'win_odds'
+        '馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
+        '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
+        '負磅': 'weight', '馬號': 'horse_id', '賠率': 'win_odds'
     }
     existing = [col for col in rename_map if col in df.columns]
     if existing:
         df.rename(columns={col: rename_map[col] for col in existing}, inplace=True)
-    else:
-        st.warning("⚠️ 找不到可對應嘅中文欄位")
 
-    # ===== 日期處理 =====
     if 'race_date' not in df.columns:
-        st.error("❌ 缺少 '比賽日期' 欄位")
+        st.error("❌ 缺少 '比賽日期'")
         return None, None
 
     df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce')
     df = df.dropna(subset=['race_date'])
     df['race_date_str'] = df['race_date'].dt.strftime('%Y-%m-%d')
 
-    # ===== 自動糾錯日期 =====
     available_dates = sorted(df['race_date_str'].unique())
     if date_str not in available_dates:
-        st.warning(f"⚠️ 輸入日期 {date_str} 無數據，改用 {available_dates[-1]}")
+        st.warning(f"⚠️ 改用 {available_dates[-1]}")
         date_str = available_dates[-1]
 
     df_date = df[df['race_date_str'] == date_str]
-
     if race_no not in df_date['race_no'].unique():
         available_races = sorted(df_date['race_no'].unique())
         if available_races:
-            st.info(f"🔄 場次 {race_no} 無數據，改用第 {available_races[0]} 場")
+            st.info(f"🔄 改用第 {available_races[0]} 場")
             race_no = available_races[0]
         else:
-            st.error(f"❌ 日期 {date_str} 無場次")
+            st.error("❌ 無場次")
             return None, None
 
     filtered = df_date[df_date['race_no'] == race_no]
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
     # ============================================================
-    # 🧠 真正嘅 XGBoost/CatBoost 模型預測
+    # 💰 賠率估算勝率（保證用到賠率）
     # ============================================================
-    try:
-        with open('hk_racing_model.pkl', 'rb') as f:
-            xgb_model = pickle.load(f)
-        cat_model = CatBoostClassifier()
-        cat_model.load_model('hk_catboost_model.cbm')
-        model_loaded = True
-        st.info("✅ 模型已載入")
-    except Exception as e:
-        st.warning(f"⚠️ 模型載入失敗，將使用賠率估算：{e}")
-        model_loaded = False
-
-    # 準備特徵（簡化版，但至少包含 draw, act_wt, win_odds）
-    features = pd.DataFrame()
-    features['draw'] = pd.to_numeric(filtered['draw'], errors='coerce').fillna(0)
-    features['act_wt'] = pd.to_numeric(filtered['weight'], errors='coerce').fillna(0)
-    features['win_odds'] = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0)
-    # 補齊其他特徵（模型訓練時用咗 36 個，但缺少嘅會補 0）
-    for col in ['distance', 'rtg', 'avg_rank_last3', 'jockey_win_rate_50',
-                'trainer_win_rate_50', 'distance_win_rate']:
-        features[col] = 0
-
-    if model_loaded:
-        try:
-            # XGBoost 預測
-            pred = xgb_model.predict_proba(features)[:, 1]
-            # CatBoost 預測
-            cat_pred = cat_model.predict_proba(features)[:, 1]
-            # 加權融合（可調整比例）
-            final_pred = (pred * 0.7 + cat_pred * 0.3)
-            st.success("✅ 模型預測完成")
-        except Exception as e:
-            st.warning(f"⚠️ 模型預測失敗，使用賠率估算：{e}")
-            model_loaded = False
-
-    # 如果模型未能使用，用賠率簡單估算
-    if not model_loaded:
-        win_odds = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0)
-        # 賠率越低，勝率越高（簡單換算）
-        inv_odds = 1 / win_odds
-        final_pred = inv_odds / inv_odds.sum()  # 歸一化
+    win_odds = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0)
+    # 避免賠率為 0
+    win_odds = win_odds.replace(0, 4.0)
+    # 賠率越低，勝率越高：勝率 ≈ 1 / 賠率
+    inv_odds = 1 / win_odds
+    final_pred = inv_odds / inv_odds.sum()  # 歸一化
 
     result_df = filtered[['horse_name', 'draw', 'weight', 'jockey', 'trainer']].copy()
     result_df['預測勝率'] = final_pred
@@ -1448,7 +1401,6 @@ def run_prediction(date_str, race_no):
     except:
         pass
 
-    # ===== 彩池推薦 =====
     top1 = result_df.iloc[0]['horse_name'] if len(result_df) > 0 else ""
     top2 = result_df.iloc[1]['horse_name'] if len(result_df) > 1 else ""
     pool_text = f"🏆 獨贏：{top1}　位置：{top1}、{top2}"
