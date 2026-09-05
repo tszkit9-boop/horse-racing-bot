@@ -1322,6 +1322,10 @@ def run_prediction(date_str, race_no):
     from datetime import datetime
     from catboost import CatBoostClassifier
 
+    # ===== 🧪 DEBUG：顯示當前模式 =====
+    st.markdown("### 🔍 診斷資訊")
+    st.write("📌 正在執行 run_prediction()")
+
     # ===== 檢查排位表 =====
     if not os.path.exists("racecard_uploaded.csv"):
         st.error("❌ 找不到 racecard_uploaded.csv")
@@ -1447,7 +1451,10 @@ def run_prediction(date_str, race_no):
     # ============================================================
     # 🧠 用模型預測
     # ============================================================
-    if model_loaded:
+       if model_loaded:
+        st.success("✅ 模型已載入（真正 AI 模型）")
+    else:
+        st.warning("⚠️ 模型未載入（將使用賠率估算）")
         try:
             pred = xgb_model.predict_proba(features)[:, 1]
             cat_pred = cat_model.predict_proba(features)[:, 1]
