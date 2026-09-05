@@ -17,6 +17,18 @@ from catboost import CatBoostClassifier
 import plotly.express as px
 import plotly.graph_objects as go
 import random
+def commit_to_github(file_path, commit_message):
+    try:
+        import subprocess
+        result = subprocess.run(['git', 'status', '--porcelain', file_path], capture_output=True, text=True)
+        if result.stdout.strip():
+            subprocess.run(['git', 'add', file_path], check=True)
+            subprocess.run(['git', 'commit', '-m', commit_message], check=True)
+            subprocess.run(['git', 'push'], check=True)
+            return True
+        return False
+    except:
+        return False
 from PIL import Image
 
 # ============================================================
