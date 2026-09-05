@@ -1371,7 +1371,7 @@ def run_prediction(date_str, race_no):
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
     # ============================================================
-    # 🧠 真正嘅 XGBoost/CatBoost 模型預測
+    # 🧠 載入 XGBoost + CatBoost 模型
     # ============================================================
     model_loaded = False
     try:
@@ -1382,33 +1382,70 @@ def run_prediction(date_str, race_no):
         model_loaded = True
         st.info("✅ 真正 AI 模型已載入")
     except Exception as e:
-        st.warning(f"⚠️ 模型載入失敗：{e}，將使用賠率估算")
+        st.warning(f"⚠️ 模型載入失敗：{e}")
 
     # ============================================================
-    # 準備特徵（使用完整 36 個特徵）
+    # 🔧 完整特徵工程（使用系統原有嘅 FEATURES_EN）
     # ============================================================
-    # 由於缺少歷史數據，只能用現有欄位 + 補 0
+    # 讀取歷史數據（用於計算特徵）
+    try:
+        history = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
+        history = standardize_columns_safe(history)
+        history = history.loc[:, ~history.columns.duplicated(keep='first')]
+        history = ensure_series(history)
+        history['race_date'] = pd.to_datetime(history['race_date'], errors='coerce')
+        history = history.dropna(subset=['race_date'])
+        finish_col = get_finish_column(history)
+        if finish_col:
+            history.rename(columns={finish_col: 'finish_position'}, inplace=True)
+        has_history = True
+    except:
+        has_history = False
+        history = None
+
+    # 準備特徵 DataFrame
+    target_date = pd.to_datetime(date_str)
+    
+    # 基本特徵
     features = pd.DataFrame()
     features['draw'] = pd.to_numeric(filtered['draw'], errors='coerce').fillna(0)
     features['act_wt'] = pd.to_numeric(filtered['weight'], errors='coerce').fillna(0)
     features['win_odds'] = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0)
+    features['horse_id'] = filtered.get('horse_id', filtered.index).astype(str)
     
-    # 補齊其他 33 個特徵（暫時用 0）
-    for col in ['distance', 'rtg', 'avg_rank_last3', 'jockey_win_rate_50',
-                'trainer_win_rate_50', 'distance_win_rate', 'distance_avg_rank',
-                'weight_change', 'jockey_trainer_win_rate', 'course_win_rate',
-                'course_avg_rank', 'days_since_last_run', 'odds_rank_in_race',
-                'rtg_change', 'jockey_horse_win_rate', 'races_last14days',
-                'going_win_rate', 'trial_win_rate', 'sire_win_rate',
-                'sire_course_win_rate', 'early_pace', 'finish_speed',
-                'last_trial_rank', 'last_trial_time', 'jockey_win_rate_5',
-                'jockey_win_rate_10', 'draw_win_rate', 'days_since_injury',
-                'injury_30d', 'injury_60d', 'injury_90d', 'total_injuries',
-                'injury_severity']:
-        features[col] = 0
+    # 如果有歷史數據，計算完整特徵
+    if has_history and history is not None and not history.empty:
+        try:
+            # 使用系統原有嘅特徵工程函數
+            race_sel = get_latest_features(features, history)
+            race_sel = compute_stats(race_sel, history, target_date)
+            # 補齊所有 FEATURES_EN
+            for f in FEATURES_EN:
+                if f not in race_sel.columns:
+                    race_sel[f] = 0
+                else:
+                    race_sel[f] = race_sel[f].fillna(0)
+            features = race_sel[FEATURES_EN].copy()
+            st.info("✅ 完整 36 個特徵已準備")
+        except Exception as e:
+            st.warning(f"⚠️ 特徵工程失敗，使用簡化特徵：{e}")
+            # fallback 到簡化特徵
+            for f in FEATURES_EN:
+                if f not in features.columns:
+                    features[f] = 0
+    else:
+        # 冇歷史數據，用 0 填充
+        for f in FEATURES_EN:
+            if f not in features.columns:
+                features[f] = 0
+        st.info("ℹ️ 無歷史數據，使用簡化特徵")
+
+    # 確保所有特徵都係數值
+    for col in features.columns:
+        features[col] = pd.to_numeric(features[col], errors='coerce').fillna(0)
 
     # ============================================================
-    # 如果模型存在，用模型預測
+    # 🧠 用模型預測
     # ============================================================
     if model_loaded:
         try:
@@ -1417,12 +1454,10 @@ def run_prediction(date_str, race_no):
             final_pred = (pred * 0.7 + cat_pred * 0.3)
             st.success("✅ 真正 AI 模型預測完成")
         except Exception as e:
-            st.warning(f"⚠️ 模型預測失敗：{e}，改用賠率估算")
+            st.warning(f"⚠️ 模型預測失敗：{e}")
             model_loaded = False
 
-    # ============================================================
-    # 如果模型失敗，用賠率估算（fallback）
-    # ============================================================
+    # Fallback：如果模型失敗，用賠率估算
     if not model_loaded:
         win_odds = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0)
         win_odds = win_odds.replace(0, 4.0)
@@ -1431,7 +1466,7 @@ def run_prediction(date_str, race_no):
         st.info("💡 使用賠率估算（模型未啟用）")
 
     # ============================================================
-    # 組合結果
+    # 📊 組合結果
     # ============================================================
     result_df = filtered[['horse_name', 'draw', 'weight', 'jockey', 'trainer']].copy()
     result_df['預測勝率'] = final_pred
@@ -1468,7 +1503,6 @@ def run_prediction(date_str, race_no):
     except:
         pass
 
-    # ===== 彩池推薦 =====
     top1 = result_df.iloc[0]['horse_name'] if len(result_df) > 0 else ""
     top2 = result_df.iloc[1]['horse_name'] if len(result_df) > 1 else ""
     pool_text = f"🏆 獨贏：{top1}　位置：{top1}、{top2}"
