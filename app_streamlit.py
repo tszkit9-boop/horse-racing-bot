@@ -1370,7 +1370,7 @@ def run_prediction(date_str, race_no):
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
     # ============================================================
-    # 真正嘅 XGBoost/CatBoost 模型預測
+    # 🧠 真正嘅 XGBoost/CatBoost 模型預測
     # ============================================================
     try:
         with open('hk_racing_model.pkl', 'rb') as f:
@@ -1378,37 +1378,40 @@ def run_prediction(date_str, race_no):
         cat_model = CatBoostClassifier()
         cat_model.load_model('hk_catboost_model.cbm')
         model_loaded = True
+        st.info("✅ 模型已載入")
     except Exception as e:
-        st.warning(f"⚠️ 模型載入失敗：{e}")
+        st.warning(f"⚠️ 模型載入失敗，將使用賠率估算：{e}")
         model_loaded = False
 
-    # 準備特徵（簡化版，實際應使用完整 36 個特徵）
+    # 準備特徵（簡化版，但至少包含 draw, act_wt, win_odds）
     features = pd.DataFrame()
     features['draw'] = pd.to_numeric(filtered['draw'], errors='coerce').fillna(0)
     features['act_wt'] = pd.to_numeric(filtered['weight'], errors='coerce').fillna(0)
     features['win_odds'] = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0)
-    features['distance'] = 0  # 如果冇距離資料
-    features['rtg'] = 0
-    features['avg_rank_last3'] = 0
-    features['jockey_win_rate_50'] = 0
-    features['trainer_win_rate_50'] = 0
-    features['distance_win_rate'] = 0
+    # 補齊其他特徵（模型訓練時用咗 36 個，但缺少嘅會補 0）
+    for col in ['distance', 'rtg', 'avg_rank_last3', 'jockey_win_rate_50',
+                'trainer_win_rate_50', 'distance_win_rate']:
+        features[col] = 0
 
     if model_loaded:
         try:
-            # 用 XGBoost 預測
+            # XGBoost 預測
             pred = xgb_model.predict_proba(features)[:, 1]
-            # 用 CatBoost 預測
+            # CatBoost 預測
             cat_pred = cat_model.predict_proba(features)[:, 1]
-            # 加權融合
+            # 加權融合（可調整比例）
             final_pred = (pred * 0.7 + cat_pred * 0.3)
+            st.success("✅ 模型預測完成")
         except Exception as e:
-            st.warning(f"⚠️ 模型預測失敗，使用模擬數據：{e}")
-            np.random.seed(42)
-            final_pred = np.random.rand(len(filtered))
-    else:
-        np.random.seed(42)
-        final_pred = np.random.rand(len(filtered))
+            st.warning(f"⚠️ 模型預測失敗，使用賠率估算：{e}")
+            model_loaded = False
+
+    # 如果模型未能使用，用賠率簡單估算
+    if not model_loaded:
+        win_odds = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0)
+        # 賠率越低，勝率越高（簡單換算）
+        inv_odds = 1 / win_odds
+        final_pred = inv_odds / inv_odds.sum()  # 歸一化
 
     result_df = filtered[['horse_name', 'draw', 'weight', 'jockey', 'trainer']].copy()
     result_df['預測勝率'] = final_pred
