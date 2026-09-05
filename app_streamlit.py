@@ -4952,16 +4952,19 @@ def run_prediction(date_str, race_no):
     import json
     from datetime import datetime
 
+    # 檢查檔案
     if not os.path.exists("racecard_uploaded.csv"):
         st.error("❌ 找不到 racecard_uploaded.csv")
         return None, None
 
+    # 讀取 CSV
     try:
         df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
     except Exception as e:
         st.error(f"❌ 讀取失敗：{e}")
         return None, None
 
+    # 欄位映射（中文 → 英文）
     rename_map = {
         '馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
         '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
@@ -4971,42 +4974,52 @@ def run_prediction(date_str, race_no):
     if existing:
         df.rename(columns={col: rename_map[col] for col in existing}, inplace=True)
 
+    # 日期處理
     if 'race_date' not in df.columns:
-        st.error("❌ 缺少 '比賽日期' 欄位")
+        st.error("❌ 缺少 '比賽日期'")
         return None, None
 
     df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce')
     df = df.dropna(subset=['race_date'])
     df['race_date_str'] = df['race_date'].dt.strftime('%Y-%m-%d')
 
+    # 自動修正日期
     available_dates = sorted(df['race_date_str'].unique())
     if date_str not in available_dates:
-        st.warning(f"⚠️ 輸入日期 {date_str} 無數據，改用 {available_dates[-1]}")
+        st.warning(f"⚠️ 改用 {available_dates[-1]}")
         date_str = available_dates[-1]
 
     df_date = df[df['race_date_str'] == date_str]
     if race_no not in df_date['race_no'].unique():
         available_races = sorted(df_date['race_no'].unique())
         if available_races:
-            st.info(f"🔄 場次 {race_no} 無數據，改用第 {available_races[0]} 場")
+            st.info(f"🔄 改用第 {available_races[0]} 場")
             race_no = available_races[0]
         else:
-            st.error(f"❌ 日期 {date_str} 無場次")
+            st.error("❌ 無場次")
             return None, None
 
     filtered = df_date[df_date['race_no'] == race_no]
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
-    np.random.seed(42)
+    # ============================================================
+    # 💰 賠率估算勝率（保證結果會跟賠率變化）
+    # ============================================================
+    win_odds = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0)
+    win_odds = win_odds.replace(0, 4.0)   # 避免賠率為 0
+    inv_odds = 1 / win_odds
+    final_pred = inv_odds / inv_odds.sum()   # 歸一化
+
+    # 組合結果
     result_df = filtered[['horse_name', 'draw', 'weight', 'jockey', 'trainer']].copy()
-    result_df['預測勝率'] = np.random.rand(len(result_df))
+    result_df['預測勝率'] = final_pred
     result_df['值博指數'] = result_df['預測勝率'] * 10
     result_df['信心指數'] = result_df['預測勝率'].apply(
         lambda x: '⭐⭐⭐ 高' if x > 0.5 else '⭐⭐ 中' if x > 0.3 else '⭐ 低'
     )
     result_df = result_df.sort_values('預測勝率', ascending=False)
 
-    # ===== 儲存 AI 預測 =====
+    # 儲存 AI 預測（用於日後比對）
     ai_file = "ai_predictions.json"
     ai_data = {}
     if os.path.exists(ai_file):
@@ -5014,7 +5027,8 @@ def run_prediction(date_str, race_no):
             with open(ai_file, 'r', encoding='utf-8') as f:
                 ai_data = json.load(f)
         except:
-            pass
+            ai_data = {}
+
     key = f"{date_str}_{race_no}"
     ai_data[key] = {
         "date": date_str,
@@ -5027,11 +5041,7 @@ def run_prediction(date_str, race_no):
     with open(ai_file, 'w', encoding='utf-8') as f:
         json.dump(ai_data, f, ensure_ascii=False, indent=2)
 
-    try:
-        commit_to_github(ai_file, f"更新 AI 預測 {date_str} 第 {race_no} 場")
-    except:
-        pass
-
+    # 彩池推薦
     top1 = result_df.iloc[0]['horse_name'] if len(result_df) > 0 else ""
     top2 = result_df.iloc[1]['horse_name'] if len(result_df) > 1 else ""
     pool_text = f"🏆 獨贏：{top1}　位置：{top1}、{top2}"
