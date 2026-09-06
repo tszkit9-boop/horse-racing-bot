@@ -2763,7 +2763,7 @@ def admin_user_management():
     # ============================================================
     # 🤖 AI 預測表現（公開）
     # ============================================================
-        with st.expander("🤖 AI 預測表現（點擊展開）"):
+    with st.expander("🤖 AI 預測表現（點擊展開）"):
         ai_file = "ai_predictions.json"
         ai_data = {}
         if os.path.exists(ai_file):
