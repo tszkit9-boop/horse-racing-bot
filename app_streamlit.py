@@ -2781,6 +2781,18 @@ def admin_user_management():
             st.write("📋 最近 5 場預測記錄：")
             for key, val in list(ai_data.items())[::-1]:
                 st.write(f"📅 {val['date']} 第 {val['race']} 場 → 🏇 {val['top_horse']}（勝率 {val['top_prob']:.1%}）")
+                # 只有管理員先見到下載按鈕
+if st.session_state.get('role') == 'super_admin':
+    if os.path.exists("ai_predictions.json"):
+        with open("ai_predictions.json", "r", encoding='utf-8') as f:
+            ai_json_data = f.read()
+        st.download_button(
+            label="📥 下載 AI 預測記錄 (ai_predictions.json)",
+            data=ai_json_data,
+            file_name="ai_predictions.json",
+            mime="application/json",
+            key="download_ai_predictions"
+        )
     
     st.divider()
     st.subheader("📥 數據匯出")
