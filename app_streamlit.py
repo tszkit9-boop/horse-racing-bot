@@ -1320,7 +1320,7 @@ def run_prediction(date_str, race_no):
     import json
     from datetime import datetime
 
-    # DEBUG：顯示當前目錄同檔案狀態
+    # DEBUG：顯示路徑
     st.write(f"📂 當前目錄：{os.getcwd()}")
     st.write(f"📄 檔案存在：{os.path.exists('ai_predictions.json')}")
 
@@ -1369,7 +1369,7 @@ def run_prediction(date_str, race_no):
     filtered = df_date[df_date['race_no'] == race_no]
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
-    # 賠率估算（保留所有馬匹）
+    # 賠率估算
     win_odds = filtered.get('win_odds', 4.0)
     if isinstance(win_odds, pd.Series):
         win_odds = win_odds.fillna(4.0).replace(0, 4.0)
@@ -1406,8 +1406,12 @@ def run_prediction(date_str, race_no):
         "all_horses": result_df['horse_name'].tolist(),
         "predicted_at": datetime.now().isoformat()
     }
+
     with open(ai_file, 'w', encoding='utf-8') as f:
         json.dump(ai_data, f, ensure_ascii=False, indent=2)
+
+    # ✅ 提交上 GitHub
+    commit_to_github(ai_file, f"更新 AI 預測 {date_str} 第 {race_no} 場")
 
     st.success(f"✅ AI 預測已儲存（共 {len(ai_data)} 筆記錄）")
 
