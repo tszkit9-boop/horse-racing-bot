@@ -18,6 +18,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import random
 def commit_to_github(file_path, commit_message):
+    """將指定檔案 commit 上 GitHub"""
     try:
         import subprocess
         result = subprocess.run(['git', 'status', '--porcelain', file_path], capture_output=True, text=True)
@@ -27,7 +28,8 @@ def commit_to_github(file_path, commit_message):
             subprocess.run(['git', 'push'], check=True)
             return True
         return False
-    except:
+    except Exception as e:
+        print(f"Commit 失敗：{e}")
         return False
 from PIL import Image
 
