@@ -1320,19 +1320,16 @@ def run_prediction(date_str, race_no):
     import json
     from datetime import datetime
 
-    # ===== 檢查排位表 =====
     if not os.path.exists("racecard_uploaded.csv"):
         st.error("❌ 找不到 racecard_uploaded.csv")
         return None, None
 
-    # ===== 讀取 CSV =====
     try:
         df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
     except Exception as e:
         st.error(f"❌ 讀取失敗：{e}")
         return None, None
 
-    # ===== 欄位映射 =====
     rename_map = {
         '馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
         '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
@@ -1369,10 +1366,15 @@ def run_prediction(date_str, race_no):
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
     # ============================================================
-    # 💰 賠率估算勝率
+    # 💰 賠率估算勝率（保留所有馬匹）
     # ============================================================
-    win_odds = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0)
-    win_odds = win_odds.replace(0, 4.0)
+    # 確保所有馬匹都被保留
+    win_odds = filtered.get('win_odds', 4.0)
+    if isinstance(win_odds, pd.Series):
+        win_odds = win_odds.fillna(4.0).replace(0, 4.0)
+    else:
+        win_odds = pd.Series([win_odds] * len(filtered)).fillna(4.0).replace(0, 4.0)
+    
     inv_odds = 1 / win_odds
     final_pred = inv_odds / inv_odds.sum()
 
@@ -1385,7 +1387,7 @@ def run_prediction(date_str, race_no):
     result_df = result_df.sort_values('預測勝率', ascending=False)
 
     # ============================================================
-    # ⭐ 儲存 AI 預測（必定儲存）
+    # ⭐ 儲存 AI 預測
     # ============================================================
     ai_file = "ai_predictions.json"
     ai_data = {}
@@ -1410,9 +1412,6 @@ def run_prediction(date_str, race_no):
 
     st.success(f"✅ AI 預測已儲存（共 {len(ai_data)} 筆記錄）")
 
-    # ============================================================
-    # 🎯 彩池推薦
-    # ============================================================
     top1 = result_df.iloc[0]['horse_name'] if len(result_df) > 0 else ""
     top2 = result_df.iloc[1]['horse_name'] if len(result_df) > 1 else ""
     pool_text = f"🏆 獨贏：{top1}　位置：{top1}、{top2}"
