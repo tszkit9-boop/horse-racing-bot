@@ -713,22 +713,6 @@ def show_paywall():
             st.info("請選擇一個方案")
 
         promo_input = st.text_input("優惠碼（如有）", key="promo_input_form")    
-        # ===== 下載 AI 預測記錄（管理員專用） =====
-    st.divider()
-    st.subheader("📥 下載 AI 預測記錄")
-    if os.path.exists("ai_predictions.json"):
-        with open("ai_predictions.json", "r", encoding='utf-8') as f:
-            ai_json_data = f.read()
-        st.download_button(
-            label="📥 下載 ai_predictions.json",
-            data=ai_json_data,
-            file_name="ai_predictions.json",
-            mime="application/json",
-            key="download_ai_predictions_admin"
-        )
-        st.caption(f"📄 檔案大小：{len(ai_json_data)} 位元組")
-    else:
-        st.info("📭 目前未有 AI 預測記錄")
 
         st.divider()
         st.markdown("""
@@ -6471,6 +6455,7 @@ def admin_user_management():
     st.divider()
     st.subheader("📥 數據匯出")
     try:
+        # 下載 users.json
         with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
             data = f.read()
         st.download_button(
@@ -6480,6 +6465,18 @@ def admin_user_management():
             mime="application/json",
             key="download_users_json"
         )
+        
+        # 下載 ai_predictions.json（如果存在）
+        if os.path.exists("ai_predictions.json"):
+            with open("ai_predictions.json", "r", encoding='utf-8') as f:
+                ai_json_data = f.read()
+            st.download_button(
+                label="📥 下載 ai_predictions.json",
+                data=ai_json_data,
+                file_name="ai_predictions.json",
+                mime="application/json",
+                key="download_ai_predictions_admin"
+            )
     except Exception as e:
         st.error(f"讀取檔案失敗：{e}")
 
