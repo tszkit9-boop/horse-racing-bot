@@ -2772,7 +2772,7 @@ def admin_user_management():
             total = len(ai_data)
             st.metric("📊 已預測場次", total)
             st.write("📋 最近 5 場預測記錄：")
-            for key, val in list(ai_data.items())[-5:][::-1]:
+            for key, val in list(ai_data.items())[::-1]:
                 st.write(f"📅 {val['date']} 第 {val['race']} 場 → 🏇 {val['top_horse']}（勝率 {val['top_prob']:.1%}）")
     
     st.divider()
