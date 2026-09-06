@@ -6707,11 +6707,44 @@ def admin_auto_maintenance():
     
     st.divider()
     st.subheader("⚡ 單獨執行")
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         if st.button("🔄 比對賽果", use_container_width=True):
             updated, msg = update_accuracy_with_results()
             st.success(f"✅ {msg}")
+            st.rerun()
+    with col2:
+        if st.button("⚖️ 調整權重", use_container_width=True):
+            result = adjust_model_weights()
+            st.success(f"✅ XGB={result['xgb_weight']}, Cat={result['cat_weight']}（命中率 {result['hit_rate']:.2%}）")
+            st.rerun()
+    with col3:
+        if st.button("⏰ 終止過期會員", use_container_width=True):
+            users = load_users()
+            today = datetime.now()
+            expired = []
+            for uid, u in users.items():
+                if u.get('group') == 'VIP' and u.get('expiry_date'):
+                    try:
+                        exp = pd.to_datetime(u['expiry_date'])
+                        if exp < today:
+                            u['group'] = 'free'
+                            u['is_paid'] = False
+                            u['predictions_limit'] = CONFIG["free_limit"]
+                            u['plan'] = None
+                            expired.append(uid)
+                    except:
+                        pass
+            if expired:
+                save_users(users)
+                st.success(f"✅ 已將 {len(expired)} 個過期會員降級：{', '.join(expired)}")
+            else:
+                st.info("✅ 目前沒有過期會員")
+            st.rerun()
+    with col4:
+        if st.button("🎯 更新 AI 命中率", use_container_width=True):
+            hit_count, msg = update_ai_accuracy()
+            st.success(f"✅ 比對完成：{msg}")
             st.rerun()
     with col2:
         if st.button("⚖️ 調整權重", use_container_width=True):
