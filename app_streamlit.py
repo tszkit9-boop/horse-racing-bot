@@ -712,7 +712,23 @@ def show_paywall():
         else:
             st.info("請選擇一個方案")
 
-        promo_input = st.text_input("優惠碼（如有）", key="promo_input_form")
+        promo_input = st.text_input("優惠碼（如有）", key="promo_input_form")    
+        # ===== 下載 AI 預測記錄（管理員專用） =====
+    st.divider()
+    st.subheader("📥 下載 AI 預測記錄")
+    if os.path.exists("ai_predictions.json"):
+        with open("ai_predictions.json", "r", encoding='utf-8') as f:
+            ai_json_data = f.read()
+        st.download_button(
+            label="📥 下載 ai_predictions.json",
+            data=ai_json_data,
+            file_name="ai_predictions.json",
+            mime="application/json",
+            key="download_ai_predictions_admin"
+        )
+        st.caption(f"📄 檔案大小：{len(ai_json_data)} 位元組")
+    else:
+        st.info("📭 目前未有 AI 預測記錄")
 
         st.divider()
         st.markdown("""
