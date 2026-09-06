@@ -2773,27 +2773,27 @@ def admin_user_management():
             except:
                 ai_data = {}
 
-        if not ai_data:
-            st.info("📭 暫時未有 AI 預測記錄，請先執行預測。")
-        else:
-            total = len(ai_data)
-            st.metric("📊 已預測場次", total)
-            st.write("📋 最近 5 場預測記錄：")
-            for key, val in list(ai_data.items())[::-1]:
-                st.write(f"📅 {val['date']} 第 {val['race']} 場 → 🏇 {val['top_horse']}（勝率 {val['top_prob']:.1%}）"
-    
-    st.divider()
-    st.subheader("📥 數據匯出")
-    try:
-        with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
-            data = f.read()
-        st.download_button(
-            label="📥 下載 users.json",
-            data=data,
-            file_name="users.json",
-            mime="application/json",
-            key="download_users_json"
-        )
+    if not ai_data:
+        st.info("暫時未有 AI 預測記錄，請先執行預測。")
+    else:
+        total = len(ai_data)
+        st.metric("📊 已預測場次", total)
+        st.write("📋 最近預測記錄：")
+        for key, val in list(ai_data.items())[::-1]:
+            st.write(f"📅 {val['date']} 第 {val['race']} 場 → 🏇 {val['top_horse']}（勝率 {val['top_prob']:.1%}）")
+        
+        # ===== 下載 AI 預測記錄（僅管理員） =====
+        if st.session_state.get('role') == 'super_admin':
+            if os.path.exists("ai_predictions.json"):
+                with open("ai_predictions.json", "r", encoding='utf-8') as f:
+                    ai_json_data = f.read()
+                st.download_button(
+                    label="📥 下載 AI 預測記錄 (ai_predictions.json)",
+                    data=ai_json_data,
+                    file_name="ai_predictions.json",
+                    mime="application/json",
+                    key="download_ai_predictions"
+                )
     except Exception as e:
         st.error(f"讀取檔案失敗：{e}")
 
