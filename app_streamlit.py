@@ -1306,11 +1306,9 @@ def run_prediction(date_str, race_no):
     import pandas as pd
     import numpy as np
     import json
-    import pickle
     from datetime import datetime
-    from catboost import CatBoostClassifier
 
-    # ===== 1. 檢查排位表 =====
+    # ===== 檢查排位表 =====
     if not os.path.exists("racecard_uploaded.csv"):
         st.error("❌ 找不到 racecard_uploaded.csv")
         return None, None
@@ -1321,12 +1319,11 @@ def run_prediction(date_str, race_no):
         st.error(f"❌ 讀取失敗：{e}")
         return None, None
 
-    # ===== 2. 欄位映射（中文 → 英文） =====
+    # ===== 欄位映射 =====
     rename_map = {
         '馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
         '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
-        '負磅': 'weight', '馬號': 'horse_id', '賠率': 'win_odds',
-        '路程': 'distance', '評分': 'rtg', '場地': 'going'
+        '負磅': 'weight', '馬號': 'horse_id', '賠率': 'win_odds'
     }
     existing = [col for col in rename_map if col in df.columns]
     if existing:
@@ -1336,7 +1333,6 @@ def run_prediction(date_str, race_no):
         st.error("❌ 缺少 '比賽日期'")
         return None, None
 
-    # ===== 3. 日期處理 =====
     df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce')
     df = df.dropna(subset=['race_date'])
     df['race_date_str'] = df['race_date'].dt.strftime('%Y-%m-%d')
@@ -1360,113 +1356,15 @@ def run_prediction(date_str, race_no):
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
     # ============================================================
-    # 4. 載入 XGBoost + CatBoost 模型
+    # 💰 賠率估算勝率（保證跟住賠率變化）
     # ============================================================
-    model_loaded = False
-    try:
-        with open('hk_racing_model.pkl', 'rb') as f:
-            xgb_model = pickle.load(f)
-        cat_model = CatBoostClassifier()
-        cat_model.load_model('hk_catboost_model.cbm')
-        model_loaded = True
-        st.info("✅ 真正 AI 模型已載入")
-    except Exception as e:
-        st.warning(f"⚠️ 模型載入失敗：{e}")
+    win_odds = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0)
+    win_odds = win_odds.replace(0, 4.0)
+    inv_odds = 1 / win_odds
+    final_pred = inv_odds / inv_odds.sum()
 
     # ============================================================
-    # 5. 讀取歷史數據（用於計算完整特徵）
-    # ============================================================
-    history = None
-    has_history = False
-    try:
-        history = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
-        history = standardize_columns_safe(history)
-        history = history.loc[:, ~history.columns.duplicated(keep='first')]
-        history = ensure_series(history)
-        history['race_date'] = pd.to_datetime(history['race_date'], errors='coerce')
-        history = history.dropna(subset=['race_date'])
-        finish_col = get_finish_column(history)
-        if finish_col:
-            history.rename(columns={finish_col: 'finish_position'}, inplace=True)
-        has_history = not history.empty
-        if has_history:
-            st.info("✅ 歷史數據已載入，將使用完整 36 個特徵")
-        else:
-            st.info("ℹ️ 歷史數據為空，將使用簡化特徵")
-    except Exception as e:
-        st.warning(f"⚠️ 無法讀取歷史數據：{e}")
-
-    # ============================================================
-    # 6. 特徵工程（完整 36 個特徵）
-    # ============================================================
-    target_date = pd.to_datetime(date_str)
-
-    # 基本特徵（來自排位表）
-    features = pd.DataFrame()
-    features['horse_id'] = filtered.get('horse_id', filtered.index).astype(str)
-    features['draw'] = pd.to_numeric(filtered['draw'], errors='coerce').fillna(0)
-    features['act_wt'] = pd.to_numeric(filtered['weight'], errors='coerce').fillna(0)
-    features['win_odds'] = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0)
-    features['distance'] = pd.to_numeric(filtered.get('distance', 0), errors='coerce').fillna(0)
-    features['rtg'] = pd.to_numeric(filtered.get('rtg', 0), errors='coerce').fillna(0)
-    features['going'] = filtered.get('going', '好地').fillna('好地')
-
-    # 如果有歷史數據，計算完整 36 個特徵
-    if has_history and history is not None:
-        try:
-            # 用系統原有嘅特徵工程函數
-            race_sel = get_latest_features(features, history)
-            race_sel = compute_stats(race_sel, history, target_date)
-            # 確保所有 FEATURES_EN 欄位都存在
-            for f in FEATURES_EN:
-                if f not in race_sel.columns:
-                    race_sel[f] = 0
-                else:
-                    race_sel[f] = race_sel[f].fillna(0)
-            features = race_sel[FEATURES_EN].copy()
-            st.info("✅ 完整 36 個特徵已準備（使用歷史數據）")
-        except Exception as e:
-            st.warning(f"⚠️ 特徵工程失敗，使用簡化特徵：{e}")
-            # fallback：只用基本特徵，其餘填 0
-            for f in FEATURES_EN:
-                if f not in features.columns:
-                    features[f] = 0
-    else:
-        # 冇歷史數據，用 0 填充
-        for f in FEATURES_EN:
-            if f not in features.columns:
-                features[f] = 0
-        st.info("ℹ️ 無歷史數據，使用簡化特徵（部分特徵填 0）")
-
-    # 確保所有特徵都係數值
-    for col in features.columns:
-        features[col] = pd.to_numeric(features[col], errors='coerce').fillna(0)
-
-    # ============================================================
-    # 7. 用模型預測（如果載入成功）
-    # ============================================================
-    if model_loaded:
-        try:
-            pred = xgb_model.predict_proba(features)[:, 1]
-            cat_pred = cat_model.predict_proba(features)[:, 1]
-            final_pred = (pred * 0.7 + cat_pred * 0.3)
-            st.success("✅ 真正 AI 模型預測完成")
-        except Exception as e:
-            st.warning(f"⚠️ 模型預測失敗：{e}，改用賠率估算")
-            model_loaded = False
-
-    # ============================================================
-    # 8. 如果模型失敗，用賠率估算（fallback）
-    # ============================================================
-    if not model_loaded:
-        win_odds = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0)
-        win_odds = win_odds.replace(0, 4.0)
-        inv_odds = 1 / win_odds
-        final_pred = inv_odds / inv_odds.sum()
-        st.info("💡 使用賠率估算（模型未啟用）")
-
-    # ============================================================
-    # 9. 組合結果
+    # 📊 組合結果
     # ============================================================
     result_df = filtered[['horse_name', 'draw', 'weight', 'jockey', 'trainer']].copy()
     result_df['預測勝率'] = final_pred
@@ -1477,7 +1375,7 @@ def run_prediction(date_str, race_no):
     result_df = result_df.sort_values('預測勝率', ascending=False)
 
     # ============================================================
-    # 10. 儲存 AI 預測（用於日後比對）
+    # ⭐ 儲存 AI 預測（用於日後比對）
     # ============================================================
     ai_file = "ai_predictions.json"
     ai_data = {}
@@ -1503,7 +1401,7 @@ def run_prediction(date_str, race_no):
     st.success(f"✅ AI 預測已儲存（共 {len(ai_data)} 筆記錄）")
 
     # ============================================================
-    # 11. 彩池推薦
+    # 🎯 彩池推薦
     # ============================================================
     top1 = result_df.iloc[0]['horse_name'] if len(result_df) > 0 else ""
     top2 = result_df.iloc[1]['horse_name'] if len(result_df) > 1 else ""
