@@ -1369,7 +1369,7 @@ def run_prediction(date_str, race_no):
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
     # ============================================================
-    # 💰 賠率估算勝率（保證用到賠率，而且一定出結果）
+    # 💰 賠率估算勝率
     # ============================================================
     win_odds = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0)
     win_odds = win_odds.replace(0, 4.0)
@@ -1385,7 +1385,7 @@ def run_prediction(date_str, race_no):
     result_df = result_df.sort_values('預測勝率', ascending=False)
 
     # ============================================================
-    # ⭐ 儲存 AI 預測（強制儲存，保證有記錄）
+    # ⭐ 儲存 AI 預測（必定儲存）
     # ============================================================
     ai_file = "ai_predictions.json"
     ai_data = {}
@@ -1410,7 +1410,9 @@ def run_prediction(date_str, race_no):
 
     st.success(f"✅ AI 預測已儲存（共 {len(ai_data)} 筆記錄）")
 
-    # ===== 彩池推薦 =====
+    # ============================================================
+    # 🎯 彩池推薦
+    # ============================================================
     top1 = result_df.iloc[0]['horse_name'] if len(result_df) > 0 else ""
     top2 = result_df.iloc[1]['horse_name'] if len(result_df) > 1 else ""
     pool_text = f"🏆 獨贏：{top1}　位置：{top1}、{top2}"
