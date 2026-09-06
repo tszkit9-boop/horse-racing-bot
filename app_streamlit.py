@@ -1319,9 +1319,10 @@ def run_prediction(date_str, race_no):
     import numpy as np
     import json
     from datetime import datetime
+
+    # DEBUG：顯示當前目錄同檔案狀態
     st.write(f"📂 當前目錄：{os.getcwd()}")
     st.write(f"📄 檔案存在：{os.path.exists('ai_predictions.json')}")
-    if not os.path.exists("racecard_uploaded.csv"):
 
     if not os.path.exists("racecard_uploaded.csv"):
         st.error("❌ 找不到 racecard_uploaded.csv")
@@ -1386,7 +1387,7 @@ def run_prediction(date_str, race_no):
     )
     result_df = result_df.sort_values('預測勝率', ascending=False)
 
-    # 儲存 AI 預測
+    # ===== 儲存 AI 預測 =====
     ai_file = "ai_predictions.json"
     ai_data = {}
     if os.path.exists(ai_file):
@@ -1410,6 +1411,7 @@ def run_prediction(date_str, race_no):
 
     st.success(f"✅ AI 預測已儲存（共 {len(ai_data)} 筆記錄）")
 
+    # 彩池推薦
     top1 = result_df.iloc[0]['horse_name'] if len(result_df) > 0 else ""
     top2 = result_df.iloc[1]['horse_name'] if len(result_df) > 1 else ""
     pool_text = f"🏆 獨贏：{top1}　位置：{top1}、{top2}"
