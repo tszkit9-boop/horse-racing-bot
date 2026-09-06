@@ -1365,10 +1365,7 @@ def run_prediction(date_str, race_no):
     filtered = df_date[df_date['race_no'] == race_no]
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
-    # ============================================================
-    # 💰 賠率估算勝率（保留所有馬匹）
-    # ============================================================
-    # 確保賠率欄位存在，缺失時填入 4.0
+    # 賠率估算（保留所有馬匹）
     win_odds = filtered.get('win_odds', 4.0)
     if isinstance(win_odds, pd.Series):
         win_odds = win_odds.fillna(4.0).replace(0, 4.0)
@@ -1386,9 +1383,7 @@ def run_prediction(date_str, race_no):
     )
     result_df = result_df.sort_values('預測勝率', ascending=False)
 
-    # ============================================================
-    # ⭐ 儲存 AI 預測（本地檔案）
-    # ============================================================
+    # 儲存 AI 預測
     ai_file = "ai_predictions.json"
     ai_data = {}
     if os.path.exists(ai_file):
