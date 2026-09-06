@@ -2763,15 +2763,12 @@ def admin_user_management():
     # ============================================================
     # 🤖 AI 預測表現（公開）
     # ============================================================
-    with st.expander("🤖 AI 預測表現（點擊展開）"):
+        with st.expander("🤖 AI 預測表現（點擊展開）"):
         ai_file = "ai_predictions.json"
         ai_data = {}
         if os.path.exists(ai_file):
-            try:
-                with open(ai_file, 'r', encoding='utf-8') as f:
-                    ai_data = json.load(f)
-            except:
-                ai_data = {}
+            with open(ai_file, 'r', encoding='utf-8') as f:
+                ai_data = json.load(f)
 
         if not ai_data:
             st.info("📭 暫時未有 AI 預測記錄，請先執行預測。")
@@ -2781,7 +2778,7 @@ def admin_user_management():
             st.write("📋 最近預測記錄：")
             for key, val in list(ai_data.items())[::-1]:
                 st.write(f"📅 {val['date']} 第 {val['race']} 場 → 🏇 {val['top_horse']}（勝率 {val['top_prob']:.1%}）")
-            
+
             # ===== 下載 AI 預測記錄（僅管理員） =====
             if st.session_state.get('role') == 'super_admin':
                 if os.path.exists("ai_predictions.json"):
