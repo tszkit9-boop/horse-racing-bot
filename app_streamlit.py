@@ -2781,7 +2781,7 @@ def admin_user_management():
 
             # ===== 下載 AI 預測記錄（僅管理員） =====
             if st.session_state.get('role') == 'super_admin':
-                if os.path.exists("ai_predictions.json"):
+            if os.path.exists("ai_predictions.json"):
                     with open("ai_predictions.json", "r", encoding='utf-8') as f:
                         ai_json_data = f.read()
                     st.download_button(
