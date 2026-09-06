@@ -1319,6 +1319,9 @@ def run_prediction(date_str, race_no):
     import numpy as np
     import json
     from datetime import datetime
+    st.write(f"📂 當前目錄：{os.getcwd()}")
+    st.write(f"📄 檔案存在：{os.path.exists('ai_predictions.json')}")
+    if not os.path.exists("racecard_uploaded.csv"):
 
     if not os.path.exists("racecard_uploaded.csv"):
         st.error("❌ 找不到 racecard_uploaded.csv")
