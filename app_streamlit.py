@@ -3766,6 +3766,7 @@ def main():
                         horse_list = [top]
                     else:
                         continue
+                # 取頭4名
                 for idx, horse in enumerate(horse_list[:4], 1):
                     pred_list.append({
                         '日期': date_str,
@@ -3775,10 +3776,13 @@ def main():
                     })
             if pred_list:
                 st.info(f"✅ 成功解析 {len(pred_list)} 筆預測（頭四名）")
+                # 顯示 pred_list 頭幾行確認
+                with st.expander("🔍 查看 pred_list 樣本（確認數據）"):
+                    st.dataframe(pd.DataFrame(pred_list).head(12))
             else:
                 st.warning("⚠️ 無法解析預測紀錄")
 
-        # 4. 比對並顯示（白底黑字）
+        # 4. 比對並顯示（白底黑字，保證顯示全部）
         if pred_list and not df_results.empty:
             df_pred = pd.DataFrame(pred_list)
             df_pred['場次'] = df_pred['場次'].astype(int)
@@ -3799,8 +3803,11 @@ def main():
                 
                 st.write(f"📊 共 {len(display_df)} 筆記錄（每場 4 名）")
                 
+                # 確保 display_df 有 data
+                st.write("### 完整比對表格（白底黑字）")
+                
+                # 方法1: 用 st.dataframe，設定高度
                 def highlight_row(row):
-                    # 白底黑字，只改變背景色標記命中/失準
                     if row['結果'] == '命中':
                         return ['background-color: #d4edda; color: black'] * len(row)
                     elif row['結果'] == '失準':
@@ -3813,8 +3820,14 @@ def main():
                     styled_df,
                     use_container_width=True,
                     hide_index=True,
-                    height=400
+                    height=500  # 增加高度
                 )
+                
+                # 方法2: 用 st.table 作為後備，確保用戶睇到全部
+                st.write("---")
+                st.write("📋 後備純表格顯示（保證全部可見）：")
+                st.table(display_df)
+                
             else:
                 st.info("ℹ️ 沒有可比對嘅預測與賽果")
         else:
