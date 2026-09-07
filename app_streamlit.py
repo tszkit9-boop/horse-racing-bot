@@ -3721,21 +3721,24 @@ def main():
     else:
         st.warning("⚠️ 尚未有任何預測紀錄，請先執行預測")
 
-    # 2. 讀取真實賽果（直接讀取新檔案）
+    # 2. 讀取真實賽果
     result_file = "race_results_clean.csv"
     df_results = pd.DataFrame()
     if os.path.exists(result_file):
         try:
             df_results = pd.read_csv(result_file, encoding='utf-8-sig')
+            st.write("🔍 debug: df_results 前5行", df_results.head())  # 除錯
             if 'race_date' not in df_results.columns or 'race_no' not in df_results.columns or 'horse_name' not in df_results.columns or 'finish_position' not in df_results.columns:
-                st.error("❌ 賽果檔案欄位不正確，應包含：race_date, race_no, horse_name, finish_position")
+                st.error("❌ 賽果檔案欄位不正確")
                 df_results = pd.DataFrame()
             else:
-                # 可選：只顯示最新日期嘅賽果（如果你想睇所有日期，可以刪除下面兩行）
                 df_results['race_date'] = pd.to_datetime(df_results['race_date'], errors='coerce')
                 latest_date = df_results['race_date'].max()
                 df_results = df_results[df_results['race_date'] == latest_date].copy()
                 st.info(f"📅 顯示最新日期：{latest_date.strftime('%Y-%m-%d')}")
+                # 除錯：顯示每個場次嘅冠軍
+                winners = df_results[df_results['finish_position'] == 1][['race_no', 'horse_name']]
+                st.write("🏆 每場冠軍：", winners)
         except Exception as e:
             st.error(f"❌ 讀取賽果失敗：{e}")
             df_results = pd.DataFrame()
@@ -3758,12 +3761,17 @@ def main():
             if not isinstance(value, dict):
                 continue
             horse_list = value.get('all_horses', [])
+            # 如果 all_horses 不存在或為空，用 top_horse 代替
             if not horse_list:
                 top = value.get('top_horse')
                 if top:
                     horse_list = [top]
                 else:
                     continue
+            # 確保 horse_list 係 list
+            if isinstance(horse_list, str):
+                horse_list = [horse_list]
+            # 只取頭 4 名
             for idx, horse in enumerate(horse_list[:4], 1):
                 pred_list.append({
                     '日期': date_str,
@@ -3773,13 +3781,15 @@ def main():
                 })
         if pred_list:
             st.info(f"✅ 成功解析 {len(pred_list)} 筆預測（頭四名）")
+            # 除錯：顯示預測嘅場次分佈
+            df_pred_debug = pd.DataFrame(pred_list)
+            st.write("🔍 預測場次分佈：", df_pred_debug.groupby('場次').size())
         else:
             st.warning("⚠️ 無法解析預測紀錄，請檢查 ai_predictions.json 格式")
 
     # 4. 比對並顯示
     if pred_list and not df_results.empty:
         df_pred = pd.DataFrame(pred_list)
-        # 直接使用已知欄位名
         df_winner = df_results[df_results['finish_position'] == 1][['race_no', 'horse_name']].copy()
         df_winner.rename(columns={'horse_name': '真實頭馬'}, inplace=True)
         df_winner['race_no'] = df_winner['race_no'].astype(int)
@@ -3792,7 +3802,6 @@ def main():
                 axis=1
             )
             df_compare = df_compare.sort_values(['日期', '場次', '預測名次'])
-            # 🔥 先篩選要顯示嘅欄位，再套用樣式
             display_df = df_compare[['日期', '場次', '預測名次', '預測馬', '真實頭馬', '結果']].copy()
             
             def highlight_row(row):
