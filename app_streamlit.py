@@ -1404,9 +1404,9 @@ def run_prediction(date_str, race_no):
     # ============================================================
     # 7. 完整彩池推薦（獨贏、位置、連贏、位置Q、三重彩、單T、四重彩）
     # ============================================================
-    pool_text = generate_pool_recommendations(result_df)
-
-    return result_df, pool_text
+pool_text = generate_pool_recommendations(result_df)
+st.write(f"DEBUG: pool_text = {pool_text}")   # 加呢行
+return result_df, pool_text
 
 # ============================================================
 # 用戶功能（完整）
