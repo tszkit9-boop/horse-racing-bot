@@ -3609,7 +3609,7 @@ def main():
     # ========== 預測 vs 賽果記錄（頭四名） ==========
     st.subheader("🏇 預測 vs 賽果記錄（頭四名）")
 
-    # ----- 1. 讀取 AI 預測紀錄 -----
+    # ----- 1. 讀取 AI 預測紀錄（兼容多種格式） -----
     ai_file = "ai_predictions.json"
     predictions = {}
     if os.path.exists(ai_file):
@@ -3623,68 +3623,101 @@ def main():
     else:
         st.warning("⚠️ 尚未有任何預測紀錄，請先執行預測")
 
-    # ----- 2. 讀取真實賽果 -----
+    # ----- 2. 讀取真實賽果（並過濾日期 >= 2026-09-06） -----
     result_file = "ALL_DATA_MERGED.csv"
     df_results = pd.DataFrame()
     if os.path.exists(result_file):
         try:
-            # 根據你嘅檔案格式調整 header 同 sep
+            # 先嘗試正常讀取（有 header）
             df_results = pd.read_csv(result_file, encoding='utf-8-sig')
-            # 如果讀出嚟得一行且好多 column（即係 header 錯咗），試吓以下寫法：
-            # df_results = pd.read_csv(result_file, header=None, encoding='utf-8-sig')
-            # df_results.columns = ['場次', '名次', '馬名', '騎師', '練馬師', '檔位', '體重']  # 請按實際順序
-            st.info(f"✅ 成功讀取 {len(df_results)} 條賽果紀錄")
+            # 如果讀出嚟得一行且有大量 column（header 錯），改用無 header 模式
+            if df_results.shape[0] == 1 and df_results.shape[1] > 50:
+                df_results = pd.read_csv(result_file, header=None, encoding='utf-8-sig')
+                # 假設欄位順序：場次, 名次, 馬名, 騎師, 練馬師, 檔位, 體重, 日期...
+                # 請根據你實際 CSV 調整，呢度只係範例
+                df_results.columns = ['場次', '名次', '馬名', '騎師', '練馬師', '檔位', '體重', '日期'] + [f'col{i}' for i in range(8, df_results.shape[1])]
+            # 如果有日期欄位，過濾 >= 2026-09-06
+            if '日期' in df_results.columns:
+                df_results['日期'] = pd.to_datetime(df_results['日期'], errors='coerce')
+                df_results = df_results[df_results['日期'] >= pd.to_datetime('2026-09-06')]
+                st.info(f"✅ 過濾後剩餘 {len(df_results)} 條賽果紀錄（2026-09-06 及之後）")
+            else:
+                st.info(f"✅ 成功讀取 {len(df_results)} 條賽果紀錄（無日期欄位，全部保留）")
         except Exception as e:
             st.error(f"❌ 讀取賽果失敗：{e}")
             df_results = pd.DataFrame()
     else:
         st.warning("⚠️ 找不到賽果檔案 ALL_DATA_MERGED.csv")
 
-    # ----- 3. 如果兩邊都有數據，進行比對 -----
+    # ----- 3. 解析預測紀錄（兼容多種格式） -----
+    pred_list = []
     if predictions and not df_results.empty:
-        # 將 predictions 轉為 DataFrame
-        pred_list = []
         for key, value in predictions.items():
-            # key 假設係 "日期_場次"，例如 "2026-09-06_1"
-            parts = key.split('_')
-            if len(parts) == 2:
-                date_str, race_no = parts[0], parts[1]
-            else:
+            # key 格式應為 "日期_場次"
+            if '_' not in key:
                 continue
-            # value 可能係 list of 馬名，或者 dict，你嘅格式要自己確認
-            # 假設 value 係 list，例如 ["馬A", "馬B", "馬C", "馬D"]
+            parts = key.split('_')
+            if len(parts) != 2:
+                continue
+            date_str, race_no = parts[0], parts[1]
+            if not race_no.isdigit():
+                continue
+            race_no = int(race_no)
+
+            # 嘗試從 value 中提取馬名列表
+            horse_list = []
             if isinstance(value, list):
-                for idx, horse in enumerate(value[:4], 1):  # 只取頭四名
-                    pred_list.append({
-                        '日期': date_str,
-                        '場次': race_no,
-                        '預測名次': idx,
-                        '預測馬': horse
-                    })
+                horse_list = value
             elif isinstance(value, dict):
-                # 如果 value 係 dict，可能 key 係 'predictions' 或其他，你要自己改
-                # 呢度只係示例
-                for idx, horse in enumerate(value.get('predictions', [])[:4], 1):
-                    pred_list.append({
-                        '日期': date_str,
-                        '場次': race_no,
-                        '預測名次': idx,
-                        '預測馬': horse
-                    })
+                # 優先搵常見嘅 key
+                for k in ['predictions', 'horses', '馬名', 'names', 'top_horses']:
+                    if k in value and isinstance(value[k], list):
+                        horse_list = value[k]
+                        break
+                # 如果都搵唔到，就搵第一個 list 類型嘅 value
+                if not horse_list:
+                    for k, v in value.items():
+                        if isinstance(v, list) and len(v) > 0 and isinstance(v[0], str):
+                            horse_list = v
+                            break
+            # 如果 horse_list 係空，跳過
+            if not horse_list:
+                continue
+
+            # 只取頭四名（如果本身已經係頭四，就全部取）
+            for idx, horse in enumerate(horse_list[:4], 1):
+                pred_list.append({
+                    '日期': date_str,
+                    '場次': race_no,
+                    '預測名次': idx,
+                    '預測馬': str(horse).strip()
+                })
+
+        if pred_list:
+            st.info(f"✅ 成功解析 {len(pred_list)} 筆預測（頭四名）")
+        else:
+            st.warning("⚠️ 無法解析預測紀錄，請檢查 ai_predictions.json 格式")
+
+    # ----- 4. 比對並顯示 -----
+    if pred_list and not df_results.empty:
         df_pred = pd.DataFrame(pred_list)
 
-        if df_pred.empty:
-            st.warning("⚠️ 預測紀錄格式不正確，無法比對")
+        # 從賽果中搵出每場嘅頭馬（名次 = 1）
+        # 留意賽果欄位名可能係「名次」或「排名」
+        winner_col = None
+        for col in ['名次', '排名', 'position']:
+            if col in df_results.columns:
+                winner_col = col
+                break
+        if winner_col is None:
+            st.error("❌ 賽果檔案欠缺名次欄位")
         else:
-            # 從賽果中搵返對應場次嘅頭馬（名次=1）
-            df_winner = df_results[df_results['名次'] == 1][['場次', '馬名']].copy()
+            df_winner = df_results[df_results[winner_col] == 1][['場次', '馬名']].copy()
             df_winner.rename(columns={'馬名': '真實頭馬'}, inplace=True)
 
-            # 合併（假設場次可以對應）
-            # 注意：你嘅賽果可能有日期，如果冇，就只靠場次 match
+            # 合併
             df_compare = df_pred.merge(df_winner, on='場次', how='left')
 
-            # 如果 df_compare 有數據，就顯示
             if not df_compare.empty:
                 # 增加結果欄
                 df_compare['結果'] = df_compare.apply(
@@ -3692,11 +3725,11 @@ def main():
                     axis=1
                 )
 
-                # 排序：先按日期、場次、預測名次排
+                # 排序：日期、場次、預測名次
                 df_compare = df_compare.sort_values(['日期', '場次', '預測名次'])
 
-                # 只顯示頭四名（實際上上面已經 filter 咗）
-                df_display = df_compare.head(4)
+                # 因為已經只取頭四名，所以直接顯示全部
+                df_display = df_compare
 
                 # 上色函數
                 def color_result(val):
@@ -3719,9 +3752,9 @@ def main():
     else:
         st.info("ℹ️ 請確保已有預測紀錄及賽果數據")
 
-    # ----- 4. 管理員下載按鈕（如有需要）-----
+    # ----- 5. 管理員下載按鈕（保留原本功能） -----
     if st.session_state.get('role') == 'super_admin':
-        # 你原本嘅下載 code 放呢度
+        # 如果你原本有下載 code，放呢度
         pass
 
     # ============================================================
