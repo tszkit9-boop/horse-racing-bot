@@ -3644,8 +3644,6 @@ def main():
                     st.info("未有日期或命中數據")
             else:
                 st.info("暫時未有預測記錄")
-    else:
-        st.info("暫時未有預測記錄，未能進行自我學習分析。請先執行預測。")
 
     st.markdown("---")
     st.subheader("🎯 賽事預測控制")
@@ -3895,27 +3893,23 @@ def main():
     # ====== 今日賽程 ======
     st.subheader("📅 今日賽程")
     try:
+        # 讀取排位表，顯示今日賽事
         df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
         df_sched = standardize_columns_safe(df_sched)
-    # 假設你讀取咗 df_results
-    if 'race_date' in df_results.columns:
-    # 將日期欄轉為 datetime
-    df_results['race_date'] = pd.to_datetime(df_results['race_date'], errors='coerce')
-    # 搵最新日期
-    latest_date = df_results['race_date'].max()
-    st.info(f"📅 最新賽果日期：{latest_date.strftime('%Y-%m-%d')}")
-    # 過濾只顯示最新日期
-    df_results = df_results[df_results['race_date'] == latest_date]
-            if day_races.empty:
-                st.info("今日沒有賽事")
-            else:
+        if 'race_date' in df_sched.columns:
+            df_sched['race_date'] = pd.to_datetime(df_sched['race_date'], errors='coerce')
+            today_dt = datetime.now().date()
+            day_races = df_sched[df_sched['race_date'].dt.date == today_dt]
+            if not day_races.empty:
                 for course in day_races['race_course'].unique():
                     races = day_races[day_races['race_course'] == course]['race_no'].unique()
                     st.write(f"🏟️ **{course}**：第 {', '.join(map(str, sorted(races)))} 場")
+            else:
+                st.info("今日沒有賽事")
         else:
             st.info("今日沒有賽事")
-    except:
-        st.info("今日沒有賽事")
+    except Exception as e:
+        st.info(f"無法讀取排位表：{e}")
 
     st.divider()
     st.warning("⚠️ **免責聲明**：本系統提供之預測僅供參考，不構成投注建議。賽馬活動涉及風險，用戶應量力而為，本系統不對任何投注損失負責。用戶必須年滿18歲。使用本服務即表示同意以上條款。")
