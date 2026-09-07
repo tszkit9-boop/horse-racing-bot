@@ -1308,7 +1308,6 @@ def run_prediction(date_str, race_no):
     import json
     from datetime import datetime
 
-    # ===== 1. 檢查排位表 =====
     if not os.path.exists("racecard_uploaded.csv"):
         st.error("❌ 找不到 racecard_uploaded.csv")
         return None, None
@@ -1319,7 +1318,6 @@ def run_prediction(date_str, race_no):
         st.error(f"❌ 讀取失敗：{e}")
         return None, None
 
-    # ===== 2. 欄位映射 =====
     rename_map = {
         '馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
         '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
@@ -1333,7 +1331,6 @@ def run_prediction(date_str, race_no):
         st.error("❌ 缺少 '比賽日期'")
         return None, None
 
-    # ===== 3. 日期處理 =====
     df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce')
     df = df.dropna(subset=['race_date'])
     df['race_date_str'] = df['race_date'].dt.strftime('%Y-%m-%d')
@@ -1356,17 +1353,11 @@ def run_prediction(date_str, race_no):
     filtered = df_date[df_date['race_no'] == race_no]
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
-    # ============================================================
-    # 4. 賠率估算勝率（保證跟住賠率變化）
-    # ============================================================
     win_odds = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0)
     win_odds = win_odds.replace(0, 4.0)
     inv_odds = 1 / win_odds
     final_pred = inv_odds / inv_odds.sum()
 
-    # ============================================================
-    # 5. 組合結果
-    # ============================================================
     result_df = filtered[['horse_name', 'draw', 'weight', 'jockey', 'trainer']].copy()
     result_df['預測勝率'] = final_pred
     result_df['值博指數'] = result_df['預測勝率'] * 10
@@ -1375,9 +1366,6 @@ def run_prediction(date_str, race_no):
     )
     result_df = result_df.sort_values('預測勝率', ascending=False)
 
-    # ============================================================
-    # 6. 儲存 AI 預測
-    # ============================================================
     ai_file = "ai_predictions.json"
     ai_data = {}
     if os.path.exists(ai_file):
@@ -1401,11 +1389,10 @@ def run_prediction(date_str, race_no):
 
     st.success(f"✅ AI 預測已儲存（共 {len(ai_data)} 筆記錄）")
 
-    # ============================================================
-    # 7. 完整彩池推薦（獨贏、位置、連贏、位置Q、三重彩、單T、四重彩）
-    # ============================================================
+    # ===== 🎯 完整彩池推薦（獨贏、位置、連贏、位置Q、三重彩、單T、四重彩） =====
+    result_df.rename(columns={'horse_name': '馬匹名稱'}, inplace=True)
     pool_text = generate_pool_recommendations(result_df)
-    st.write(f"DEBUG: pool_text = {pool_text}")   # 加呢行
+
     return result_df, pool_text
 
 # ============================================================
