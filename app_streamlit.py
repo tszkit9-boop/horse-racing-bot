@@ -3731,7 +3731,7 @@ def main():
                 st.error("❌ 賽果檔案欄位不正確，應包含：race_date, race_no, horse_name, finish_position")
                 df_results = pd.DataFrame()
             else:
-                # 可選：只顯示最新日期嘅賽果，如果唔想要就刪除下面兩行
+                # 可選：只顯示最新日期嘅賽果（如果你想睇所有日期，可以刪除下面兩行）
                 df_results['race_date'] = pd.to_datetime(df_results['race_date'], errors='coerce')
                 latest_date = df_results['race_date'].max()
                 df_results = df_results[df_results['race_date'] == latest_date].copy()
@@ -3792,6 +3792,8 @@ def main():
                 axis=1
             )
             df_compare = df_compare.sort_values(['日期', '場次', '預測名次'])
+            # 🔥 先篩選要顯示嘅欄位，再套用樣式
+            display_df = df_compare[['日期', '場次', '預測名次', '預測馬', '真實頭馬', '結果']].copy()
             
             def highlight_row(row):
                 if row['結果'] == '命中':
@@ -3801,9 +3803,9 @@ def main():
                 else:
                     return [''] * len(row)
             
-            styled_df = df_compare.style.apply(highlight_row, axis=1)
+            styled_df = display_df.style.apply(highlight_row, axis=1)
             st.dataframe(
-                styled_df[['日期', '場次', '預測名次', '預測馬', '真實頭馬', '結果']],
+                styled_df,
                 use_container_width=True,
                 hide_index=True
             )
@@ -3811,9 +3813,6 @@ def main():
             st.info("ℹ️ 沒有可比對嘅預測與賽果（可能場次不匹配）")
     else:
         st.info("ℹ️ 請確保已有預測紀錄及賽果數據")
-
-    
-  
     # ============================================================
     # 🎮 虛擬投注
     # ============================================================
