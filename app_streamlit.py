@@ -3838,15 +3838,19 @@ def main():
                 df_display = df_compare
 
                 # 上色函數
-                def color_result(val):
-                    if val == '命中':
-                        return 'background-color: #90EE90; color: black'
-                    elif val == '失準':
-                        return 'background-color: #FF6B6B; color: white'
+                # 上色函數（逐行處理）
+                def highlight_row(row):
+                    # 根據 '結果' 欄位決定整行顏色
+                    if row['結果'] == '命中':
+                        return ['background-color: #90EE90; color: black'] * len(row)
+                    elif row['結果'] == '失準':
+                        return ['background-color: #FF6B6B; color: white'] * len(row)
                     else:
-                        return ''
+                        return [''] * len(row)
 
-                styled_df = df_display.style.map(color_result, subset=['结果'])
+                # 套用樣式（apply 逐行，唔用 subset）
+                styled_df = df_display.style.apply(highlight_row, axis=1)
+
                 st.dataframe(
                     styled_df,
                     use_container_width=True,
