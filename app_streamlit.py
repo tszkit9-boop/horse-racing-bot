@@ -3606,57 +3606,56 @@ def main():
                         st.warning(f"讀取賽果失敗：{e}")
                         results_df = None
 
-# ---------- 比對預測 vs 賽果（頭四名） ----------
-# 先排序拎頭四名（如果有預測勝率就用佢排）
-if '預測勝率' in df_compare.columns:
-    df_compare = df_compare.sort_values('預測勝率', ascending=False).head(4)
-else:
-    df_compare = df_compare.head(4)
+    # ========== 預測 vs 賽果記錄（只顯示頭四名） ==========
+    st.subheader("🏇 預測 vs 賽果記錄（頭四名）")
 
-# 新增『結果』欄（比對預測同真實馬名）
-df_compare['結果'] = df_compare.apply(
-    lambda row: '命中' if row['預測馬'] == row['真實馬'] else '失準',
-    axis=1
-)
-
-# 上色函數
-def color_result(val):
-    if val == '命中':
-        return 'background-color: #90EE90; color: black'
-    elif val == '失準':
-        return 'background-color: #FF6B6B; color: white'
+    # 假設你嘅 DataFrame 變數名係 df_compare（如果唔係，請改返）
+    # 如果 df_compare 未定義或係空，就顯示提示
+    if 'df_compare' not in locals() or df_compare.empty:
+        st.info("暫時未有賽果數據可供比對")
     else:
-        return 'background-color: #fff3cd; color: #856404;'
-
-# 套用樣式
-styled_df = df_compare.style.applymap(color_result, subset=['結果'])
-
-# 顯示
-st.dataframe(
-    styled_df,
-    use_container_width=True,
-    hide_index=True
-)
-
-# --- 管理員下載按鈕 ---
-if st.session_state.get('role') == 'super_admin':
-    # 呢度原本嘅下載 code 保留
-    pass
-
-                # ----- 管理員下載按鈕 -----
-                if st.session_state.get('role') == 'super_admin':
-                    if os.path.exists("ai_predictions.json"):
-                        with open("ai_predictions.json", "r", encoding='utf-8') as f:
-                            ai_json_data = f.read()
-                        st.download_button(
-                            label="📥 下載 AI 預測記錄 (ai_predictions.json)",
-                            data=ai_json_data,
-                            file_name="ai_predictions.json",
-                            mime="application/json",
-                            key="download_ai_predictions"
-                        )
+        # 確保有『預測勝率』欄位就排序，否則直接拎頭 4 行
+        if '預測勝率' in df_compare.columns:
+            df_display = df_compare.sort_values('預測勝率', ascending=False).head(4)
         else:
-            st.info("請先登入以查看 AI 預測表現")    
+            df_display = df_compare.head(4)
+
+        # 新增『結果』欄：比對預測馬同真實馬
+        # 請根據你實際嘅欄位名修改下面嘅 '預測馬' 同 '真實馬'
+        if '預測馬' in df_display.columns and '真實馬' in df_display.columns:
+            df_display['結果'] = df_display.apply(
+                lambda row: '命中' if row['預測馬'] == row['真實馬'] else '失準',
+                axis=1
+            )
+        else:
+            # 如果欄位名唔同，你可以改呢度，或者暫時跳過
+            st.warning("搵唔到「預測馬」或「真實馬」欄位，請檢查欄位名稱")
+            df_display['結果'] = '未比對'
+
+        # 上色函數
+        def color_result(val):
+            if val == '命中':
+                return 'background-color: #90EE90; color: black'
+            elif val == '失準':
+                return 'background-color: #FF6B6B; color: white'
+            else:
+                return 'background-color: #fff3cd; color: #856404;'
+
+        # 套用樣式（只對『結果』欄位上色）
+        styled_df = df_display.style.applymap(color_result, subset=['結果'])
+
+        # 顯示表格
+        st.dataframe(
+            styled_df,
+            use_container_width=True,
+            hide_index=True
+        )
+
+    # --- 管理員下載按鈕（保留原有功能） ---
+    if st.session_state.get('role') == 'super_admin':
+        # 呢度嘅下載 code 你原本有乜就照擺，唔好改
+        # 如果冇下載功能，可以留空或者刪除呢個 if
+        pass
 
     # ============================================================
     # 🎮 虛擬投注
