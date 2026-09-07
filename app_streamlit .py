@@ -972,6 +972,7 @@ NAME_MAPPING = {
     'total_injuries': '傷患總次數',
     'injury_severity': '傷患嚴重程度'
 }
+
 def standardize_columns_safe(df):
     rename_map = {
         '騎師': 'jockey', '練馬師': 'trainer', '路程': 'distance',
@@ -2278,7 +2279,6 @@ def admin_monthly_report():
         key="download_monthly_report_json"
     )
     st.caption("💡 提示：CSV 同 JSON 檔案可用 Excel 打開，或轉換成 PDF")
-
 # ============================================================
 # 後台管理（所有模組）
 # ============================================================
@@ -2498,7 +2498,8 @@ def admin_user_management():
             )
     except Exception as e:
         st.error(f"讀取檔案失敗：{e}")
-        def admin_manage_predictions():
+
+def admin_manage_predictions():
     st.subheader("📊 管理用戶預測次數")
     users = load_users()
     if not users:
@@ -3158,7 +3159,8 @@ def admin_automation():
         auto['remind_days'] = days
         save_json(AUTOMATION_FILE, auto)
         st.success("✅ 已儲存")
-    def admin_security():
+
+def admin_security():
     st.subheader("🔐 安全與權限")
     st.write("操作日誌")
     logs = load_logs()
@@ -3337,6 +3339,7 @@ def admin_page():
     for i, name in enumerate(tab_names):
         with tabs[i]:
             tab_functions[name]()
+
 # ============================================================
 # 主頁面（已加入賽事日曆、倒數計時、管理員贈送幣）
 # ============================================================
