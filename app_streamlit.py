@@ -3677,11 +3677,7 @@ def main():
                 st.error(f"❌ 預測過程發生錯誤：{e}")
                 import traceback
                 st.code(traceback.format_exc())    
-    # ============================================================
-    # 🤖 AI 預測表現 + 真實賽果對比（公開）
-    # ============================================================
-    # ========== AI預測表現及賽果對比 ==========
-    # ========== 預測 vs 賽果記錄（頭四名，自動取最新日期） ==========
+       # ========== AI 預測表現及賽果對比 ==========
     st.subheader("🏇 預測 vs 賽果記錄（頭四名）")
 
     # ----- 1. 讀取 AI 預測紀錄 -----
@@ -3698,13 +3694,13 @@ def main():
     else:
         st.warning("⚠️ 尚未有任何預測紀錄，請先執行預測")
 
-    # ----- 2. 讀取真實賽果（自動取最新日期，靜默處理） -----
+    # ----- 2. 讀取真實賽果（自動取最新日期） -----
     result_file = "ALL_DATA_MERGED.csv"
     df_results = pd.DataFrame()
     if os.path.exists(result_file):
         try:
             df_raw = pd.read_csv(result_file, encoding='utf-8-sig')
-            # 如果 header 錯，改無 header
+            # 如果 header 錯，改用無 header 模式
             if df_raw.shape[0] == 1 and df_raw.shape[1] > 50:
                 df_raw = pd.read_csv(result_file, header=None, encoding='utf-8-sig')
                 df_raw.columns = [f'col{i}' for i in range(df_raw.shape[1])]
@@ -3731,7 +3727,7 @@ def main():
     else:
         st.warning("⚠️ 找不到賽果檔案 ALL_DATA_MERGED.csv")
 
-    # ----- 3. 解析預測紀錄（專門針對你嘅 JSON 格式） -----
+    # ----- 3. 解析預測紀錄 -----
     pred_list = []
     if predictions and not df_results.empty:
         for key, value in predictions.items():
@@ -3826,10 +3822,6 @@ def main():
                 st.info("ℹ️ 沒有可比對嘅預測與賽果（可能場次不匹配）")
     else:
         st.info("ℹ️ 請確保已有預測紀錄及賽果數據")
-
-    # ----- 5. 管理員下載按鈕（保留） -----
-    if st.session_state.get('role') == 'super_admin':
-        pass
       
     # ============================================================
     # 🎮 虛擬投注
