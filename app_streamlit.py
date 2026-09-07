@@ -3717,17 +3717,12 @@ def main():
                     break
             
             if date_col is not None:
-                # 轉日期格式
                 df_raw[date_col] = pd.to_datetime(df_raw[date_col], errors='coerce')
-                # 搵最新日期
                 latest_date = df_raw[date_col].max()
-                # 過濾出最新日期嘅數據
                 df_results = df_raw[df_raw[date_col] == latest_date].copy()
             else:
-                # 冇日期欄，全部保留
                 df_results = df_raw.copy()
             
-            # 如果完全冇數據，提示
             if df_results.empty:
                 st.warning("⚠️ 賽果檔案無有效數據")
         except Exception as e:
@@ -3797,7 +3792,6 @@ def main():
         if rank_col is None or horse_col is None or race_col is None:
             st.error("❌ 賽果檔案欠缺必要欄位（名次、馬名、場次）")
         else:
-            # 確保場次類型一致
             df_results[race_col] = pd.to_numeric(df_results[race_col], errors='coerce')
             df_winner = df_results[df_results[rank_col] == 1][[race_col, horse_col]].copy()
             df_winner.rename(columns={horse_col: '真實頭馬', race_col: '場次'}, inplace=True)
