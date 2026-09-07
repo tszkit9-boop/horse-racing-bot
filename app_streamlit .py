@@ -1376,7 +1376,7 @@ def show_betting_interface(username):
     st.subheader("📝 投注")
     col_date, col_race = st.columns(2)
     with col_date:
-        bet_date = st.date_input("📅 選擇日期", value=pd.to_datetime("2026-09-06"), key="bet_date")
+        date = st.date_input("📅 選擇日期", value=pd.to_datetime("2026-09-06"), key="predict_date_mid")
     with col_race:
         bet_race = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="bet_race")
     if st.button("🔍 睇預測 & 投注", key="show_bet_options"):
