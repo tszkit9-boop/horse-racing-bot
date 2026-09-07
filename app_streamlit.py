@@ -767,6 +767,12 @@ def update_accuracy_with_results():
         return 0, "沒有預測記錄"
     try:
         results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
+        results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
+
+# 強制印出嚟睇下個檔入面有咩欄位！
+st.write("CSV 讀取成功，入面嘅欄位係：", results_df.columns.tolist())
+st.write("頭 5 行係：")
+st.dataframe(results_df.head())
         results_df = standardize_columns_safe(results_df)
         results_df = results_df.loc[:, ~results_df.columns.duplicated()]
         required = ['race_date', 'race_no', 'horse_name', 'finish_position']
