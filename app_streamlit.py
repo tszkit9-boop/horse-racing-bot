@@ -767,8 +767,7 @@ def update_accuracy_with_results():
         return 0, "沒有預測記錄"
     try:
         results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
-       results_df = standardize_columns_safe(results_df)
-       results_df = results_df.loc[:, ~results_df.columns.duplicated()]
+        results_df = standardize_columns_safe(results_df)
         results_df = results_df.loc[:, ~results_df.columns.duplicated()]
         required = ['race_date', 'race_no', 'horse_name', 'finish_position']
         for col in required:
