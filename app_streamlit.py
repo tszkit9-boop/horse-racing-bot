@@ -7,7 +7,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import pickle
+import pickle預
 import os
 import json
 from datetime import datetime, timedelta
@@ -3733,11 +3733,10 @@ def main():
                 df_results['race_date'] = pd.to_datetime(df_results['race_date'], errors='coerce')
                 latest_date = df_results['race_date'].max()
                 df_results = df_results[df_results['race_date'] == latest_date].copy()
-                # 🔥 轉為 int，並去除可能嘅空格
-                df_results['race_no'] = df_results['race_no'].astype(str).str.strip().astype(int)
+                # 🔥 強制轉換為數值，並處理可能嘅空格
+                df_results['finish_position'] = pd.to_numeric(df_results['finish_position'], errors='coerce')
+                df_results['race_no'] = pd.to_numeric(df_results['race_no'], errors='coerce').astype(int)
                 st.info(f"📅 顯示最新日期：{latest_date.strftime('%Y-%m-%d')}")
-                # 🔥 除錯：顯示 df_results 嘅 race_no 唯一值
-                st.write("🔍 debug: df_results 的 race_no 唯一值", df_results['race_no'].unique())
         except Exception as e:
             st.error(f"❌ 讀取賽果失敗：{e}")
             df_results = pd.DataFrame()
@@ -3776,25 +3775,28 @@ def main():
                 })
         if pred_list:
             st.info(f"✅ 成功解析 {len(pred_list)} 筆預測（頭四名）")
-            # 🔥 除錯：顯示預測嘅 race_no 唯一值
-            df_pred_debug = pd.DataFrame(pred_list)
-            st.write("🔍 debug: 預測的場次唯一值", df_pred_debug['場次'].unique())
         else:
             st.warning("⚠️ 無法解析預測紀錄")
 
     if pred_list and not df_results.empty:
         df_pred = pd.DataFrame(pred_list)
-        df_pred['場次'] = df_pred['場次'].astype(str).str.strip().astype(int)
+        df_pred['場次'] = df_pred['場次'].astype(int)
         
+        # 🔥 取出每場冠軍（finish_position == 1）
         df_winner = df_results[df_results['finish_position'] == 1][['race_no', 'horse_name']].copy()
         df_winner.rename(columns={'horse_name': '真實頭馬'}, inplace=True)
-        df_winner['race_no'] = df_winner['race_no'].astype(str).str.strip().astype(int)
+        df_winner['race_no'] = df_winner['race_no'].astype(int)
         
-        # 🔥 除錯：顯示合併前嘅 key
-        st.write("🔍 debug: df_pred 的場次", df_pred['場次'].tolist())
-        st.write("🔍 debug: df_winner 的 race_no", df_winner['race_no'].tolist())
+        # 🔥 顯示 df_winner 內容（除錯）
+        st.write("🔍 debug: df_winner（每場冠軍）")
+        st.dataframe(df_winner)
         
+        # 合併
         df_compare = df_pred.merge(df_winner, left_on='場次', right_on='race_no', how='left')
+        
+        # 🔥 顯示合併後前 10 行（除錯）
+        st.write("🔍 debug: df_compare 前 10 行")
+        st.dataframe(df_compare.head(10))
         
         if not df_compare.empty:
             df_compare['結果'] = df_compare.apply(
