@@ -3846,7 +3846,7 @@ def main():
                     else:
                         return ''
 
-                styled_df = df_display.style.applymap(color_result, subset=['結果'])
+                styled_df = df_display.style.map(color_result, subset=['结果'])
                 st.dataframe(
                     styled_df,
                     use_container_width=True,
