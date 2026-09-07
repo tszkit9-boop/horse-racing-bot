@@ -5028,9 +5028,8 @@ def run_prediction(date_str, race_no):
     except:
         pass
 
-    top1 = result_df.iloc[0]['horse_name'] if len(result_df) > 0 else ""
-    top2 = result_df.iloc[1]['horse_name'] if len(result_df) > 1 else ""
-    pool_text = f"🏆 獨贏：{top1}　位置：{top1}、{top2}"
+    result_df.rename(columns={'horse_name': '馬匹名稱'}, inplace=True)
+    pool_text = generate_pool_recommendations(result_df)
     return result_df, pool_text
 # ============================================================
 # 用戶功能（完整）
