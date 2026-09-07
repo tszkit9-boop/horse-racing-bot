@@ -7399,18 +7399,18 @@ def main():
     # 5️⃣ 🎯 賽事預測控制
     # ============================================================
     st.markdown("---")
-    st.subheader("🎯 賽事預測控制")
+st.subheader("🎯 賽事預測控制")
 
-    col_date, col_race, col_btn = st.columns([2, 2, 1])
+col_date, col_race, col_btn = st.columns([2, 2, 1])
 
-    with col_date:
-        date = st.date_input("選擇日期", value=pd.to_datetime("2026-09-06"), key="predict_date_mid")
+with col_date:
+    date = st.date_input("📅 選擇日期", value=pd.to_datetime("2026-09-06"), key="predict_date_mid")
 
-    with col_race:
-        race_no = st.selectbox("選擇場次", list(range(1, 12)), index=0, key="predict_race_mid")
+with col_race:
+    race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=0, key="predict_race_mid")
 
-    with col_btn:
-        predict_btn = st.button("執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
+with col_btn:
+    predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
 
 if predict_btn:
     date_str = date.strftime("%Y-%m-%d")
@@ -7427,7 +7427,7 @@ if predict_btn:
         except Exception as e:
             st.error(f"❌ 預測過程發生錯誤：{e}")
             import traceback
-            st.code(traceback.format_exc())  
+            st.code(traceback.format_exc())
     # ============================================================
     # 🤖 AI 預測表現（公開）
     # ============================================================
