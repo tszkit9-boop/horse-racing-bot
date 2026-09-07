@@ -3570,7 +3570,8 @@ def main():
             except Exception as e:
                 st.error(f"❌ 預測過程發生錯誤：{e}")
                 import traceback
-                st.code(traceback.format_exc())    # ============================================================
+                st.code(traceback.format_exc())    
+        # ============================================================
     # 🤖 AI 預測表現 + 真實賽果對比（公開）
     # ============================================================
     with st.expander("🤖 AI 預測表現 & 賽果對比（點擊展開）"):
@@ -3590,20 +3591,22 @@ def main():
                 # ----- 載入賽果數據 -----
                 results_file = "ALL_DATA_MERGED.csv"
                 results_df = None
-if os.path.exists(results_file):
-    try:
-        results_df = pd.read_csv(results_file, encoding='utf-8-sig')
-        results_df = standardize_columns_safe(results_df)
-        results_df = results_df.loc[:, ~results_df.columns.duplicated()]   # ← 加呢行
-        if 'race_date' in results_df.columns:
-            results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
-            results_df['race_date_str'] = results_df['race_date'].dt.strftime('%Y-%m-%d')
-        if 'horse_name' not in results_df.columns and '馬名' in results_df.columns:
-            results_df.rename(columns={'馬名': 'horse_name'}, inplace=True)
-        if 'finish_position' not in results_df.columns and '名次' in results_df.columns:
-            results_df.rename(columns={'名次': 'finish_position'}, inplace=True)
-    except:
-        results_df = None
+                if os.path.exists(results_file):
+                    try:
+                        results_df = pd.read_csv(results_file, encoding='utf-8-sig')
+                        results_df = standardize_columns_safe(results_df)
+                        # 移除重複欄位（解決 reindex 錯誤）
+                        results_df = results_df.loc[:, ~results_df.columns.duplicated()]
+                        if 'race_date' in results_df.columns:
+                            results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
+                            results_df['race_date_str'] = results_df['race_date'].dt.strftime('%Y-%m-%d')
+                        if 'horse_name' not in results_df.columns and '馬名' in results_df.columns:
+                            results_df.rename(columns={'馬名': 'horse_name'}, inplace=True)
+                        if 'finish_position' not in results_df.columns and '名次' in results_df.columns:
+                            results_df.rename(columns={'名次': 'finish_position'}, inplace=True)
+                    except Exception as e:
+                        st.warning(f"讀取賽果失敗：{e}")
+                        results_df = None
 
                 # ----- 比對預測 vs 賽果 -----
                 hit_count = 0
@@ -3686,9 +3689,7 @@ if os.path.exists(results_file):
                 if compare_list:
                     st.subheader("📋 預測 vs 賽果記錄")
                     df_compare = pd.DataFrame(compare_list)
-                    # 由新到舊排序
                     df_compare = df_compare.sort_values('日期', ascending=False)
-                    # 用顏色標記結果
                     def color_result(val):
                         if "✅" in val:
                             return "background-color: #d4edda; color: #155724;"
