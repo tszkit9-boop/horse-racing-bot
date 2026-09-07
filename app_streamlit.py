@@ -767,25 +767,25 @@ def update_accuracy_with_results():
      return 0, "沒有預測記錄"
 
     try:
-    results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
-    results_df = standardize_columns_safe(results_df)
-    results_df = results_df.loc[:, ~results_df.columns.duplicated()]
-    required = ['race_date', 'race_no', 'horse_name', 'finish_position']
-    for col in required:
-    if col not in results_df.columns:
-    return 0, f"缺少必要欄位: {col}"
+    try:
+        results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
+        results_df = standardize_columns_safe(results_df)
+        results_df = results_df.loc[:, ~results_df.columns.duplicated()]
+        required = ['race_date', 'race_no', 'horse_name', 'finish_position']
+        for col in required:
+            if col not in results_df.columns:
+                return 0, f"缺少必要欄位: {col}"
         
         # 強制讀取 2026/09/05 之後嘅數據
-    results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
-    cut_off = pd.to_datetime('2026-09-05')
-    results_df = results_df[results_df['race_date'] >= cut_off]
-    results_df = results_df.dropna(subset=['race_date'])
+        results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
+        cut_off = pd.to_datetime('2026-09-05')
+        results_df = results_df[results_df['race_date'] >= cut_off]
+        results_df = results_df.dropna(subset=['race_date'])
 
-    updated = 0
-        # (原本下面嘅代碼繼續保持喺呢個縮排度)
+        updated = 0
         
     except Exception as e:
-    return 0, f"讀取賽果時出錯: {e}"
+        return 0, f"讀取賽果時出錯: {e}"
 st.dataframe(results_df.head())
         results_df = standardize_columns_safe(results_df)
         results_df = results_df.loc[:, ~results_df.columns.duplicated()]
