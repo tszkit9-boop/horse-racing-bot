@@ -3570,7 +3570,7 @@ def main():
                 st.error(f"❌ 預測過程發生錯誤：{e}")
                 import traceback
                 st.code(traceback.format_exc())    
-    # ============================================================
+       # ============================================================
     # 🤖 AI 預測表現 + 真實賽果對比（公開）
     # ============================================================
     with st.expander("🤖 AI 預測表現 & 賽果對比（點擊展開）"):
@@ -3583,7 +3583,7 @@ def main():
                         ai_data = json.load(f)
                 except:
                     ai_data = {}
-            
+
             if not ai_data:
                 st.info("📭 暫時未有 AI 預測記錄，請先執行預測。")
             else:
@@ -3594,7 +3594,6 @@ def main():
                     try:
                         results_df = pd.read_csv(results_file, encoding='utf-8-sig')
                         results_df = standardize_columns_safe(results_df)
-                        # 移除重複欄位（解決 reindex 錯誤）
                         results_df = results_df.loc[:, ~results_df.columns.duplicated()]
                         if 'race_date' in results_df.columns:
                             results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
@@ -3619,7 +3618,6 @@ def main():
                         top_horse = pred.get('top_horse')
                         if not date_str or not race_no or not top_horse:
                             continue
-                        # 搵賽果
                         matched = results_df[
                             (results_df['race_date_str'] == date_str) &
                             (results_df['race_no'] == race_no) &
@@ -3638,7 +3636,6 @@ def main():
                                     "結果": "✅ 命中"
                                 })
                             else:
-                                # 搵真實頭馬（finish_position == 1）
                                 real_winner = results_df[
                                     (results_df['race_date_str'] == date_str) &
                                     (results_df['race_no'] == race_no) &
@@ -3661,7 +3658,6 @@ def main():
                                 "結果": "⏳ 待比對（賽果未匹配）"
                             })
                 else:
-                    # 冇賽果數據，只顯示預測記錄
                     for key, pred in ai_data.items():
                         compare_list.append({
                             "日期": pred.get('date', ''),
@@ -3673,7 +3669,6 @@ def main():
                     total_count = len(ai_data)
                     hit_count = 0
 
-                # ----- 顯示統計 -----
                 total = len(ai_data)
                 st.metric("📊 已預測場次", total)
                 if results_df is not None and not results_df.empty:
@@ -3684,7 +3679,6 @@ def main():
                 else:
                     st.info("📌 上傳賽果 CSV 後可顯示命中率")
 
-                # ----- 顯示對比表格 -----
                 if compare_list:
                     st.subheader("📋 預測 vs 賽果記錄")
                     df_compare = pd.DataFrame(compare_list)
@@ -3697,12 +3691,11 @@ def main():
                         else:
                             return "background-color: #fff3cd; color: #856404;"
                     st.dataframe(
-                        df_compare.style.applymap(color_result, subset=['結果'])
+                        df_compare.style.applymap(color_result, subset=['結果']),
                         use_container_width=True,
                         hide_index=True
                     )
 
-                # ----- 管理員下載按鈕 -----
                 if st.session_state.get('role') == 'super_admin':
                     if os.path.exists("ai_predictions.json"):
                         with open("ai_predictions.json", "r", encoding='utf-8') as f:
