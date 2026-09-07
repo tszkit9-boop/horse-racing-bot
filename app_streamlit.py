@@ -7,7 +7,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import pickle預
+import pickle
 import os
 import json
 from datetime import datetime, timedelta
