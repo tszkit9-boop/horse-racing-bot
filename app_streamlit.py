@@ -3399,35 +3399,35 @@ def main():
 
     # ====== 賽事預測控制 ======
     st.markdown("---")
-    st.subheader("🎯 賽事預測控制")
-    col_date, col_race, col_btn = st.columns([2, 2, 1])
-    with col_date:
-        date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="predict_date_mid")
-    with col_race:
-        race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race_mid")
-    with col_btn:
-        predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
+  st.subheader("🎯 賽事預測控制")
 
-    with st.sidebar:
-        st.header("🎯 用戶資訊")
-        if CONFIG["enable_registration"] and st.session_state.logged_in:
-            st.write(f"👤 用戶：{st.session_state.username}")
-            users = load_users()
-            user_data = users.get(st.session_state.username, {})
-            limit = user_data.get('predictions_limit', CONFIG['free_limit'])
-            if limit == -1:
-                st.success("♾️ 無限預測次數")
+col_date, col_race, col_btn = st.columns([2, 2, 1])
+
+with col_date:
+    date = st.date_input("📅 選擇日期", value=pd.to_datetime("2026-09-06"), key="predict_date_mid")
+
+with col_race:
+    race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=0, key="predict_race_mid")
+
+with col_btn:
+    predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
+
+if predict_btn:
+    date_str = date.strftime("%Y-%m-%d")
+    with st.spinner(f"⏳ 正在預測 {date_str} 第 {race_no} 場..."):
+        try:
+            result, pool = run_prediction(date_str, race_no)
+            if result is not None and not result.empty:
+                st.success(f"✅ {date_str} 第 {race_no} 場預測完成！")
+                if pool:
+                    st.info(pool)
+                st.dataframe(result, use_container_width=True)
             else:
-                used = user_data.get('free_usage', 0)
-                remain = max(0, limit - used)
-                st.info(f"📊 剩餘免費場次：{remain} 場")
-            if st.button("📋 我的預測記錄", key="show_history_btn_side"):
-                st.session_state.show_history = not st.session_state.show_history
-            if st.button("🚪 登出", key="logout_btn_side"):
-                for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history']:
-                    if key in st.session_state:
-                        del st.session_state[key]
-                st.rerun()
+                st.error("❌ 未能獲取預測結果，請檢查排位表")
+        except Exception as e:
+            st.error(f"❌ 預測過程發生錯誤：{e}")
+            import traceback
+            st.code(traceback.format_exc())
             
             st.divider()
             st.caption("💬 聯絡管理員")
@@ -3468,7 +3468,9 @@ def main():
         else:
             date_str = date.strftime('%Y-%m-%d')
             with st.spinner(f"執行預測 {date_str} 第 {race_no} 場..."):
-                result, pool = run_prediction(date_str, race_no)
+def run_prediction(date_str, race_no):
+    st.write("🔍 run_prediction 開始執行")   # 加呢行
+    import os
                 if result is not None:
                     st.success(f"✅ {date_str} 第 {race_no} 場 預測完成")
                     
