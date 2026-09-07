@@ -768,6 +768,7 @@ def update_accuracy_with_results():
     try:
     try:
     try:
+    try:
         results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
         results_df = standardize_columns_safe(results_df)
         results_df = results_df.loc[:, ~results_df.columns.duplicated()]
@@ -776,22 +777,16 @@ def update_accuracy_with_results():
             if col not in results_df.columns:
                 return 0, f"缺少必要欄位: {col}"
         
-        # 1. 強制將日期轉成標準格式
+        # 強制讀取 2026/09/05 之後嘅數據
         results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
-        
-        # 2. 設置截止日期：2026年9月5日
         cut_off = pd.to_datetime('2026-09-05')
-        
-        # 3. 強制只保留 2026-09-05 及之後嘅數據
         results_df = results_df[results_df['race_date'] >= cut_off]
-        
-        # 4. 去掉日期解析失敗（變咗 NaT）嘅行
         results_df = results_df.dropna(subset=['race_date'])
 
         updated = 0
-        # 如果原本下面仲有代碼，請保持喺呢個縮排度...
+        # (原本下面嘅代碼繼續保持喺呢個縮排度)
         
-    except Exception as e:
+        except Exception as e:
         return 0, f"讀取賽果時出錯: {e}"
 st.dataframe(results_df.head())
         results_df = standardize_columns_safe(results_df)
