@@ -766,23 +766,37 @@ def update_accuracy_with_results():
     if not records:
         return 0, "沒有預測記錄"
     try:
+    try:
         results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
-        results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
+        results_df = standardize_columns_safe(results_df)
+        results_df = results_df.loc[:, ~results_df.columns.duplicated()]
+        required = ['race_date', 'race_no', 'horse_name', 'finish_position']
+        for col in required:
+            if col not in results_df.columns:
+                return 0, f"缺少必要欄位: {col}"
+        
         # 1. 強制將日期轉成標準格式
-results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
+        results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
+        
+        # 2. 設置截止日期：2026年9月5日
+        cut_off = pd.to_datetime('2026-09-05')
+        
+        # 3. 強制只保留 2026-09-05 及之後嘅數據
+        results_df = results_df[results_df['race_date'] >= cut_off]
+        
+        # 4. 去掉日期解析失敗（變咗 NaT）嘅行
+        results_df = results_df.dropna(subset=['race_date'])
 
-# 2. 設置截止日期：2026年9月5日
-cut_off = pd.to_datetime('2026-09-05')
+        # 5. 強制印出嚟睇下個檔入面有咩欄位！(確認讀取成功)
+        st.write("CSV 讀取成功，入面嘅欄位係：", results_df.columns.tolist())
+        st.write(results_df.head())
 
-# 3. 強制只保留 2026-09-05 及之後嘅數據
-results_df = results_df[results_df['race_date'] >= cut_off]
+        updated = 0
+        # (呢度繼續你原本落去嘅代碼...)
 
-# 4. 去掉日期解析失敗（變咗 NaT）嘅行
-results_df = results_df.dropna(subset=['race_date'])
-
-# 強制印出嚟睇下個檔入面有咩欄位！
-st.write("CSV 讀取成功，入面嘅欄位係：", results_df.columns.tolist())
-st.write("頭 5 行係：")
+    except Exception as e:
+        # 呢個 Except 一定要加，如果唔係就會報錯！
+        return 0, f"讀取賽果時出錯: {e}"
 st.dataframe(results_df.head())
         results_df = standardize_columns_safe(results_df)
         results_df = results_df.loc[:, ~results_df.columns.duplicated()]
