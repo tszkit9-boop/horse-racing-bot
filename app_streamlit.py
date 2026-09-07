@@ -1248,13 +1248,13 @@ def load_horse_name_map():
 
 def generate_pool_recommendations(df, top_n=6):
     """生成六種彩池推薦（獨贏、位置、連贏、位置Q、三重彩、單T、四重彩）"""
-    # 確保使用正確嘅欄位名
+    # 自動偵測馬名欄位
     if 'horse_name' in df.columns:
         horse_col = 'horse_name'
     elif '馬匹名稱' in df.columns:
         horse_col = '馬匹名稱'
     else:
-        return "無法生成彩池推薦：缺少馬匹名稱欄位"
+        return "⚠️ 無法生成彩池推薦：缺少馬匹名稱欄位"
     
     top_horses = df.head(top_n)
     horse_names = top_horses[horse_col].tolist()
@@ -1383,6 +1383,7 @@ def run_prediction(date_str, race_no):
     )
     result_df = result_df.sort_values('預測勝率', ascending=False)
 
+    # 儲存 AI 預測
     ai_file = "ai_predictions.json"
     ai_data = {}
     if os.path.exists(ai_file):
@@ -1406,10 +1407,9 @@ def run_prediction(date_str, race_no):
 
     st.success(f"✅ AI 預測已儲存（共 {len(ai_data)} 筆記錄）")
 
-    # ===== 🎯 完整彩池推薦（獨贏、位置、連贏、位置Q、三重彩、單T、四重彩） =====
-    result_df.rename(columns={'horse_name': '馬匹名稱'}, inplace=True)
-    # 唔好 rename，直接用 horse_name
+    # ===== 🎯 完整彩池推薦（唔會 rename，直接使用 horse_name） =====
     pool_text = generate_pool_recommendations(result_df)
+
     return result_df, pool_text
 
 # ============================================================
