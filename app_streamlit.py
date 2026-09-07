@@ -3704,7 +3704,7 @@ def main():
                     except Exception as e:
                         st.warning(f"讀取賽果失敗：{e}")
                         results_df = None    
-    # ========== AI 預測表現及賽果對比（可折疊） ==========
+      # ========== AI 預測表現及賽果對比 ==========
     with st.expander("🤖 AI 預測表現 & 賽果對比（點擊展開）", expanded=False):
         
         # 1. 讀取 AI 預測紀錄
@@ -3721,7 +3721,7 @@ def main():
         else:
             st.warning("⚠️ 尚未有任何預測紀錄，請先執行預測")
 
-        # 2. 讀取真實賽果（race_results_clean.csv）
+        # 2. 讀取真實賽果
         result_file = "race_results_clean.csv"
         df_results = pd.DataFrame()
         if os.path.exists(result_file):
@@ -3729,10 +3729,9 @@ def main():
                 df_results = pd.read_csv(result_file, encoding='utf-8-sig')
                 required_cols = ['race_date', 'race_no', 'horse_name', 'finish_position']
                 if not all(col in df_results.columns for col in required_cols):
-                    st.error(f"❌ 賽果檔案缺少必要欄位，應包含：{', '.join(required_cols)}")
+                    st.error(f"❌ 賽果檔案缺少必要欄位")
                     df_results = pd.DataFrame()
                 else:
-                    # 🔥 清洗馬名：去除頭尾空格
                     df_results['horse_name'] = df_results['horse_name'].str.strip()
                     df_results['finish_position'] = pd.to_numeric(df_results['finish_position'], errors='coerce')
                     df_results['race_no'] = pd.to_numeric(df_results['race_no'], errors='coerce').astype(int)
@@ -3740,17 +3739,13 @@ def main():
                     latest_date = df_results['race_date'].max()
                     df_results = df_results[df_results['race_date'] == latest_date].copy()
                     st.info(f"📅 顯示最新日期：{latest_date.strftime('%Y-%m-%d')}")
-                    
-                    # 🔥 Debug: 顯示賽果頭幾行
-                    with st.expander("🔍 查看賽果檔案 (race_results_clean.csv) 頭 10 行"):
-                        st.dataframe(df_results.head(10))
             except Exception as e:
                 st.error(f"❌ 讀取賽果失敗：{e}")
                 df_results = pd.DataFrame()
         else:
             st.warning("⚠️ 找不到賽果檔案 race_results_clean.csv")
 
-        # 3. 解析預測紀錄
+        # 3. 解析預測紀錄（每個場次取頭4名）
         pred_list = []
         if predictions and not df_results.empty:
             for key, value in predictions.items():
@@ -3767,14 +3762,15 @@ def main():
                     continue
                 horse_list = value.get('all_horses', [])
                 if not horse_list or not isinstance(horse_list, list):
+                    # 如果 all_horses 不存在，用 top_horse 代替（但咁樣只會得1名）
                     top = value.get('top_horse')
                     if top:
                         horse_list = [top]
                     else:
                         continue
-                # 🔥 清洗馬名
-                cleaned_horses = [str(h).strip() for h in horse_list]
-                for idx, horse in enumerate(cleaned_horses[:4], 1):
+                # 清洗馬名並取前4名
+                cleaned = [str(h).strip() for h in horse_list if str(h).strip()]
+                for idx, horse in enumerate(cleaned[:4], 1):
                     pred_list.append({
                         '日期': date_str,
                         '場次': race_no,
@@ -3782,36 +3778,30 @@ def main():
                         '預測馬': horse
                     })
             if pred_list:
-                st.info(f"✅ 成功解析 {len(pred_list)} 筆預測（頭四名）")
-                # 🔥 Debug: 顯示預測頭幾行
-                with st.expander("🔍 查看預測紀錄 (ai_predictions.json) 頭 12 筆"):
-                    st.dataframe(pd.DataFrame(pred_list).head(12))
+                st.info(f"✅ 成功解析 {len(pred_list)} 筆預測（每場最多4名）")
             else:
                 st.warning("⚠️ 無法解析預測紀錄")
 
-        # 4. 比對並顯示
+        # 4. 比對並顯示表格
         if pred_list and not df_results.empty:
             df_pred = pd.DataFrame(pred_list)
             df_pred['場次'] = df_pred['場次'].astype(int)
             df_pred['預測名次'] = df_pred['預測名次'].astype(int)
             
-            # 🔥 取出每場冠軍 (finish_position == 1)
+            # 取出每場冠軍
             df_winner = df_results[df_results['finish_position'] == 1][['race_no', 'horse_name']].copy()
             df_winner.rename(columns={'horse_name': '真實頭馬'}, inplace=True)
             df_winner['race_no'] = df_winner['race_no'].astype(int)
-            
-            # 🔥 Debug: 顯示 df_winner 全部內容
-            with st.expander("🔍 查看每場冠軍 (df_winner)"):
-                st.dataframe(df_winner)
             
             # 合併
             df_compare = df_pred.merge(df_winner, left_on='場次', right_on='race_no', how='left')
             
             if not df_compare.empty:
-                # 🔥 比對前，再清洗一次（確保一致）
+                # 再次清洗以防萬一
                 df_compare['預測馬'] = df_compare['預測馬'].str.strip()
                 df_compare['真實頭馬'] = df_compare['真實頭馬'].str.strip()
                 
+                # 判定命中
                 df_compare['結果'] = df_compare.apply(
                     lambda row: '命中' if row['預測馬'] == row['真實頭馬'] else '失準',
                     axis=1
@@ -3821,11 +3811,7 @@ def main():
                 
                 st.write(f"📊 共 {len(display_df)} 筆記錄（每場 4 名）")
                 
-                # 🔥 顯示合併後頭 12 行 debug
-                with st.expander("🔍 查看合併後頭 12 筆 (df_compare)"):
-                    st.dataframe(display_df.head(12))
-                
-                # 定義樣式（白底黑字）
+                # 白底黑字樣式
                 def highlight_row(row):
                     if row['結果'] == '命中':
                         return ['background-color: #d4edda; color: black'] * len(row)
@@ -3835,6 +3821,7 @@ def main():
                         return ['background-color: white; color: black'] * len(row)
                 
                 styled_df = display_df.style.apply(highlight_row, axis=1)
+                # 顯示表格，高度設為500px確保可滾動
                 st.dataframe(
                     styled_df,
                     use_container_width=True,
@@ -3842,11 +3829,10 @@ def main():
                     height=500
                 )
                 
-                # 後備純表格（保證全部可見）
+                # 額外：如果 st.dataframe 有問題，用 st.table 確保全部顯示
                 st.write("---")
-                st.write("📋 後備表格（純文字，保證全部可見）：")
+                st.write("📋 完整表格（備用）：")
                 st.table(display_df)
-                
             else:
                 st.info("ℹ️ 沒有可比對嘅預測與賽果")
         else:
