@@ -1247,33 +1247,47 @@ def load_horse_name_map():
     return {}
 
 def generate_pool_recommendations(df, top_n=6):
-    """生成六種彩池推薦（獨贏、位置、連贏、位置Q、三重彩、單T、四重彩）"""
-    # 自動偵測馬名欄位
-    if 'horse_name' in df.columns:
-        horse_col = 'horse_name'
-    elif '馬匹名稱' in df.columns:
-        horse_col = '馬匹名稱'
-    else:
-        return "⚠️ 無法生成彩池推薦：缺少馬匹名稱欄位"
-    
+    """生成六種彩池推薦（自動偵測欄位名）"""
+    if df.empty:
+        return "⚠️ 無數據"
+
+    # 自動搵馬名欄位：嘗試常見名稱，否則用第一欄
+    possible_cols = ['horse_name', '馬匹名稱', '馬名', 'Name', 'horse']
+    horse_col = None
+    for col in possible_cols:
+        if col in df.columns:
+            horse_col = col
+            break
+    if horse_col is None:
+        horse_col = df.columns[0]  # 用第一欄
+
+    # 自動搵勝率欄位
+    prob_col = None
+    for col in ['預測勝率', 'prob', 'probability']:
+        if col in df.columns:
+            prob_col = col
+            break
+    if prob_col is None:
+        return "⚠️ 缺少勝率欄位"
+
     top_horses = df.head(top_n)
     horse_names = top_horses[horse_col].tolist()
-    probs = top_horses['預測勝率'].tolist()
-    
+    probs = top_horses[prob_col].tolist()
+
     def combo_score(indices):
         score = 1.0
         for i in indices:
             score *= probs[i]
         return score / len(indices)
-    
+
     rec = "【獨贏】\n"
     for i, row in top_horses.head(3).iterrows():
-        rec += f"  {row[horse_col]}（{row['預測勝率']:.1%}）\n"
-    
+        rec += f"  {row[horse_col]}（{row[prob_col]:.1%}）\n"
+
     rec += "\n【位置】\n"
     for i, row in top_horses.head(4).iterrows():
-        rec += f"  {row[horse_col]}（{row['預測勝率']:.1%}）\n"
-    
+        rec += f"  {row[horse_col]}（{row[prob_col]:.1%}）\n"
+
     rec += "\n【連贏】\n"
     pairs = []
     for i in range(min(len(horse_names), 5)):
@@ -1282,7 +1296,7 @@ def generate_pool_recommendations(df, top_n=6):
     pairs.sort(reverse=True)
     for _, i, j in pairs[:5]:
         rec += f"  {horse_names[i]} + {horse_names[j]}\n"
-    
+
     rec += "\n【位置Q】\n"
     q_pairs = []
     for i in range(min(len(horse_names), 6)):
@@ -1292,7 +1306,7 @@ def generate_pool_recommendations(df, top_n=6):
     q_pairs.sort(reverse=True)
     for _, i, j in q_pairs[:6]:
         rec += f"  {horse_names[i]} + {horse_names[j]}\n"
-    
+
     rec += "\n【三重彩 / 單T】\n"
     tierce = []
     for i in range(min(len(horse_names), 4)):
@@ -1303,7 +1317,7 @@ def generate_pool_recommendations(df, top_n=6):
     tierce.sort(reverse=True)
     for _, i, j, k in tierce[:5]:
         rec += f"  {horse_names[i]} > {horse_names[j]} > {horse_names[k]}\n"
-    
+
     rec += "\n【四重彩】\n"
     quartet = []
     for i in range(min(len(horse_names), 4)):
@@ -1315,7 +1329,7 @@ def generate_pool_recommendations(df, top_n=6):
     quartet.sort(reverse=True)
     for _, i, j, k, l in quartet[:3]:
         rec += f"  {horse_names[i]} > {horse_names[j]} > {horse_names[k]} > {horse_names[l]}\n"
-    
+
     return rec
 
 def run_prediction(date_str, race_no):
@@ -1335,6 +1349,7 @@ def run_prediction(date_str, race_no):
         st.error(f"❌ 讀取失敗：{e}")
         return None, None
 
+    # 欄位映射（保證有 'horse_name'）
     rename_map = {
         '馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
         '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
@@ -1375,6 +1390,12 @@ def run_prediction(date_str, race_no):
     inv_odds = 1 / win_odds
     final_pred = inv_odds / inv_odds.sum()
 
+    # 確保 result_df 有 'horse_name' 欄位（如果冇，用第一欄代替）
+    if 'horse_name' not in filtered.columns:
+        # 如果冇 horse_name，用第一欄（假設係馬名）
+        first_col = filtered.columns[0]
+        filtered.rename(columns={first_col: 'horse_name'}, inplace=True)
+
     result_df = filtered[['horse_name', 'draw', 'weight', 'jockey', 'trainer']].copy()
     result_df['預測勝率'] = final_pred
     result_df['值博指數'] = result_df['預測勝率'] * 10
@@ -1407,7 +1428,7 @@ def run_prediction(date_str, race_no):
 
     st.success(f"✅ AI 預測已儲存（共 {len(ai_data)} 筆記錄）")
 
-    # ===== 🎯 完整彩池推薦（唔會 rename，直接使用 horse_name） =====
+    # ===== 完整彩池推薦（自動適應欄位名） =====
     pool_text = generate_pool_recommendations(result_df)
 
     return result_df, pool_text
