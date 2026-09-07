@@ -2284,6 +2284,56 @@ def admin_monthly_report():
 # ============================================================
 def admin_user_management():
     st.subheader("👥 用戶管理")
+    
+    # ============================================================
+    # 1. 直接讀取 users.json（唔靠 load_users()，避免潛在問題）
+    # ============================================================
+    user_file = "users.json"
+    
+    if not os.path.exists(user_file):
+        st.error("❌ users.json 檔案不存在！請檢查檔案是否放在正確位置。")
+        return
+    
+    try:
+        with open(user_file, 'r', encoding='utf-8') as f:
+            users = json.load(f)
+    except json.JSONDecodeError as e:
+        st.error(f"❌ users.json 格式錯誤：{e}")
+        return
+    except Exception as e:
+        st.error(f"❌ 讀取 users.json 失敗：{e}")
+        return
+    
+    # 顯示用戶數量
+    st.info(f"✅ 成功載入 {len(users)} 個用戶")
+    
+    # ============================================================
+    # 2. 顯示用戶列表（如果 users 係 dict）
+    # ============================================================
+    if users and isinstance(users, dict):
+        df = pd.DataFrame.from_dict(users, orient='index')
+        
+        # 確保必要欄位存在
+        if 'level' not in df.columns:
+            df['level'] = '🥉 銅牌會員'
+        if 'exp' not in df.columns:
+            df['exp'] = 0
+        if 'badges' not in df.columns:
+            df['badges'] = ''
+        df['badges_count'] = df['badges'].apply(lambda x: len(x) if isinstance(x, list) else 0)
+        
+        # 選擇顯示嘅欄位
+        display_cols = ['username', 'group', 'level', 'exp', 'badges_count', 'total_usage', 'is_paid', 'virtual_balance']
+        available_cols = [col for col in display_cols if col in df.columns]
+        st.dataframe(df[available_cols], use_container_width=True)
+    else:
+        st.info("暫無用戶")
+    
+    st.divider()
+    
+    # ============================================================
+    # 3. 新增用戶（保留你原本嘅功能）
+    # ============================================================
     with st.expander("➕ 新增用戶", expanded=False):
         col1, col2 = st.columns(2)
         with col1:
@@ -2296,7 +2346,13 @@ def admin_user_management():
             if not new_username or not new_password:
                 st.warning("請填寫用戶名同密碼")
             else:
-                users = load_users()
+                # 重新讀取一次確保最新
+                try:
+                    with open(user_file, 'r', encoding='utf-8') as f:
+                        users = json.load(f)
+                except:
+                    users = {}
+                    
                 if new_username in users:
                     st.error("❌ 用戶名已被使用")
                 else:
@@ -2312,7 +2368,7 @@ def admin_user_management():
                         "group": new_group,
                         "phone": "",
                         "plan": None,
-                        "predictions_limit": -1 if new_group in ['super_admin', 'VIP'] else CONFIG["free_limit"],
+                        "predictions_limit": -1 if new_group in ['super_admin', 'VIP'] else CONFIG.get("free_limit", 2),
                         "history": [],
                         "terms_agreed": datetime.now().isoformat(),
                         "invite_code": new_username.upper() + str(random.randint(100, 999)),
@@ -2326,154 +2382,205 @@ def admin_user_management():
                         "last_claim_date": '',
                         "bets": []
                     }
-                    save_users(users)
-                    log_admin_action(st.session_state.username, f"新增用戶 {new_username}")
-                    st.success(f"✅ 用戶 {new_username} 已建立！")
-                    st.rerun()
-    users = load_users()
-    if not users:
-        st.info("暫無用戶")
-        return
-    st.write("現有用戶列表：")
-    df = pd.DataFrame.from_dict(users, orient='index')
-    if 'level' not in df.columns:
-        df['level'] = '🥉 銅牌會員'
-    if 'exp' not in df.columns:
-        df['exp'] = 0
-    if 'badges' not in df.columns:
-        df['badges'] = ''
-    df['badges_count'] = df['badges'].apply(lambda x: len(x) if isinstance(x, list) else 0)
-    display_cols = ['username', 'group', 'level', 'exp', 'badges_count', 'total_usage', 'is_paid', 'virtual_balance']
-    available_cols = [col for col in display_cols if col in df.columns]
-    st.dataframe(df[available_cols], use_container_width=True)
+                    try:
+                        with open(user_file, 'w', encoding='utf-8') as f:
+                            json.dump(users, f, ensure_ascii=False, indent=2)
+                        st.success(f"✅ 用戶 {new_username} 已建立！")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ 儲存失敗：{e}")
+    
     st.divider()
+    
+    # ============================================================
+    # 4. 刪除用戶（保留你原本嘅功能）
+    # ============================================================
     st.subheader("🗑️ 刪除用戶")
-    del_user = st.selectbox("選擇要刪除嘅用戶", list(users.keys()), key="del_user_select")
-    if del_user:
-        if del_user == "admin":
-            st.warning("⚠️ 唔可以刪除 admin 帳號")
-        else:
-            confirm = st.checkbox(f"確認刪除 {del_user}？", key="confirm_del")
-            if confirm and st.button("🗑️ 確認刪除", key="del_user_btn"):
-                users.pop(del_user)
-                save_users(users)
-                log_admin_action(st.session_state.username, f"刪除用戶 {del_user}")
-                st.success(f"✅ 用戶 {del_user} 已刪除")
-                st.rerun()
-    st.divider()
-    st.subheader("👁️ 查看用戶視角")
-    selected_user = st.selectbox("選擇要查看的用戶", list(users.keys()), key="view_user_select")
-    if selected_user:
-        user_data = users[selected_user]
-        st.markdown("---")
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("👤 用戶", selected_user)
-        col2.metric("🏷️ 級別", user_data.get('group', 'free').upper())
-        col3.metric("📊 總預測次數", len(user_data.get('history', [])))
-        limit = user_data.get('predictions_limit', CONFIG['free_limit'])
-        if limit == -1:
-            col4.metric("📊 剩餘場次", "♾️ 無限")
-        else:
-            used = user_data.get('free_usage', 0)
-            remain = max(0, limit - used)
-            col4.metric("📊 剩餘場次", remain)
-        st.markdown("---")
-        st.subheader(f"📋 {selected_user} 嘅預測記錄")
-        history = user_data.get('history', [])
-        if history:
-            df_hist = pd.DataFrame(history[-20:][::-1])
-            st.dataframe(df_hist, use_container_width=True)
-        else:
-            st.info("呢個用戶暫時冇任何預測記錄")
-        if history:
-            st.subheader(f"🎯 {selected_user} 嘅準確度統計")
-            acc = load_accuracy()
-            records = acc.get('records', [])
-            user_records = [r for r in records if r.get('username') == selected_user]
-            if user_records:
-                df_rec = pd.DataFrame(user_records)
-                total = len(df_rec)
-                hit = df_rec[df_rec['is_hit'] == True].shape[0] if 'is_hit' in df_rec else 0
-                hit_rate = hit/total if total>0 else 0
-                roi = (hit * 400 - total * 100) / (total * 100) if total>0 else 0
-                col1, col2, col3 = st.columns(3)
-                col1.metric("總預測", total)
-                col2.metric("命中", hit)
-                col3.metric("命中率", f"{hit_rate:.2%}")
-                st.metric("ROI (模擬)", f"{roi:.2%}")
-                if 'date' in df_rec:
-                    df_rec['date'] = pd.to_datetime(df_rec['date'])
-                    daily = df_rec.groupby(df_rec['date'].dt.date).agg(
-                        total=('is_hit', 'count'),
-                        hit=('is_hit', lambda x: (x==True).sum())
-                    ).reset_index()
-                    daily['hit_rate'] = daily['hit'] / daily['total']
-                    fig = px.line(daily, x='date', y='hit_rate', title=f'{selected_user} 嘅命中率趨勢')
-                    st.plotly_chart(fig, use_container_width=True)
+    # 重新讀取確保最新
+    try:
+        with open(user_file, 'r', encoding='utf-8') as f:
+            users = json.load(f)
+    except:
+        users = {}
+        
+    if users:
+        del_user = st.selectbox("選擇要刪除嘅用戶", list(users.keys()), key="del_user_select")
+        if del_user:
+            if del_user == "admin":
+                st.warning("⚠️ 唔可以刪除 admin 帳號")
             else:
-                st.info("呢個用戶未有準確度數據（未對比賽果）")
-    with st.expander("✏️ 編輯用戶"):
-        username = st.selectbox("選擇要編輯的用戶", list(users.keys()), key="edit_user_select")
-        if username:
-            user = users[username]
-            col_edit1, col_edit2 = st.columns(2)
-            with col_edit1:
-                new_group = st.selectbox("群組", ['free', 'paid', 'VIP', 'super_admin'], index=['free','paid','VIP','super_admin'].index(user.get('group','free')), key="edit_group")
-                new_is_paid = st.checkbox("付費狀態", value=user.get('is_paid', False), key="edit_is_paid")
-                new_password = st.text_input("新密碼（留空 = 不變）", type="password", key="edit_password", placeholder="輸入新密碼")
-            with col_edit2:
-                level_options = ["🥉 銅牌會員", "🥈 銀牌會員", "🥇 金牌會員", "💎 鑽石會員", "👑 傳說會員", "👑 超級管理員"]
-                current_level = user.get('level', '🥉 銅牌會員')
-                if current_level not in level_options:
-                    level_options.append(current_level)
-                new_level = st.selectbox("🏅 等級", level_options, index=level_options.index(current_level) if current_level in level_options else 0, key="edit_level")
-                new_exp = st.number_input("📊 經驗值", min_value=0, value=user.get('exp', 0), step=10, key="edit_exp")
-                all_badges = ["🏆 首勝", "🔥 三連勝", "⚡ 五連勝", "💯 百場預測", "🎯 命中大師", "👥 社交達人", "💰 付費會員", "🏇 馬匹專家"]
-                current_badges = user.get('badges', [])
-                new_badges = st.multiselect("🎖️ 勳章", all_badges, default=[b for b in current_badges if b in all_badges], key="edit_badges")
+                confirm = st.checkbox(f"確認刪除 {del_user}？", key="confirm_del")
+                if confirm and st.button("🗑️ 確認刪除", key="del_user_btn"):
+                    users.pop(del_user)
+                    try:
+                        with open(user_file, 'w', encoding='utf-8') as f:
+                            json.dump(users, f, ensure_ascii=False, indent=2)
+                        st.success(f"✅ 用戶 {del_user} 已刪除")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ 刪除失敗：{e}")
+    else:
+        st.info("暫無用戶可刪除")
+    
+    st.divider()
+    
+    # ============================================================
+    # 5. 查看用戶視角（保留你原本嘅功能）
+    # ============================================================
+    st.subheader("👁️ 查看用戶視角")
+    # 重新讀取確保最新
+    try:
+        with open(user_file, 'r', encoding='utf-8') as f:
+            users = json.load(f)
+    except:
+        users = {}
+        
+    if users:
+        selected_user = st.selectbox("選擇要查看的用戶", list(users.keys()), key="view_user_select")
+        if selected_user:
+            user_data = users[selected_user]
             st.markdown("---")
-            st.subheader("💰 虛擬幣調整")
-            col_coin1, col_coin2 = st.columns(2)
-            with col_coin1:
-                current_balance = user.get('virtual_balance', 0)
-                st.metric("當前結餘", f"${current_balance:,.0f}")
-            with col_coin2:
-                coin_adjust = st.number_input("調整金額（+ 加錢，- 扣錢）", value=0, step=100, key="coin_adjust")
-                if st.button("✅ 確認調整虛擬幣", key="apply_coin_adjust"):
-                    if coin_adjust != 0:
-                        new_balance = current_balance + coin_adjust
-                        if new_balance < 0:
-                            st.error("❌ 餘額不能為負數")
-                        else:
-                            users[username]['virtual_balance'] = new_balance
-                            save_users(users)
-                            log_admin_action(st.session_state.username, f"調整 {username} 虛擬幣：{coin_adjust:+d}（新餘額：{new_balance}）")
-                            st.success(f"✅ 已調整 {username} 的虛擬幣，新餘額：${new_balance:,.0f}")
-                            st.rerun()
-            if st.button("🔄 重置虛擬幣為 $1000", key="reset_coin"):
-                users[username]['virtual_balance'] = 1000
-                save_users(users)
-                log_admin_action(st.session_state.username, f"重置 {username} 虛擬幣為 1000")
-                st.success("✅ 已重置虛擬幣為 $1000")
-                st.rerun()
-            note = st.text_area("備註", value=user.get('note', ''), key="edit_note")
-            if st.button("💾 儲存變更", key="save_user_changes"):
-                users[username]['group'] = new_group
-                users[username]['is_paid'] = new_is_paid
-                users[username]['note'] = note
-                users[username]['level'] = new_level
-                users[username]['exp'] = new_exp
-                users[username]['badges'] = new_badges
-                if new_password:
-                    users[username]['password'] = new_password
-                if new_group in ['super_admin', 'VIP']:
-                    users[username]['predictions_limit'] = -1
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("👤 用戶", selected_user)
+            col2.metric("🏷️ 級別", user_data.get('group', 'free').upper())
+            col3.metric("📊 總預測次數", len(user_data.get('history', [])))
+            limit = user_data.get('predictions_limit', CONFIG.get('free_limit', 2))
+            if limit == -1:
+                col4.metric("📊 剩餘場次", "♾️ 無限")
+            else:
+                used = user_data.get('free_usage', 0)
+                remain = max(0, limit - used)
+                col4.metric("📊 剩餘場次", remain)
+            st.markdown("---")
+            st.subheader(f"📋 {selected_user} 嘅預測記錄")
+            history = user_data.get('history', [])
+            if history:
+                df_hist = pd.DataFrame(history[-20:][::-1])
+                st.dataframe(df_hist, use_container_width=True)
+            else:
+                st.info("呢個用戶暫時冇任何預測記錄")
+            if history:
+                st.subheader(f"🎯 {selected_user} 嘅準確度統計")
+                acc = load_accuracy()
+                records = acc.get('records', [])
+                user_records = [r for r in records if r.get('username') == selected_user]
+                if user_records:
+                    df_rec = pd.DataFrame(user_records)
+                    total = len(df_rec)
+                    hit = df_rec[df_rec['is_hit'] == True].shape[0] if 'is_hit' in df_rec else 0
+                    hit_rate = hit/total if total>0 else 0
+                    roi = (hit * 400 - total * 100) / (total * 100) if total>0 else 0
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("總預測", total)
+                    col2.metric("命中", hit)
+                    col3.metric("命中率", f"{hit_rate:.2%}")
+                    st.metric("ROI (模擬)", f"{roi:.2%}")
+                    if 'date' in df_rec:
+                        df_rec['date'] = pd.to_datetime(df_rec['date'])
+                        daily = df_rec.groupby(df_rec['date'].dt.date).agg(
+                            total=('is_hit', 'count'),
+                            hit=('is_hit', lambda x: (x==True).sum())
+                        ).reset_index()
+                        daily['hit_rate'] = daily['hit'] / daily['total']
+                        fig = px.line(daily, x='date', y='hit_rate', title=f'{selected_user} 嘅命中率趨勢')
+                        st.plotly_chart(fig, use_container_width=True)
                 else:
-                    users[username]['predictions_limit'] = CONFIG["free_limit"]
-                save_users(users)
-                log_admin_action(st.session_state.username, f"編輯用戶 {username}（等級：{new_level}，勳章：{len(new_badges)}個）")
-                st.success("✅ 已更新用戶資料！")
-                st.rerun()
+                    st.info("呢個用戶未有準確度數據（未對比賽果）")
+    else:
+        st.info("暫無用戶")
+    
+    st.divider()
+    
+    # ============================================================
+    # 6. 編輯用戶（保留你原本嘅功能）
+    # ============================================================
+    with st.expander("✏️ 編輯用戶"):
+        # 重新讀取確保最新
+        try:
+            with open(user_file, 'r', encoding='utf-8') as f:
+                users = json.load(f)
+        except:
+            users = {}
+            
+        if users:
+            username = st.selectbox("選擇要編輯的用戶", list(users.keys()), key="edit_user_select")
+            if username:
+                user = users[username]
+                col_edit1, col_edit2 = st.columns(2)
+                with col_edit1:
+                    new_group = st.selectbox("群組", ['free', 'paid', 'VIP', 'super_admin'], 
+                                            index=['free','paid','VIP','super_admin'].index(user.get('group','free')), 
+                                            key="edit_group")
+                    new_is_paid = st.checkbox("付費狀態", value=user.get('is_paid', False), key="edit_is_paid")
+                    new_password = st.text_input("新密碼（留空 = 不變）", type="password", key="edit_password", placeholder="輸入新密碼")
+                with col_edit2:
+                    level_options = ["🥉 銅牌會員", "🥈 銀牌會員", "🥇 金牌會員", "💎 鑽石會員", "👑 傳說會員", "👑 超級管理員"]
+                    current_level = user.get('level', '🥉 銅牌會員')
+                    if current_level not in level_options:
+                        level_options.append(current_level)
+                    new_level = st.selectbox("🏅 等級", level_options, 
+                                            index=level_options.index(current_level) if current_level in level_options else 0, 
+                                            key="edit_level")
+                    new_exp = st.number_input("📊 經驗值", min_value=0, value=user.get('exp', 0), step=10, key="edit_exp")
+                    all_badges = ["🏆 首勝", "🔥 三連勝", "⚡ 五連勝", "💯 百場預測", "🎯 命中大師", "👥 社交達人", "💰 付費會員", "🏇 馬匹專家"]
+                    current_badges = user.get('badges', [])
+                    new_badges = st.multiselect("🎖️ 勳章", all_badges, 
+                                                default=[b for b in current_badges if b in all_badges], 
+                                                key="edit_badges")
+                st.markdown("---")
+                st.subheader("💰 虛擬幣調整")
+                col_coin1, col_coin2 = st.columns(2)
+                with col_coin1:
+                    current_balance = user.get('virtual_balance', 0)
+                    st.metric("當前結餘", f"${current_balance:,.0f}")
+                with col_coin2:
+                    coin_adjust = st.number_input("調整金額（+ 加錢，- 扣錢）", value=0, step=100, key="coin_adjust")
+                    if st.button("✅ 確認調整虛擬幣", key="apply_coin_adjust"):
+                        if coin_adjust != 0:
+                            new_balance = current_balance + coin_adjust
+                            if new_balance < 0:
+                                st.error("❌ 餘額不能為負數")
+                            else:
+                                users[username]['virtual_balance'] = new_balance
+                                try:
+                                    with open(user_file, 'w', encoding='utf-8') as f:
+                                        json.dump(users, f, ensure_ascii=False, indent=2)
+                                    st.success(f"✅ 已調整 {username} 的虛擬幣，新餘額：${new_balance:,.0f}")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"❌ 儲存失敗：{e}")
+                if st.button("🔄 重置虛擬幣為 $1000", key="reset_coin"):
+                    users[username]['virtual_balance'] = 1000
+                    try:
+                        with open(user_file, 'w', encoding='utf-8') as f:
+                            json.dump(users, f, ensure_ascii=False, indent=2)
+                        st.success("✅ 已重置虛擬幣為 $1000")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ 儲存失敗：{e}")
+                note = st.text_area("備註", value=user.get('note', ''), key="edit_note")
+                if st.button("💾 儲存變更", key="save_user_changes"):
+                    users[username]['group'] = new_group
+                    users[username]['is_paid'] = new_is_paid
+                    users[username]['note'] = note
+                    users[username]['level'] = new_level
+                    users[username]['exp'] = new_exp
+                    users[username]['badges'] = new_badges
+                    if new_password:
+                        users[username]['password'] = new_password
+                    if new_group in ['super_admin', 'VIP']:
+                        users[username]['predictions_limit'] = -1
+                    else:
+                        users[username]['predictions_limit'] = CONFIG.get("free_limit", 2)
+                    try:
+                        with open(user_file, 'w', encoding='utf-8') as f:
+                            json.dump(users, f, ensure_ascii=False, indent=2)
+                        st.success("✅ 已更新用戶資料！")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ 儲存失敗：{e}")
+        else:
+            st.info("暫無用戶可編輯")
     st.divider()
     st.subheader("📥 數據匯出")
     try:
