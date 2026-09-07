@@ -3712,7 +3712,7 @@ def main():
                     except Exception as e:
                         st.warning(f"讀取賽果失敗：{e}")
                         results_df = None    
-    # ========== 預測 vs 賽果記錄（頭四名） ==========
+      # ========== 預測 vs 賽果記錄（頭四名） ==========
     st.subheader("🏇 預測 vs 賽果記錄（頭四名）")
 
     # ----- 1. 讀取 AI 預測紀錄 -----
@@ -3729,7 +3729,7 @@ def main():
     else:
         st.warning("⚠️ 尚未有任何預測紀錄，請先執行預測")
 
-    # ----- 2. 讀取真實賽果（自動適應日期欄位） -----
+    # ----- 2. 讀取真實賽果（不過濾日期，全部讀取） -----
     result_file = "ALL_DATA_MERGED.csv"
     df_results = pd.DataFrame()
     if os.path.exists(result_file):
@@ -3739,42 +3739,17 @@ def main():
             # 如果讀出嚟得一行且有大量 column，可能 header 錯，改用無 header
             if df_raw.shape[0] == 1 and df_raw.shape[1] > 50:
                 df_raw = pd.read_csv(result_file, header=None, encoding='utf-8-sig')
-                # 假設欄位順序：場次, 名次, 馬名, 騎師, 練馬師, 檔位, 體重, 日期, ...
-                # 請根據實際調整，但下面會自動偵測日期，所以唔使太擔心
                 # 自動命名欄位
                 df_raw.columns = [f'col{i}' for i in range(df_raw.shape[1])]
-
-            # 自動偵測日期欄位名稱（常見寫法）
-            date_col = None
-            possible_date_cols = ['日期', 'Date', 'race_date', 'date', '賽事日期', 'race_day']
-            for col in possible_date_cols:
-                if col in df_raw.columns:
-                    date_col = col
-                    break
-
-            # 如果有日期欄，就過濾 >= 2026-09-06
-            if date_col is not None:
-                try:
-                    # 將日期欄轉為 datetime
-                    df_raw[date_col] = pd.to_datetime(df_raw[date_col], errors='coerce')
-                    df_results = df_raw[df_raw[date_col] >= pd.to_datetime('2026-09-06')].copy()
-                    st.info(f"✅ 過濾後剩餘 {len(df_results)} 條賽果紀錄（2026-09-06 及之後）")
-                except Exception as e:
-                    st.warning(f"⚠️ 日期過濾失敗，將使用全部賽果：{e}")
-                    df_results = df_raw.copy()
-                    st.info(f"✅ 成功讀取 {len(df_results)} 條賽果紀錄（全部）")
-            else:
-                # 冇日期欄，全部保留
-                df_results = df_raw.copy()
-                st.info(f"✅ 成功讀取 {len(df_results)} 條賽果紀錄（無日期欄位，全部保留）")
-
+            df_results = df_raw.copy()
+            st.info(f"✅ 成功讀取 {len(df_results)} 條賽果紀錄（全部）")
         except Exception as e:
             st.error(f"❌ 讀取賽果失敗：{e}")
             df_results = pd.DataFrame()
     else:
         st.warning("⚠️ 找不到賽果檔案 ALL_DATA_MERGED.csv")
 
-    # ----- 3. 解析預測紀錄（兼容多種格式） -----
+    # ----- 3. 解析預測紀錄（提取場次） -----
     pred_list = []
     if predictions and not df_results.empty:
         for key, value in predictions.items():
@@ -3821,80 +3796,64 @@ def main():
         else:
             st.warning("⚠️ 無法解析預測紀錄，請檢查 ai_predictions.json 格式")
 
-    # ----- 4. 比對並顯示 -----
+    # ----- 4. 比對並顯示（只用場次匹配） -----
     if pred_list and not df_results.empty:
         df_pred = pd.DataFrame(pred_list)
 
-        # 搵出名次欄位（可能叫 名次、排名、position）
+        # 自動偵測欄位名稱
         rank_col = None
         for col in ['名次', '排名', 'position', 'rank']:
             if col in df_results.columns:
                 rank_col = col
                 break
-        if rank_col is None:
-            st.error("❌ 賽果檔案欠缺名次欄位")
+        horse_col = None
+        for col in ['馬名', 'horse', 'name', '馬匹']:
+            if col in df_results.columns:
+                horse_col = col
+                break
+        race_col = None
+        for col in ['場次', 'race', 'RaceNo', '場數']:
+            if col in df_results.columns:
+                race_col = col
+                break
+
+        if rank_col is None or horse_col is None or race_col is None:
+            st.error("❌ 賽果檔案欠缺必要欄位（名次、馬名、場次）")
         else:
-            # 搵出馬名欄位（可能叫 馬名、horse、name）
-            horse_col = None
-            for col in ['馬名', 'horse', 'name', '馬匹']:
-                if col in df_results.columns:
-                    horse_col = col
-                    break
-            if horse_col is None:
-                st.error("❌ 賽果檔案欠缺馬名欄位")
+            # 篩選頭馬（名次=1）
+            df_winner = df_results[df_results[rank_col] == 1][[race_col, horse_col]].copy()
+            df_winner.rename(columns={horse_col: '真實頭馬', race_col: '場次'}, inplace=True)
+
+            # 合併（只用場次）
+            df_compare = df_pred.merge(df_winner, on='場次', how='left')
+
+            if not df_compare.empty:
+                # 增加結果欄
+                df_compare['結果'] = df_compare.apply(
+                    lambda row: '命中' if row['預測馬'] == row['真實頭馬'] else '失準',
+                    axis=1
+                )
+                # 排序
+                df_compare = df_compare.sort_values(['日期', '場次', '預測名次'])
+                df_display = df_compare
+
+                # 上色函數
+                def color_result(val):
+                    if val == '命中':
+                        return 'background-color: #90EE90; color: black'
+                    elif val == '失準':
+                        return 'background-color: #FF6B6B; color: white'
+                    else:
+                        return ''
+
+                styled_df = df_display.style.applymap(color_result, subset=['結果'])
+                st.dataframe(
+                    styled_df,
+                    use_container_width=True,
+                    hide_index=True
+                )
             else:
-                # 搵出場次欄位（可能叫 場次、race、RaceNo）
-                race_col = None
-                for col in ['場次', 'race', 'RaceNo', '場數']:
-                    if col in df_results.columns:
-                        race_col = col
-                        break
-                if race_col is None:
-                    st.error("❌ 賽果檔案欠缺場次欄位")
-                else:
-                    # 篩選頭馬
-                    df_winner = df_results[df_results[rank_col] == 1][[race_col, horse_col]].copy()
-                    df_winner.rename(columns={horse_col: '真實頭馬', race_col: '場次'}, inplace=True)
-
-                    # 如果有日期欄，加入日期匹配
-                    date_col = None
-                    for col in ['日期', 'Date', 'race_date', 'date']:
-                        if col in df_results.columns:
-                            date_col = col
-                            break
-                    if date_col is not None:
-                        # 將日期統一為字串格式 YYYY-MM-DD 方便比對
-                        df_winner['日期'] = pd.to_datetime(df_results[df_results[rank_col] == 1][date_col]).dt.strftime('%Y-%m-%d')
-                    else:
-                        # 冇日期，只按場次合併
-                        df_winner['日期'] = None  # 用 None 表示冇日期
-
-                    # 合併：先按場次，再按日期（如果有）
-                    if '日期' in df_winner.columns and df_winner['日期'].notna().any():
-                        df_compare = df_pred.merge(df_winner, on=['場次', '日期'], how='left')
-                    else:
-                        df_compare = df_pred.merge(df_winner, on='場次', how='left')
-
-                    if not df_compare.empty:
-                        df_compare['結果'] = df_compare.apply(
-                            lambda row: '命中' if row['預測馬'] == row['真實頭馬'] else '失準',
-                            axis=1
-                        )
-                        df_compare = df_compare.sort_values(['日期', '場次', '預測名次'])
-                        # 只顯示頭四名（已過濾）
-                        df_display = df_compare
-
-                        def color_result(val):
-                            if val == '命中':
-                                return 'background-color: #90EE90; color: black'
-                            elif val == '失準':
-                                return 'background-color: #FF6B6B; color: white'
-                            else:
-                                return ''
-                        styled_df = df_display.style.applymap(color_result, subset=['結果'])
-                        st.dataframe(styled_df, use_container_width=True, hide_index=True)
-                    else:
-                        st.info("ℹ️ 沒有可比對嘅預測與賽果（可能場次或日期不匹配）")
+                st.info("ℹ️ 沒有可比對嘅預測與賽果（可能場次不匹配）")
     else:
         st.info("ℹ️ 請確保已有預測紀錄及賽果數據")
 
@@ -3902,7 +3861,6 @@ def main():
     if st.session_state.get('role') == 'super_admin':
         # 如有下載功能，放呢度
         pass
-
     
   
     # ============================================================
