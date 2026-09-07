@@ -766,15 +766,15 @@ def update_accuracy_with_results():
     if not records:
         return 0, "沒有預測記錄"
     try:
-        results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
-        results_df = standardize_columns_safe(results_df)
-        results_df = results_df.loc[:, ~results_df.columns.duplicated()]
+        # 直接讀取新賽果檔案
+        results_df = pd.read_csv('race_results_clean.csv', encoding='utf-8-sig')
         required = ['race_date', 'race_no', 'horse_name', 'finish_position']
         for col in required:
             if col not in results_df.columns:
-                return 0, f"缺少必要欄位：{col}"
+                return 0, f"賽果檔案缺少必要欄位：{col}"
         results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
         results_df = results_df.dropna(subset=['race_date'])
+        
         updated = 0
         for rec in records:
             if rec.get('actual_result') is not None:
@@ -2849,11 +2849,8 @@ def admin_auto_maintenance():
             st.rerun()
 
 def update_ai_accuracy():
-    """比對 AI 預測同真實賽果，更新命中率"""
-    import json
-    import pandas as pd
     ai_file = "ai_predictions.json"
-    results_file = "ALL_DATA_MERGED.csv"
+    results_file = "race_results_clean.csv"
     if not os.path.exists(ai_file):
         return 0, "未有 AI 預測記錄"
     if not os.path.exists(results_file):
@@ -2861,13 +2858,10 @@ def update_ai_accuracy():
     with open(ai_file, 'r', encoding='utf-8') as f:
         ai_data = json.load(f)
     results_df = pd.read_csv(results_file, encoding='utf-8-sig')
-    results_df = standardize_columns_safe(results_df)
+    if 'race_date' not in results_df.columns or 'race_no' not in results_df.columns or 'horse_name' not in results_df.columns or 'finish_position' not in results_df.columns:
+        return 0, "賽果檔案欄位不正確"
     results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
     results_df['race_date_str'] = results_df['race_date'].dt.strftime('%Y-%m-%d')
-    if 'horse_name' not in results_df.columns and '馬名' in results_df.columns:
-        results_df.rename(columns={'馬名': 'horse_name'}, inplace=True)
-    if 'finish_position' not in results_df.columns and '名次' in results_df.columns:
-        results_df.rename(columns={'名次': 'finish_position'}, inplace=True)
     hit_count = 0
     total_count = 0
     for key, pred in ai_data.items():
@@ -3018,40 +3012,38 @@ def admin_accuracy_monitor():
         st.info("暫時未有預測記錄，未能進行監控。")
         return
     try:
-        results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
-        results_df = standardize_columns_safe(results_df)
-        results_df = results_df.loc[:, ~results_df.columns.duplicated()]
-        if 'race_date' not in results_df.columns or 'race_no' not in results_df.columns or '馬名' not in results_df.columns or 'finish_position' not in results_df.columns:
-            if '日期' in results_df.columns:
-                results_df.rename(columns={'日期': 'race_date'}, inplace=True)
-            if '場次' in results_df.columns:
-                results_df.rename(columns={'場次': 'race_no'}, inplace=True)
-            if '馬名' not in results_df.columns and 'horse_name' in results_df.columns:
-                results_df.rename(columns={'horse_name': '馬名'}, inplace=True)
-            if 'finish_position' not in results_df.columns and '名次' in results_df.columns:
-                results_df.rename(columns={'名次': 'finish_position'}, inplace=True)
-        if 'race_date' in results_df.columns and 'race_no' in results_df.columns and '馬名' in results_df.columns and 'finish_position' in results_df.columns:
+        results_df = pd.read_csv('race_results_clean.csv', encoding='utf-8-sig')
+        if 'race_date' not in results_df.columns or 'race_no' not in results_df.columns or 'horse_name' not in results_df.columns or 'finish_position' not in results_df.columns:
+            st.warning("race_results_clean.csv 缺少必要欄位")
+            results_df = pd.DataFrame()
+        else:
             results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
             results_df = results_df.dropna(subset=['race_date'])
             for rec in records:
                 if rec.get('actual_result') is not None:
                     continue
-                date_str = rec['date']
-                race_no = rec['race']
-                horse = rec['horse']
+                date_str = rec.get('date')
+                race_no = rec.get('race')
+                horse = rec.get('horse')
+                if not date_str or not race_no or not horse:
+                    continue
                 matched = results_df[(results_df['race_date'].dt.strftime('%Y-%m-%d') == date_str) &
                                      (results_df['race_no'] == race_no) &
-                                     (results_df['馬名'] == horse)]
+                                     (results_df['horse_name'] == horse)]
                 if not matched.empty:
                     pos = matched.iloc[0]['finish_position']
                     rec['actual_result'] = int(pos) if pd.notna(pos) else None
                     rec['is_hit'] = (rec['actual_result'] == 1) if rec['actual_result'] is not None else None
             save_accuracy(acc)
             st.success("✅ 已自動比對賽果")
-        else:
-            st.warning("ALL_DATA_MERGED.csv 缺少必要欄位，請確保包含：race_date, race_no, 馬名, finish_position")
     except Exception as e:
         st.error(f"自動比對失敗：{e}")
+    
+    # 其餘顯示統計圖表嘅 code 保持不變
+    df_records = pd.DataFrame(records)
+    if df_records.empty:
+        return
+    # ... (後面嘅統計顯示同之前一樣)
     df_records = pd.DataFrame(records)
     if df_records.empty:
         return
@@ -3711,7 +3703,114 @@ def main():
                             results_df.rename(columns={'名次': 'finish_position'}, inplace=True)
                     except Exception as e:
                         st.warning(f"讀取賽果失敗：{e}")
-                        results_df = None
+                        results_df = None    
+    # ========== AI 預測表現及賽果對比 ==========
+    st.subheader("🏇 預測 vs 賽果記錄（頭四名）")
+
+    # 1. 讀取 AI 預測紀錄
+    ai_file = "ai_predictions.json"
+    predictions = {}
+    if os.path.exists(ai_file):
+        try:
+            with open(ai_file, 'r', encoding='utf-8') as f:
+                predictions = json.load(f)
+            st.info(f"✅ 成功讀取 {len(predictions)} 個預測紀錄")
+        except Exception as e:
+            st.error(f"❌ 讀取預測紀錄失敗：{e}")
+            predictions = {}
+    else:
+        st.warning("⚠️ 尚未有任何預測紀錄，請先執行預測")
+
+    # 2. 讀取真實賽果（直接讀取新檔案）
+    result_file = "race_results_clean.csv"
+    df_results = pd.DataFrame()
+    if os.path.exists(result_file):
+        try:
+            df_results = pd.read_csv(result_file, encoding='utf-8-sig')
+            if 'race_date' not in df_results.columns or 'race_no' not in df_results.columns or 'horse_name' not in df_results.columns or 'finish_position' not in df_results.columns:
+                st.error("❌ 賽果檔案欄位不正確，應包含：race_date, race_no, horse_name, finish_position")
+                df_results = pd.DataFrame()
+            else:
+                # 可選：只顯示最新日期嘅賽果，如果唔想要就刪除下面兩行
+                df_results['race_date'] = pd.to_datetime(df_results['race_date'], errors='coerce')
+                latest_date = df_results['race_date'].max()
+                df_results = df_results[df_results['race_date'] == latest_date].copy()
+                st.info(f"📅 顯示最新日期：{latest_date.strftime('%Y-%m-%d')}")
+        except Exception as e:
+            st.error(f"❌ 讀取賽果失敗：{e}")
+            df_results = pd.DataFrame()
+    else:
+        st.warning("⚠️ 找不到賽果檔案 race_results_clean.csv")
+
+    # 3. 解析預測紀錄
+    pred_list = []
+    if predictions and not df_results.empty:
+        for key, value in predictions.items():
+            if '_' not in key:
+                continue
+            parts = key.split('_')
+            if len(parts) != 2:
+                continue
+            date_str, race_no_str = parts[0], parts[1]
+            if not race_no_str.isdigit():
+                continue
+            race_no = int(race_no_str)
+            if not isinstance(value, dict):
+                continue
+            horse_list = value.get('all_horses', [])
+            if not horse_list:
+                top = value.get('top_horse')
+                if top:
+                    horse_list = [top]
+                else:
+                    continue
+            for idx, horse in enumerate(horse_list[:4], 1):
+                pred_list.append({
+                    '日期': date_str,
+                    '場次': race_no,
+                    '預測名次': idx,
+                    '預測馬': str(horse).strip()
+                })
+        if pred_list:
+            st.info(f"✅ 成功解析 {len(pred_list)} 筆預測（頭四名）")
+        else:
+            st.warning("⚠️ 無法解析預測紀錄，請檢查 ai_predictions.json 格式")
+
+    # 4. 比對並顯示
+    if pred_list and not df_results.empty:
+        df_pred = pd.DataFrame(pred_list)
+        # 直接使用已知欄位名
+        df_winner = df_results[df_results['finish_position'] == 1][['race_no', 'horse_name']].copy()
+        df_winner.rename(columns={'horse_name': '真實頭馬'}, inplace=True)
+        df_winner['race_no'] = df_winner['race_no'].astype(int)
+        df_pred['場次'] = df_pred['場次'].astype(int)
+        
+        df_compare = df_pred.merge(df_winner, left_on='場次', right_on='race_no', how='left')
+        if not df_compare.empty:
+            df_compare['結果'] = df_compare.apply(
+                lambda row: '命中' if row['預測馬'] == row['真實頭馬'] else '失準',
+                axis=1
+            )
+            df_compare = df_compare.sort_values(['日期', '場次', '預測名次'])
+            
+            def highlight_row(row):
+                if row['結果'] == '命中':
+                    return ['background-color: #90EE90; color: black'] * len(row)
+                elif row['結果'] == '失準':
+                    return ['background-color: #FF6B6B; color: white'] * len(row)
+                else:
+                    return [''] * len(row)
+            
+            styled_df = df_compare.style.apply(highlight_row, axis=1)
+            st.dataframe(
+                styled_df[['日期', '場次', '預測名次', '預測馬', '真實頭馬', '結果']],
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.info("ℹ️ 沒有可比對嘅預測與賽果（可能場次不匹配）")
+    else:
+        st.info("ℹ️ 請確保已有預測紀錄及賽果數據")
 
     
   
