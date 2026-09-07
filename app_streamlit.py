@@ -1332,7 +1332,7 @@ def update_accuracy_with_results():
     acc = load_accuracy()
     records = acc.get('records', [])
     if not records:
-        return 0, "沒有預測記錄
+        return 0, "沒有預測記錄"
     try:
         results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
         results_df = standardize_columns_safe(results_df)
