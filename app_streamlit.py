@@ -3570,7 +3570,7 @@ def main():
                 st.error(f"❌ 預測過程發生錯誤：{e}")
                 import traceback
                 st.code(traceback.format_exc())    
-       # ============================================================
+    # ============================================================
     # 🤖 AI 預測表現 + 真實賽果對比（公開）
     # ============================================================
     with st.expander("🤖 AI 預測表現 & 賽果對比（點擊展開）"):
@@ -3669,33 +3669,41 @@ def main():
                     total_count = len(ai_data)
                     hit_count = 0
 
+                # ----- 顯示統計 -----
                 total = len(ai_data)
                 st.metric("📊 已預測場次", total)
-                if results_df is not None and not results_df.empty:
-                    hit_rate = hit_count / total_count if total_count > 0 else 0
+                if results_df is not None and not results_df.empty and total_count > 0:
+                    hit_rate = hit_count / total_count
                     col1, col2 = st.columns(2)
                     col1.metric("🎯 命中場次", hit_count)
-                    col2.metric("📈 命中率", f"{hit_rate:.1%}" if total_count > 0 else "N/A")
+                    col2.metric("📈 命中率", f"{hit_rate:.1%}")
                 else:
                     st.info("📌 上傳賽果 CSV 後可顯示命中率")
 
+                # ----- 顯示對比表格（安全版） -----
                 if compare_list:
                     st.subheader("📋 預測 vs 賽果記錄")
                     df_compare = pd.DataFrame(compare_list)
                     df_compare = df_compare.sort_values('日期', ascending=False)
+                    
+                    # 定義顏色函數
                     def color_result(val):
-                        if "✅" in val:
+                        if "✅" in str(val):
                             return "background-color: #d4edda; color: #155724;"
-                        elif "❌" in val:
+                        elif "❌" in str(val):
                             return "background-color: #f8d7da; color: #721c24;"
                         else:
                             return "background-color: #fff3cd; color: #856404;"
+                    
+                    # 安全地應用樣式
+                    styled_df = df_compare.style.applymap(color_result, subset=['結果'])
                     st.dataframe(
-                        df_compare.style.applymap(color_result, subset=['結果']),
+                        styled_df,
                         use_container_width=True,
                         hide_index=True
                     )
 
+                # ----- 管理員下載按鈕 -----
                 if st.session_state.get('role') == 'super_admin':
                     if os.path.exists("ai_predictions.json"):
                         with open("ai_predictions.json", "r", encoding='utf-8') as f:
