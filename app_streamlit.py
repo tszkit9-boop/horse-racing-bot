@@ -768,6 +768,17 @@ def update_accuracy_with_results():
     try:
         results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
         results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
+        # 1. 強制將日期轉成標準格式
+results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
+
+# 2. 設置截止日期：2026年9月5日
+cut_off = pd.to_datetime('2026-09-05')
+
+# 3. 強制只保留 2026-09-05 及之後嘅數據
+results_df = results_df[results_df['race_date'] >= cut_off]
+
+# 4. 去掉日期解析失敗（變咗 NaT）嘅行
+results_df = results_df.dropna(subset=['race_date'])
 
 # 強制印出嚟睇下個檔入面有咩欄位！
 st.write("CSV 讀取成功，入面嘅欄位係：", results_df.columns.tolist())
