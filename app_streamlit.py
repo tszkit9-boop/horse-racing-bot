@@ -3680,13 +3680,12 @@ def main():
                 else:
                     st.info("📌 上傳賽果 CSV 後可顯示命中率")
 
-                # ----- 顯示對比表格（安全版） -----
+                # ----- 顯示對比表格（修正變數名） -----
                 if compare_list:
                     st.subheader("📋 預測 vs 賽果記錄")
                     df_compare = pd.DataFrame(compare_list)
                     df_compare = df_compare.sort_values('日期', ascending=False)
                     
-                    # 定義顏色函數
                     def color_result(val):
                         if "✅" in str(val):
                             return "background-color: #d4edda; color: #155724;"
@@ -3695,7 +3694,7 @@ def main():
                         else:
                             return "background-color: #fff3cd; color: #856404;"
                     
-                    # 安全地應用樣式
+                    # 正確使用 df_compare（唔係 df.compare）
                     styled_df = df_compare.style.applymap(color_result, subset=['結果'])
                     st.dataframe(
                         styled_df,
@@ -3716,7 +3715,8 @@ def main():
                             key="download_ai_predictions"
                         )
         else:
-            st.info("請先登入以查看 AI 預測表現")
+            st.info("請先登入以查看 AI 預測表現")    
+
     # ============================================================
     # 🎮 虛擬投注
     # ============================================================
