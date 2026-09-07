@@ -3704,7 +3704,7 @@ def main():
                     except Exception as e:
                         st.warning(f"讀取賽果失敗：{e}")
                         results_df = None    
-      # ========== AI 預測表現及賽果對比 ==========
+    # ========== AI 預測表現及賽果對比（揀場次顯示） ==========
     with st.expander("🤖 AI 預測表現 & 賽果對比（點擊展開）", expanded=False):
         
         # 1. 讀取 AI 預測紀錄
@@ -3745,9 +3745,10 @@ def main():
         else:
             st.warning("⚠️ 找不到賽果檔案 race_results_clean.csv")
 
-        # 3. 解析預測紀錄（每個場次取頭4名）
-        pred_list = []
+        # 3. 如果資料齊全，顯示場次選擇器
         if predictions and not df_results.empty:
+            # 先將 predictions 轉換成 df_pred（所有場次嘅頭4名）
+            pred_list = []
             for key, value in predictions.items():
                 if '_' not in key:
                     continue
@@ -3762,13 +3763,11 @@ def main():
                     continue
                 horse_list = value.get('all_horses', [])
                 if not horse_list or not isinstance(horse_list, list):
-                    # 如果 all_horses 不存在，用 top_horse 代替（但咁樣只會得1名）
                     top = value.get('top_horse')
                     if top:
                         horse_list = [top]
                     else:
                         continue
-                # 清洗馬名並取前4名
                 cleaned = [str(h).strip() for h in horse_list if str(h).strip()]
                 for idx, horse in enumerate(cleaned[:4], 1):
                     pred_list.append({
@@ -3777,64 +3776,69 @@ def main():
                         '預測名次': idx,
                         '預測馬': horse
                     })
+            
             if pred_list:
-                st.info(f"✅ 成功解析 {len(pred_list)} 筆預測（每場最多4名）")
+                df_pred = pd.DataFrame(pred_list)
+                df_pred['場次'] = df_pred['場次'].astype(int)
+                df_pred['預測名次'] = df_pred['預測名次'].astype(int)
+                
+                # 取得所有可用場次（由預測同賽果合併）
+                available_races = sorted(df_pred['場次'].unique())
+                # 同時只顯示有賽果嘅場次
+                available_races = [r for r in available_races if r in df_results['race_no'].unique()]
+                
+                if available_races:
+                    # 場次選擇器
+                    selected_race = st.selectbox("🏇 選擇場次", available_races, format_func=lambda x: f"第 {x} 場")
+                    
+                    # 過濾該場嘅預測
+                    df_pred_race = df_pred[df_pred['場次'] == selected_race].copy()
+                    # 過濾該場嘅賽果（只取頭4名，因為預測只顯示頭4名）
+                    df_result_race = df_results[df_results['race_no'] == selected_race].copy()
+                    df_result_race = df_result_race.sort_values('finish_position').head(4)
+                    
+                    # 合併預測同賽果（用預測名次做 left join）
+                    # 因為預測名次係 1-4，賽果嘅 finish_position 都係 1-4，但兩者馬名未必相同
+                    # 我哋直接用預測名次做 key，同時將賽果嘅 finish_position 改名做「真實名次」
+                    df_result_race.rename(columns={'finish_position': '真實名次', 'horse_name': '真實馬'}, inplace=True)
+                    
+                    # 合併：預測名次 對 真實名次（因為兩者都係 1-4）
+                    df_compare = df_pred_race.merge(df_result_race, left_on='預測名次', right_on='真實名次', how='left')
+                    
+                    # 判定命中（預測馬 == 真實馬）
+                    df_compare['結果'] = df_compare.apply(
+                        lambda row: '命中' if row['預測馬'] == row['真實馬'] else '失準',
+                        axis=1
+                    )
+                    
+                    # 選取要顯示嘅欄位
+                    display_df = df_compare[['預測名次', '預測馬', '真實名次', '真實馬', '結果']].copy()
+                    display_df.columns = ['名次', '預測馬', '真實名次', '真實馬', '結果']
+                    
+                    st.write(f"📊 第 {selected_race} 場 預測 vs 賽果")
+                    
+                    # 白底黑字樣式
+                    def highlight_row(row):
+                        if row['結果'] == '命中':
+                            return ['background-color: #d4edda; color: black'] * len(row)
+                        elif row['結果'] == '失準':
+                            return ['background-color: #f8d7da; color: black'] * len(row)
+                        else:
+                            return ['background-color: white; color: black'] * len(row)
+                    
+                    styled_df = display_df.style.apply(highlight_row, axis=1)
+                    st.dataframe(
+                        styled_df,
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                    
+                    # 後備純表格（可選）
+                    # st.table(display_df)
+                else:
+                    st.info("ℹ️ 沒有可比較嘅場次（預測同賽果場次不匹配）")
             else:
                 st.warning("⚠️ 無法解析預測紀錄")
-
-        # 4. 比對並顯示表格
-        if pred_list and not df_results.empty:
-            df_pred = pd.DataFrame(pred_list)
-            df_pred['場次'] = df_pred['場次'].astype(int)
-            df_pred['預測名次'] = df_pred['預測名次'].astype(int)
-            
-            # 取出每場冠軍
-            df_winner = df_results[df_results['finish_position'] == 1][['race_no', 'horse_name']].copy()
-            df_winner.rename(columns={'horse_name': '真實頭馬'}, inplace=True)
-            df_winner['race_no'] = df_winner['race_no'].astype(int)
-            
-            # 合併
-            df_compare = df_pred.merge(df_winner, left_on='場次', right_on='race_no', how='left')
-            
-            if not df_compare.empty:
-                # 再次清洗以防萬一
-                df_compare['預測馬'] = df_compare['預測馬'].str.strip()
-                df_compare['真實頭馬'] = df_compare['真實頭馬'].str.strip()
-                
-                # 判定命中
-                df_compare['結果'] = df_compare.apply(
-                    lambda row: '命中' if row['預測馬'] == row['真實頭馬'] else '失準',
-                    axis=1
-                )
-                df_compare = df_compare.sort_values(['日期', '場次', '預測名次'])
-                display_df = df_compare[['日期', '場次', '預測名次', '預測馬', '真實頭馬', '結果']].copy()
-                
-                st.write(f"📊 共 {len(display_df)} 筆記錄（每場 4 名）")
-                
-                # 白底黑字樣式
-                def highlight_row(row):
-                    if row['結果'] == '命中':
-                        return ['background-color: #d4edda; color: black'] * len(row)
-                    elif row['結果'] == '失準':
-                        return ['background-color: #f8d7da; color: black'] * len(row)
-                    else:
-                        return ['background-color: white; color: black'] * len(row)
-                
-                styled_df = display_df.style.apply(highlight_row, axis=1)
-                # 顯示表格，高度設為500px確保可滾動
-                st.dataframe(
-                    styled_df,
-                    use_container_width=True,
-                    hide_index=True,
-                    height=500
-                )
-                
-                # 額外：如果 st.dataframe 有問題，用 st.table 確保全部顯示
-                st.write("---")
-                st.write("📋 完整表格（備用）：")
-                st.table(display_df)
-            else:
-                st.info("ℹ️ 沒有可比對嘅預測與賽果")
         else:
             st.info("ℹ️ 請確保已有預測紀錄及賽果數據")
     # ============================================================
