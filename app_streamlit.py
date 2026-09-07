@@ -1,683 +1,2721 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+賽馬預測系統 - 完整版（付款無上傳 / 審核後記錄消失 / 註冊跳登入）
+"""
 
+import streamlit as st
+import pandas as pd
+import numpy as np
+import pickle
+import os
+import json
+from datetime import datetime, timedelta
+import warnings
+warnings.filterwarnings('ignore')
+from catboost import CatBoostClassifier
+import plotly.express as px
+import plotly.graph_objects as go
+import random
+from PIL import Image
 
+# ============================================================
+# 🔒 隱藏 Streamlit 平台 UI
+# ============================================================
+st.set_page_config(
+    page_title="🏇 賽馬預測系統",
+    page_icon="🐎",
+    layout="wide",
+    initial_sidebar_state="expanded",
+    menu_items={
+        'Get Help': None,
+        'Report a bug': None,
+        'About': None,
+    }
+)
 
-
-  
-
-<!DOCTYPE html>
-<html
-  lang="en"
-  
-  data-color-mode="auto" data-light-theme="light" data-dark-theme="dark"
-  data-a11y-animated-images="system" data-a11y-link-underlines="true"
-  
-  >
-
-    <style>
-:root {
-  --fontStack-monospace: "Monaspace Neon", ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace !important;
-}
+st.markdown("""
+<style>
+    div[data-testid="stToolbar"] { display: none !important; }
+    .stAppDeployButton { display: none !important; }
+    #MainMenu { display: none !important; }
+    footer { display: none !important; }
+    header { display: none !important; }
+    button[kind="share"] { display: none !important; }
+    a[href*="streamlit.io"] { display: none !important; }
+    .st-emotion-cache-1r6slb0 { display: none !important; }
+    [data-testid="stHeader"] { display: none !important; }
+    [data-testid="stDecoration"] { display: none !important; }
+    .stApp > header { display: none !important; }
+    section[data-testid="stSidebar"] {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        width: 300px !important;
+    }
+    section[data-testid="stSidebar"] * {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+    }
+    .stApp > header + div {
+        padding-top: 0 !important;
+    }
 </style>
+""", unsafe_allow_html=True)
 
+# ============================================================
+# 🔐 系統設定（動態載入）
+# ============================================================
+CONFIG_FILE = 'system_config.json'
 
+DEFAULT_CONFIG = {
+    "enable_registration": True,
+    "enable_payment": True,
+    "enable_admin": True,
+    "currency": "HKD",
+    "free_limit": 2,
+    "admin_password": "z54060437K",
+    "price_day": 18,
+    "price_month": 128,
+    "price_quarter": 328,
+    "verification_expiry": 5,
+    "enable_vip_content": True,
+    "enable_daily_free_tip": True,
+    "enable_invite_reward": True,
+    "invite_reward_inviter": 1,
+    "invite_reward_invitee": 1,
+    "module_user_management": True,
+    "module_analytics": True,
+    "module_finance": True,
+    "module_monitoring": True,
+    "module_content": True,
+    "module_automation": True,
+    "module_security": True,
+    "module_promo": True,
+}
 
+# ============================================================
+# 1. 數據讀寫函數（基本）
+# ============================================================
+def load_json(file_path, default=None):
+    if default is None:
+        default = {}
+    if os.path.exists(file_path):
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return default
+    return default
 
-  <head>
-    <meta charset="utf-8">
-  <link rel="dns-prefetch" href="https://github.githubassets.com">
-  <link rel="dns-prefetch" href="https://avatars.githubusercontent.com">
-  <link rel="dns-prefetch" href="https://github-cloud.s3.amazonaws.com">
-  <link rel="dns-prefetch" href="https://user-images.githubusercontent.com/">
-  <link rel="preconnect" href="https://github.githubassets.com" crossorigin>
-  <link rel="preconnect" href="https://avatars.githubusercontent.com">
+def save_json(file_path, data):
+    try:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except:
+        return False
 
-<script type="importmap" nonce="SckHDQm3AnR4iD1HwJ5hA/Na1+hRT2I87aG/QLTs3F0=">{"imports":{"react":"https://github.githubassets.com/assets/react-d55061672d2143f7.js","scheduler":"https://github.githubassets.com/assets/scheduler-d677f65b41f96812.js","react-dom":"https://github.githubassets.com/assets/react-dom-0305b837a0656bc2.js","react-dom/client":"https://github.githubassets.com/assets/react-dom-client-a497fe3cf4f31b2c.js"}}</script>
-<meta name="react-profiling" content="0" data-turbo-transient="true" />
-<meta name="react-import-map" content="react,react-dom,react-dom/client,react-dom/profiling,scheduler@254e607d6015" data-turbo-track="reload" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/react-d55061672d2143f7.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/scheduler-d677f65b41f96812.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/react-dom-0305b837a0656bc2.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/react-dom-client-a497fe3cf4f31b2c.js" />
+def load_system_config():
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            for key, value in DEFAULT_CONFIG.items():
+                if key not in config:
+                    config[key] = value
+            return config
+        except:
+            return DEFAULT_CONFIG.copy()
+    else:
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(DEFAULT_CONFIG, f, ensure_ascii=False, indent=2)
+        return DEFAULT_CONFIG.copy()
 
-  
+def save_system_config(config):
+    try:
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+        return True
+    except:
+        return False
 
+CONFIG = load_system_config()
 
-  <link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/light-b18a1a7ee7730775.css" /><link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/dark-f6186b2d117410d4.css" /><link data-color-theme="light_high_contrast" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/light_high_contrast-9d093cb5adfc6a5b.css" /><link data-color-theme="light_colorblind" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/light_colorblind-f5feae0aadcc43fc.css" /><link data-color-theme="light_colorblind_high_contrast" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/light_colorblind_high_contrast-74d952aba5f21e52.css" /><link data-color-theme="light_tritanopia" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/light_tritanopia-8721875aeff8934e.css" /><link data-color-theme="light_tritanopia_high_contrast" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/light_tritanopia_high_contrast-3f4605b5abb8e535.css" /><link data-color-theme="dark_high_contrast" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/dark_high_contrast-f39e8ef7b7418526.css" /><link data-color-theme="dark_colorblind" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/dark_colorblind-41afbd5fe2f06081.css" /><link data-color-theme="dark_colorblind_high_contrast" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/dark_colorblind_high_contrast-fbd591bc36cdd52c.css" /><link data-color-theme="dark_tritanopia" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/dark_tritanopia-5fb945cce4a8e360.css" /><link data-color-theme="dark_tritanopia_high_contrast" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/dark_tritanopia_high_contrast-26ecc5642fc4ae92.css" /><link data-color-theme="dark_dimmed" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/dark_dimmed-266756cc794a2e14.css" /><link data-color-theme="dark_dimmed_high_contrast" crossorigin="anonymous" media="all" rel="stylesheet" data-href="https://github.githubassets.com/assets/dark_dimmed_high_contrast-4fdf24b122e0aa79.css" />
+# ============================================================
+# 2. 檔案路徑常數
+# ============================================================
+USER_DATA_FILE = 'users.json'
+FINANCE_FILE = 'finance.json'
+PROMO_FILE = 'promo_codes.json'
+LOG_FILE = 'admin_log.json'
+ACCURACY_FILE = 'accuracy.json'
+PAYMENT_PROOFS_FILE = 'payment_proofs.json'
+CONTENT_FILE = 'content.json'
+AUTOMATION_FILE = 'automation.json'
+PAYMENT_PROOFS_DIR = 'payment_proofs'
 
-  <style type="text/css">
-    :root {
-      --tab-size-preference: 4;
+# ============================================================
+# 3. 數據讀寫函數（續）
+# ============================================================
+def load_users():
+    users = load_json(USER_DATA_FILE)
+    if not users or "admin" not in users:
+        users = {
+            "admin": {
+                "username": "admin",
+                "password": CONFIG["admin_password"],
+                "is_paid": False,
+                "paid_date": None,
+                "expiry_date": None,
+                "free_usage": 0,
+                "total_usage": 0,
+                "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                "note": "系統超級管理員",
+                "group": "super_admin",
+                "phone": "",
+                "plan": None,
+                "predictions_limit": -1,
+                "history": [],
+                "terms_agreed": datetime.now().isoformat(),
+                "invite_code": "ADMIN001",
+                "invited_by": None,
+                "invite_rewards": 0,
+                "invite_count": 0
+            }
+        }
+        save_users(users)
+    else:
+        if "admin" in users:
+            users["admin"]["group"] = "super_admin"
+            users["admin"]["predictions_limit"] = -1
+            if users["admin"].get("note") != "系統超級管理員":
+                users["admin"]["note"] = "系統超級管理員（已自動修復）"
+        for uid, u in users.items():
+            if 'plan' not in u: u['plan'] = None
+            if 'paid_date' not in u: u['paid_date'] = None
+            if 'expiry_date' not in u: u['expiry_date'] = None
+            if 'phone' not in u: u['phone'] = ''
+            if 'note' not in u: u['note'] = ''
+            if 'history' not in u: u['history'] = []
+            if 'free_usage' not in u: u['free_usage'] = 0
+            if 'total_usage' not in u: u['total_usage'] = 0
+            if 'terms_agreed' not in u: u['terms_agreed'] = None
+            if 'invite_code' not in u:
+                u['invite_code'] = uid.upper() + str(random.randint(100, 999))
+            if 'invited_by' not in u: u['invited_by'] = None
+            if 'invite_rewards' not in u: u['invite_rewards'] = 0
+            if 'invite_count' not in u: u['invite_count'] = 0
+            if 'predictions_limit' not in u:
+                if u.get('group') in ['super_admin', 'VIP', 'paid']:
+                    u['predictions_limit'] = -1
+                else:
+                    u['predictions_limit'] = CONFIG["free_limit"]
+        save_users(users)
+    return users
+
+def save_users(users):
+    return save_json(USER_DATA_FILE, users)
+
+def load_finance():
+    return load_json(FINANCE_FILE)
+
+def save_finance(finance):
+    return save_json(FINANCE_FILE, finance)
+
+def load_promos():
+    return load_json(PROMO_FILE)
+
+def save_promos(promos):
+    return save_json(PROMO_FILE, promos)
+
+def load_logs():
+    return load_json(LOG_FILE)
+
+def save_logs(logs):
+    return save_json(LOG_FILE, logs)
+
+def load_accuracy():
+    return load_json(ACCURACY_FILE)
+
+def save_accuracy(acc):
+    return save_json(ACCURACY_FILE, acc)
+
+def load_payment_proofs():
+    proofs = load_json(PAYMENT_PROOFS_FILE)
+    if not proofs:
+        proofs = {"proof_records": []}
+        save_payment_proofs(proofs)
+    elif "proof_records" not in proofs:
+        proofs["proof_records"] = []
+        save_payment_proofs(proofs)
+    return proofs
+
+def save_payment_proofs(proofs):
+    return save_json(PAYMENT_PROOFS_FILE, proofs)
+
+def log_admin_action(admin, action):
+    logs = load_logs()
+    if 'logs' not in logs: logs['logs'] = []
+    logs['logs'].append({
+        'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'admin': admin,
+        'action': action
+    })
+    save_logs(logs)
+
+def authenticate(username, password):
+    users = load_users()
+    if username in users and users[username].get('password') == password:
+        return True
+    return False
+
+def generate_promo_code():
+    return ''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=8))
+
+def generate_verification_code():
+    return ''.join(random.choices('0123456789', k=6))
+
+def get_plan_days(plan):
+    if plan == 'day': return 1
+    elif plan == 'month': return 30
+    elif plan == 'quarter': return 90
+    return 0
+
+def get_plan_name(plan):
+    names = {'day': '日費', 'month': '月費', 'quarter': '季費'}
+    return names.get(plan, '未知')
+
+def get_plan_price(plan):
+    if plan == 'day': return CONFIG['price_day']
+    elif plan == 'month': return CONFIG['price_month']
+    elif plan == 'quarter': return CONFIG['price_quarter']
+    return 0
+
+# ============================================================
+# 4. 模型載入
+# ============================================================
+@st.cache_resource
+def load_models():
+    try:
+        with open('hk_racing_model.pkl', 'rb') as f:
+            xgb_obj = pickle.load(f)
+            xgb_model = xgb_obj[0] if isinstance(xgb_obj, tuple) else xgb_obj
+        cat_model = CatBoostClassifier()
+        cat_model.load_model('hk_catboost_model.cbm')
+        with open('hk_ranking_model.pkl', 'rb') as f:
+            rank_obj = pickle.load(f)
+            rank_model = rank_obj[0] if isinstance(rank_obj, tuple) else rank_obj
+        return xgb_model, cat_model, rank_model
+    except:
+        st.error("❌ 模型載入失敗")
+        return None, None, None
+
+# ============================================================
+# 5. 特徵工程（36 特徵，不包含賠率變化）
+# ============================================================
+FEATURES_EN = [
+    'draw', 'act_wt', 'distance', 'rtg', 'avg_rank_last3',
+    'jockey_win_rate_50', 'trainer_win_rate_50',
+    'distance_win_rate', 'distance_avg_rank',
+    'win_odds', 'weight_change', 'jockey_trainer_win_rate',
+    'course_win_rate', 'course_avg_rank',
+    'days_since_last_run', 'odds_rank_in_race',
+    'rtg_change', 'jockey_horse_win_rate',
+    'races_last14days', 'going_win_rate',
+    'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
+    'early_pace', 'finish_speed',
+    'last_trial_rank', 'last_trial_time',
+    'jockey_win_rate_5', 'jockey_win_rate_10', 'draw_win_rate',
+    'days_since_injury', 'injury_30d', 'injury_60d', 'injury_90d',
+    'total_injuries', 'injury_severity'
+]
+
+EXPECTED_FEATURES = [
+    'draw', 'weight', 'distance', 'Rtg.', '近3場平均名次',
+    '騎師近50場勝率', '練馬師近50場勝率', '同路程歷史勝率',
+    '同路程歷史平均名次', 'win_odds', '體重變化', '騎練組合勝率',
+    '詳細賽道歷史勝率', '詳細賽道歷史平均名次', '出賽相隔日數',
+    '賠率場次排名', '評分變化', '騎馬合作勝率', '近14日出賽次數',
+    '場地狀況勝率', '試閘歷史勝率', '父系歷史勝率', '父系同程勝率',
+    '前速指標', '後勁指標', '最近試閘名次', '最近試閘時間',
+    '騎師近5場勝率', '騎師近10場勝率', '檔位勝率', '最近傷患日數',
+    '過去30日內有傷患', '過去60日內有傷患', '過去90日內有傷患',
+    '傷患總次數', '傷患嚴重程度'
+]
+
+NAME_MAPPING = {
+    'act_wt': 'weight', 'rtg': 'Rtg.',
+    'avg_rank_last3': '近3場平均名次',
+    'jockey_win_rate_50': '騎師近50場勝率',
+    'trainer_win_rate_50': '練馬師近50場勝率',
+    'distance_win_rate': '同路程歷史勝率',
+    'distance_avg_rank': '同路程歷史平均名次',
+    'weight_change': '體重變化',
+    'jockey_trainer_win_rate': '騎練組合勝率',
+    'course_win_rate': '詳細賽道歷史勝率',
+    'course_avg_rank': '詳細賽道歷史平均名次',
+    'days_since_last_run': '出賽相隔日數',
+    'odds_rank_in_race': '賠率場次排名',
+    'rtg_change': '評分變化',
+    'jockey_horse_win_rate': '騎馬合作勝率',
+    'races_last14days': '近14日出賽次數',
+    'going_win_rate': '場地狀況勝率',
+    'trial_win_rate': '試閘歷史勝率',
+    'sire_win_rate': '父系歷史勝率',
+    'sire_course_win_rate': '父系同程勝率',
+    'early_pace': '前速指標',
+    'finish_speed': '後勁指標',
+    'last_trial_rank': '最近試閘名次',
+    'last_trial_time': '最近試閘時間',
+    'jockey_win_rate_5': '騎師近5場勝率',
+    'jockey_win_rate_10': '騎師近10場勝率',
+    'draw_win_rate': '檔位勝率',
+    'days_since_injury': '最近傷患日數',
+    'injury_30d': '過去30日內有傷患',
+    'injury_60d': '過去60日內有傷患',
+    'injury_90d': '過去90日內有傷患',
+    'total_injuries': '傷患總次數',
+    'injury_severity': '傷患嚴重程度'
+}
+
+def standardize_columns_safe(df):
+    rename_map = {
+        '騎師': 'jockey', '練馬師': 'trainer', '路程': 'distance',
+        '場地': 'going', '檔位': 'draw', '評分': 'rtg',
+        '馬匹編號': 'horse_id', '馬匹ID': 'horse_id', '馬號': 'horse_id',
+        '馬匹id': 'horse_id', 'horse': 'horse_id',
+        '場次': 'race_no', '馬場': 'race_course',
+        '實際負磅': 'act_wt',
+        '名次': 'finish_position', '最終名次': 'finish_position',
+        '馬名': 'horse_name',
+        '賠率': 'win_odds', '獨贏賠率': 'win_odds',
+    }
+    df.rename(columns=rename_map, inplace=True, errors='ignore')
+    if '比賽日期' in df.columns and 'race_date' not in df.columns:
+        df.rename(columns={'比賽日期': 'race_date'}, inplace=True)
+    elif '比賽日期' in df.columns and 'race_date' in df.columns:
+        df.drop(columns=['比賽日期'], inplace=True, errors='ignore')
+    return df
+
+def ensure_series(df):
+    for col in df.columns:
+        if isinstance(df[col], pd.DataFrame):
+            df[col] = df[col].iloc[:, 0]
+    return df
+
+def get_finish_column(df):
+    candidates = ['finish_position', '名次', 'Position', 'pos', 'Rank', 'rank', '最終名次']
+    for col in candidates:
+        if col in df.columns:
+            return col
+    return None
+
+def safe_parse_dates(df):
+    date_col = None
+    for col in ['race_date', '比賽日期']:
+        if col in df.columns:
+            date_col = col
+            break
+    if date_col is None:
+        return None, None
+    dates = df[date_col].copy()
+    dates = dates.astype(str).str.strip()
+    parsed = pd.to_datetime(dates, errors='coerce')
+    if parsed.notna().sum() == 0:
+        return None, None
+    df['race_date'] = parsed
+    return df, date_col
+
+def get_latest_features(race_df, history_df):
+    history_df['race_date'] = pd.to_datetime(history_df['race_date'], errors='coerce')
+    latest = history_df.sort_values('race_date').groupby('horse_id').last().reset_index()
+    merged = race_df.merge(latest, on='horse_id', how='left', suffixes=('', '_hist'))
+    for col in FEATURES_EN:
+        if col in merged.columns and col not in race_df.columns:
+            hist_col = col + '_hist'
+            if hist_col in merged.columns:
+                merged[col] = merged[hist_col]
+            else:
+                merged[col] = 0
+        elif col not in merged.columns:
+            merged[col] = 0
+        merged[col] = merged[col].fillna(0)
+    for col in ['draw', 'act_wt', 'distance', 'rtg', 'win_odds']:
+        if col in race_df.columns:
+            merged[col] = race_df[col].values
+    return merged
+
+def compute_stats(race_df, history_df, race_date):
+    history_df = ensure_series(history_df)
+    if history_df.columns.duplicated().any():
+        history_df = history_df.loc[:, ~history_df.columns.duplicated(keep='first')]
+    for col in ['jockey', 'trainer', 'horse_id']:
+        if col not in race_df.columns:
+            race_df[col] = 0
+    hist = history_df[history_df['race_date'] < race_date].copy()
+    if hist.empty:
+        for col in ['jockey_win_rate_50', 'trainer_win_rate_50', 'avg_rank_last3',
+                    'distance_win_rate', 'jockey_horse_win_rate', 'going_win_rate',
+                    'draw_win_rate', 'jockey_win_rate_5', 'jockey_win_rate_10']:
+            race_df[col] = 0.0
+        return race_df
+    if 'finish_position' not in hist.columns:
+        raise KeyError("歷史數據缺少 finish_position")
+    hist['finish_position'] = pd.to_numeric(hist['finish_position'], errors='coerce')
+    try:
+        jockey_stats = hist.groupby('jockey').apply(lambda g: (g['finish_position']==1).sum()/max(len(g),1)).reset_index(name='jockey_win_rate_50')
+        race_df = race_df.merge(jockey_stats, on='jockey', how='left')
+        race_df['jockey_win_rate_50'] = race_df['jockey_win_rate_50'].fillna(0)
+    except:
+        race_df['jockey_win_rate_50'] = 0.0
+    try:
+        trainer_stats = hist.groupby('trainer').apply(lambda g: (g['finish_position']==1).sum()/max(len(g),1)).reset_index(name='trainer_win_rate_50')
+        race_df = race_df.merge(trainer_stats, on='trainer', how='left')
+        race_df['trainer_win_rate_50'] = race_df['trainer_win_rate_50'].fillna(0)
+    except:
+        race_df['trainer_win_rate_50'] = 0.0
+    try:
+        last3 = hist.groupby('horse_id').apply(lambda g: g.sort_values('race_date').tail(3)['finish_position'].mean()).reset_index(name='avg_rank_last3')
+        race_df = race_df.merge(last3, on='horse_id', how='left')
+        race_df['avg_rank_last3'] = race_df['avg_rank_last3'].fillna(99)
+    except:
+        race_df['avg_rank_last3'] = 99.0
+    try:
+        def dist_win(g, dist):
+            sub = g[g['distance']==dist]
+            return 0.0 if len(sub)==0 else (sub['finish_position']==1).sum()/len(sub)
+        race_df['distance_win_rate'] = race_df.apply(lambda r: dist_win(hist[hist['horse_id']==r['horse_id']], r['distance']), axis=1)
+    except:
+        race_df['distance_win_rate'] = 0.0
+    try:
+        def jh_win(g, j, h):
+            sub = g[(g['jockey']==j) & (g['horse_id']==h)]
+            return 0.0 if len(sub)==0 else (sub['finish_position']==1).sum()/len(sub)
+        race_df['jockey_horse_win_rate'] = race_df.apply(lambda r: jh_win(hist, r['jockey'], r['horse_id']), axis=1)
+    except:
+        race_df['jockey_horse_win_rate'] = 0.0
+    try:
+        def going_win(g, go):
+            sub = g[g['going']==go]
+            return 0.0 if len(sub)==0 else (sub['finish_position']==1).sum()/len(sub)
+        race_df['going_win_rate'] = race_df.apply(lambda r: going_win(hist[hist['horse_id']==r['horse_id']], r['going']), axis=1)
+    except:
+        race_df['going_win_rate'] = 0.0
+    try:
+        def draw_win(g, dr):
+            sub = g[g['draw']==dr]
+            return 0.0 if len(sub)==0 else (sub['finish_position']==1).sum()/len(sub)
+        race_df['draw_win_rate'] = race_df.apply(lambda r: draw_win(hist[hist['horse_id']==r['horse_id']], r['draw']), axis=1)
+    except:
+        race_df['draw_win_rate'] = 0.0
+    try:
+        last_run = hist.groupby('horse_id')['race_date'].max().reset_index(name='last_date')
+        race_df = race_df.merge(last_run, on='horse_id', how='left')
+        race_df['days_since_last_run'] = (race_date - race_df['last_date']).dt.days.fillna(999)
+    except:
+        race_df['days_since_last_run'] = 999
+    try:
+        last_rtg = hist.groupby('horse_id').last()['rtg'].reset_index(name='last_rtg')
+        race_df = race_df.merge(last_rtg, on='horse_id', how='left')
+        race_df['rtg_change'] = (race_df['rtg'] - race_df['last_rtg']).fillna(0)
+    except:
+        race_df['rtg_change'] = 0
+    try:
+        race_df['races_last14days'] = race_df.apply(lambda r: len(hist[(hist['horse_id']==r['horse_id']) & (hist['race_date']>=race_date-pd.Timedelta(days=14))]), axis=1)
+    except:
+        race_df['races_last14days'] = 0
+    for col in ['course_win_rate', 'course_avg_rank', 'weight_change', 'jockey_trainer_win_rate',
+                'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
+                'early_pace', 'finish_speed', 'last_trial_rank', 'last_trial_time',
+                'jockey_win_rate_5', 'jockey_win_rate_10',
+                'days_since_injury', 'injury_30d', 'injury_60d', 'injury_90d',
+                'total_injuries', 'injury_severity']:
+        if col not in race_df.columns:
+            race_df[col] = 0
+        else:
+            race_df[col] = race_df[col].fillna(0)
+    return race_df
+
+@st.cache_data
+def load_horse_name_map():
+    try:
+        df_map = pd.read_csv('horse_name_mapping.csv', encoding='utf-8-sig')
+        if 'horse_id' in df_map.columns and '馬名' in df_map.columns:
+            return dict(zip(df_map['horse_id'], df_map['馬名']))
+    except:
+        pass
+    return {}
+
+def generate_pool_recommendations(df, top_n=6):
+    top_horses = df.head(top_n)
+    horse_names = top_horses['馬匹名稱'].tolist()
+    probs = top_horses['預測勝率'].tolist()
+    def combo_score(indices):
+        score = 1.0
+        for i in indices:
+            score *= probs[i]
+        return score / len(indices)
+    rec = "【獨贏】\n"
+    for i, row in top_horses.head(3).iterrows():
+        rec += f"  {row['馬匹名稱']} (勝率 {row['預測勝率']:.2%})\n"
+    rec += "\n【位置】\n"
+    for i, row in top_horses.head(4).iterrows():
+        rec += f"  {row['馬匹名稱']} (勝率 {row['預測勝率']:.2%})\n"
+    rec += "\n【連贏】\n"
+    pairs = []
+    for i in range(min(len(horse_names), 5)):
+        for j in range(i+1, min(len(horse_names), 6)):
+            pairs.append((combo_score([i, j]), i, j))
+    pairs.sort(reverse=True)
+    for _, i, j in pairs[:5]:
+        rec += f"  {horse_names[i]} + {horse_names[j]}\n"
+    rec += "\n【位置Q】\n"
+    q_pairs = []
+    for i in range(min(len(horse_names), 6)):
+        for j in range(i+1, min(len(horse_names), 8)):
+            if j < len(horse_names):
+                q_pairs.append((combo_score([i, j]), i, j))
+    q_pairs.sort(reverse=True)
+    for _, i, j in q_pairs[:6]:
+        rec += f"  {horse_names[i]} + {horse_names[j]}\n"
+    rec += "\n【三重彩】\n"
+    tierce = []
+    for i in range(min(len(horse_names), 4)):
+        for j in range(min(len(horse_names), 5)):
+            for k in range(min(len(horse_names), 6)):
+                if i != j and i != k and j != k:
+                    tierce.append((combo_score([i, j, k]), i, j, k))
+    tierce.sort(reverse=True)
+    for _, i, j, k in tierce[:5]:
+        rec += f"  {horse_names[i]} > {horse_names[j]} > {horse_names[k]}\n"
+    rec += "\n【四重彩】\n"
+    quartet = []
+    for i in range(min(len(horse_names), 4)):
+        for j in range(min(len(horse_names), 5)):
+            for k in range(min(len(horse_names), 6)):
+                for l in range(min(len(horse_names), 7)):
+                    if len(set([i, j, k, l])) == 4:
+                        quartet.append((combo_score([i, j, k, l]), i, j, k, l))
+    quartet.sort(reverse=True)
+    for _, i, j, k, l in quartet[:3]:
+        rec += f"  {horse_names[i]} > {horse_names[j]} > {horse_names[k]} > {horse_names[l]}\n"
+    return rec
+
+def run_prediction(date_str, race_no):
+    xgb_model, cat_model, rank_model = load_models()
+    if xgb_model is None:
+        return None, None
+
+    try:
+        df = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
+    except:
+        st.error("讀取排位表失敗")
+        return None, None
+
+    df = standardize_columns_safe(df)
+    df = df.loc[:, ~df.columns.duplicated(keep='first')]
+    df = ensure_series(df)
+
+    df, _ = safe_parse_dates(df)
+    if df is None:
+        st.error("無法解析日期")
+        return None, None
+    df = df.dropna(subset=['race_date'])
+    if df.empty:
+        st.error("無有效日期")
+        return None, None
+
+    if 'race_no' not in df.columns:
+        st.error("找不到場次欄位")
+        return None, None
+    df['race_no'] = df['race_no'].astype(str).str.extract(r'(\d+)')[0]
+    df['race_no'] = pd.to_numeric(df['race_no'], errors='coerce')
+    df = df.dropna(subset=['race_no'])
+    if df.empty:
+        st.error("無有效場次")
+        return None, None
+
+    target = pd.to_datetime(date_str)
+    race_sel = df[(df['race_date'].dt.date == target.date()) & (df['race_no'] == race_no)]
+    if race_sel.empty:
+        st.error(f"日期 {date_str} 第 {race_no} 場無數據")
+        return None, None
+
+    try:
+        history = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
+    except:
+        st.error("缺少歷史數據檔案 ALL_DATA_MERGED.csv")
+        return None, None
+
+    history = standardize_columns_safe(history)
+    history = history.loc[:, ~history.columns.duplicated(keep='first')]
+    history = ensure_series(history)
+    if 'race_date' not in history.columns:
+        if '比賽日期' in history.columns:
+            history.rename(columns={'比賽日期': 'race_date'}, inplace=True)
+        else:
+            st.error("歷史數據缺少日期欄位")
+            return None, None
+    history['race_date'] = pd.to_datetime(history['race_date'], errors='coerce')
+    history = history.dropna(subset=['race_date'])
+
+    finish_col = get_finish_column(history)
+    if finish_col is None:
+        st.error("歷史數據缺少名次欄位")
+        return None, None
+    history.rename(columns={finish_col: 'finish_position'}, inplace=True)
+
+    name_map = load_horse_name_map()
+
+    race_sel = get_latest_features(race_sel, history)
+    race_sel = compute_stats(race_sel, history, target)
+    race_sel['中文名'] = race_sel['horse_id'].map(name_map).fillna(race_sel['horse_id'])
+
+    if 'win_odds' not in race_sel.columns:
+        race_sel['win_odds'] = 4.0
+    else:
+        race_sel['win_odds'] = race_sel['win_odds'].replace(0, 4.0).fillna(4.0)
+    race_sel['win_odds'] = pd.to_numeric(race_sel['win_odds'], errors='coerce').fillna(4.0)
+    race_sel['odds_rank_in_race'] = race_sel['win_odds'].rank(ascending=True)
+
+    for f in FEATURES_EN:
+        if f not in race_sel.columns:
+            race_sel[f] = 0
+        else:
+            race_sel[f] = race_sel[f].fillna(0)
+
+    X = race_sel[FEATURES_EN].copy()
+    for col in X.columns:
+        X[col] = pd.to_numeric(X[col], errors='coerce').fillna(0)
+
+    X.rename(columns=NAME_MAPPING, inplace=True)
+    for col in EXPECTED_FEATURES:
+        if col not in X.columns:
+            X[col] = 0
+    X = X[EXPECTED_FEATURES]
+
+    prob_xgb = xgb_model.predict_proba(X)[:, 1]
+    prob_cat = cat_model.predict_proba(X)[:, 1]
+    
+    # 🧠 使用動態權重（從 system_config.json 讀取）
+    config = load_system_config()
+    xgb_w = config.get('xgb_weight', 25)
+    cat_w = config.get('cat_weight', 1)
+    prob_final = (prob_xgb * xgb_w + prob_cat * cat_w) / (xgb_w + cat_w)
+    
+    rank_score = rank_model.predict(X)
+
+    result = race_sel[['中文名', 'draw', 'win_odds']].copy()
+    result.rename(columns={'中文名': '馬匹名稱', 'draw': '檔位', 'win_odds': '賠率'}, inplace=True)
+    result['預測勝率'] = prob_final
+    result['值博指數'] = result['預測勝率'] / result['賠率']
+    result = result.sort_values('值博指數', ascending=False)
+
+    pool_rec = generate_pool_recommendations(result)
+    return result, pool_rec
+
+# ============================================================
+# 6. 用戶功能
+# ============================================================
+def record_prediction(username, date_str, race_no, horse_name, predicted_prob=None):
+    users = load_users()
+    if username in users:
+        if 'history' not in users[username]:
+            users[username]['history'] = []
+        users[username]['history'].append({
+            'date': date_str,
+            'race': race_no,
+            'horse': horse_name,
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'predicted_prob': predicted_prob
+        })
+        save_users(users)
+        acc = load_accuracy()
+        if 'records' not in acc:
+            acc['records'] = []
+        acc['records'].append({
+            'username': username,
+            'date': date_str,
+            'race': race_no,
+            'horse': horse_name,
+            'predicted_at': datetime.now().isoformat(),
+            'actual_result': None,
+            'is_hit': None
+        })
+        save_accuracy(acc)
+
+def get_user_stats(username):
+    users = load_users()
+    if username not in users:
+        return {'total_predictions': 0, 'free_used': 0, 'is_paid': False, 'group': 'free', 'plan': None}
+    user = users[username]
+    history = user.get('history', [])
+    total = len(history)
+    free_used = user.get('free_usage', 0)
+    return {
+        'total_predictions': total,
+        'free_used': free_used,
+        'is_paid': user.get('is_paid', False),
+        'group': user.get('group', 'free'),
+        'plan': user.get('plan', None)
     }
 
-    pre, code {
-      tab-size: var(--tab-size-preference);
+def show_user_dashboard(username):
+    if not username:
+        return
+    stats = get_user_stats(username)
+    users = load_users()
+    user_data = users.get(username, {})
+    group = user_data.get('group', 'free')
+    is_paid = user_data.get('is_paid', False)
+    plan = user_data.get('plan', None)
+    expiry = user_data.get('expiry_date', None)
+    invite_code = user_data.get('invite_code', '')
+    invite_count = user_data.get('invite_count', 0)
+    invite_rewards = user_data.get('invite_rewards', 0)
+    
+    if group == 'super_admin':
+        level = "👑 超級管理員"
+    elif group == 'VIP':
+        level = "👑 VIP"
+    elif is_paid:
+        level = "💎 付費用戶"
+    else:
+        level = "🆓 免費用戶"
+    
+    st.markdown("---")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("👤 用戶", username)
+    col2.metric("🏷️ 級別", level)
+    col3.metric("📊 總預測次數", stats['total_predictions'])
+    limit = user_data.get('predictions_limit', CONFIG['free_limit'])
+    if limit == -1:
+        col4.metric("📊 剩餘場次", "♾️ 無限")
+    else:
+        used = user_data.get('free_usage', 0)
+        remain = max(0, limit - used)
+        col4.metric("📊 剩餘場次", remain)
+    st.markdown("---")
+    if plan:
+        st.caption(f"📌 當前方案：{get_plan_name(plan)}")
+    
+    if CONFIG.get("enable_invite_reward", True):
+        st.markdown("---")
+        st.subheader("🎁 邀請獎勵")
+        col_inv1, col_inv2, col_inv3 = st.columns(3)
+        with col_inv1:
+            st.caption(f"你的邀請碼：**{invite_code}**")
+        with col_inv2:
+            st.caption(f"已成功邀請 **{invite_count}** 位朋友")
+        with col_inv3:
+            st.caption(f"已獲得獎勵次數：**{invite_rewards}** 次（已自動加到你的預測額度）")
+    
+    st.markdown("---")
+    st.subheader("📊 預測統計")
+    today = datetime.now().strftime('%Y-%m-%d')
+    history = user_data.get('history', [])
+    today_count = sum(1 for h in history if h.get('date') == today)
+    
+    col_p1, col_p2, col_p3, col_p4 = st.columns(4)
+    with col_p1:
+        st.metric("📈 總預測", stats['total_predictions'])
+    with col_p2:
+        st.metric("📅 今日已用", today_count)
+    with col_p3:
+        if limit == -1:
+            st.metric("🔮 剩餘次數", "♾️ 無限")
+        else:
+            remain = max(0, limit - user_data.get('free_usage', 0))
+            st.metric("🔮 剩餘次數", remain)
+    with col_p4:
+        if st.button("🚀 去預測", use_container_width=True, key="quick_predict"):
+            st.session_state.page = "預測"
+            st.rerun()
+    
+    if today_count > 0:
+        st.caption(f"📝 今日已進行 {today_count} 次預測")
+    else:
+        st.caption("📝 今日尚未進行預測")
+
+def show_prediction_history(username):
+    if not username:
+        st.info("請先登入以查看歷史記錄")
+        return
+    users = load_users()
+    if username not in users:
+        st.info("未有歷史記錄")
+        return
+    history = users[username].get('history', [])
+    if not history:
+        st.info("你仲未有任何預測記錄")
+        return
+    df = pd.DataFrame(history[-20:][::-1])
+    st.dataframe(df, use_container_width=True)
+
+# ============================================================
+# 7. 登入/註冊（使用按鈕切換，註冊後跳登入）
+# ============================================================
+def login_page():
+    st.title("🔐 登入 / 註冊")
+    
+    # 兩個並排按鈕
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🔑 登入", use_container_width=True):
+            st.session_state.page_mode = "login"
+    with col2:
+        if st.button("📝 註冊", use_container_width=True):
+            st.session_state.page_mode = "register"
+    
+    mode = st.session_state.get("page_mode", "login")
+    
+    if mode == "login":
+        with st.form("login_form"):
+            username = st.text_input("用戶名稱", key="login_user")
+            password = st.text_input("密碼", type="password", key="login_pass")
+            if st.form_submit_button("登入"):
+                users = load_users()
+                if username in users and users[username].get('password') == password:
+                    st.session_state.logged_in = True
+                    st.session_state.username = username
+                    st.session_state.role = users[username].get('group', 'free')
+                    st.session_state.usage_count = users[username].get('free_usage', 0)
+                    st.rerun()
+                else:
+                    st.error("❌ 用戶名稱或密碼錯誤")
+    else:
+        st.subheader("📝 註冊新帳號")
+        with st.form("register_form"):
+            new_user = st.text_input("用戶名稱（最少 3 個字）", key="reg_user")
+            phone = st.text_input("手機號碼（可選）", key="reg_phone")
+            new_pass = st.text_input("密碼", type="password", key="reg_pass")
+            new_pass2 = st.text_input("確認密碼", type="password", key="reg_pass2")
+            
+            if CONFIG.get("enable_invite_reward", True):
+                invite_code_input = st.text_input("邀請碼（如有）", key="reg_invite_code", placeholder="輸入朋友的邀請碼")
+            else:
+                invite_code_input = None
+            
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                verify_code_input = st.text_input("驗證碼", key="reg_verify", placeholder="輸入 6 位數字", max_chars=6)
+            with col2:
+                if st.form_submit_button("📨 獲取驗證碼", type="secondary"):
+                    code = generate_verification_code()
+                    st.session_state['reg_verify_code'] = code
+                    st.session_state['reg_verify_expiry'] = datetime.now() + timedelta(minutes=CONFIG.get('verification_expiry', 5))
+                    st.info(f"📧 你嘅驗證碼係：**{code}**（有效期 5 分鐘）")
+            
+            st.divider()
+            with st.expander("📜 服務條款（請仔細閱讀）"):
+                st.markdown("""
+                **SHTSN 賽馬預測系統 服務條款**
+
+                **1. 服務說明**
+                本系統提供賽馬預測數據及分析，僅供參考及娛樂用途，並非投注建議。用戶應自行判斷，所有投注決定及後果由用戶自行承擔。
+
+                **2. 用戶責任**
+                - 用戶必須年滿 18 歲。
+                - 用戶需確保所提供嘅資料真實、準確、完整。
+                - 用戶不得將本系統用於任何非法或不當用途。
+
+                **3. 免責聲明**
+                - 預測結果僅為演算法分析，不構成任何形式嘅投資建議或保證。
+                - 本系統不保證預測準確度，亦不對用戶因使用本系統而產生嘅任何損失負責。
+                - 用戶明白賽馬活動存在風險，應量力而為。
+
+                **4. 付款與退款**
+                - 用戶付款後即表示同意購買所選方案。
+                - 付款後不設退款，除非系統因技術問題未能提供服務。
+                - 管理員保留最終審核及拒絕退款嘅權利。
+
+                **5. 帳戶安全**
+                - 用戶需自行保管帳號及密碼，任何經由帳戶進行嘅活動均視為用戶本人所為。
+                - 如發現帳戶被盜用，應立即通知管理員。
+
+                **6. 終止服務**
+                - 管理員保留隨時終止或暫停用戶帳戶嘅權利，如用戶違反條款或進行不當行為。
+                - 終止後，用戶將無法使用系統服務，已付費用將不獲退還。
+
+                **7. 條款修訂**
+                本系統有權隨時修訂服務條款，修訂後會於系統內公告。用戶繼續使用即表示同意最新條款。
+
+                **8. 聯絡我們**
+                如有任何疑問，可透過 Telegram 聯絡管理員：@bryhjdjbrbxibvrjskofndhiebdpaq
+
+                **最後更新日期：2026 年 8 月 25 日**
+                """)
+            
+            agree_terms = st.checkbox("✅ 我已閱讀並同意上述服務條款", key="agree_terms")
+            submitted = st.form_submit_button("註冊")
+            
+            if submitted:
+                if len(new_user) < 3:
+                    st.error("❌ 用戶名稱至少 3 個字")
+                elif new_pass != new_pass2:
+                    st.error("❌ 密碼不一致")
+                elif len(new_pass) < 4:
+                    st.error("❌ 密碼至少 4 個字")
+                elif 'reg_verify_code' not in st.session_state or \
+                     verify_code_input != st.session_state['reg_verify_code'] or \
+                     datetime.now() > st.session_state.get('reg_verify_expiry', datetime.now()):
+                    st.error("❌ 驗證碼無效或已過期，請重新獲取")
+                elif not agree_terms:
+                    st.error("❌ 請先閱讀並同意服務條款，方可註冊")
+                else:
+                    users = load_users()
+                    if new_user in users:
+                        st.error("❌ 用戶名稱已被使用")
+                    else:
+                        invited_by = None
+                        if CONFIG.get("enable_invite_reward", True) and invite_code_input:
+                            for uid, u in users.items():
+                                if u.get('invite_code') == invite_code_input:
+                                    invited_by = uid
+                                    break
+                            if not invited_by:
+                                st.warning("⚠️ 邀請碼無效，請確認後再試。")
+                        
+                        new_user_data = {
+                            'password': new_pass,
+                            'phone': phone,
+                            'is_paid': False,
+                            'paid_date': None,
+                            'expiry_date': None,
+                            'free_usage': 0,
+                            'total_usage': 0,
+                            'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                            'note': '',
+                            'group': 'free',
+                            'plan': None,
+                            'predictions_limit': CONFIG["free_limit"],
+                            'history': [],
+                            'terms_agreed': datetime.now().isoformat(),
+                            'invite_code': new_user.upper() + str(random.randint(100, 999)),
+                            'invited_by': invited_by,
+                            'invite_rewards': 0,
+                            'invite_count': 0
+                        }
+                        users[new_user] = new_user_data
+                        save_users(users)
+                        
+                        if CONFIG.get("enable_invite_reward", True) and invited_by:
+                            inviter = users.get(invited_by)
+                            if inviter:
+                                reward_inviter = CONFIG.get("invite_reward_inviter", 1)
+                                reward_invitee = CONFIG.get("invite_reward_invitee", 1)
+                                if inviter['predictions_limit'] != -1:
+                                    inviter['predictions_limit'] += reward_inviter
+                                inviter['invite_count'] = inviter.get('invite_count', 0) + 1
+                                inviter['invite_rewards'] = inviter.get('invite_rewards', 0) + reward_inviter
+                                if new_user_data['predictions_limit'] != -1:
+                                    new_user_data['predictions_limit'] += reward_invitee
+                                new_user_data['invite_rewards'] = reward_invitee
+                                save_users(users)
+                                st.success(f"✅ 註冊成功！你同邀請人各獲得 {reward_invitee} 次免費預測獎勵！")
+                            else:
+                                st.success("✅ 註冊成功！")
+                        else:
+                            st.success("✅ 註冊成功！")
+                        
+                        # 🎯 重點：註冊成功後自動跳去登入
+                        st.session_state.page_mode = "login"
+                        st.rerun()
+
+# ============================================================
+# 🔧 付款牆（無上傳功能，只顯示 FPS + Telegram）
+# ============================================================
+def show_paywall():
+    st.warning(f"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度")
+    st.subheader("💳 選擇你嘅方案")
+
+    plan_options = {
+        "day": f"☀️ 日費  ${CONFIG['price_day']}   (1天)",
+        "month": f"📆 月費  ${CONFIG['price_month']}  (30天)",
+        "quarter": f"📅 季費  ${CONFIG['price_quarter']} (90天)"
     }
-  </style>
 
-    <link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/primer-primitives-ae6d9799eadb7678.css" />
-    <link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/primer-tailwind-compatible-7bcdf2461fd2cc13.css" />
-    <link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/global-d128fe951c35227f.css" />
-    <link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/github-a9a9110285537967.css" />
-    <link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/tailwind-fae4450eba3729a7.css" />
-  <link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/repository-5c86d3f12914e4c9.css" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/code-4bc66c6b883d8cfe.css" />
-
-  
-
-  <script type="application/json" id="client-env">{"locale":"en","featureFlags":["actions_enable_background_steps","actions_workflow_language_service_allow_case_function","activity_diff_file_tree","activity_repos_file_tree","activity_repos_overview_header","activity_repos_overview_sidebar","agent_author_search_expansion","agent_author_search_expansion_ui_pulls","alternate_user_config_repo","billing_billable_licenses_cost_center_bucket_fix","billing_cost_center_list_assigned_resources","billing_cost_center_user_level_budgets","billing_discount_threshold_notification","billing_multi_user_cost_center_total_user_count","billing_ui_budget_pagination_enabled","billing_user_level_budgets","billing_user_level_budgets_manage","cca_combined_monthly_limit_meter","ccr_files_changed_model_picker","ccr_implement_suggestion_refresh","ccr_mcp_skills_ga","code_quality_enablement_banner_targeting","code_quality_new_repo_selection_card","code_quality_org_level_trends","code_quality_remove_preview","code_view_checks_live_updates","code_view_raf_sticky_lines","codemirror_inp_optimizations","codespaces_prebuild_region_target_update","coding_agent_create_task_strip","coding_agent_third_party_model_ui","contentful_primer_code_blocks","copilot_agent_default_branch_repository_tanstack","copilot_agent_snippy","copilot_api_agentic_issue_marshal_yaml","copilot_automations_pagination","copilot_chat_attach_multiple_images","copilot_chat_auto_mode_picker_paid","copilot_chat_category_rate_limit_messages","copilot_chat_clear_model_selection_for_default_change","copilot_chat_compact_tables","copilot_chat_disable_model_picker_while_streaming","copilot_chat_docked_panel","copilot_chat_enable_tool_call_logs","copilot_chat_header_reorder","copilot_chat_increase_token_padding","copilot_chat_input_commands","copilot_chat_interspersed_tool_calls","copilot_chat_max_upsell","copilot_chat_minimize_contextual","copilot_chat_model_picker_promotions","copilot_chat_models_browser_cache","copilot_chat_new_topic_nudge","copilot_chat_opening_thread_switch","copilot_chat_reduce_quota_checks","copilot_chat_vision_dotcom_chat_ga_gate","copilot_chat_vision_in_claude","copilot_chat_vision_preview_gate","copilot_cli_install_cta_max_plan","copilot_css_textarea_autosize","copilot_custom_copilots","copilot_custom_copilots_feature_preview","copilot_diff_explain_conversation_intent","copilot_diff_reference_context","copilot_duplicate_thread","copilot_extensions_removal_on_marketplace","copilot_fix_failed_workflows_all_skus","copilot_ftp_hyperspace_upgrade_prompt","copilot_hide_hovercard","copilot_immersive_code_block_transition_wrap","copilot_immersive_embedded_deferred_payload","copilot_immersive_embedded_draggable","copilot_immersive_embedded_header_button","copilot_immersive_embedded_implicit_references","copilot_immersive_embedded_skip_copilot_api_token_for_dotcom_context","copilot_immersive_file_block_transition_open","copilot_immersive_file_preview_keep_mounted","copilot_immersive_suggestion_pills","copilot_immersive_task_hyperlinking","copilot_immersive_task_within_chat_thread","copilot_issue_list_show_more","copilot_mc_cli_resume_any_users_task","copilot_mission_control_agent_merge_fix_ci","copilot_mission_control_agent_merge_resolve_conflicts","copilot_mission_control_agent_merge_respond_to_reviewers","copilot_mission_control_agents_page_redesign","copilot_mission_control_environment_list_icons","copilot_mission_control_grouped_tasks_endpoint","copilot_mission_control_managed_sandbox_environments","copilot_mission_control_needs_attention","copilot_mission_control_reasoning_effort","copilot_mission_control_sandbox_remote_bypass","copilot_mission_control_session_events_ui","copilot_mission_control_session_filters","copilot_mission_control_task_alive_updates","copilot_mission_control_task_sharing","copilot_org_policy_page_focus_mode","copilot_pr_chat_enhancements","copilot_premium_request_quotas","copilot_prominent_upgrade_button","copilot_resource_panel","copilot_share_active_subthread","copilot_spaces_ga","copilot_spaces_individual_policies_ga","copilot_spark_handle_nil_friendly_name","copilot_swe_agent_authorization_status_ui","copilot_swe_agent_hide_model_picker_if_only_auto","copilot_swe_agent_issue_comment_trigger","copilot_swe_agent_pr_comment_model_picker","copilot_swe_agent_pull_request_comment_trigger","copilot_swe_agent_pull_request_merged_trigger","copilot_swe_agent_pull_request_opened_trigger","copilot_swe_agent_pull_request_synchronize_trigger","copilot_swe_agent_use_subagents","copilot_task_api_github_rest_style","copilot_token_based_billing","copilot_unconfigured_is_inherited","copilot_user_can_upgrade_plan_field","copilot_workbench_sunset","copilot_workbench_ubb","dashboard_indexeddb_caching","dashboard_lists_max_age_filter","dashboard_surface_persistent_preferences","dashboard_universe_2025","dashboard_universe_2025_feedback_dialog","fgpat_permissions_selector_redesign","flex_cta_groups_mvp","flex_suite_details","ga_enterprise_teams_ui","glc_code_quality_repo_settings_workflow_config","global_nav_react","hide_github_models_ui","hide_groups_list_for_few_groups","hyperspace_2025_logged_out_batch_1","hyperspace_2025_logged_out_batch_2","hyperspace_2025_logged_out_batch_3","in_product_messaging_datadog_monitoring","ipm_global_transactional_message_agents","ipm_global_transactional_message_copilot","ipm_global_transactional_message_issues","ipm_global_transactional_message_prs","ipm_global_transactional_message_repos","ipm_global_transactional_message_spaces","issue_fields_multi_select","issue_inline_avatars","issue_pinned_views","issue_pinned_views_optimistic_updates","issue_relative_time_micro","issue_viewer_nested_sub_issues_tanstack","issue_viewer_subissues_optimistic_overlay","issues_dashboard_default_view","issues_dashboard_sso_structured_errors","issues_expanded_file_types","issues_hide_closed_sub_issues","issues_lazy_load_comment_box_suggestions","issues_react_chrome_container_query_fix","issues_react_include_bots_in_pickers","issues_react_ui_feedback","landing_pages_ninetailed","landing_pages_web_vitals_tracking","lifecycle_label_name_updates","marketing_pages_search_explore_provider","memex_default_issue_create_repository","memex_lazy_hydrate_agent_tasks","memex_live_update_hovercard","memex_mwl_filter_field_delimiter","memex_remove_deprecated_type_issue","memex_roadmap_drag_style","merge_queue_restricted_pushers_warning","merge_status_checks_refetch_dedupe","merge_status_header_feedback","new_quick_search_dotcom","new_quick_search_ui_service","oauth_authorize_clickjacking_protection","octocaptcha_origin_optimization","pacer_layout_hide_sso_banner","pr_sfv_new_diff_fetch","primer_react_css_anchor_positioning","primer_react_merged_forwarded_refs","property_definition_empty_state_suggestions","prs_copilot_app_open_action","prs_css_anchor_positioning","prs_live_updates_issue_comments","prx_files","pull_request_commit_checks_dialog","pull_request_copilot_attribution_header","pull_request_files_virtualization","pull_request_overview_panel_edit_description","pull_request_stacks_feedback_dialog","pull_request_virtualization_image_estimate","pull_request_virtualization_scroll_compensation","pull_request_virtualization_scroll_intent","react_blob_isolate_code_lines","react_blob_overlay","react_blob_ssr_content_visibility","react_data_router_code_view_sidebar","react_data_router_tanstack_allowed","react_sandbox_future_tanstack","repo_issues_sidebar_layout","repo_overview_ask_copilot","repos_contributors_limited_default_range","repository_suggester_elastic_search","review_involves_filter","rulesets_actor_list_editor","sample_network_conn_type","secret_scanning_pattern_alerts_link","security_center_artifact_filters_popover","see_who_reacted","semantic_similarity_duplicate_issue_detection","session_logs_ungroup_reasoning_text","site_banner_desktop_copilot_app","site_code_quality_page","site_ghca_pixel_mona","site_github_app_ga_page","site_github_app_ga_page_highlight","site_global_banner_deprecate_spark","site_global_banner_dev_days_organizer","site_global_nav_spark_models_removed","spark_prompt_secret_scanning","spark_server_connection_status","suppress_automated_browser_vitals","swp_forms_disable_octocaptcha","track_notifications_settings_usage","update_issue_suggestions","viewscreen_sandbox","warn_inaccessible_attachments","webp_support","workbench_store_readonly","react_import_map","react_import_map"],"login":"tszkit9-boop","copilotApiOverrideUrl":"https://api.individual.githubcopilot.com","cmcApiUrl":"https://api.github.com/cmc_internal/api"}</script>
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/wp-runtime-7f57061257516358.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/app-foundation-e0177decbdb9c8db.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/app-runtime-4656aa6e8c75d87c.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/fetch-utilities-7b6fb98f6a1b382e.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/78205-ee23aacea4530923.js" />
-<script crossorigin="anonymous" type="module" src="https://github.githubassets.com/assets/environment-cc490900cdc90d4d.js" defer="defer"></script>
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/app-runtime.57e268780bf2d64c.module.css" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/catalyst-4cbc4856b6c4069d.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/selector-observer-68d21c8f08e4d02a.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/relative-time-element-d82da87ed4cd5e62.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/296-a42a557b17e98f4f.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/816-0618a896a22d101f.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/65637-accc4e9208dcd17e.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/58494-041cd1803d1acff2.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/31721-f6f9b53de938591c.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/46740-fa2d6042e69cdff3.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/98944-d8943a5fe11b81d6.js" />
-<script crossorigin="anonymous" type="module" src="https://github.githubassets.com/assets/github-elements-f392bf3ecf554139.js" defer="defer"></script>
-<script crossorigin="anonymous" type="module" src="https://github.githubassets.com/assets/element-registry-6fde71464673c6b4.js" defer="defer"></script>
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/runtime-helpers-199eecb878185733.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/aria-live-50f912630c91395a.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/hotkey-d7eacd5a5172ab36.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/react-core-2acf8fdc3e042e35.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/react-lib-ca971393e168bebf.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/50841-d5bdbed0da1ea535.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/2761-43f8f84b23ba0e06.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/88475-0016a6bf3ee03b2a.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/26533-ba17ec41bc728e34.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/3609-1c60db4625bf1d59.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/87644-f3da34e156df8833.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/21880-49d5b3a7bdfe29c1.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/87220-3ab66bd9b360281d.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/49583-12ef1686e4d5fa25.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/55887-80b8fa5e9698bb0b.js" />
-<script crossorigin="anonymous" type="module" src="https://github.githubassets.com/assets/behaviors-1ccb25b353daa7c5.js" defer="defer"></script>
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/react-core.2ae6159a8c31523c.module.css" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/primer-react-6c14a83d95621dc6.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/76256-fc7a00288014fd44.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/437-160386f8600b8d8b.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/2927-b80e2cc29a9eace0.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/46502-4990995181a737eb.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/23423-3d4e34cc9848a644.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/65390-b5e389a86afba794.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/40062-311d6601c4ff2dab.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/75861-89236a1c714156bf.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/2850-c5c257bb335623dc.js" />
-<script crossorigin="anonymous" type="module" src="https://github.githubassets.com/assets/editor-06c2659050d4f660.js" defer="defer"></script>
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/primer-react-css.0a155a0e82c04f56.module.css" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/editor.e7c2ada0f06c199c.module.css" />
-<script crossorigin="anonymous" type="module" src="https://github.githubassets.com/assets/code-menu-4961596b2756954d.js" defer="defer"></script>
-  
-  <link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/13365-32873c68369b5c8c.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/7463-5603436e8d8e5f21.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/82065-091e20ddb1d76890.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/27600-2a649207fd8cdcf4.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/43851-f4f0e87f2c721d97.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/47901-52123d918c3b3e33.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/53979-9c8da9ce5a11abcf.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/65498-14969237aed985a6.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/74710-cdb841247e57bd6d.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/47944-9bb14e5b153e3fd7.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/53551-dcf83da7e8a5b5f6.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/72027-99b6b3e51e30271c.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/84437-012b71aed031f42d.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/43563-9149cbb0adfe8610.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/87093-073d793675fe4dc6.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/95685-7e62fabd9b123f24.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/16946-35bfe6bc833b955b.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/55240-ef1959875e0d12b6.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/88118-7b714c5ea90036c2.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/81976-6ce7a6adc02ea92b.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/17646-617a314c335cefa9.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/78804-413443e25c6f0525.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/57257-569ff0f98c9fde70.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/22757-f6fd30b46ff7029b.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/90227-265ed8b613d5278e.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/1834-5c8282712c3c18de.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/61787-7c626b16c6ba03a1.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/32432-6a123c0c35c37ec4.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/68616-745d0f6e60900bbf.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/37601-be822fee4da32d91.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/67234-d5cfbbe42108c4e9.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/29289-df3336c29f3902f1.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/79515-8e67e13575c3d41f.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/35651-16eacd5d1f3abe4a.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/dynamic-github-ui--code-view--route-components-63ee8984e1013326.js" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/12047-580f2adaa1783240.js" />
-<script crossorigin="anonymous" type="module" src="https://github.githubassets.com/assets/code-view-808a36ea29427f0f.js" defer="defer"></script>
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/57257.ec145d4361bf6aae.module.css" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/37601.5511c2420cbc6e17.module.css" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/35651.7b7b86fe7f69d647.module.css" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/dynamic-github-ui--code-view--route-components.145881df533523ff.module.css" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/code-view.4f5e75daf7d00904.module.css" />
-
-
-  <title>Editing horse-racing-bot/app_streamlit.py at main · tszkit9-boop/horse-racing-bot</title>
-
-
-
-  <meta name="route-pattern" content="/:user_id/:repository/edit/*name(/*path)" data-turbo-transient>
-  <meta name="route-controller" content="blob" data-turbo-transient>
-  <meta name="route-action" content="edit" data-turbo-transient>
-  <meta name="fetch-nonce" content="v2:0cd25537-76a8-3885-05ff-8c902bf589a3">
-
-    
-  <meta name="current-catalog-service-hash" content="f3abb0cc802f3d7b95fc8762b94bdcb13bf39634c40c357301c4aa1d67a256fb">
-
-
-  <meta name="request-id" content="30A9:3D05CC:636018:6BB019:6A8C745F" data-turbo-transient="true" /><meta name="html-safe-nonce" content="1b6d8ff200dee537d85c05d64ffc61a905bac614b46ee3c2fe3624d818bdce71" data-turbo-transient="true" /><meta name="visitor-payload" content="eyJyZWZlcnJlciI6Imh0dHBzOi8vZ2l0aHViLmNvbS90c3praXQ5LWJvb3AvaG9yc2UtcmFjaW5nLWJvdC9ibG9iL21haW4vYXBwX3N0cmVhbWxpdC5weSIsInJlcXVlc3RfaWQiOiIzMEE5OjNEMDVDQzo2MzYwMTg6NkJCMDE5OjZBOEM3NDVGIiwidmlzaXRvcl9pZCI6Ijg0NzYxOTYwNjAxMjA2ODgyNDMiLCJyZWdpb25fZWRnZSI6InNvdXRoZWFzdGFzaWEiLCJyZWdpb25fcmVuZGVyIjoiaWFkIn0=" data-turbo-transient="true" /><meta name="visitor-hmac" content="60e66ab54786df10d44d177fd35d53e852b45198cdf142bdc77c281315c610e8" data-turbo-transient="true" />
-
-
-    <meta name="hovercard-subject-tag" content="repository:1341026980" data-turbo-transient>
-
-
-  <meta name="github-keyboard-shortcuts" content="repository,code-editor,copilot" data-turbo-transient="true" />
-  
-
-  <meta name="selected-link" value="repo_source" data-turbo-transient>
-  <link rel="assets" href="https://github.githubassets.com/">
-
-    <meta name="google-site-verification" content="Apib7-x98H0j5cPqHWwSMm6dNU4GmODRoqxLiDzdx9I">
-
-<meta name="octolytics-url" content="https://collector.github.com/github/collect" /><meta name="octolytics-actor-id" content="276705105" /><meta name="octolytics-actor-login" content="tszkit9-boop" /><meta name="octolytics-actor-hash" content="c0bf7078b90dc0741476a5eafc7808d10733c0d992cf7c1222e42983580f23a4" />
-
-
-
-
-
-  <meta name="analytics-location" content="/&lt;user-name&gt;/&lt;repo-name&gt;/blob/edit" data-turbo-transient="true" />
-
-  
-
-
-
-
-    <meta name="user-login" content="tszkit9-boop">
-
-  <link rel="sudo-modal" href="/sessions/sudo_modal">
-
-    <meta name="viewport" content="width=device-width">
-
-    
-
-      <meta name="description" content="Contribute to tszkit9-boop/horse-racing-bot development by creating an account on GitHub.">
-
-      <link rel="search" type="application/opensearchdescription+xml" href="/opensearch.xml" title="GitHub">
-
-    <link rel="fluid-icon" href="https://github.com/fluidicon.png" title="GitHub">
-    <meta property="fb:app_id" content="1401488693436528">
-    <meta name="apple-itunes-app" content="app-id=1477376905, app-argument=https://github.com/tszkit9-boop/horse-racing-bot/edit/main/app_streamlit.py" />
-
-      <meta name="twitter:image" content="https://opengraph.githubassets.com/109712c58672ce8fa63d90b9e6bbd1be01a8d4a8b8e2fcbf5b1c6cfbdc313c1d/tszkit9-boop/horse-racing-bot" /><meta name="twitter:site" content="@github" /><meta name="twitter:card" content="summary_large_image" /><meta name="twitter:title" content="Editing horse-racing-bot/app_streamlit.py at main · tszkit9-boop/horse-racing-bot" /><meta name="twitter:description" content="Contribute to tszkit9-boop/horse-racing-bot development by creating an account on GitHub." />
-  <meta property="og:image" content="https://opengraph.githubassets.com/109712c58672ce8fa63d90b9e6bbd1be01a8d4a8b8e2fcbf5b1c6cfbdc313c1d/tszkit9-boop/horse-racing-bot" /><meta property="og:image:alt" content="Contribute to tszkit9-boop/horse-racing-bot development by creating an account on GitHub." /><meta property="og:image:width" content="1200" /><meta property="og:image:height" content="600" /><meta property="og:site_name" content="GitHub" /><meta property="og:type" content="object" /><meta property="og:title" content="Editing horse-racing-bot/app_streamlit.py at main · tszkit9-boop/horse-racing-bot" /><meta property="og:url" content="https://github.com/tszkit9-boop/horse-racing-bot" /><meta property="og:description" content="Contribute to tszkit9-boop/horse-racing-bot development by creating an account on GitHub." />
-  
-
-
-      <link rel="shared-web-socket" href="wss://alive.github.com/_sockets/u/276705105/ws?session=eyJ2IjoiVjMiLCJ1IjoyNzY3MDUxMDUsInMiOjIyNDc3NTYwNzcsImMiOjI0OTI1NDM3MDksInQiOjE3ODc1ODk3Mjh9--9a35b4f4f6ddb22a19324fcaa6c5f4828a9351c89d938f3373bd05d772505f6f" data-refresh-url="/_alive" data-session-id="4832a6ffe28bac9973cb500195ee86adbc0dae2085749087860aa3272a3638c8">
-
-      <link rel="service-worker-src" href="/assets-cdn/worker/service-worker-35efd1a0e927624b.js?current_user=tszkit9-boop&amp;errors_url=https%3A%2F%2Fapi.github.com%2F_private%2Fbrowser%2Ferrors&amp;release=888b071bf0c43384d55671af93f9d2515bc50abf&amp;actor_id=276705105&amp;is_staff=false&amp;analytics_collector_url=https%3A%2F%2Fcollector.github.com%2Fgithub%2Fcollect">
-
-      <meta name="hostname" content="github.com">
-
-
-      <meta name="keyboard-shortcuts-preference" content="all">
-      <meta name="hovercards-preference" content="true">
-      <meta name="announcement-preference-hovercard" content="true">
-
-        <meta name="expected-hostname" content="github.com">
-
-
-  <meta http-equiv="x-pjax-version" content="da24dd1d6bda6c5c44861340219df693016fdce002d713ddc76fed06393ff1c8" data-turbo-track="reload">
-  <meta http-equiv="x-pjax-csp-version" content="2af6a6627810d190be616096b617c8f37a1419b9435f76190f0e0d7638222ac1" data-turbo-track="reload">
-  <meta http-equiv="x-pjax-css-version" content="cd96ae92d0acedf8663fab15af3d8d3ab9bb20e6ad6fd5dc5b20475f56124b33" data-turbo-track="reload">
-  <meta http-equiv="x-pjax-js-version" content="4c7918852276f4ba63a221f962fe5362ed5794cde567192fcb6d642101e0f02d" data-turbo-track="reload">
-
-  <meta name="turbo-cache-control" content="no-preview" data-turbo-transient="">
-
-      <meta name="turbo-cache-control" content="no-cache" data-turbo-transient>
-
-    <meta data-hydrostats="publish">
-
-  <meta name="go-import" content="github.com/tszkit9-boop/horse-racing-bot git https://github.com/tszkit9-boop/horse-racing-bot.git">
-
-  <meta name="octolytics-dimension-user_id" content="276705105" /><meta name="octolytics-dimension-user_login" content="tszkit9-boop" /><meta name="octolytics-dimension-repository_id" content="1341026980" /><meta name="octolytics-dimension-repository_nwo" content="tszkit9-boop/horse-racing-bot" /><meta name="octolytics-dimension-repository_public" content="true" /><meta name="octolytics-dimension-repository_is_fork" content="false" /><meta name="octolytics-dimension-repository_network_root_id" content="1341026980" /><meta name="octolytics-dimension-repository_network_root_nwo" content="tszkit9-boop/horse-racing-bot" />
-  <meta name="current-repo-nwo" content="tszkit9-boop/horse-racing-bot" />
-
-
-
-    
-
-    <meta name="turbo-body-classes" content="logged-in env-production page-responsive text-rendering-optimize-speed">
-  <meta name="disable-turbo" content="false">
-
-
-  <meta name="browser-stats-url" content="https://api.github.com/_private/browser/stats">
-
-
-  <meta name="browser-errors-url" content="https://api.github.com/_private/browser/errors">
-
-    <meta name="release" content="888b071bf0c43384d55671af93f9d2515bc50abf" data-turbo-track="reload">
-  <meta name="ui-target" content="full">
-
-  <link rel="mask-icon" href="https://github.githubassets.com/assets/pinned-octocat-093da3e6fa40.svg" color="#000000">
-  <link rel="alternate icon" class="js-site-favicon" type="image/png" href="https://github.githubassets.com/favicons/favicon.png">
-  <link rel="icon" class="js-site-favicon" type="image/svg+xml" href="https://github.githubassets.com/favicons/favicon.svg" data-base-href="https://github.githubassets.com/favicons/favicon">
-
-<meta name="theme-color" content="#1e2327">
-<meta name="color-scheme" content="light dark" />
-
-
-  <link rel="manifest" href="/manifest.json" crossOrigin="use-credentials">
-
-  </head>
-
-  <body class="logged-in env-production page-responsive text-rendering-optimize-speed" style="word-wrap: break-word;" >
-    <div data-turbo-body class="logged-in env-production page-responsive text-rendering-optimize-speed" style="word-wrap: break-word;" >
-      <div id="__primerPortalRoot__" style="z-index: 1000; position: absolute; width: 100%;" data-turbo-permanent></div>
-      
-
-    <div class="position-relative header-wrapper js-header-wrapper ">
-      <a href="#start-of-content" data-skip-target-assigned="false" class="tmp-p-3 color-bg-accent-emphasis color-fg-on-emphasis show-on-focus js-skip-to-content">Skip to content</a>
-
-      <span data-view-component="true" class="progress-pjax-loader Progress position-fixed width-full">
-    <span style="width: 0%;" data-view-component="true" class="Progress-item progress-pjax-loader-bar left-0 top-0 color-bg-accent-emphasis"></span>
-</span>      
-      <link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/30201-022f7fa868d59ba8.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/keyboard-shortcuts-dialog-0af30d58b2cdb457.js" fetchpriority="low" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/keyboard-shortcuts-dialog.b454cb3d92fe7657.module.css" />
-
-<react-partial
-  partial-name="keyboard-shortcuts-dialog"
-  data-ssr="false"
-  data-attempted-ssr="false"
-  data-react-profiling="false"
->
-  
-  <script type="application/json" data-target="react-partial.embeddedData">{"props":{"docsUrl":"https://docs.github.com/get-started/accessibility/keyboard-shortcuts"}}</script>
-  <div data-target="react-partial.reactRoot"></div>
-</react-partial>
-
-
-
-
-
-      
-
-          
-
-                  <link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/32367-68d1fb8d908a961c.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/39250-eec6a44e57540df4.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/14922-4ce98fc49f7ef002.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/74972-de8fb00c75024dfe.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/19520-d377556483a5f133.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/34924-bcd4fef8052ccf85.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/56331-a581d3f45214d5f6.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/34837-1849ff9e8ae0cc6a.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/91911-0a14fc0e5cefa04c.js" fetchpriority="low" />
-<link crossorigin="anonymous" rel="modulepreload" href="https://github.githubassets.com/assets/global-nav-bar-e59e29334c57ada0.js" fetchpriority="low" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/57257.ec145d4361bf6aae.module.css" />
-<link crossorigin="anonymous" media="all" rel="stylesheet" href="https://github.githubassets.com/assets/global-nav-bar.247bc635cd244ac0.module.css" />
-
-<react-partial
-  partial-name="global-nav-bar"
-  data-ssr="true"
-  data-attempted-ssr="true"
-  data-react-profiling="false"
->
-  
-  <script type="application/json" data-target="react-partial.embeddedData">{"props":{"contextRegion":{"crumbs":[{"crumb_type":"user","label":"tszkit9-boop","is_root":false,"href":"/tszkit9-boop"},{"crumb_type":"repository","label":"horse-racing-bot","is_root":false,"href":"/tszkit9-boop/horse-racing-bot"}],"localNavigation":[{"id":"code","icon":"code","label":"Code","href":"/tszkit9-boop/horse-racing-bot","selectedLinks":["repo_source","repo_downloads","repo_commits","repo_releases","repo_tags","repo_branches","repo_packages","repo_deployments","repo_attestations"],"popoverTarget":false,"commandId":"repositories:go-to-code","reactNav":{"appTarget":"code-view","anchor":"code-view-repo-link"},"turboNav":{"frame":"repo-content-turbo-frame"}},{"id":"issues","icon":"issue-opened","label":"Issues","href":"/tszkit9-boop/horse-racing-bot/issues","selectedLinks":["repo_issues","repo_labels","repo_milestones"],"count":0,"popoverTarget":false,"commandId":"repositories:go-to-issues","reactNav":{"appTarget":"issues-react","anchor":null},"turboNav":{"frame":"repo-content-turbo-frame"}},{"id":"pull-requests","icon":"git-pull-request","label":"Pull requests","href":"/tszkit9-boop/horse-racing-bot/pulls","selectedLinks":["repo_pulls","checks"],"count":0,"popoverTarget":false,"commandId":"repositories:go-to-pull-requests","reactNav":{"appTarget":null,"anchor":null},"turboNav":{"frame":"repo-content-turbo-frame"}},{"id":"agents","icon":"agent","label":"Agents","href":"/tszkit9-boop/horse-racing-bot/agents?author=tszkit9-boop","selectedLinks":["repo_agents","repo_agents_task"],"popoverTarget":false,"commandId":"repositories:go-to-agents","reactNav":{"appTarget":"repo-agents","anchor":null},"turboNav":{"frame":"repo-content-turbo-frame"}},{"id":"actions","icon":"play","label":"Actions","href":"/tszkit9-boop/horse-racing-bot/actions","selectedLinks":["repo_actions"],"popoverTarget":false,"commandId":"repositories:go-to-actions","reactNav":{"appTarget":null,"anchor":null},"turboNav":{"frame":"repo-content-turbo-frame"}},{"id":"projects","icon":"table","label":"Projects","href":"/tszkit9-boop/horse-racing-bot/projects","selectedLinks":["repo_projects","new_repo_project","repo_project"],"popoverTarget":false,"commandId":"repositories:go-to-projects","reactNav":{"appTarget":null,"anchor":null},"turboNav":{"frame":"repo-content-turbo-frame"}},{"id":"wiki","icon":"book","label":"Wiki","href":"/tszkit9-boop/horse-racing-bot/wiki","selectedLinks":["repo_wiki"],"popoverTarget":false,"commandId":"repositories:go-to-wiki","reactNav":{"appTarget":null,"anchor":null},"turboNav":{"frame":"repo-content-turbo-frame"}},{"id":"security-and-quality","icon":"shield","label":"Security and quality","href":"/tszkit9-boop/horse-racing-bot/security","selectedLinks":["security","overview","alerts","policy","token_scanning","code_scanning"],"count":3,"popoverTarget":false,"commandId":"repositories:go-to-security","reactNav":{"appTarget":null,"anchor":null},"turboNav":{"frame":"repo-content-turbo-frame"}},{"id":"insights","icon":"graph","label":"Insights","href":"/tszkit9-boop/horse-racing-bot/pulse","selectedLinks":["repo_graphs","repo_contributors","dependency_graph","dependabot_updates","pulse","people","community"],"popoverTarget":false,"commandId":"repositories:go-to-insights","reactNav":{"appTarget":null,"anchor":null},"turboNav":{"frame":"repo-content-turbo-frame"}},{"id":"settings","icon":"gear","label":"Settings","href":"/tszkit9-boop/horse-racing-bot/settings","selectedLinks":["code_review_limits","code_quality","codespaces_repository_settings","collaborators","custom_tabs","github_models_repo_settings","hooks","integration_installations","interaction_limits","issue_template_editor","key_links_settings","license_policy","notifications","repo_announcements","repo_branch_settings","repo_custom_properties","repo_keys_settings","repo_pages_settings","repo_protected_tags_settings","repo_rule_insights","repo_rule_insights_dashboard","repo_rules_bypass_requests","repo_rulesets","repo_settings_copilot_coding_guidelines","repo_settings_copilot_content_exclusion","repo_settings_copilot_dreams","repo_settings_copilot_internet_access","repo_settings_copilot_mcp","repo_settings_copilot_swe_agent","repo_settings","repo_suggestions_settings","reported_content","repository_actions_settings_add_new_runner","repository_actions_settings_general","repository_actions_settings_runner_details","repository_actions_settings_runners","repository_actions_settings","repository_actions_settings_policies","repository_actions_settings_oidc_configuration","repository_drives_settings","repository_environments","role_details","secrets_settings_actions","secrets_settings_agents","secrets_settings_codespaces","secrets_settings_dependabot","secrets","security_analysis","security_products"],"popoverTarget":false,"commandId":"repositories:go-to-settings","reactNav":{"appTarget":null,"anchor":null},"turboNav":{"frame":"repo-content-turbo-frame"}}],"localNavigationUpdateChannel":"eyJjIjoicmVwbzoxMzQxMDI2OTgwOnVzZXI6Mjc2NzA1MTA1OnNldHRpbmdzIiwidCI6MTc4NzU4OTcyN30=--14de16e0cec74bda25df55af988f92a2b719a8adf0a7b1d11b5673867fe8ef9a","selectedLink":null,"currentPath":"/tszkit9-boop/horse-racing-bot/edit/main/app_streamlit.py"},"userMenu":{"owner":{"login":"tszkit9-boop","name":null,"avatarUrl":"https://avatars.githubusercontent.com/u/276705105?v=4"}},"headerLogo":{"href":"/","aria-label":"Homepage "},"notifications":{"indicatorMode":"none","websocketChannel":"eyJjIjoibm90aWZpY2F0aW9uLWNoYW5nZWQ6Mjc2NzA1MTA1IiwidCI6MTc4NzU4OTcyOH0=--284c25d185f5c4baadcd4ac3ff50844ee584a3b94ee8238460297f7f045e6313","fetchIndicatorSrc":"/notifications/indicator","fetchIndicatorEnabled":true},"issues":{"href":"/issues"},"pulls":{"href":"/pulls"},"contributedRepos":{"href":"/repos"},"copilot":{"show":true,"showAgentsButton":false,"copilotChatUrl":"/github-copilot/chat?skip_anchor=true","copilotApiUrl":"https://api.individual.githubcopilot.com"},"search":{"show":true,"showCommandPalette":false,"isSearchPage":false,"isJumpToSearch":false,"searchContext":{"scope":"repo:tszkit9-boop/horse-racing-bot","current_repo_name":"horse-racing-bot","current_repo_nwo":"tszkit9-boop/horse-racing-bot","user_id":"tszkit9-boop"}},"enterpriseBanner":{"show":false},"globalTransactionalMessage":[],"payloadsUrl":"/_global-navigation/payloads.json?v=1"}}</script>
-  <div data-target="react-partial.reactRoot"><link rel="preload" as="image" href="https://avatars.githubusercontent.com/u/276705105?v=4&amp;size=64"/><header role="banner" aria-label="Global navigation menu" data-component="Stack" class="GlobalNav styles-module__appHeader__YzYWk prc-Stack-Stack-UQ9k6" data-gap="none" data-direction="vertical" data-align="stretch" data-wrap="nowrap" data-justify="start" data-padding="none"><div data-component="Stack" class="prc-Stack-Stack-UQ9k6" data-direction="horizontal" data-align="center" data-wrap="nowrap" data-justify="center" data-padding="none"><div data-testid="top-nav-left" data-component="Stack" class="styles-module__left__Fylw7 styles-module__withLocalNavigation__rjTJ_ prc-Stack-Stack-UQ9k6" data-gap="condensed" data-direction="horizontal" data-align="stretch" data-wrap="nowrap" data-justify="start" data-padding="normal"><div data-loading-wrapper="true"><button data-component="IconButton" type="button" aria-haspopup="dialog" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_1b5_"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-three-bars" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M1 2.75A.75.75 0 0 1 1.75 2h12.5a.75.75 0 0 1 0 1.5H1.75A.75.75 0 0 1 1 2.75Zm0 5A.75.75 0 0 1 1.75 7h12.5a.75.75 0 0 1 0 1.5H1.75A.75.75 0 0 1 1 7.75ZM1.75 12h12.5a.75.75 0 0 1 0 1.5H1.75a.75.75 0 0 1 0-1.5Z"></path></svg></button></div><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true" id="_R_1b5_">Open menu</span><a data-component="IconButton" type="button" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderHome__nkA_U prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_1j5_" href="/" data-discover="true"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-mark-github" viewBox="0 0 24 24" width="32" height="32" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M10.226 17.284c-2.965-.36-5.054-2.493-5.054-5.256 0-1.123.404-2.336 1.078-3.144-.292-.741-.247-2.314.09-2.965.898-.112 2.111.36 2.83 1.01.853-.269 1.752-.404 2.853-.404 1.1 0 1.999.135 2.807.382.696-.629 1.932-1.1 2.83-.988.315.606.36 2.179.067 2.942.72.854 1.101 2 1.101 3.167 0 2.763-2.089 4.852-5.098 5.234.763.494 1.28 1.572 1.28 2.807v2.336c0 .674.561 1.056 1.235.786 4.066-1.55 7.255-5.615 7.255-10.646C23.5 6.188 18.334 1 11.978 1 5.62 1 .5 6.188.5 12.545c0 4.986 3.167 9.12 7.435 10.669.606.225 1.19-.18 1.19-.786V20.63a2.9 2.9 0 0 1-1.078.224c-1.483 0-2.359-.808-2.987-2.313-.247-.607-.517-.966-1.034-1.033-.27-.023-.359-.135-.359-.27 0-.27.45-.471.898-.471.652 0 1.213.404 1.797 1.235.45.651.921.943 1.483.943.561 0 .92-.202 1.437-.719.382-.381.674-.718.944-.943"></path></svg></a><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true"><span id="_R_1j5_">Homepage <span class="prc-src-InternalVisuallyHidden-2YaI6">(<!-- -->g then d<!-- -->)</span></span><span class="prc-TooltipV2-KeybindingHintContainer-Ymj-3 prc-TooltipV2-HasTextBefore-fdOXj" aria-hidden="true" data-component="Tooltip.KeybindingHintContainer"><kbd class="prc-KeybindingHint-KeybindingHint-qpYIs prc-Text-Text-9mHv3" data-component="KeybindingHint" data-testid="keybinding-hint"><span class="prc-components-Chord-DdhWN prc-components-ChordOnEmphasis-O-4BS prc-components-ChordSmall-c-P-x prc-Text-Text-9mHv3" data-component="Text" data-kbd-chord="true"> <span class="prc-src-InternalVisuallyHidden-2YaI6">g</span><span aria-hidden="true">G</span></span><span class="prc-src-InternalVisuallyHidden-2YaI6">then</span> <span class="prc-components-Chord-DdhWN prc-components-ChordOnEmphasis-O-4BS prc-components-ChordSmall-c-P-x prc-Text-Text-9mHv3" data-component="Text" data-kbd-chord="true"> <span class="prc-src-InternalVisuallyHidden-2YaI6">d</span><span aria-hidden="true">D</span></span></kbd></span></span><div class="d-none"></div></div><div data-testid="top-nav-center" data-component="Stack" class="styles-module__center__R3QRv styles-module__withLocalNavigation__rjTJ_ prc-Stack-Stack-UQ9k6" data-gap="condensed" data-direction="horizontal" data-align="stretch" data-wrap="nowrap" data-justify="start" data-padding="normal"><nav class="styles-module__contextRegion__VbSp2 prc-Breadcrumbs-BreadcrumbsBase-3Gb-B" aria-label="Breadcrumbs" data-overflow="menu" data-variant="normal" data-component="Breadcrumbs"><ol class="prc-Breadcrumbs-BreadcrumbsList-BKjpe"><li class="prc-Breadcrumbs-ItemWrapper-k0NLn"><a class="styles-module__contextCrumb__IzGIq prc-Breadcrumbs-Item-jcraJ" data-component="Breadcrumbs.Item" href="/tszkit9-boop" data-discover="true"><span class="">tszkit9-boop</span></a></li><li class="prc-Breadcrumbs-ItemWrapper-k0NLn"><a class="styles-module__contextCrumb__IzGIq styles-module__contextCrumbLast__tI2e3 styles-module__repoPickerCrumb__dk81Q prc-Breadcrumbs-Item-jcraJ" data-component="Breadcrumbs.Item" href="/tszkit9-boop/horse-racing-bot" data-discover="true">horse-racing-bot</a><div class="d-none"></div><button data-component="IconButton" type="button" aria-haspopup="true" aria-expanded="false" tabindex="0" class="prc-Button-ButtonBase-9n-Xk styles-module__contextCrumb__IzGIq styles-module__repoPickerDropdownButton__WjHYX prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="small" data-variant="invisible" aria-labelledby="_R_3eqd5_" id="_R_eqd5_"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-triangle-down" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="m4.427 7.427 3.396 3.396a.25.25 0 0 0 .354 0l3.396-3.396A.25.25 0 0 0 11.396 7H4.604a.25.25 0 0 0-.177.427Z"></path></svg></button><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true"><span id="_R_3eqd5_">Switch repository<span class="prc-src-InternalVisuallyHidden-2YaI6">(<!-- -->alt shift r<!-- -->)</span></span><span class="prc-TooltipV2-KeybindingHintContainer-Ymj-3 prc-TooltipV2-HasTextBefore-fdOXj" aria-hidden="true" data-component="Tooltip.KeybindingHintContainer"><kbd class="prc-KeybindingHint-KeybindingHint-qpYIs prc-Text-Text-9mHv3" data-component="KeybindingHint" data-testid="keybinding-hint"><span class="prc-components-Chord-DdhWN prc-components-ChordOnEmphasis-O-4BS prc-components-ChordSmall-c-P-x prc-Text-Text-9mHv3" data-component="Text" data-kbd-chord="true"> <span class="prc-src-InternalVisuallyHidden-2YaI6">alt</span><span aria-hidden="true">Alt</span> <span class="prc-src-InternalVisuallyHidden-2YaI6">shift</span><span aria-hidden="true">⇧</span> <span class="prc-src-InternalVisuallyHidden-2YaI6">r</span><span aria-hidden="true">R</span></span></kbd></span></span></li></ol></nav><div class="Search-module__searchButtonGroup__aetw5 prc-ButtonGroup-ButtonGroup-vFUrY" data-component="ButtonGroup"><div class="prc-ButtonGroup-Item-PqvDl"><button data-component="Button" type="button" aria-label="Open quick search dialog, type / to search" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ Search-module__searchButton__aiE0a" data-loading="false" data-size="medium" data-variant="invisible"><span data-component="buttonContent" data-align="center" class="prc-Button-ButtonContent-Iohp5"><span data-component="leadingVisual" class="prc-Button-Visual-YNt2F prc-Button-VisualWrap-E4cnq"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-search" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"></path></svg></span><span data-component="text" class="prc-Button-Label-FWkx3"><span class="Search-module__placeholder__p9hbG Search-module__text__veSYi Search-module__value__TFoak">Type <kbd class="Search-module__kbd__WCskr">/</kbd> to search</span></span></span></button></div><div class="prc-ButtonGroup-Item-PqvDl"></div></div><button data-component="IconButton" type="button" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ Search-module__smallSearchButton___8Gvn prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_al5_"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-search" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"></path></svg></button><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true"><span id="_R_al5_">Open quick search dialog, type / to search<span class="prc-src-InternalVisuallyHidden-2YaI6">(<!-- -->forward slash<!-- -->)</span></span><span class="prc-TooltipV2-KeybindingHintContainer-Ymj-3 prc-TooltipV2-HasTextBefore-fdOXj" aria-hidden="true" data-component="Tooltip.KeybindingHintContainer"><kbd class="prc-KeybindingHint-KeybindingHint-qpYIs prc-Text-Text-9mHv3" data-component="KeybindingHint" data-testid="keybinding-hint"><span class="prc-components-Chord-DdhWN prc-components-ChordOnEmphasis-O-4BS prc-components-ChordSmall-c-P-x prc-Text-Text-9mHv3" data-component="Text" data-kbd-chord="true"> <span class="prc-src-InternalVisuallyHidden-2YaI6">forward slash</span><span aria-hidden="true">/</span></span></kbd></span></span><div class="d-none"></div></div><div data-testid="top-nav-right" data-component="Stack" class="styles-module__right__mlBQg styles-module__withLocalNavigation__rjTJ_ styles-module__rightWithResponsiveCreateButton__SKn2W prc-Stack-Stack-UQ9k6" data-gap="condensed" data-direction="horizontal" data-align="center" data-wrap="nowrap" data-justify="start" data-padding="normal"><div data-testid="top-bar-actions" data-component="Stack" class="prc-Stack-Stack-UQ9k6" data-gap="condensed" data-direction="horizontal" data-align="center" data-wrap="nowrap" data-justify="start" data-padding="none"><div class="hide-sm hide-md"><div class="CopilotItems-module__Wrapper__BFG9q"><div class="prc-ButtonGroup-ButtonGroup-vFUrY" data-component="ButtonGroup"><div class="prc-ButtonGroup-Item-PqvDl"><a data-component="IconButton" type="button" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_1aif5_" href="/copilot" data-discover="true"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-copilot" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M7.998 15.035c-4.562 0-7.873-2.914-7.998-3.749V9.338c.085-.628.677-1.686 1.588-2.065.013-.07.024-.143.036-.218.029-.183.06-.384.126-.612-.201-.508-.254-1.084-.254-1.656 0-.87.128-1.769.693-2.484.579-.733 1.494-1.124 2.724-1.261 1.206-.134 2.262.034 2.944.765.05.053.096.108.139.165.044-.057.094-.112.143-.165.682-.731 1.738-.899 2.944-.765 1.23.137 2.145.528 2.724 1.261.566.715.693 1.614.693 2.484 0 .572-.053 1.148-.254 1.656.066.228.098.429.126.612.012.076.024.148.037.218.924.385 1.522 1.471 1.591 2.095v1.872c0 .766-3.351 3.795-8.002 3.795Zm0-1.485c2.28 0 4.584-1.11 5.002-1.433V7.862l-.023-.116c-.49.21-1.075.291-1.727.291-1.146 0-2.059-.327-2.71-.991A3.222 3.222 0 0 1 8 6.303a3.24 3.24 0 0 1-.544.743c-.65.664-1.563.991-2.71.991-.652 0-1.236-.081-1.727-.291l-.023.116v4.255c.419.323 2.722 1.433 5.002 1.433ZM6.762 2.83c-.193-.206-.637-.413-1.682-.297-1.019.113-1.479.404-1.713.7-.247.312-.369.789-.369 1.554 0 .793.129 1.171.308 1.371.162.181.519.379 1.442.379.853 0 1.339-.235 1.638-.54.315-.322.527-.827.617-1.553.117-.935-.037-1.395-.241-1.614Zm4.155-.297c-1.044-.116-1.488.091-1.681.297-.204.219-.359.679-.242 1.614.091.726.303 1.231.618 1.553.299.305.784.54 1.638.54.922 0 1.28-.198 1.442-.379.179-.2.308-.578.308-1.371 0-.765-.123-1.242-.37-1.554-.233-.296-.693-.587-1.713-.7Z"></path><path d="M6.25 9.037a.75.75 0 0 1 .75.75v1.501a.75.75 0 0 1-1.5 0V9.787a.75.75 0 0 1 .75-.75Zm4.25.75v1.501a.75.75 0 0 1-1.5 0V9.787a.75.75 0 0 1 1.5 0Z"></path></svg></a><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true" id="_R_1aif5_">Chat with Copilot</span></div><div class="prc-ButtonGroup-Item-PqvDl"><div class="d-none"></div><button data-component="ActionMenu.Button" type="button" aria-label="Open Copilot…" aria-haspopup="true" aria-expanded="false" tabindex="0" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ CopilotItems-module__CopilotMenu__DVdfE" data-loading="false" data-size="medium" data-variant="invisible" id="_R_2iif5_"><span data-component="buttonContent" data-align="center" class="prc-Button-ButtonContent-Iohp5"><span data-component="leadingVisual" class="prc-Button-Visual-YNt2F prc-Button-VisualWrap-E4cnq"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-copilot" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M7.998 15.035c-4.562 0-7.873-2.914-7.998-3.749V9.338c.085-.628.677-1.686 1.588-2.065.013-.07.024-.143.036-.218.029-.183.06-.384.126-.612-.201-.508-.254-1.084-.254-1.656 0-.87.128-1.769.693-2.484.579-.733 1.494-1.124 2.724-1.261 1.206-.134 2.262.034 2.944.765.05.053.096.108.139.165.044-.057.094-.112.143-.165.682-.731 1.738-.899 2.944-.765 1.23.137 2.145.528 2.724 1.261.566.715.693 1.614.693 2.484 0 .572-.053 1.148-.254 1.656.066.228.098.429.126.612.012.076.024.148.037.218.924.385 1.522 1.471 1.591 2.095v1.872c0 .766-3.351 3.795-8.002 3.795Zm0-1.485c2.28 0 4.584-1.11 5.002-1.433V7.862l-.023-.116c-.49.21-1.075.291-1.727.291-1.146 0-2.059-.327-2.71-.991A3.222 3.222 0 0 1 8 6.303a3.24 3.24 0 0 1-.544.743c-.65.664-1.563.991-2.71.991-.652 0-1.236-.081-1.727-.291l-.023.116v4.255c.419.323 2.722 1.433 5.002 1.433ZM6.762 2.83c-.193-.206-.637-.413-1.682-.297-1.019.113-1.479.404-1.713.7-.247.312-.369.789-.369 1.554 0 .793.129 1.171.308 1.371.162.181.519.379 1.442.379.853 0 1.339-.235 1.638-.54.315-.322.527-.827.617-1.553.117-.935-.037-1.395-.241-1.614Zm4.155-.297c-1.044-.116-1.488.091-1.681.297-.204.219-.359.679-.242 1.614.091.726.303 1.231.618 1.553.299.305.784.54 1.638.54.922 0 1.28-.198 1.442-.379.179-.2.308-.578.308-1.371 0-.765-.123-1.242-.37-1.554-.233-.296-.693-.587-1.713-.7Z"></path><path d="M6.25 9.037a.75.75 0 0 1 .75.75v1.501a.75.75 0 0 1-1.5 0V9.787a.75.75 0 0 1 .75-.75Zm4.25.75v1.501a.75.75 0 0 1-1.5 0V9.787a.75.75 0 0 1 1.5 0Z"></path></svg></span></span><span data-component="trailingAction" class="prc-Button-Visual-YNt2F prc-Button-VisualWrap-E4cnq"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-triangle-down" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="m4.427 7.427 3.396 3.396a.25.25 0 0 0 .354 0l3.396-3.396A.25.25 0 0 0 11.396 7H4.604a.25.25 0 0 0-.177.427Z"></path></svg></span></button></div></div></div></div><div class="styles-module__itemDivider__nunbs hide-sm hide-md"></div><button data-component="ActionMenu.Button" type="button" aria-haspopup="true" aria-expanded="false" tabindex="0" class="prc-Button-ButtonBase-9n-Xk GlobalCreateMenu-module__actionMenuButton__Hj_iB GlobalCreateMenu-module__responsiveCreateMenu__zTmSP hide-sm" data-loading="false" data-size="medium" data-variant="invisible" aria-labelledby="global-create-menu-tooltip-_R_6f5_" id="_R_mf5_"><span data-component="buttonContent" data-align="center" class="prc-Button-ButtonContent-Iohp5"><span data-component="leadingVisual" class="prc-Button-Visual-YNt2F prc-Button-VisualWrap-E4cnq"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-plus" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z"></path></svg></span></span><span data-component="trailingAction" class="prc-Button-Visual-YNt2F prc-Button-VisualWrap-E4cnq"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-triangle-down" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="m4.427 7.427 3.396 3.396a.25.25 0 0 0 .354 0l3.396-3.396A.25.25 0 0 0 11.396 7H4.604a.25.25 0 0 0-.177.427Z"></path></svg></span></button><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true" id="global-create-menu-tooltip-_R_6f5_">Create new...</span><div data-component="Stack" class="hide-sm hide-md prc-Stack-Stack-UQ9k6" data-gap="condensed" data-direction="horizontal" data-align="center" data-wrap="nowrap" data-justify="start" data-padding="none"><a data-component="IconButton" type="button" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_2of5_" href="/issues" data-discover="true"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-issue-opened" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"></path><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"></path></svg></a><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true" id="_R_2of5_">All issues</span><a data-component="IconButton" type="button" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_38f5_" href="/pulls" data-discover="true"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-git-pull-request" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"></path></svg></a><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true" id="_R_38f5_">All pull requests</span><a data-component="IconButton" type="button" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_3of5_" href="/repos" data-discover="true"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-repo" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8ZM5 12.25a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25v3.25a.25.25 0 0 1-.4.2l-1.45-1.087a.249.249 0 0 0-.3 0L5.4 15.7a.25.25 0 0 1-.4-.2Z"></path></svg></a><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true" id="_R_3of5_">All repositories</span><div class="d-none"></div></div></div><a data-component="IconButton" type="button" class="prc-Button-ButtonBase-9n-Xk styles-module__appHeaderButton__axedQ prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_2n5_" href="/notifications" data-discover="true"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-inbox" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M2.8 2.06A1.75 1.75 0 0 1 4.41 1h7.18c.7 0 1.333.417 1.61 1.06l2.74 6.395c.04.093.06.194.06.295v4.5A1.75 1.75 0 0 1 14.25 15H1.75A1.75 1.75 0 0 1 0 13.25v-4.5c0-.101.02-.202.06-.295Zm1.61.44a.25.25 0 0 0-.23.152L1.887 8H4.75a.75.75 0 0 1 .6.3L6.625 10h2.75l1.275-1.7a.75.75 0 0 1 .6-.3h2.863L11.82 2.652a.25.25 0 0 0-.23-.152Zm10.09 7h-2.875l-1.275 1.7a.75.75 0 0 1-.6.3h-3.5a.75.75 0 0 1-.6-.3L4.375 9.5H1.5v3.75c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25Z"></path></svg></a><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true"><span id="_R_2n5_">You have no unread notifications<span class="prc-src-InternalVisuallyHidden-2YaI6">(<!-- -->g then n<!-- -->)</span></span><span class="prc-TooltipV2-KeybindingHintContainer-Ymj-3 prc-TooltipV2-HasTextBefore-fdOXj" aria-hidden="true" data-component="Tooltip.KeybindingHintContainer"><kbd class="prc-KeybindingHint-KeybindingHint-qpYIs prc-Text-Text-9mHv3" data-component="KeybindingHint" data-testid="keybinding-hint"><span class="prc-components-Chord-DdhWN prc-components-ChordOnEmphasis-O-4BS prc-components-ChordSmall-c-P-x prc-Text-Text-9mHv3" data-component="Text" data-kbd-chord="true"> <span class="prc-src-InternalVisuallyHidden-2YaI6">g</span><span aria-hidden="true">G</span></span><span class="prc-src-InternalVisuallyHidden-2YaI6">then</span> <span class="prc-components-Chord-DdhWN prc-components-ChordOnEmphasis-O-4BS prc-components-ChordSmall-c-P-x prc-Text-Text-9mHv3" data-component="Text" data-kbd-chord="true"> <span class="prc-src-InternalVisuallyHidden-2YaI6">n</span><span aria-hidden="true">N</span></span></kbd></span></span><div class="d-none"></div><div class="GlobalNavUserMenu-module__container__NaVIt"><button data-component="IconButton" type="button" aria-haspopup="menu" data-login="tszkit9-boop" class="prc-Button-ButtonBase-9n-Xk GlobalNavUserMenu-module__anchor__Dcej6 prc-Button-IconButton-fyge7" data-loading="false" data-no-visuals="true" data-size="medium" data-variant="invisible" aria-labelledby="_R_av5_"><img data-component="Avatar" class="prc-Avatar-Avatar-0xaUi" alt="User avatar" width="32" height="32" style="--avatarSize-regular:32px" src="https://avatars.githubusercontent.com/u/276705105?v=4&amp;size=64" data-testid="github-avatar"/></button><span class="prc-TooltipV2-Tooltip-tLeuB" data-direction="s" data-component="Tooltip" aria-hidden="true" id="_R_av5_">Open user navigation menu</span></div></div></div><h2 class="prc-src-InternalVisuallyHidden-2YaI6">Repository navigation</h2><nav class="prc-components-UnderlineWrapper-eT-Yj prc-UnderlineNav-UnderlineWrapper-GWONT LocalNavigation-module__LocalNavigation__b0Xc0" aria-label="Repository" data-variant="inset" data-overflow-mode="wrap" data-hide-icons-breakpoint="medium"><ul class="prc-UnderlineNav-ItemsList-oj8gN prc-components-UnderlineItemList-xKlKC" role="list"><li role="presentation" aria-hidden="true" class="prc-UnderlineNav-WrapSpacer--aLgz"></li><li class="prc-UnderlineNav-UnderlineNavItem-syRjR"><a href="/tszkit9-boop/horse-racing-bot" aria-current="page" data-tab-item="code" data-react-nav="code-view" data-react-nav-anchor="code-view-repo-link" data-turbo-frame="repo-content-turbo-frame" class="prc-components-UnderlineItem-7fP-n" data-discover="true"><span data-component="icon"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-code" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="m11.28 3.22 4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.749.749 0 0 1-1.275-.326.749.749 0 0 1 .215-.734L13.94 8l-3.72-3.72a.749.749 0 0 1 .326-1.275.749.749 0 0 1 .734.215Zm-6.56 0a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042L2.06 8l3.72 3.72a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L.47 8.53a.75.75 0 0 1 0-1.06Z"></path></svg></span><span data-component="text" data-content="Code">Code</span></a></li><li class="prc-UnderlineNav-UnderlineNavItem-syRjR"><a href="/tszkit9-boop/horse-racing-bot/issues" data-tab-item="issues" data-react-nav="issues-react" data-turbo-frame="repo-content-turbo-frame" class="prc-components-UnderlineItem-7fP-n" data-discover="true"><span data-component="icon"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-issue-opened" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"></path><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"></path></svg></span><span data-component="text" data-content="Issues">Issues</span></a></li><li class="prc-UnderlineNav-UnderlineNavItem-syRjR"><a href="/tszkit9-boop/horse-racing-bot/pulls" data-tab-item="pull-requests" data-turbo-frame="repo-content-turbo-frame" class="prc-components-UnderlineItem-7fP-n" data-discover="true"><span data-component="icon"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-git-pull-request" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"></path></svg></span><span data-component="text" data-content="Pull requests">Pull requests</span></a></li><li class="prc-UnderlineNav-UnderlineNavItem-syRjR"><a href="/tszkit9-boop/horse-racing-bot/agents?author=tszkit9-boop" data-tab-item="agents" data-react-nav="repo-agents" data-turbo-frame="repo-content-turbo-frame" class="prc-components-UnderlineItem-7fP-n" data-discover="true"><span data-component="icon"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-agent" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M14.5 8.9v-.052A2.956 2.956 0 0 0 11.542 5.9a.815.815 0 0 1-.751-.501l-.145-.348A3.496 3.496 0 0 0 7.421 2.9h-.206a3.754 3.754 0 0 0-3.736 4.118l.011.121a.822.822 0 0 1-.619.879A1.81 1.81 0 0 0 1.5 9.773v.14c0 1.097.89 1.987 1.987 1.987H4.5a.75.75 0 0 1 0 1.5H3.487A3.487 3.487 0 0 1 0 9.913v-.14C0 8.449.785 7.274 1.963 6.75A5.253 5.253 0 0 1 7.215 1.4h.206a4.992 4.992 0 0 1 4.586 3.024A4.455 4.455 0 0 1 16 8.848V8.9a.75.75 0 0 1-1.5 0Z"></path><path d="m8.38 7.67 2.25 2.25a.749.749 0 0 1 0 1.061L8.38 13.23a.749.749 0 1 1-1.06-1.06l1.719-1.72L7.32 8.731A.75.75 0 0 1 8.38 7.67ZM15 13.45h-3a.75.75 0 0 1 0-1.5h3a.75.75 0 0 1 0 1.5Z"></path></svg></span><span data-component="text" data-content="Agents">Agents</span></a></li><li class="prc-UnderlineNav-UnderlineNavItem-syRjR"><a href="/tszkit9-boop/horse-racing-bot/actions" data-tab-item="actions" data-turbo-frame="repo-content-turbo-frame" class="prc-components-UnderlineItem-7fP-n" data-discover="true"><span data-component="icon"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-play" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm4.879-2.773 4.264 2.559a.25.25 0 0 1 0 .428l-4.264 2.559A.25.25 0 0 1 6 10.559V5.442a.25.25 0 0 1 .379-.215Z"></path></svg></span><span data-component="text" data-content="Actions">Actions</span></a></li><li class="prc-UnderlineNav-UnderlineNavItem-syRjR"><a href="/tszkit9-boop/horse-racing-bot/projects" data-tab-item="projects" data-turbo-frame="repo-content-turbo-frame" class="prc-components-UnderlineItem-7fP-n" data-discover="true"><span data-component="icon"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-table" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M0 1.75C0 .784.784 0 1.75 0h12.5C15.216 0 16 .784 16 1.75v12.5A1.75 1.75 0 0 1 14.25 16H1.75A1.75 1.75 0 0 1 0 14.25ZM6.5 6.5v8h7.75a.25.25 0 0 0 .25-.25V6.5Zm8-1.5V1.75a.25.25 0 0 0-.25-.25H6.5V5Zm-13 1.5v7.75c0 .138.112.25.25.25H5v-8ZM5 5V1.5H1.75a.25.25 0 0 0-.25.25V5Z"></path></svg></span><span data-component="text" data-content="Projects">Projects</span></a></li><li class="prc-UnderlineNav-UnderlineNavItem-syRjR"><a href="/tszkit9-boop/horse-racing-bot/wiki" data-tab-item="wiki" data-turbo-frame="repo-content-turbo-frame" class="prc-components-UnderlineItem-7fP-n" data-discover="true"><span data-component="icon"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-book" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M0 1.75A.75.75 0 0 1 .75 1h4.253c1.227 0 2.317.59 3 1.501A3.743 3.743 0 0 1 11.006 1h4.245a.75.75 0 0 1 .75.75v10.5a.75.75 0 0 1-.75.75h-4.507a2.25 2.25 0 0 0-1.591.659l-.622.621a.75.75 0 0 1-1.06 0l-.622-.621A2.25 2.25 0 0 0 5.258 13H.75a.75.75 0 0 1-.75-.75Zm7.251 10.324.004-5.073-.002-2.253A2.25 2.25 0 0 0 5.003 2.5H1.5v9h3.757a3.75 3.75 0 0 1 1.994.574ZM8.755 4.75l-.004 7.322a3.752 3.752 0 0 1 1.992-.572H14.5v-9h-3.495a2.25 2.25 0 0 0-2.25 2.25Z"></path></svg></span><span data-component="text" data-content="Wiki">Wiki</span></a></li><li class="prc-UnderlineNav-UnderlineNavItem-syRjR"><a href="/tszkit9-boop/horse-racing-bot/security" data-tab-item="security-and-quality" data-turbo-frame="repo-content-turbo-frame" class="prc-components-UnderlineItem-7fP-n" data-discover="true"><span data-component="icon"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-shield" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M7.467.133a1.748 1.748 0 0 1 1.066 0l5.25 1.68A1.75 1.75 0 0 1 15 3.48V7c0 1.566-.32 3.182-1.303 4.682-.983 1.498-2.585 2.813-5.032 3.855a1.697 1.697 0 0 1-1.33 0c-2.447-1.042-4.049-2.357-5.032-3.855C1.32 10.182 1 8.566 1 7V3.48a1.75 1.75 0 0 1 1.217-1.667Zm.61 1.429a.25.25 0 0 0-.153 0l-5.25 1.68a.25.25 0 0 0-.174.238V7c0 1.358.275 2.666 1.057 3.86.784 1.194 2.121 2.34 4.366 3.297a.196.196 0 0 0 .154 0c2.245-.956 3.582-2.104 4.366-3.298C13.225 9.666 13.5 8.36 13.5 7V3.48a.251.251 0 0 0-.174-.237l-5.25-1.68ZM8.75 4.75v3a.75.75 0 0 1-1.5 0v-3a.75.75 0 0 1 1.5 0ZM9 10.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"></path></svg></span><span data-component="text" data-content="Security and quality">Security and quality</span><span data-component="counter"><span aria-hidden="true" data-variant="secondary" data-component="CounterLabel" class="prc-CounterLabel-CounterLabel-X-kRU">3</span><span class="prc-VisuallyHidden-VisuallyHidden-Q0qSB"> (<!-- -->3<!-- -->)</span></span></a></li><li class="prc-UnderlineNav-UnderlineNavItem-syRjR"><a href="/tszkit9-boop/horse-racing-bot/pulse" data-tab-item="insights" data-turbo-frame="repo-content-turbo-frame" class="prc-components-UnderlineItem-7fP-n" data-discover="true"><span data-component="icon"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-graph" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M1.5 1.75V13.5h13.75a.75.75 0 0 1 0 1.5H.75a.75.75 0 0 1-.75-.75V1.75a.75.75 0 0 1 1.5 0Zm14.28 2.53-5.25 5.25a.75.75 0 0 1-1.06 0L7 7.06 4.28 9.78a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042l3.25-3.25a.75.75 0 0 1 1.06 0L10 7.94l4.72-4.72a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042Z"></path></svg></span><span data-component="text" data-content="Insights">Insights</span></a></li><li class="prc-UnderlineNav-UnderlineNavItem-syRjR"><a href="/tszkit9-boop/horse-racing-bot/settings" data-tab-item="settings" data-turbo-frame="repo-content-turbo-frame" class="prc-components-UnderlineItem-7fP-n" data-discover="true"><span data-component="icon"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-gear" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="M8 0a8.2 8.2 0 0 1 .701.031C9.444.095 9.99.645 10.16 1.29l.288 1.107c.018.066.079.158.212.224.231.114.454.243.668.386.123.082.233.09.299.071l1.103-.303c.644-.176 1.392.021 1.82.63.27.385.506.792.704 1.218.315.675.111 1.422-.364 1.891l-.814.806c-.049.048-.098.147-.088.294.016.257.016.515 0 .772-.01.147.038.246.088.294l.814.806c.475.469.679 1.216.364 1.891a7.977 7.977 0 0 1-.704 1.217c-.428.61-1.176.807-1.82.63l-1.102-.302c-.067-.019-.177-.011-.3.071a5.909 5.909 0 0 1-.668.386c-.133.066-.194.158-.211.224l-.29 1.106c-.168.646-.715 1.196-1.458 1.26a8.006 8.006 0 0 1-1.402 0c-.743-.064-1.289-.614-1.458-1.26l-.289-1.106c-.018-.066-.079-.158-.212-.224a5.738 5.738 0 0 1-.668-.386c-.123-.082-.233-.09-.299-.071l-1.103.303c-.644.176-1.392-.021-1.82-.63a8.12 8.12 0 0 1-.704-1.218c-.315-.675-.111-1.422.363-1.891l.815-.806c.05-.048.098-.147.088-.294a6.214 6.214 0 0 1 0-.772c.01-.147-.038-.246-.088-.294l-.815-.806C.635 6.045.431 5.298.746 4.623a7.92 7.92 0 0 1 .704-1.217c.428-.61 1.176-.807 1.82-.63l1.102.302c.067.019.177.011.3-.071.214-.143.437-.272.668-.386.133-.066.194-.158.211-.224l.29-1.106C6.009.645 6.556.095 7.299.03 7.53.01 7.764 0 8 0Zm-.571 1.525c-.036.003-.108.036-.137.146l-.289 1.105c-.147.561-.549.967-.998 1.189-.173.086-.34.183-.5.29-.417.278-.97.423-1.529.27l-1.103-.303c-.109-.03-.175.016-.195.045-.22.312-.412.644-.573.99-.014.031-.021.11.059.19l.815.806c.411.406.562.957.53 1.456a4.709 4.709 0 0 0 0 .582c.032.499-.119 1.05-.53 1.456l-.815.806c-.081.08-.073.159-.059.19.162.346.353.677.573.989.02.03.085.076.195.046l1.102-.303c.56-.153 1.113-.008 1.53.27.161.107.328.204.501.29.447.222.85.629.997 1.189l.289 1.105c.029.109.101.143.137.146a6.6 6.6 0 0 0 1.142 0c.036-.003.108-.036.137-.146l.289-1.105c.147-.561.549-.967.998-1.189.173-.086.34-.183.5-.29.417-.278.97-.423 1.529-.27l1.103.303c.109.029.175-.016.195-.045.22-.313.411-.644.573-.99.014-.031.021-.11-.059-.19l-.815-.806c-.411-.406-.562-.957-.53-1.456a4.709 4.709 0 0 0 0-.582c-.032-.499.119-1.05.53-1.456l.815-.806c.081-.08.073-.159.059-.19a6.464 6.464 0 0 0-.573-.989c-.02-.03-.085-.076-.195-.046l-1.102.303c-.56.153-1.113.008-1.53-.27a4.44 4.44 0 0 0-.501-.29c-.447-.222-.85-.629-.997-1.189l-.289-1.105c-.029-.11-.101-.143-.137-.146a6.6 6.6 0 0 0-1.142 0ZM11 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM9.5 8a1.5 1.5 0 1 0-3.001.001A1.5 1.5 0 0 0 9.5 8Z"></path></svg></span><span data-component="text" data-content="Settings">Settings</span></a></li></ul><div class="prc-UnderlineNav-MoreButtonContainer-Dnrq6"><div class="prc-UnderlineNav-MoreButtonDivider-dN0a-"></div><button data-component="overflow-menu-button" type="button" aria-haspopup="true" aria-expanded="false" tabindex="0" class="prc-Button-ButtonBase-9n-Xk prc-UnderlineNav-MoreButton-Y8soj" data-loading="false" data-size="medium" data-variant="invisible" id="_R_1afl_"><span data-component="buttonContent" data-align="center" class="prc-Button-ButtonContent-Iohp5"><span data-component="text" class="prc-Button-Label-FWkx3"><span>More<span class="prc-src-InternalVisuallyHidden-2YaI6"> items</span></span></span></span><span data-component="trailingAction" class="prc-Button-Visual-YNt2F prc-Button-VisualWrap-E4cnq"><svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-triangle-down" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom"><path d="m4.427 7.427 3.396 3.396a.25.25 0 0 0 .354 0l3.396-3.396A.25.25 0 0 0 11.396 7H4.604a.25.25 0 0 0-.177.427Z"></path></svg></span></button></div></nav><div class="d-none"></div></header></div>
-</react-partial>
-
-
-
-
-      <div hidden="hidden" data-view-component="true" class="js-stale-session-flash stale-session-flash flash flash-warn flash-full">
-  
-        <svg aria-hidden="true" data-component="Octicon" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-alert">
-    <path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"></path>
-</svg>
-        <span class="js-stale-session-flash-signed-in" hidden>You signed in with another tab or window. <a class="Link--inTextBlock" href="">Reload</a> to refresh your session.</span>
-        <span class="js-stale-session-flash-signed-out" hidden>You signed out in another tab or window. <a class="Link--inTextBlock" href="">Reload</a> to refresh your session.</span>
-        <span class="js-stale-session-flash-switched" hidden>You switched accounts on another tab or window. <a class="Link--inTextBlock" href="">Reload</a> to refresh your session.</span>
-
-    <button id="icon-button-d7457226-0074-4125-9563-cee3009baa89" aria-labelledby="tooltip-ce333f39-bc74-489e-bdd1-fcdd9270b9ff" type="button" data-view-component="true" class="Button Button--iconOnly Button--invisible Button--medium flash-close js-flash-close">  <svg aria-hidden="true" data-component="Octicon" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-x Button-visual">
-    <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"></path>
-</svg>
-</button><tool-tip id="tooltip-ce333f39-bc74-489e-bdd1-fcdd9270b9ff" for="icon-button-d7457226-0074-4125-9563-cee3009baa89" popover="manual" data-direction="s" data-type="label" data-view-component="true" class="sr-only position-absolute">Dismiss alert</tool-tip>
-
-
-  
-</div>
+    if st.session_state.get('payment_just_submitted', False):
+        st.success("✅ 付款申請已成功提交！管理員將盡快審核。")
+        st.info("📩 提交後請 Telegram 通知管理員（可加快審核）")
+        st.markdown("💬 Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
+        if 'payment_detail' in st.session_state:
+            st.write(st.session_state['payment_detail'])
+        if st.button("返回主頁"):
+            for key in ['payment_just_submitted', 'payment_detail']:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.rerun()
+        st.stop()
+
+    with st.form(key="payment_form"):
+        plan_choice = st.radio(
+            "請選擇付費方案：",
+            options=[""] + list(plan_options.keys()),
+            format_func=lambda x: plan_options.get(x, "請選擇方案"),
+            index=0,
+            key="plan_radio_in_form"
+        )
+
+        if plan_choice:
+            plan_name = get_plan_name(plan_choice)
+            plan_days = get_plan_days(plan_choice)
+            original_price = get_plan_price(plan_choice)
+            st.info(f"📌 你已選擇 **{plan_name}**（原價 ${original_price}，有效期 {plan_days} 天）")
+        else:
+            st.info("請選擇一個方案以繼續")
+
+        promo_input = st.text_input("優惠碼（如有）", key="promo_input_form", placeholder="例如 A7K3X9P2")
         
-          <include-fragment src="/in-product-messaging/copilot-budget-request-banner?page_path=%2Ftszkit9-boop%2Fhorse-racing-bot%2Fedit%2Fmain%2Fapp_streamlit.py" data-nonce="v2:0cd25537-76a8-3885-05ff-8c902bf589a3" data-view-component="true">
-  
-  <div data-show-on-forbidden-error hidden>
-    <div class="Box">
-  <div class="blankslate-container">
-    <div data-view-component="true" class="blankslate blankslate-spacious color-bg-default rounded-2">
-      
+        # 📌 顯示 FPS 轉數快資料（不提供上傳）
+        st.divider()
+        st.subheader("📤 付款方式")
+        st.markdown("""
+        **請使用以下方式過數：**
+        - 🏦 **FPS 轉數快**：`12345678`
+        - 📛 **戶口名稱**：`SHTSN SYSTEM`
+        - 💰 **金額**：請根據你選擇的方案支付
+        """)
+        st.info("💬 過數後，請將 **付款截圖** 透過 Telegram 發送俾管理員：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
+        st.caption("管理員確認收款後，會喺後台批准你嘅申請，系統會自動升級你嘅帳戶。")
 
-      <h3 data-view-component="true" class="blankslate-heading">        Uh oh!
-</h3>
-      <p data-view-component="true" class="blankslate-description">        <p class="color-fg-muted my-2 mb-2 ws-normal">There was an error while loading. <a class="Link--inTextBlock" data-turbo="false" href="" aria-label="Please reload this page">Please reload this page</a>.</p>
-</p>
+        submitted = st.form_submit_button("📩 提交付款申請，等待管理員審核")
 
-</div>  </div>
-</div>  </div>
-</include-fragment>
-          <include-fragment src="/in-product-messaging/code-scanning-ai-findings-preview-banner?page_path=%2Ftszkit9-boop%2Fhorse-racing-bot%2Fedit%2Fmain%2Fapp_streamlit.py" data-nonce="v2:0cd25537-76a8-3885-05ff-8c902bf589a3" data-view-component="true">
-  
-  <div data-show-on-forbidden-error hidden>
-    <div class="Box">
-  <div class="blankslate-container">
-    <div data-view-component="true" class="blankslate blankslate-spacious color-bg-default rounded-2">
-      
+        if submitted:
+            st.info("⏳ 正在處理你嘅申請...")
+            
+            if not plan_choice:
+                st.error("❌ 請先選擇一個付費方案")
+                st.stop()
+            if not st.session_state.get('logged_in', False):
+                st.error("❌ 請先登入")
+                st.stop()
+            
+            original_price = get_plan_price(plan_choice)
+            final_price = original_price
+            discount_applied = False
+            discount_desc = ""
+            promo_code_used = None
+            
+            if promo_input:
+                try:
+                    promos = load_promos()
+                    promo_data = promos.get(promo_input)
+                    if promo_data and not promo_data.get('used', False):
+                        expiry = promo_data.get('expiry')
+                        if expiry:
+                            expiry_date = datetime.fromisoformat(expiry)
+                            if expiry_date >= datetime.now():
+                                discount_type = promo_data.get('discount_type', 'percentage')
+                                discount_value = promo_data.get('discount_value', 0)
+                                if discount_type == 'percentage':
+                                    final_price = original_price * (1 - discount_value / 100)
+                                    discount_desc = f"{discount_value}% 折扣"
+                                elif discount_type == 'fixed':
+                                    final_price = max(0, original_price - discount_value)
+                                    discount_desc = f"減 ${discount_value}"
+                                elif discount_type == 'free':
+                                    final_price = 0
+                                    discount_desc = "全免！"
+                                final_price = round(final_price, 2)
+                                discount_applied = True
+                                promo_code_used = promo_input
+                except:
+                    pass
 
-      <h3 data-view-component="true" class="blankslate-heading">        Uh oh!
-</h3>
-      <p data-view-component="true" class="blankslate-description">        <p class="color-fg-muted my-2 mb-2 ws-normal">There was an error while loading. <a class="Link--inTextBlock" data-turbo="false" href="" aria-label="Please reload this page">Please reload this page</a>.</p>
-</p>
+            # 直接寫入記錄，無圖片
+            try:
+                proofs = load_payment_proofs()
+                new_proof = {
+                    "id": len(proofs['proof_records']) + 1,
+                    "username": st.session_state.username,
+                    "plan": plan_choice,
+                    "plan_name": get_plan_name(plan_choice),
+                    "original_price": original_price,
+                    "final_price": final_price,
+                    "discount_applied": discount_applied,
+                    "discount_desc": discount_desc,
+                    "promo_code": promo_code_used,
+                    "filename": "無圖片（請自行 Telegram 發送截圖）",
+                    "uploaded_at": datetime.now().isoformat(),
+                    "status": "pending"
+                }
+                proofs['proof_records'].append(new_proof)
+                
+                # 🧪 直接檢查寫入結果
+                result = save_payment_proofs(proofs)
+                if result:
+                    st.session_state['payment_just_submitted'] = True
+                    st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
+                    st.success("✅ 申請已提交！請將付款截圖傳送管理員")
+                    st.rerun()
+                else:
+                    st.error("❌ 寫入付款記錄失敗，請檢查檔案權限")
+                    st.stop()
+            except Exception as e:
+                st.error(f"❌ 提交過程中發生錯誤：{e}")
+                st.stop()
 
-</div>  </div>
-</div>  </div>
-</include-fragment>
+# ============================================================
+# 8. 後台所有模組（完整實作）
+# ============================================================
 
-          
-    </div>
-
-  <div id="start-of-content" class="show-on-focus"></div>
-
-
-
-
-
-
-
-
-    <div id="js-flash-container" class="flash-container" data-turbo-replace>
-
-
-
-
-
-  <template class="js-flash-template">
+# ---------- 8.1 用戶管理 ----------
+def admin_user_management():
+    st.subheader("👥 用戶管理")
+    with st.expander("➕ 新增用戶", expanded=False):
+        col1, col2 = st.columns(2)
+        with col1:
+            new_username = st.text_input("新用戶名", key="new_user_name")
+            new_password = st.text_input("密碼", type="password", key="new_user_pw")
+        with col2:
+            new_group = st.selectbox("群組", ["free", "paid", "VIP", "super_admin"], key="new_user_group")
+            new_is_paid = st.checkbox("付費狀態", value=False, key="new_user_paid")
+        if st.button("建立用戶", key="create_user_btn"):
+            if not new_username or not new_password:
+                st.warning("請填寫用戶名同密碼")
+            else:
+                users = load_users()
+                if new_username in users:
+                    st.error("❌ 用戶名已被使用")
+                else:
+                    users[new_username] = {
+                        "password": new_password,
+                        "is_paid": new_is_paid,
+                        "paid_date": None,
+                        "expiry_date": None,
+                        "free_usage": 0,
+                        "total_usage": 0,
+                        "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        "note": "手動新增",
+                        "group": new_group,
+                        "phone": "",
+                        "plan": None,
+                        "predictions_limit": -1 if new_group in ['super_admin', 'VIP'] else CONFIG["free_limit"],
+                        "history": [],
+                        "terms_agreed": datetime.now().isoformat(),
+                        "invite_code": new_username.upper() + str(random.randint(100, 999)),
+                        "invited_by": None,
+                        "invite_rewards": 0,
+                        "invite_count": 0
+                    }
+                    save_users(users)
+                    log_admin_action(st.session_state.username, f"新增用戶 {new_username}")
+                    st.success(f"✅ 用戶 {new_username} 已建立！")
+                    st.rerun()
     
-<div class="flash flash-full   {{ className }}">
-  <div >
-    <button autofocus class="flash-close js-flash-close" type="button" aria-label="Dismiss this message">
-      <svg aria-hidden="true" data-component="Octicon" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-x">
-    <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"></path>
-</svg>
-    </button>
-    <div aria-atomic="true" role="alert" class="js-flash-alert">
-      
-      <div>{{ message }}</div>
-
-    </div>
-  </div>
-</div>
-  </template>
-</div>
-
-
+    users = load_users()
+    if not users:
+        st.info("暫無用戶")
+        return
     
-  <notification-shelf-watcher data-base-url="https://github.com/notifications/beta/shelf" data-channel="eyJjIjoibm90aWZpY2F0aW9uLWNoYW5nZWQ6Mjc2NzA1MTA1IiwidCI6MTc4NzU4OTcyOH0=--284c25d185f5c4baadcd4ac3ff50844ee584a3b94ee8238460297f7f045e6313" data-view-component="true" class="js-socket-channel"></notification-shelf-watcher>
-  <div hidden data-initial data-target="notification-shelf-watcher.placeholder"></div>
-
-
-
-
-
-
-  <div
-    class="application-main "
-    data-commit-hovercards-enabled
-    data-discussion-hovercards-enabled
-    data-issue-and-pr-hovercards-enabled
-    data-project-hovercards-enabled
-  >
-        <div itemscope itemtype="http://schema.org/SoftwareSourceCode" class="">
-    <main id="js-repo-pjax-container" >
-      
-      
-
-
-
-
-
-
-
-
+    st.write("現有用戶列表：")
+    df = pd.DataFrame.from_dict(users, orient='index')
+    st.dataframe(df, use_container_width=True)
     
-  <div id="repository-container-header" data-turbo-replace hidden ></div>
-
-
-
-<turbo-frame id="repo-content-turbo-frame" target="_top" data-turbo-action="advance" class="">
-    <div id="repo-content-pjax-container" class="repository-content " >
+    st.divider()
+    st.subheader("🗑️ 刪除用戶")
+    del_user = st.selectbox("選擇要刪除嘅用戶", list(users.keys()), key="del_user_select")
+    if del_user:
+        if del_user == "admin":
+            st.warning("⚠️ 唔可以刪除 admin 帳號")
+        else:
+            confirm = st.checkbox(f"確認刪除 {del_user}？", key="confirm_del")
+            if confirm and st.button("🗑️ 確認刪除", key="del_user_btn"):
+                users.pop(del_user)
+                save_users(users)
+                log_admin_action(st.session_state.username, f"刪除用戶 {del_user}")
+                st.success(f"✅ 用戶 {del_user} 已刪除")
+                st.rerun()
     
-
-
-
+    st.divider()
+    st.subheader("👁️ 查看用戶視角")
+    selected_user = st.selectbox("選擇要查看的用戶", list(users.keys()), key="view_user_select")
+    if selected_user:
+        user_data = users[selected_user]
+        st.markdown("---")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("👤 用戶", selected_user)
+        col2.metric("🏷️ 級別", user_data.get('group', 'free').upper())
+        col3.metric("📊 總預測次數", len(user_data.get('history', [])))
+        limit = user_data.get('predictions_limit', CONFIG['free_limit'])
+        if limit == -1:
+            col4.metric("📊 剩餘場次", "♾️ 無限")
+        else:
+            used = user_data.get('free_usage', 0)
+            remain = max(0, limit - used)
+            col4.metric("📊 剩餘場次", remain)
+        st.markdown("---")
+        st.subheader(f"📋 {selected_user} 嘅預測記錄")
+        history = user_data.get('history', [])
+        if history:
+            df_hist = pd.DataFrame(history[-20:][::-1])
+            st.dataframe(df_hist, use_container_width=True)
+        else:
+            st.info("呢個用戶暫時冇任何預測記錄")
+        if history:
+            st.subheader(f"🎯 {selected_user} 嘅準確度統計")
+            acc = load_accuracy()
+            records = acc.get('records', [])
+            user_records = [r for r in records if r.get('username') == selected_user]
+            if user_records:
+                df_rec = pd.DataFrame(user_records)
+                total = len(df_rec)
+                hit = df_rec[df_rec['is_hit'] == True].shape[0] if 'is_hit' in df_rec else 0
+                hit_rate = hit/total if total>0 else 0
+                roi = (hit * 400 - total * 100) / (total * 100) if total>0 else 0
+                col1, col2, col3 = st.columns(3)
+                col1.metric("總預測", total)
+                col2.metric("命中", hit)
+                col3.metric("命中率", f"{hit_rate:.2%}")
+                st.metric("ROI (模擬)", f"{roi:.2%}")
+                if 'date' in df_rec:
+                    df_rec['date'] = pd.to_datetime(df_rec['date'])
+                    daily = df_rec.groupby(df_rec['date'].dt.date).agg(
+                        total=('is_hit', 'count'),
+                        hit=('is_hit', lambda x: (x==True).sum())
+                    ).reset_index()
+                    daily['hit_rate'] = daily['hit'] / daily['total']
+                    fig = px.line(daily, x='date', y='hit_rate', title=f'{selected_user} 嘅命中率趨勢')
+                    st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("呢個用戶未有準確度數據（未對比賽果）")
     
-      
+    with st.expander("✏️ 編輯用戶"):
+        username = st.selectbox("選擇要編輯的用戶", list(users.keys()), key="edit_user_select")
+        if username:
+            user = users[username]
+            new_group = st.selectbox("群組", ['free', 'paid', 'VIP', 'super_admin'], index=['free','paid','VIP','super_admin'].index(user.get('group','free')), key="edit_group")
+            new_is_paid = st.checkbox("付費狀態", value=user.get('is_paid', False), key="edit_is_paid")
+            new_password = st.text_input("新密碼（留空 = 不變）", type="password", key="edit_password", placeholder="輸入新密碼")
+            note = st.text_area("備註", value=user.get('note', ''), key="edit_note")
+            if st.button("儲存變更", key="save_user_changes"):
+                users[username]['group'] = new_group
+                users[username]['is_paid'] = new_is_paid
+                users[username]['note'] = note
+                if new_password:
+                    users[username]['password'] = new_password
+                if new_group in ['super_admin', 'VIP']:
+                    users[username]['predictions_limit'] = -1
+                else:
+                    users[username]['predictions_limit'] = CONFIG["free_limit"]
+                save_users(users)
+                log_admin_action(st.session_state.username, f"編輯用戶 {username}")
+                st.success("✅ 已更新")
+                st.rerun()
     
+    # 📥 下載 users.json
+    st.divider()
+    st.subheader("📥 數據匯出")
+    if st.button("📥 下載 users.json", key="download_users_json"):
+        try:
+            with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
+                data = f.read()
+            st.download_button(
+                label="✅ 點擊下載 users.json",
+                data=data,
+                file_name="users.json",
+                mime="application/json",
+                key="download_users_btn"
+            )
+        except Exception as e:
+            st.error(f"讀取檔案失敗：{e}")
 
+# ---------- 8.2 數據分析 ----------
+def admin_analytics():
+    st.subheader("📊 數據分析 & 用戶增長")
+    users = load_users()
+    total_users = len(users)
+    paid_users = sum(1 for u in users.values() if u.get('is_paid', False))
+    vip_users = sum(1 for u in users.values() if u.get('group') == 'VIP')
+    super_admin_users = sum(1 for u in users.values() if u.get('group') == 'super_admin')
+    total_pred = sum(u.get('total_usage', 0) for u in users.values())
+    
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("總用戶", total_users)
+    col2.metric("付費用戶", paid_users)
+    col3.metric("VIP", vip_users)
+    col4.metric("超級管理員", super_admin_users)
+    col5.metric("總預測次數", total_pred)
+    
+    if users:
+        df_users = pd.DataFrame.from_dict(users, orient='index')
+        if 'created_at' in df_users.columns:
+            df_users['created_at'] = pd.to_datetime(df_users['created_at'], errors='coerce')
+            df_users = df_users.dropna(subset=['created_at'])
+            df_users['date'] = df_users['created_at'].dt.date
+            daily = df_users.groupby('date').size().reset_index(name='new_users')
+            daily = daily.sort_values('date')
+            daily['cumulative'] = daily['new_users'].cumsum()
+            fig = px.line(daily, x='date', y=['new_users', 'cumulative'], 
+                          title='每日新增用戶 & 累積用戶', 
+                          labels={'value':'用戶數', 'date':'日期'})
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("未有 created_at 數據，無法顯示增長圖")
+    else:
+        st.info("暫無用戶")
 
+# ---------- 8.3 財務管理 ----------
+def admin_finance():
+    st.subheader("💰 財務管理")
+    finance = load_finance()
+    total_income = finance.get('total_income', 0)
+    monthly = finance.get('monthly_income', 0)
+    yearly = finance.get('yearly_income', 0)
+    col1, col2, col3 = st.columns(3)
+    col1.metric("總收入 (HKD)", f"${total_income:.2f}")
+    col2.metric("本月收入 (HKD)", f"${monthly:.2f}")
+    col3.metric("今年收入 (HKD)", f"${yearly:.2f}")
+    
+    with st.expander("➕ 新增收入記錄"):
+        amount = st.number_input("金額", min_value=0.0, step=10.0, key="finance_amount")
+        desc = st.text_input("描述", key="finance_desc")
+        if st.button("記錄", key="add_finance"):
+            finance['total_income'] = finance.get('total_income', 0) + amount
+            finance['monthly_income'] = finance.get('monthly_income', 0) + amount
+            finance['yearly_income'] = finance.get('yearly_income', 0) + amount
+            save_finance(finance)
+            log_admin_action(st.session_state.username, f"新增收入 {amount} - {desc}")
+            st.success("✅ 已記錄")
+            st.rerun()
 
+# ---------- 8.4 優惠碼管理 ----------
+def admin_promo_codes():
+    st.subheader("🎟️ 優惠碼管理")
+    promos = load_promos()
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write("現有優惠碼")
+        if promos:
+            df = pd.DataFrame.from_dict(promos, orient='index')
+            if 'discount_type' not in df.columns:
+                df['discount_type'] = 'percentage'
+            if 'discount_value' not in df.columns:
+                df['discount_value'] = 0
+            st.dataframe(df, use_container_width=True)
+        else:
+            st.info("暫無優惠碼")
+    with col2:
+        st.write("產生新優惠碼")
+        duration = st.number_input("有效期 (天)", min_value=1, value=30, key="promo_duration")
+        discount_type = st.selectbox("折扣類型", ["percentage", "fixed", "free"], key="promo_discount_type",
+                                     format_func=lambda x: {"percentage": "百分比（%折扣）", "fixed": "固定金額（減$）", "free": "完全免費"}.get(x, x))
+        discount_value = st.number_input("折扣數值", min_value=0, value=20, key="promo_discount_value", 
+                                         help="百分比：20 = 8折（減20%）；固定金額：減指定金額；免費：無效")
+        if st.button("產生優惠碼", key="gen_promo"):
+            code = generate_promo_code()
+            expiry = (datetime.now() + timedelta(days=duration)).isoformat()
+            promos[code] = {
+                "used": False,
+                "expiry": expiry,
+                "created_at": datetime.now().isoformat(),
+                "discount_type": discount_type,
+                "discount_value": discount_value
+            }
+            save_promos(promos)
+            st.success(f"✅ 優惠碼已產生：`{code}` 有效期 {duration} 天")
+            st.rerun()
+        
+        st.write("---")
+        st.write("套用優惠碼")
+        code_input = st.text_input("優惠碼", key="apply_promo_code")
+        username_input = st.text_input("用戶名稱", key="apply_promo_user")
+        if st.button("套用", key="apply_promo"):
+            if code_input not in promos:
+                st.error("優惠碼不存在")
+            elif promos[code_input].get('used', False):
+                st.error("優惠碼已被使用")
+            else:
+                users = load_users()
+                if username_input not in users:
+                    st.error("用戶不存在")
+                else:
+                    users[username_input]['is_paid'] = True
+                    users[username_input]['group'] = 'paid'
+                    users[username_input]['predictions_limit'] = -1
+                    promos[code_input]['used'] = True
+                    promos[code_input]['used_by'] = username_input
+                    save_users(users)
+                    save_promos(promos)
+                    log_admin_action(st.session_state.username, f"套用優惠碼 {code_input} 給 {username_input}")
+                    st.success("✅ 已升級用戶")
+                    st.rerun()
 
+# ---------- 8.5 預測監控 ----------
+def admin_accuracy_monitor():
+    st.subheader("📈 預測準確率監控")
+    acc = load_accuracy()
+    records = acc.get('records', [])
+    if not records:
+        st.info("暫時未有預測記錄，未能進行監控。")
+        return
 
+    try:
+        results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
+        results_df = standardize_columns_safe(results_df)
+        if 'race_date' not in results_df.columns or 'race_no' not in results_df.columns or '馬名' not in results_df.columns or 'finish_position' not in results_df.columns:
+            if '日期' in results_df.columns:
+                results_df.rename(columns={'日期': 'race_date'}, inplace=True)
+            if '場次' in results_df.columns:
+                results_df.rename(columns={'場次': 'race_no'}, inplace=True)
+            if '馬名' not in results_df.columns and 'horse_name' in results_df.columns:
+                results_df.rename(columns={'horse_name': '馬名'}, inplace=True)
+            if 'finish_position' not in results_df.columns and '名次' in results_df.columns:
+                results_df.rename(columns={'名次': 'finish_position'}, inplace=True)
+        
+        if 'race_date' in results_df.columns and 'race_no' in results_df.columns and '馬名' in results_df.columns and 'finish_position' in results_df.columns:
+            results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
+            results_df = results_df.dropna(subset=['race_date'])
+            for rec in records:
+                if rec.get('actual_result') is not None:
+                    continue
+                date_str = rec['date']
+                race_no = rec['race']
+                horse = rec['horse']
+                matched = results_df[(results_df['race_date'].dt.strftime('%Y-%m-%d') == date_str) & 
+                                     (results_df['race_no'] == race_no) & 
+                                     (results_df['馬名'] == horse)]
+                if not matched.empty:
+                    pos = matched.iloc[0]['finish_position']
+                    rec['actual_result'] = int(pos) if pd.notna(pos) else None
+                    rec['is_hit'] = (rec['actual_result'] == 1) if rec['actual_result'] is not None else None
+            save_accuracy(acc)
+            st.success("✅ 已自動比對賽果")
+        else:
+            st.warning("ALL_DATA_MERGED.csv 缺少必要欄位，請確保包含：race_date, race_no, 馬名, finish_position")
+    except Exception as e:
+        st.error(f"自動比對失敗：{e}")
 
+    df_records = pd.DataFrame(records)
+    if df_records.empty:
+        return
+    total = len(df_records)
+    hit = df_records[df_records['is_hit'] == True].shape[0] if 'is_hit' in df_records else 0
+    hit_rate = hit/total if total>0 else 0
+    roi = (hit * 400 - total * 100) / (total * 100) if total>0 else 0
 
+    col1, col2, col3 = st.columns(3)
+    col1.metric("總預測記錄", total)
+    col2.metric("命中次數", hit)
+    col3.metric("命中率", f"{hit_rate:.2%}")
+    st.metric("ROI (模擬)", f"{roi:.2%}")
 
-<react-app
-  app-name="code-view"
-  initial-path="/tszkit9-boop/horse-racing-bot/edit/main/app_streamlit.py"
-  style="display: block; min-height: calc(100vh - 64px);"
-  data-attempted-ssr="true"
-  data-ssr="true"
-  data-lazy="false"
-  data-alternate="false"
-  data-data-router-enabled="true"
-  data-react-profiling="false"
->
-  
-  <script type="application/json" data-target="react-app.embeddedData">{"payload":{"codeViewEditRoute":{"refInfo":{"name":"main","listCacheKey":"v0:1787250580.0","canEdit":true,"refType":"branch","currentOid":"57793ad8fde6da9161cac4dfbdd3d30d8f6501e7","canEditOnDefaultBranch":false,"fileExistsOnDefault":true},"editInfo":{"customSlashCommandsDocsUrl":"https://docs.github.com/early-access/github/save-time-with-slash-commands/syntax-for-user-defined-slash-commands","markdownDocsUrl":"https://docs.github.com/github/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax","pullRequestUrl":null,"content":"#!/usr/bin/env python\r\n# -*- coding: utf-8 -*-\r\n\"\"\"\r\n賽馬預測系統 - 完整版（所有後台模組齊全，無任何遺漏）\r\n\"\"\"\r\n\r\nimport streamlit as st\r\nimport pandas as pd\r\nimport numpy as np\r\nimport pickle\r\nimport os\r\nimport json\r\nfrom datetime import datetime, timedelta\r\nimport warnings\r\nwarnings.filterwarnings('ignore')\r\nfrom catboost import CatBoostClassifier\r\nimport plotly.express as px\r\nimport plotly.graph_objects as go\r\n\r\n# ============================================================\r\n# 🔐 功能開關（全部中文說明）\r\n# ============================================================\r\nCONFIG = {\r\n    \"enable_registration\": False,\r\n    \"enable_payment\": False,\r\n    \"enable_admin\": True,\r\n    \"currency\": \"HKD\",\r\n    \"free_limit\": 2,\r\n    \"subscription_price\": 9.99,\r\n    \"admin_password\": \"z54060437K\",\r\n    \"module_user_management\": True,\r\n    \"module_analytics\": True,\r\n    \"module_finance\": True,\r\n    \"module_monitoring\": True,\r\n    \"module_content\": True,\r\n    \"module_automation\": True,\r\n    \"module_security\": True,\r\n    \"module_promo\": True,\r\n}\r\n\r\n# ============================================================\r\n# 1. 設定頁面\r\n# ============================================================\r\nst.set_page_config(\r\n    page_title=\"🏇 賽馬預測系統\",\r\n    page_icon=\"🐎\",\r\n    layout=\"wide\",\r\n    initial_sidebar_state=\"expanded\"\r\n)\r\n\r\n# ============================================================\r\n# 2. 數據讀寫函數（所有 JSON 檔案）\r\n# ============================================================\r\nUSER_DATA_FILE = 'users.json'\r\nFINANCE_FILE = 'finance.json'\r\nLOG_FILE = 'admin_log.json'\r\nAUTOMATION_FILE = 'automation.json'\r\nCONTENT_FILE = 'content.json'\r\nPROMO_FILE = 'promo_codes.json'\r\nACCURACY_FILE = 'accuracy.json'\r\n\r\ndef load_json(file):\r\n    if os.path.exists(file):\r\n        with open(file, 'r', encoding='utf-8') as f:\r\n            return json.load(f)\r\n    return {}\r\n\r\ndef save_json(file, data):\r\n    with open(file, 'w', encoding='utf-8') as f:\r\n        json.dump(data, f, ensure_ascii=False, indent=2)\r\n\r\ndef load_users():\r\n    return load_json(USER_DATA_FILE)\r\n\r\ndef save_users(users):\r\n    save_json(USER_DATA_FILE, users)\r\n\r\ndef load_finance():\r\n    return load_json(FINANCE_FILE)\r\n\r\ndef save_finance(finance):\r\n    save_json(FINANCE_FILE, finance)\r\n\r\ndef load_promos():\r\n    return load_json(PROMO_FILE)\r\n\r\ndef save_promos(promos):\r\n    save_json(PROMO_FILE, promos)\r\n\r\ndef load_logs():\r\n    return load_json(LOG_FILE)\r\n\r\ndef save_logs(logs):\r\n    save_json(LOG_FILE, logs)\r\n\r\ndef load_accuracy():\r\n    return load_json(ACCURACY_FILE)\r\n\r\ndef save_accuracy(acc):\r\n    save_json(ACCURACY_FILE, acc)\r\n\r\ndef log_admin_action(admin, action):\r\n    logs = load_logs()\r\n    if 'logs' not in logs:\r\n        logs['logs'] = []\r\n    logs['logs'].append({\r\n        'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),\r\n        'admin': admin,\r\n        'action': action\r\n    })\r\n    save_logs(logs)\r\n\r\ndef authenticate(username, password):\r\n    users = load_users()\r\n    if username in users and users[username].get('password') == password:\r\n        return True\r\n    return False\r\n\r\ndef generate_promo_code():\r\n    import random, string\r\n    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))\r\n\r\n# ============================================================\r\n# 3. 模型載入\r\n# ============================================================\r\n@st.cache_resource\r\ndef load_models():\r\n    try:\r\n        with open('hk_racing_model.pkl', 'rb') as f:\r\n            xgb_obj = pickle.load(f)\r\n            xgb_model = xgb_obj[0] if isinstance(xgb_obj, tuple) else xgb_obj\r\n        cat_model = CatBoostClassifier()\r\n        cat_model.load_model('hk_catboost_model.cbm')\r\n        with open('hk_ranking_model.pkl', 'rb') as f:\r\n            rank_obj = pickle.load(f)\r\n            rank_model = rank_obj[0] if isinstance(rank_obj, tuple) else rank_obj\r\n        return xgb_model, cat_model, rank_model\r\n    except Exception as e:\r\n        st.error(f\"❌ 模型載入失敗：{e}\")\r\n        return None, None, None\r\n\r\n# ============================================================\r\n# 4. 完整特徵工程（36 特徵 + 預測核心）\r\n# ============================================================\r\nFEATURES_EN = [\r\n    'draw', 'act_wt', 'distance', 'rtg', 'avg_rank_last3',\r\n    'jockey_win_rate_50', 'trainer_win_rate_50',\r\n    'distance_win_rate', 'distance_avg_rank',\r\n    'win_odds', 'weight_change', 'jockey_trainer_win_rate',\r\n    'course_win_rate', 'course_avg_rank',\r\n    'days_since_last_run', 'odds_rank_in_race',\r\n    'rtg_change', 'jockey_horse_win_rate',\r\n    'races_last14days', 'going_win_rate',\r\n    'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',\r\n    'early_pace', 'finish_speed',\r\n    'last_trial_rank', 'last_trial_time',\r\n    'jockey_win_rate_5', 'jockey_win_rate_10', 'draw_win_rate',\r\n    'days_since_injury', 'injury_30d', 'injury_60d', 'injury_90d',\r\n    'total_injuries', 'injury_severity'\r\n]\r\n\r\nEXPECTED_FEATURES = [\r\n    'draw', 'weight', 'distance', 'Rtg.', '近3場平均名次',\r\n    '騎師近50場勝率', '練馬師近50場勝率', '同路程歷史勝率',\r\n    '同路程歷史平均名次', 'win_odds', '體重變化', '騎練組合勝率',\r\n    '詳細賽道歷史勝率', '詳細賽道歷史平均名次', '出賽相隔日數',\r\n    '賠率場次排名', '評分變化', '騎馬合作勝率', '近14日出賽次數',\r\n    '場地狀況勝率', '試閘歷史勝率', '父系歷史勝率', '父系同程勝率',\r\n    '前速指標', '後勁指標', '最近試閘名次', '最近試閘時間',\r\n    '騎師近5場勝率', '騎師近10場勝率', '檔位勝率', '最近傷患日數',\r\n    '過去30日內有傷患', '過去60日內有傷患', '過去90日內有傷患',\r\n    '傷患總次數', '傷患嚴重程度'\r\n]\r\n\r\nNAME_MAPPING = {\r\n    'act_wt': 'weight', 'rtg': 'Rtg.',\r\n    'avg_rank_last3': '近3場平均名次',\r\n    'jockey_win_rate_50': '騎師近50場勝率',\r\n    'trainer_win_rate_50': '練馬師近50場勝率',\r\n    'distance_win_rate': '同路程歷史勝率',\r\n    'distance_avg_rank': '同路程歷史平均名次',\r\n    'weight_change': '體重變化',\r\n    'jockey_trainer_win_rate': '騎練組合勝率',\r\n    'course_win_rate': '詳細賽道歷史勝率',\r\n    'course_avg_rank': '詳細賽道歷史平均名次',\r\n    'days_since_last_run': '出賽相隔日數',\r\n    'odds_rank_in_race': '賠率場次排名',\r\n    'rtg_change': '評分變化',\r\n    'jockey_horse_win_rate': '騎馬合作勝率',\r\n    'races_last14days': '近14日出賽次數',\r\n    'going_win_rate': '場地狀況勝率',\r\n    'trial_win_rate': '試閘歷史勝率',\r\n    'sire_win_rate': '父系歷史勝率',\r\n    'sire_course_win_rate': '父系同程勝率',\r\n    'early_pace': '前速指標',\r\n    'finish_speed': '後勁指標',\r\n    'last_trial_rank': '最近試閘名次',\r\n    'last_trial_time': '最近試閘時間',\r\n    'jockey_win_rate_5': '騎師近5場勝率',\r\n    'jockey_win_rate_10': '騎師近10場勝率',\r\n    'draw_win_rate': '檔位勝率',\r\n    'days_since_injury': '最近傷患日數',\r\n    'injury_30d': '過去30日內有傷患',\r\n    'injury_60d': '過去60日內有傷患',\r\n    'injury_90d': '過去90日內有傷患',\r\n    'total_injuries': '傷患總次數',\r\n    'injury_severity': '傷患嚴重程度'\r\n}\r\n\r\ndef standardize_columns_safe(df):\r\n    rename_map = {\r\n        '騎師': 'jockey', '練馬師': 'trainer', '路程': 'distance',\r\n        '場地': 'going', '檔位': 'draw', '評分': 'rtg',\r\n        '馬匹編號': 'horse_id', '馬匹ID': 'horse_id', '馬號': 'horse_id',\r\n        '馬匹id': 'horse_id', 'horse': 'horse_id',\r\n        '場次': 'race_no', '馬場': 'race_course',\r\n        '實際負磅': 'act_wt',\r\n        '名次': 'finish_position', '最終名次': 'finish_position',\r\n        '馬名': 'horse_name',\r\n        '賠率': 'win_odds', '獨贏賠率': 'win_odds',\r\n    }\r\n    df.rename(columns=rename_map, inplace=True, errors='ignore')\r\n    if '比賽日期' in df.columns and 'race_date' not in df.columns:\r\n        df.rename(columns={'比賽日期': 'race_date'}, inplace=True)\r\n    elif '比賽日期' in df.columns and 'race_date' in df.columns:\r\n        df.drop(columns=['比賽日期'], inplace=True, errors='ignore')\r\n    return df\r\n\r\ndef ensure_series(df):\r\n    for col in df.columns:\r\n        if isinstance(df[col], pd.DataFrame):\r\n            df[col] = df[col].iloc[:, 0]\r\n    return df\r\n\r\ndef get_finish_column(df):\r\n    candidates = ['finish_position', '名次', 'Position', 'pos', 'Rank', 'rank', '最終名次']\r\n    for col in candidates:\r\n        if col in df.columns:\r\n            return col\r\n    return None\r\n\r\ndef safe_parse_dates(df):\r\n    date_col = None\r\n    for col in ['race_date', '比賽日期']:\r\n        if col in df.columns:\r\n            date_col = col\r\n            break\r\n    if date_col is None:\r\n        return None, None\r\n    dates = df[date_col].copy()\r\n    dates = dates.astype(str).str.strip()\r\n    parsed = pd.to_datetime(dates, errors='coerce')\r\n    if parsed.notna().sum() == 0:\r\n        return None, None\r\n    df['race_date'] = parsed\r\n    return df, date_col\r\n\r\ndef get_latest_features(race_df, history_df):\r\n    history_df['race_date'] = pd.to_datetime(history_df['race_date'], errors='coerce')\r\n    latest = history_df.sort_values('race_date').groupby('horse_id').last().reset_index()\r\n    merged = race_df.merge(latest, on='horse_id', how='left', suffixes=('', '_hist'))\r\n    for col in FEATURES_EN:\r\n        if col in merged.columns and col not in race_df.columns:\r\n            hist_col = col + '_hist'\r\n            if hist_col in merged.columns:\r\n                merged[col] = merged[hist_col]\r\n            else:\r\n                merged[col] = 0\r\n        elif col not in merged.columns:\r\n            merged[col] = 0\r\n        merged[col] = merged[col].fillna(0)\r\n    for col in ['draw', 'act_wt', 'distance', 'rtg', 'win_odds']:\r\n        if col in race_df.columns:\r\n            merged[col] = race_df[col].values\r\n    return merged\r\n\r\ndef compute_stats(race_df, history_df, race_date):\r\n    history_df = ensure_series(history_df)\r\n    if history_df.columns.duplicated().any():\r\n        history_df = history_df.loc[:, ~history_df.columns.duplicated(keep='first')]\r\n    for col in ['jockey', 'trainer', 'horse_id']:\r\n        if col not in race_df.columns:\r\n            race_df[col] = 0\r\n    hist = history_df[history_df['race_date'] \u003c race_date].copy()\r\n    if hist.empty:\r\n        for col in ['jockey_win_rate_50', 'trainer_win_rate_50', 'avg_rank_last3',\r\n                    'distance_win_rate', 'jockey_horse_win_rate', 'going_win_rate',\r\n                    'draw_win_rate', 'jockey_win_rate_5', 'jockey_win_rate_10']:\r\n            race_df[col] = 0.0\r\n        return race_df\r\n    if 'finish_position' not in hist.columns:\r\n        raise KeyError(\"歷史數據缺少 finish_position\")\r\n    hist['finish_position'] = pd.to_numeric(hist['finish_position'], errors='coerce')\r\n    try:\r\n        jockey_stats = hist.groupby('jockey').apply(lambda g: (g['finish_position']==1).sum()/max(len(g),1)).reset_index(name='jockey_win_rate_50')\r\n        race_df = race_df.merge(jockey_stats, on='jockey', how='left')\r\n        race_df['jockey_win_rate_50'] = race_df['jockey_win_rate_50'].fillna(0)\r\n    except:\r\n        race_df['jockey_win_rate_50'] = 0.0\r\n    try:\r\n        trainer_stats = hist.groupby('trainer').apply(lambda g: (g['finish_position']==1).sum()/max(len(g),1)).reset_index(name='trainer_win_rate_50')\r\n        race_df = race_df.merge(trainer_stats, on='trainer', how='left')\r\n        race_df['trainer_win_rate_50'] = race_df['trainer_win_rate_50'].fillna(0)\r\n    except:\r\n        race_df['trainer_win_rate_50'] = 0.0\r\n    try:\r\n        last3 = hist.groupby('horse_id').apply(lambda g: g.sort_values('race_date').tail(3)['finish_position'].mean()).reset_index(name='avg_rank_last3')\r\n        race_df = race_df.merge(last3, on='horse_id', how='left')\r\n        race_df['avg_rank_last3'] = race_df['avg_rank_last3'].fillna(99)\r\n    except:\r\n        race_df['avg_rank_last3'] = 99.0\r\n    try:\r\n        def dist_win(g, dist):\r\n            sub = g[g['distance']==dist]\r\n            return 0.0 if len(sub)==0 else (sub['finish_position']==1).sum()/len(sub)\r\n        race_df['distance_win_rate'] = race_df.apply(lambda r: dist_win(hist[hist['horse_id']==r['horse_id']], r['distance']), axis=1)\r\n    except:\r\n        race_df['distance_win_rate'] = 0.0\r\n    try:\r\n        def jh_win(g, j, h):\r\n            sub = g[(g['jockey']==j) \u0026 (g['horse_id']==h)]\r\n            return 0.0 if len(sub)==0 else (sub['finish_position']==1).sum()/len(sub)\r\n        race_df['jockey_horse_win_rate'] = race_df.apply(lambda r: jh_win(hist, r['jockey'], r['horse_id']), axis=1)\r\n    except:\r\n        race_df['jockey_horse_win_rate'] = 0.0\r\n    try:\r\n        def going_win(g, go):\r\n            sub = g[g['going']==go]\r\n            return 0.0 if len(sub)==0 else (sub['finish_position']==1).sum()/len(sub)\r\n        race_df['going_win_rate'] = race_df.apply(lambda r: going_win(hist[hist['horse_id']==r['horse_id']], r['going']), axis=1)\r\n    except:\r\n        race_df['going_win_rate'] = 0.0\r\n    try:\r\n        def draw_win(g, dr):\r\n            sub = g[g['draw']==dr]\r\n            return 0.0 if len(sub)==0 else (sub['finish_position']==1).sum()/len(sub)\r\n        race_df['draw_win_rate'] = race_df.apply(lambda r: draw_win(hist[hist['horse_id']==r['horse_id']], r['draw']), axis=1)\r\n    except:\r\n        race_df['draw_win_rate'] = 0.0\r\n    try:\r\n        last_run = hist.groupby('horse_id')['race_date'].max().reset_index(name='last_date')\r\n        race_df = race_df.merge(last_run, on='horse_id', how='left')\r\n        race_df['days_since_last_run'] = (race_date - race_df['last_date']).dt.days.fillna(999)\r\n    except:\r\n        race_df['days_since_last_run'] = 999\r\n    try:\r\n        last_rtg = hist.groupby('horse_id').last()['rtg'].reset_index(name='last_rtg')\r\n        race_df = race_df.merge(last_rtg, on='horse_id', how='left')\r\n        race_df['rtg_change'] = (race_df['rtg'] - race_df['last_rtg']).fillna(0)\r\n    except:\r\n        race_df['rtg_change'] = 0\r\n    try:\r\n        race_df['races_last14days'] = race_df.apply(lambda r: len(hist[(hist['horse_id']==r['horse_id']) \u0026 (hist['race_date']\u003e=race_date-pd.Timedelta(days=14))]), axis=1)\r\n    except:\r\n        race_df['races_last14days'] = 0\r\n    for col in ['course_win_rate', 'course_avg_rank', 'weight_change', 'jockey_trainer_win_rate',\r\n                'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',\r\n                'early_pace', 'finish_speed', 'last_trial_rank', 'last_trial_time',\r\n                'jockey_win_rate_5', 'jockey_win_rate_10',\r\n                'days_since_injury', 'injury_30d', 'injury_60d', 'injury_90d',\r\n                'total_injuries', 'injury_severity']:\r\n        if col not in race_df.columns:\r\n            race_df[col] = 0\r\n        else:\r\n            race_df[col] = race_df[col].fillna(0)\r\n    return race_df\r\n\r\n@st.cache_data\r\ndef load_horse_name_map():\r\n    try:\r\n        df_map = pd.read_csv('horse_name_mapping.csv', encoding='utf-8-sig')\r\n        if 'horse_id' in df_map.columns and '馬名' in df_map.columns:\r\n            return dict(zip(df_map['horse_id'], df_map['馬名']))\r\n    except:\r\n        pass\r\n    return {}\r\n\r\ndef generate_pool_recommendations(df, top_n=6):\r\n    top_horses = df.head(top_n)\r\n    horse_names = top_horses['馬匹名稱'].tolist()\r\n    probs = top_horses['預測勝率'].tolist()\r\n    def combo_score(indices):\r\n        score = 1.0\r\n        for i in indices:\r\n            score *= probs[i]\r\n        return score / len(indices)\r\n    rec = \"【獨贏】\\n\"\r\n    for i, row in top_horses.head(3).iterrows():\r\n        rec += f\"  {row['馬匹名稱']} (勝率 {row['預測勝率']:.2%})\\n\"\r\n    rec += \"\\n【位置】\\n\"\r\n    for i, row in top_horses.head(4).iterrows():\r\n        rec += f\"  {row['馬匹名稱']} (勝率 {row['預測勝率']:.2%})\\n\"\r\n    rec += \"\\n【連贏】\\n\"\r\n    pairs = []\r\n    for i in range(min(len(horse_names), 5)):\r\n        for j in range(i+1, min(len(horse_names), 6)):\r\n            pairs.append((combo_score([i, j]), i, j))\r\n    pairs.sort(reverse=True)\r\n    for _, i, j in pairs[:5]:\r\n        rec += f\"  {horse_names[i]} + {horse_names[j]}\\n\"\r\n    rec += \"\\n【位置Q】\\n\"\r\n    q_pairs = []\r\n    for i in range(min(len(horse_names), 6)):\r\n        for j in range(i+1, min(len(horse_names), 8)):\r\n            if j \u003c len(horse_names):\r\n                q_pairs.append((combo_score([i, j]), i, j))\r\n    q_pairs.sort(reverse=True)\r\n    for _, i, j in q_pairs[:6]:\r\n        rec += f\"  {horse_names[i]} + {horse_names[j]}\\n\"\r\n    rec += \"\\n【三重彩】\\n\"\r\n    tierce = []\r\n    for i in range(min(len(horse_names), 4)):\r\n        for j in range(min(len(horse_names), 5)):\r\n            for k in range(min(len(horse_names), 6)):\r\n                if i != j and i != k and j != k:\r\n                    tierce.append((combo_score([i, j, k]), i, j, k))\r\n    tierce.sort(reverse=True)\r\n    for _, i, j, k in tierce[:5]:\r\n        rec += f\"  {horse_names[i]} \u003e {horse_names[j]} \u003e {horse_names[k]}\\n\"\r\n    rec += \"\\n【四重彩】\\n\"\r\n    quartet = []\r\n    for i in range(min(len(horse_names), 4)):\r\n        for j in range(min(len(horse_names), 5)):\r\n            for k in range(min(len(horse_names), 6)):\r\n                for l in range(min(len(horse_names), 7)):\r\n                    if len(set([i, j, k, l])) == 4:\r\n                        quartet.append((combo_score([i, j, k, l]), i, j, k, l))\r\n    quartet.sort(reverse=True)\r\n    for _, i, j, k, l in quartet[:3]:\r\n        rec += f\"  {horse_names[i]} \u003e {horse_names[j]} \u003e {horse_names[k]} \u003e {horse_names[l]}\\n\"\r\n    return rec\r\n\r\ndef run_prediction(date_str, race_no):\r\n    xgb_model, cat_model, rank_model = load_models()\r\n    if xgb_model is None:\r\n        return None, None\r\n\r\n    try:\r\n        df = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')\r\n    except Exception as e:\r\n        st.error(f\"讀取排位表失敗：{e}\")\r\n        return None, None\r\n\r\n    df = standardize_columns_safe(df)\r\n    df = df.loc[:, ~df.columns.duplicated(keep='first')]\r\n    df = ensure_series(df)\r\n\r\n    df, _ = safe_parse_dates(df)\r\n    if df is None:\r\n        st.error(\"無法解析日期\")\r\n        return None, None\r\n    df = df.dropna(subset=['race_date'])\r\n    if df.empty:\r\n        st.error(\"無有效日期\")\r\n        return None, None\r\n\r\n    if 'race_no' not in df.columns:\r\n        st.error(\"找不到場次欄位\")\r\n        return None, None\r\n    df['race_no'] = df['race_no'].astype(str).str.extract(r'(\\d+)')[0]\r\n    df['race_no'] = pd.to_numeric(df['race_no'], errors='coerce')\r\n    df = df.dropna(subset=['race_no'])\r\n    if df.empty:\r\n        st.error(\"無有效場次\")\r\n        return None, None\r\n\r\n    target = pd.to_datetime(date_str)\r\n    race_sel = df[(df['race_date'].dt.date == target.date()) \u0026 (df['race_no'] == race_no)]\r\n    if race_sel.empty:\r\n        st.error(f\"日期 {date_str} 第 {race_no} 場無數據\")\r\n        return None, None\r\n\r\n    try:\r\n        history = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')\r\n    except:\r\n        st.error(\"缺少歷史數據檔案 ALL_DATA_MERGED.csv\")\r\n        return None, None\r\n\r\n    history = standardize_columns_safe(history)\r\n    history = history.loc[:, ~history.columns.duplicated(keep='first')]\r\n    history = ensure_series(history)\r\n    if 'race_date' not in history.columns:\r\n        if '比賽日期' in history.columns:\r\n            history.rename(columns={'比賽日期': 'race_date'}, inplace=True)\r\n        else:\r\n            st.error(\"歷史數據缺少日期欄位\")\r\n            return None, None\r\n    history['race_date'] = pd.to_datetime(history['race_date'], errors='coerce')\r\n    history = history.dropna(subset=['race_date'])\r\n\r\n    finish_col = get_finish_column(history)\r\n    if finish_col is None:\r\n        st.error(\"歷史數據缺少名次欄位\")\r\n        return None, None\r\n    history.rename(columns={finish_col: 'finish_position'}, inplace=True)\r\n\r\n    name_map = load_horse_name_map()\r\n\r\n    race_sel = get_latest_features(race_sel, history)\r\n    race_sel = compute_stats(race_sel, history, target)\r\n    race_sel['中文名'] = race_sel['horse_id'].map(name_map).fillna(race_sel['horse_id'])\r\n\r\n    if 'win_odds' not in race_sel.columns:\r\n        race_sel['win_odds'] = 4.0\r\n    else:\r\n        race_sel['win_odds'] = race_sel['win_odds'].replace(0, 4.0).fillna(4.0)\r\n    race_sel['win_odds'] = pd.to_numeric(race_sel['win_odds'], errors='coerce').fillna(4.0)\r\n    race_sel['odds_rank_in_race'] = race_sel['win_odds'].rank(ascending=True)\r\n\r\n    for f in FEATURES_EN:\r\n        if f not in race_sel.columns:\r\n            race_sel[f] = 0\r\n        else:\r\n            race_sel[f] = race_sel[f].fillna(0)\r\n\r\n    X = race_sel[FEATURES_EN].copy()\r\n    for col in X.columns:\r\n        X[col] = pd.to_numeric(X[col], errors='coerce').fillna(0)\r\n\r\n    X.rename(columns=NAME_MAPPING, inplace=True)\r\n    for col in EXPECTED_FEATURES:\r\n        if col not in X.columns:\r\n            X[col] = 0\r\n    X = X[EXPECTED_FEATURES]\r\n\r\n    prob_xgb = xgb_model.predict_proba(X)[:, 1]\r\n    prob_cat = cat_model.predict_proba(X)[:, 1]\r\n    prob_final = (prob_xgb * 25 + prob_cat) / 26\r\n    rank_score = rank_model.predict(X)\r\n\r\n    result = race_sel[['中文名', 'draw', 'win_odds']].copy()\r\n    result.rename(columns={'中文名': '馬匹名稱', 'draw': '檔位', 'win_odds': '賠率'}, inplace=True)\r\n    result['預測勝率'] = prob_final\r\n    result['值博指數'] = result['預測勝率'] / result['賠率']\r\n    result = result.sort_values('值博指數', ascending=False)\r\n\r\n    pool_rec = generate_pool_recommendations(result)\r\n    return result, pool_rec\r\n\r\n# ============================================================\r\n# 5. 用戶功能（儀表板、歷史、統計）\r\n# ============================================================\r\ndef record_prediction(username, date_str, race_no, horse_name, predicted_prob=None):\r\n    users = load_users()\r\n    if username in users:\r\n        if 'history' not in users[username]:\r\n            users[username]['history'] = []\r\n        users[username]['history'].append({\r\n            'date': date_str,\r\n            'race': race_no,\r\n            'horse': horse_name,\r\n            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),\r\n            'predicted_prob': predicted_prob\r\n        })\r\n        save_users(users)\r\n        # 記錄到 accuracy.json\r\n        acc = load_accuracy()\r\n        if 'records' not in acc:\r\n            acc['records'] = []\r\n        acc['records'].append({\r\n            'username': username,\r\n            'date': date_str,\r\n            'race': race_no,\r\n            'horse': horse_name,\r\n            'predicted_at': datetime.now().isoformat(),\r\n            'actual_result': None,\r\n            'is_hit': None\r\n        })\r\n        save_accuracy(acc)\r\n\r\ndef get_user_stats(username):\r\n    users = load_users()\r\n    if username not in users:\r\n        return {'total_predictions': 0, 'free_used': 0, 'is_paid': False, 'group': 'free'}\r\n    user = users[username]\r\n    history = user.get('history', [])\r\n    total = len(history)\r\n    free_used = user.get('free_usage', 0)\r\n    return {\r\n        'total_predictions': total,\r\n        'free_used': free_used,\r\n        'is_paid': user.get('is_paid', False),\r\n        'group': user.get('group', 'free')\r\n    }\r\n\r\ndef show_user_dashboard(username):\r\n    if not username:\r\n        return\r\n    stats = get_user_stats(username)\r\n    users = load_users()\r\n    user_data = users.get(username, {})\r\n    group = user_data.get('group', 'free')\r\n    is_paid = user_data.get('is_paid', False)\r\n    \r\n    if group == 'VIP':\r\n        level = \"👑 VIP\"\r\n    elif is_paid:\r\n        level = \"💎 付費用戶\"\r\n    else:\r\n        level = \"🆓 免費用戶\"\r\n    \r\n    st.markdown(\"---\")\r\n    col1, col2, col3, col4 = st.columns(4)\r\n    col1.metric(\"👤 用戶\", username)\r\n    col2.metric(\"🏷️ 級別\", level)\r\n    col3.metric(\"📊 總預測次數\", stats['total_predictions'])\r\n    if not is_paid and group != 'VIP':\r\n        remain = max(0, CONFIG[\"free_limit\"] - stats['free_used'])\r\n        col4.metric(\"📊 剩餘免費場次\", remain)\r\n    else:\r\n        col4.metric(\"📊 剩餘場次\", \"∞\")\r\n    st.markdown(\"---\")\r\n\r\ndef show_prediction_history(username):\r\n    if not username:\r\n        st.info(\"請先登入以查看歷史記錄\")\r\n        return\r\n    users = load_users()\r\n    if username not in users:\r\n        st.info(\"未有歷史記錄\")\r\n        return\r\n    history = users[username].get('history', [])\r\n    if not history:\r\n        st.info(\"你仲未有任何預測記錄\")\r\n        return\r\n    df = pd.DataFrame(history[-20:][::-1])\r\n    st.dataframe(df, use_container_width=True)\r\n\r\n# ============================================================\r\n# 6. 登入/註冊\r\n# ============================================================\r\ndef login_page():\r\n    st.title(\"🔐 登入 / 註冊\")\r\n    tab1, tab2 = st.tabs([\"登入\", \"註冊\"])\r\n    with tab1:\r\n        username = st.text_input(\"用戶名稱\", key=\"login_user\")\r\n        password = st.text_input(\"密碼\", type=\"password\", key=\"login_pass\")\r\n        if st.button(\"登入\"):\r\n            if authenticate(username, password):\r\n                st.session_state.logged_in = True\r\n                st.session_state.username = username\r\n                st.rerun()\r\n            else:\r\n                st.error(\"❌ 用戶名稱或密碼錯誤\")\r\n    with tab2:\r\n        new_user = st.text_input(\"用戶名稱\", key=\"reg_user\")\r\n        new_pass = st.text_input(\"密碼\", type=\"password\", key=\"reg_pass\")\r\n        new_pass2 = st.text_input(\"確認密碼\", type=\"password\", key=\"reg_pass2\")\r\n        if st.button(\"註冊\"):\r\n            if new_pass != new_pass2:\r\n                st.error(\"❌ 密碼不一致\")\r\n            elif len(new_user) \u003c 3:\r\n                st.error(\"❌ 用戶名稱至少 3 個字\")\r\n            else:\r\n                users = load_users()\r\n                if new_user in users:\r\n                    st.error(\"❌ 用戶名稱已被使用\")\r\n                else:\r\n                    users[new_user] = {\r\n                        'password': new_pass,\r\n                        'is_paid': False,\r\n                        'paid_date': None,\r\n                        'expiry_date': None,\r\n                        'free_usage': 0,\r\n                        'total_usage': 0,\r\n                        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),\r\n                        'note': '',\r\n                        'group': 'free',\r\n                        'history': []\r\n                    }\r\n                    save_users(users)\r\n                    st.success(\"✅ 註冊成功！請返回登入\")\r\n                    st.rerun()\r\n\r\n# ============================================================\r\n# 7. 付費牆\r\n# ============================================================\r\ndef show_paywall():\r\n    st.warning(f\"⚠️ 你已經用晒 {CONFIG['free_limit']} 場免費額度\")\r\n    st.markdown(f\"\"\"\r\n    ### 💳 升級至付費版（{CONFIG['currency']}）\r\n    每月 {CONFIG['currency']} {CONFIG['subscription_price']:.2f}\r\n    **付款方式：** FPS / PayMe / 銀行轉帳\r\n    📩 付款後 WhatsApp 通知開通\r\n    \"\"\")\r\n    if CONFIG[\"enable_admin\"]:\r\n        with st.expander(\"🔐 管理員開通\"):\r\n            admin_code = st.text_input(\"管理員密碼\", type=\"password\", key=\"admin_paywall\")\r\n            if admin_code == CONFIG[\"admin_password\"]:\r\n                if st.button(\"✅ 手動開通此用戶\"):\r\n                    users = load_users()\r\n                    if st.session_state.username in users:\r\n                        users[st.session_state.username]['is_paid'] = True\r\n                        users[st.session_state.username]['paid_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')\r\n                        users[st.session_state.username]['expiry_date'] = (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S')\r\n                        save_users(users)\r\n                        st.success(\"✅ 已開通！\")\r\n                        st.rerun()\r\n\r\n# ============================================================\r\n# 8. 後台所有模組（完整實作）\r\n# ============================================================\r\n\r\n# ---------- 8.1 用戶管理 ----------\r\ndef admin_user_management():\r\n    st.subheader(\"👥 用戶管理\")\r\n    users = load_users()\r\n    if not users:\r\n        st.info(\"暫無用戶\")\r\n        return\r\n    df = pd.DataFrame.from_dict(users, orient='index')\r\n    st.dataframe(df, use_container_width=True)\r\n    \r\n    with st.expander(\"✏️ 編輯用戶\"):\r\n        username = st.selectbox(\"選擇用戶\", list(users.keys()))\r\n        if username:\r\n            user = users[username]\r\n            new_group = st.selectbox(\"群組\", ['free', 'paid', 'VIP'], index=['free','paid','VIP'].index(user.get('group','free')))\r\n            new_is_paid = st.checkbox(\"付費狀態\", value=user.get('is_paid', False))\r\n            note = st.text_area(\"備註\", value=user.get('note', ''))\r\n            if st.button(\"儲存變更\"):\r\n                users[username]['group'] = new_group\r\n                users[username]['is_paid'] = new_is_paid\r\n                users[username]['note'] = note\r\n                save_users(users)\r\n                log_admin_action(st.session_state.username, f\"編輯用戶 {username}\")\r\n                st.success(\"✅ 已更新\")\r\n                st.rerun()\r\n\r\n# ---------- 8.2 數據分析（含用戶增長） ----------\r\ndef admin_analytics():\r\n    st.subheader(\"📊 數據分析 \u0026 用戶增長\")\r\n    users = load_users()\r\n    total_users = len(users)\r\n    paid_users = sum(1 for u in users.values() if u.get('is_paid', False))\r\n    vip_users = sum(1 for u in users.values() if u.get('group') == 'VIP')\r\n    total_pred = sum(u.get('total_usage', 0) for u in users.values())\r\n    \r\n    col1, col2, col3, col4 = st.columns(4)\r\n    col1.metric(\"總用戶\", total_users)\r\n    col2.metric(\"付費用戶\", paid_users)\r\n    col3.metric(\"VIP\", vip_users)\r\n    col4.metric(\"總預測次數\", total_pred)\r\n    \r\n    if users:\r\n        df_users = pd.DataFrame.from_dict(users, orient='index')\r\n        if 'created_at' in df_users.columns:\r\n            df_users['created_at'] = pd.to_datetime(df_users['created_at'], errors='coerce')\r\n            df_users = df_users.dropna(subset=['created_at'])\r\n            df_users['date'] = df_users['created_at'].dt.date\r\n            daily = df_users.groupby('date').size().reset_index(name='new_users')\r\n            daily = daily.sort_values('date')\r\n            daily['cumulative'] = daily['new_users'].cumsum()\r\n            fig = px.line(daily, x='date', y=['new_users', 'cumulative'], \r\n                          title='每日新增用戶 \u0026 累積用戶', \r\n                          labels={'value':'用戶數', 'date':'日期'})\r\n            st.plotly_chart(fig, use_container_width=True)\r\n        else:\r\n            st.info(\"未有 created_at 數據，無法顯示增長圖\")\r\n    else:\r\n        st.info(\"暫無用戶\")\r\n\r\n# ---------- 8.3 財務管理 ----------\r\ndef admin_finance():\r\n    st.subheader(\"💰 財務管理\")\r\n    finance = load_finance()\r\n    total_income = finance.get('total_income', 0)\r\n    monthly = finance.get('monthly_income', 0)\r\n    yearly = finance.get('yearly_income', 0)\r\n    col1, col2, col3 = st.columns(3)\r\n    col1.metric(\"總收入 (HKD)\", f\"${total_income:.2f}\")\r\n    col2.metric(\"本月收入 (HKD)\", f\"${monthly:.2f}\")\r\n    col3.metric(\"今年收入 (HKD)\", f\"${yearly:.2f}\")\r\n    \r\n    with st.expander(\"➕ 新增收入記錄\"):\r\n        amount = st.number_input(\"金額\", min_value=0.0, step=10.0)\r\n        desc = st.text_input(\"描述\")\r\n        if st.button(\"記錄\"):\r\n            finance['total_income'] = finance.get('total_income', 0) + amount\r\n            finance['monthly_income'] = finance.get('monthly_income', 0) + amount\r\n            finance['yearly_income'] = finance.get('yearly_income', 0) + amount\r\n            save_finance(finance)\r\n            log_admin_action(st.session_state.username, f\"新增收入 {amount} - {desc}\")\r\n            st.success(\"✅ 已記錄\")\r\n            st.rerun()\r\n\r\n# ---------- 8.4 優惠碼管理 ----------\r\ndef admin_promo_codes():\r\n    st.subheader(\"🎟️ 優惠碼管理\")\r\n    promos = load_promos()\r\n    col1, col2 = st.columns(2)\r\n    with col1:\r\n        st.write(\"現有優惠碼\")\r\n        if promos:\r\n            st.dataframe(pd.DataFrame.from_dict(promos, orient='index'), use_container_width=True)\r\n        else:\r\n            st.info(\"暫無優惠碼\")\r\n    with col2:\r\n        st.write(\"產生新優惠碼\")\r\n        duration = st.number_input(\"有效期 (天)\", min_value=1, value=30)\r\n        if st.button(\"產生優惠碼\"):\r\n            code = generate_promo_code()\r\n            expiry = (datetime.now() + timedelta(days=duration)).isoformat()\r\n            promos[code] = {\"used\": False, \"expiry\": expiry, \"created_at\": datetime.now().isoformat()}\r\n            save_promos(promos)\r\n            st.success(f\"✅ 優惠碼已產生：`{code}` 有效期 {duration} 天\")\r\n            st.rerun()\r\n        st.write(\"套用優惠碼\")\r\n        code_input = st.text_input(\"優惠碼\")\r\n        username_input = st.text_input(\"用戶名稱\")\r\n        if st.button(\"套用\"):\r\n            if code_input not in promos:\r\n                st.error(\"優惠碼不存在\")\r\n            elif promos[code_input].get('used', False):\r\n                st.error(\"優惠碼已被使用\")\r\n            else:\r\n                users = load_users()\r\n                if username_input not in users:\r\n                    st.error(\"用戶不存在\")\r\n                else:\r\n                    users[username_input]['is_paid'] = True\r\n                    users[username_input]['group'] = 'paid'\r\n                    promos[code_input]['used'] = True\r\n                    promos[code_input]['used_by'] = username_input\r\n                    save_users(users)\r\n                    save_promos(promos)\r\n                    log_admin_action(st.session_state.username, f\"套用優惠碼 {code_input} 給 {username_input}\")\r\n                    st.success(\"✅ 已升級用戶\")\r\n                    st.rerun()\r\n\r\n# ---------- 8.5 預測監控（新增） ----------\r\ndef admin_accuracy_monitor():\r\n    st.subheader(\"📈 預測準確率監控\")\r\n    acc = load_accuracy()\r\n    records = acc.get('records', [])\r\n    if not records:\r\n        st.info(\"暫時未有預測記錄，未能進行監控。\")\r\n        return\r\n\r\n    # 自動比對賽果\r\n    try:\r\n        results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')\r\n        results_df = standardize_columns_safe(results_df)\r\n        if 'race_date' in results_df.columns and 'race_no' in results_df.columns and '馬名' in results_df.columns and 'finish_position' in results_df.columns:\r\n            results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')\r\n            results_df = results_df.dropna(subset=['race_date'])\r\n            for rec in records:\r\n                if rec.get('actual_result') is not None:\r\n                    continue\r\n                date_str = rec['date']\r\n                race_no = rec['race']\r\n                horse = rec['horse']\r\n                matched = results_df[(results_df['race_date'].dt.strftime('%Y-%m-%d') == date_str) \u0026 \r\n                                     (results_df['race_no'] == race_no) \u0026 \r\n                                     (results_df['馬名'] == horse)]\r\n                if not matched.empty:\r\n                    pos = matched.iloc[0]['finish_position']\r\n                    rec['actual_result'] = int(pos) if pd.notna(pos) else None\r\n                    rec['is_hit'] = (rec['actual_result'] == 1) if rec['actual_result'] is not None else None\r\n            save_accuracy(acc)\r\n            st.success(\"✅ 已自動比對賽果\")\r\n        else:\r\n            st.warning(\"ALL_DATA_MERGED.csv 缺少必要欄位 (race_date, race_no, 馬名, finish_position)\")\r\n    except Exception as e:\r\n        st.error(f\"自動比對失敗：{e}\")\r\n\r\n    df_records = pd.DataFrame(records)\r\n    if df_records.empty:\r\n        return\r\n    total = len(df_records)\r\n    hit = df_records[df_records['is_hit'] == True].shape[0] if 'is_hit' in df_records else 0\r\n    hit_rate = hit/total if total\u003e0 else 0\r\n    roi = (hit * 400 - total * 100) / (total * 100) if total\u003e0 else 0\r\n\r\n    col1, col2, col3 = st.columns(3)\r\n    col1.metric(\"總預測記錄\", total)\r\n    col2.metric(\"命中次數\", hit)\r\n    col3.metric(\"命中率\", f\"{hit_rate:.2%}\")\r\n    st.metric(\"ROI (模擬)\", f\"{roi:.2%}\")\r\n\r\n    if 'date' in df_records:\r\n        df_records['date'] = pd.to_datetime(df_records['date'])\r\n        daily = df_records.groupby(df_records['date'].dt.date).agg(\r\n            total=('is_hit', 'count'),\r\n            hit=('is_hit', lambda x: (x==True).sum())\r\n        ).reset_index()\r\n        daily['hit_rate'] = daily['hit'] / daily['total']\r\n        fig = px.line(daily, x='date', y='hit_rate', title='每日命中率趨勢')\r\n        st.plotly_chart(fig, use_container_width=True)\r\n\r\n    with st.expander(\"📋 查看所有記錄\"):\r\n        st.dataframe(df_records, use_container_width=True)\r\n\r\n# ---------- 8.6 訂閱管理（新增） ----------\r\ndef admin_subscription():\r\n    st.subheader(\"⏰ 訂閱管理 \u0026 到期提醒\")\r\n    users = load_users()\r\n    paid_users = {u: data for u, data in users.items() if data.get('is_paid', False) or data.get('group') == 'VIP'}\r\n    if not paid_users:\r\n        st.info(\"暫時沒有付費用戶\")\r\n        return\r\n\r\n    df_paid = pd.DataFrame.from_dict(paid_users, orient='index')\r\n    if 'expiry_date' not in df_paid:\r\n        df_paid['expiry_date'] = None\r\n    df_paid['expiry_date'] = pd.to_datetime(df_paid['expiry_date'], errors='coerce')\r\n    today = datetime.now()\r\n    df_paid['days_left'] = (df_paid['expiry_date'] - today).dt.days\r\n    df_paid['status'] = df_paid['days_left'].apply(lambda x: '🟢 有效' if x \u003e 7 else ('🟡 快到期' if x \u003e 0 else '🔴 已過期'))\r\n\r\n    st.dataframe(df_paid[['is_paid', 'group', 'paid_date', 'expiry_date', 'days_left', 'status']], use_container_width=True)\r\n\r\n    auto = load_json(AUTOMATION_FILE)\r\n    remind_days = auto.get('remind_days', 3)\r\n    new_remind = st.number_input(\"提前幾天提醒\", min_value=1, value=remind_days)\r\n    if st.button(\"儲存提醒設定\"):\r\n        auto['remind_days'] = new_remind\r\n        save_json(AUTOMATION_FILE, auto)\r\n        st.success(f\"✅ 已設為提前 {new_remind} 天提醒\")\r\n        log_admin_action(st.session_state.username, f\"設定提醒天數為 {new_remind}\")\r\n\r\n    st.subheader(\"✏️ 手動續期\")\r\n    username = st.selectbox(\"選擇用戶\", list(paid_users.keys()))\r\n    if username:\r\n        new_expiry = st.date_input(\"新的到期日\", value=pd.to_datetime(today + timedelta(days=30)))\r\n        if st.button(\"確認續期\"):\r\n            users[username]['expiry_date'] = new_expiry.strftime('%Y-%m-%d %H:%M:%S')\r\n            save_users(users)\r\n            log_admin_action(st.session_state.username, f\"續期用戶 {username} 至 {new_expiry}\")\r\n            st.success(f\"✅ {username} 已續期至 {new_expiry}\")\r\n            st.rerun()\r\n\r\n# ---------- 8.7 系統監控 ----------\r\ndef admin_monitoring():\r\n    st.subheader(\"📡 系統監控\")\r\n    files = ['ALL_DATA_MERGED.csv', 'HKCJ_FULL_YEAR_DATA.csv', 'horse_name_mapping.csv',\r\n             'hk_racing_model.pkl', 'hk_catboost_model.cbm', 'hk_ranking_model.pkl']\r\n    for f in files:\r\n        if os.path.exists(f):\r\n            size = os.path.getsize(f)/1024\r\n            st.success(f\"✅ {f} 存在 ({size:.1f} KB)\")\r\n        else:\r\n            st.error(f\"❌ {f} 不存在\")\r\n    logs = load_logs()\r\n    if logs.get('logs'):\r\n        df_log = pd.DataFrame(logs['logs'][-20:])\r\n        st.dataframe(df_log, use_container_width=True)\r\n\r\n# ---------- 8.8 內容管理 ----------\r\ndef admin_content():\r\n    st.subheader(\"📝 內容管理\")\r\n    content = load_json(CONTENT_FILE)\r\n    announcement = content.get('announcement', '歡迎使用系統')\r\n    new_ann = st.text_area(\"公告內容\", value=announcement, height=100)\r\n    if st.button(\"更新公告\"):\r\n        content['announcement'] = new_ann\r\n        save_json(CONTENT_FILE, content)\r\n        st.success(\"✅ 已更新\")\r\n    st.write(\"上傳排位表\")\r\n    uploaded = st.file_uploader(\"選擇 CSV 排位表\", type=['csv'])\r\n    if uploaded:\r\n        with open('HKCJ_FULL_YEAR_DATA.csv', 'wb') as f:\r\n            f.write(uploaded.getbuffer())\r\n        st.success(\"✅ 排位表已更新\")\r\n\r\n# ---------- 8.9 自動化工具 ----------\r\ndef admin_automation():\r\n    st.subheader(\"🤖 自動化工具\")\r\n    auto = load_json(AUTOMATION_FILE)\r\n    days = st.number_input(\"提前幾天提醒\", min_value=1, value=auto.get('remind_days', 3))\r\n    if st.button(\"儲存設定\"):\r\n        auto['remind_days'] = days\r\n        save_json(AUTOMATION_FILE, auto)\r\n        st.success(\"✅ 已儲存\")\r\n\r\n# ---------- 8.10 安全與權限 ----------\r\ndef admin_security():\r\n    st.subheader(\"🔐 安全與權限\")\r\n    st.write(\"操作日誌\")\r\n    logs = load_logs()\r\n    if logs.get('logs'):\r\n        df_log = pd.DataFrame(logs['logs'][-20:])\r\n        st.dataframe(df_log, use_container_width=True)\r\n    st.write(\"多管理員管理\")\r\n    users = load_users()\r\n    admin_list = [u for u, d in users.items() if d.get('group') == 'VIP' or d.get('is_admin')]\r\n    st.write(\"現有管理員：\", \", \".join(admin_list) if admin_list else \"無\")\r\n    new_admin = st.text_input(\"新增管理員用戶名\")\r\n    if st.button(\"設為管理員\"):\r\n        if new_admin in users:\r\n            users[new_admin]['group'] = 'VIP'\r\n            users[new_admin]['is_admin'] = True\r\n            save_users(users)\r\n            log_admin_action(st.session_state.username, f\"新增管理員 {new_admin}\")\r\n            st.success(\"✅ 已設為管理員\")\r\n            st.rerun()\r\n        else:\r\n            st.error(\"用戶不存在\")\r\n\r\n# ============================================================\r\n# 9. 後台頁面（密碼驗證 + 所有分頁）\r\n# ============================================================\r\ndef admin_page():\r\n    if 'admin_authenticated' not in st.session_state:\r\n        st.session_state.admin_authenticated = False\r\n    \r\n    if not st.session_state.admin_authenticated:\r\n        st.title(\"🔐 後台管理 - 身份驗證\")\r\n        st.markdown(\"請輸入管理員密碼以進入後台\")\r\n        admin_pw = st.text_input(\"管理員密碼\", type=\"password\", key=\"admin_login_pw\")\r\n        col1, col2 = st.columns(2)\r\n        with col1:\r\n            if st.button(\"🔓 解鎖後台\", type=\"primary\"):\r\n                if admin_pw == CONFIG[\"admin_password\"]:\r\n                    st.session_state.admin_authenticated = True\r\n                    st.session_state.admin_username = \"admin\"\r\n                    log_admin_action(\"admin\", \"登入後台\")\r\n                    st.success(\"✅ 密碼正確！\")\r\n                    st.rerun()\r\n                else:\r\n                    st.error(\"❌ 密碼錯誤！\")\r\n        with col2:\r\n            if st.button(\"⬅️ 返回主頁\"):\r\n                st.session_state.show_admin = False\r\n                st.rerun()\r\n        return\r\n    \r\n    st.title(\"🔐 後台管理\")\r\n    st.info(f\"👤 管理員：{st.session_state.get('admin_username', 'admin')} | 已通過驗證\")\r\n    if st.button(\"🚪 登出後台\"):\r\n        st.session_state.admin_authenticated = False\r\n        st.session_state.show_admin = False\r\n        st.rerun()\r\n    st.divider()\r\n    \r\n    tabs = st.tabs([\r\n        \"👥 用戶管理\", \r\n        \"📊 數據分析\", \r\n        \"💰 財務\", \r\n        \"🎟️ 優惠碼\", \r\n        \"📈 預測監控\", \r\n        \"⏰ 訂閱管理\", \r\n        \"📡 監控\", \r\n        \"📝 內容\", \r\n        \"🤖 自動化\", \r\n        \"🔐 安全\"\r\n    ])\r\n    with tabs[0]:\r\n        admin_user_management() if CONFIG[\"module_user_management\"] else st.info(\"模組已關閉\")\r\n    with tabs[1]:\r\n        admin_analytics() if CONFIG[\"module_analytics\"] else st.info(\"模組已關閉\")\r\n    with tabs[2]:\r\n        admin_finance() if CONFIG[\"module_finance\"] else st.info(\"模組已關閉\")\r\n    with tabs[3]:\r\n        admin_promo_codes() if CONFIG[\"module_promo\"] else st.info(\"模組已關閉\")\r\n    with tabs[4]:\r\n        admin_accuracy_monitor()\r\n    with tabs[5]:\r\n        admin_subscription()\r\n    with tabs[6]:\r\n        admin_monitoring() if CONFIG[\"module_monitoring\"] else st.info(\"模組已關閉\")\r\n    with tabs[7]:\r\n        admin_content() if CONFIG[\"module_content\"] else st.info(\"模組已關閉\")\r\n    with tabs[8]:\r\n        admin_automation() if CONFIG[\"module_automation\"] else st.info(\"模組已關閉\")\r\n    with tabs[9]:\r\n        admin_security() if CONFIG[\"module_security\"] else st.info(\"模組已關閉\")\r\n\r\n# ============================================================\r\n# 10. 主頁面\r\n# ============================================================\r\ndef main():\r\n    if 'logged_in' not in st.session_state:\r\n        st.session_state.logged_in = False\r\n    if 'username' not in st.session_state:\r\n        st.session_state.username = None\r\n    if 'usage_count' not in st.session_state:\r\n        st.session_state.usage_count = 0\r\n    if 'show_admin' not in st.session_state:\r\n        st.session_state.show_admin = False\r\n    if 'show_history' not in st.session_state:\r\n        st.session_state.show_history = False\r\n    if 'admin_authenticated' not in st.session_state:\r\n        st.session_state.admin_authenticated = False\r\n\r\n    if CONFIG[\"enable_registration\"] and not st.session_state.logged_in:\r\n        login_page()\r\n        return\r\n\r\n    if st.session_state.show_admin and CONFIG[\"enable_admin\"]:\r\n        admin_page()\r\n        return\r\n\r\n    col1, col2 = st.columns([6, 1])\r\n    with col1:\r\n        st.title(\"🏇 賽馬預測系統\")\r\n        st.markdown(\"AI 驅動・即時預測・彩池推薦\")\r\n        st.caption(f\"{datetime.now().strftime('%Y年%m月%d日')} · 36個特徵 · 三模型融合 · 六種彩池\")\r\n    with col2:\r\n        if CONFIG[\"enable_admin\"]:\r\n            if st.button(\"🔐 後台\", use_container_width=True):\r\n                st.session_state.show_admin = True\r\n                st.session_state.admin_authenticated = False\r\n                st.rerun()\r\n\r\n    if CONFIG[\"enable_registration\"] and st.session_state.logged_in:\r\n        show_user_dashboard(st.session_state.username)\r\n    elif not CONFIG[\"enable_registration\"]:\r\n        st.info(\"🔓 目前為公開模式，任何人皆可使用\")\r\n\r\n    with st.sidebar:\r\n        st.header(\"🎯 控制面板\")\r\n        if CONFIG[\"enable_registration\"] and st.session_state.logged_in:\r\n            st.write(f\"👤 用戶：{st.session_state.username}\")\r\n            if CONFIG[\"enable_payment\"]:\r\n                users = load_users()\r\n                user_data = users.get(st.session_state.username, {})\r\n                if user_data.get('is_paid', False):\r\n                    st.success(\"✅ 付費用戶\")\r\n                else:\r\n                    remain = max(0, CONFIG[\"free_limit\"] - st.session_state.usage_count)\r\n                    st.info(f\"📊 剩餘免費場次：{remain} 場\")\r\n            if st.button(\"📋 我的預測記錄\"):\r\n                st.session_state.show_history = not st.session_state.show_history\r\n        date = st.date_input(\"📅 選擇日期\", value=pd.to_datetime(\"2025-04-09\"))\r\n        race_no = st.selectbox(\"🏇 選擇場次\", list(range(1, 12)), index=8)\r\n        predict_btn = st.button(\"🚀 執行預測\", type=\"primary\", use_container_width=True)\r\n\r\n    if CONFIG[\"enable_registration\"] and st.session_state.logged_in and st.session_state.get('show_history', False):\r\n        st.subheader(\"📋 我的預測記錄\")\r\n        show_prediction_history(st.session_state.username)\r\n        st.divider()\r\n\r\n    st.subheader(\"📅 今日賽程\")\r\n    try:\r\n        df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')\r\n        df_sched = standardize_columns_safe(df_sched)\r\n        if 'race_date' in df_sched.columns:\r\n            df_sched['race_date'] = pd.to_datetime(df_sched['race_date'], errors='coerce')\r\n            df_sched = df_sched.dropna(subset=['race_date'])\r\n            today = datetime.now().date()\r\n            day_races = df_sched[df_sched['race_date'].dt.date == today]\r\n            if day_races.empty:\r\n                st.info(\"今日沒有賽事\")\r\n            else:\r\n                for course in day_races['race_course'].unique():\r\n                    races = day_races[day_races['race_course'] == course]['race_no'].unique()\r\n                    st.write(f\"🏟️ **{course}**：第 {', '.join(map(str, sorted(races)))} 場\")\r\n        else:\r\n            st.info(\"今日沒有賽事\")\r\n    except:\r\n        st.info(\"今日沒有賽事\")\r\n\r\n    if predict_btn:\r\n        if CONFIG[\"enable_payment\"]:\r\n            users = load_users()\r\n            user_data = users.get(st.session_state.username, {})\r\n            is_paid = user_data.get('is_paid', False)\r\n            if not is_paid:\r\n                if st.session_state.usage_count \u003e= CONFIG[\"free_limit\"]:\r\n                    show_paywall()\r\n                    return\r\n        date_str = date.strftime('%Y-%m-%d')\r\n        with st.spinner(f\"執行預測 {date_str} 第 {race_no} 場...\"):\r\n            result, pool = run_prediction(date_str, race_no)\r\n            if result is not None:\r\n                st.success(f\"✅ {date_str} 第 {race_no} 場 預測完成\")\r\n                st.subheader(\"🏇 預測 TOP 5\")\r\n                display_df = result.head(5)[['馬匹名稱', '檔位', '預測勝率', '值博指數']].copy()\r\n                display_df['預測勝率'] = display_df['預測勝率'].apply(lambda x: f\"{x:.2%}\")\r\n                display_df['值博指數'] = display_df['值博指數'].apply(lambda x: f\"{x:.4f}\")\r\n                st.dataframe(display_df, use_container_width=True)\r\n                st.subheader(\"🎯 彩池推薦\")\r\n                st.text(pool)\r\n\r\n                if CONFIG[\"enable_registration\"] and st.session_state.logged_in:\r\n                    winner_name = result.iloc[0]['馬匹名稱'] if not result.empty else \"未知\"\r\n                    prob = result.iloc[0]['預測勝率'] if not result.empty else None\r\n                    record_prediction(st.session_state.username, date_str, race_no, winner_name, prob)\r\n                    users = load_users()\r\n                    if st.session_state.username in users:\r\n                        users[st.session_state.username]['free_usage'] = users[st.session_state.username].get('free_usage', 0) + 1\r\n                        users[st.session_state.username]['total_usage'] = users[st.session_state.username].get('total_usage', 0) + 1\r\n                        save_users(users)\r\n                    st.session_state.usage_count += 1\r\n                    st.info(\"📝 預測已記錄到你的歷史\")\r\n\r\n    st.divider()\r\n    st.caption(f\"🕐 最後更新：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\")\r\n    st.caption(\"🔐 數據來源：HKJC | 系統版本：v14.0-用戶體驗版\")\r\n\r\nif __name__ == '__main__':\r\n    main()\r\n","fileName":"app_streamlit.py","previewEditPath":"/tszkit9-boop/horse-racing-bot/preview/main/app_streamlit.py","isNewFile":false,"binary":false,"enableCommitButton":null,"slashCommandsEnabled":true,"helpUrl":"https://docs.github.com","codeMirror":{"indentSize":4,"indentMode":"space","lineWrapping":"off","showFileActions":true},"editors":{"stacksEnabled":true,"actionsEnabled":true,"dependabotEditorEnabled":false,"devcontainerEditorEnabled":true,"isEnterprise":false,"isProxima":false,"repositoryActionsEnabled":true,"repositoryActionsReadinessPath":"/tszkit9-boop/horse-racing-bot/settings/actions/check_readiness"},"templates":{"issueFormsEnabled":true,"showIssueFormWarning":false},"pickers":{"licensePickerAvailable":true,"licenseToolPath":"/tszkit9-boop/horse-racing-bot/community/license/new?branch=main","codeOfConductPickerAvailable":true,"codeOfConductToolPath":"/tszkit9-boop/horse-racing-bot/community/code-of-conduct/new"},"banners":{"citationHelpUrl":"https://docs.github.com/github/creating-cloning-and-archiving-repositories/creating-a-repository-on-github/about-citation-files","editRepoPath":"/tszkit9-boop/horse-racing-bot/settings","hasMixedLineEndings":null,"orgMemberProfileReadmeCalloutEnabled":false,"orgProfileReadmeCalloutEnabled":false,"profileReadmeCalloutEnabled":false,"replacedDetectedEncoding":null,"repositoryCitationTemplateUrl":"https://github.com/tszkit9-boop/horse-racing-bot/citation_file_template","repositoryFundingLinksEnabled":false,"sponsorsEnabled":true},"uploadPolicyPath":"/upload/policies/assets","uploadExtensions":[".gif",".jpeg",".jpg",".mov",".mp4",".png",".svg",".webm",".webp"],"renderableExtensions":[".md",".livemd",".markdown",".mdown",".mdwn",".mkd",".mkdn",".mkdown",".ronn",".scd",".workbook",".mdx",".litcoffee",".coffee.md",".textile",".rdoc",".org",".creole",".mediawiki",".wiki",".wikitext",".asciidoc",".adoc",".asc",".rst",".rest",".rest.txt",".rst.txt",".pod",".pod6"],"isOnboardingGuidance":false},"webCommitInfo":{"authorEmails":[],"canCommitStatus":"allowed","pullRequestEnabled":true,"canCreatePullRequest":true,"commitOid":"57793ad8fde6da9161cac4dfbdd3d30d8f6501e7","dcoSignoffEnabled":false,"dcoSignoffHelpUrl":null,"defaultEmail":null,"defaultNewBranchName":"tszkit9-boop-patch-1","guidanceTask":null,"saveUrl":"/tszkit9-boop/horse-racing-bot/tree-save/main/app_streamlit.py","forkedRepo":null,"repoHeadEmpty":false,"shouldFork":null,"shouldUpdate":null,"lockedOnMigration":false,"userOverRepositoryLimit":false,"pr":null,"protectionNotEnforcedInfo":null,"suggestionsUrlMention":"/suggestions?mention_suggester=1\u0026repository=horse-racing-bot\u0026user_id=tszkit9-boop","suggestionsUrlIssue":"/suggestions?issue_suggester=1\u0026repository=horse-racing-bot\u0026user_id=tszkit9-boop","suggestionsUrlEmoji":"/autocomplete/emoji","supportFileUrl":null},"path":"app_streamlit.py","copilotInfo":null,"copilotGenerateCommitMessageAuthInfo":{"apiUrl":"https://api.individual.githubcopilot.com","ssoOrganizations":[],"copilotAccessAllowed":true}},"codeViewLayoutRoute":{"repo":{"id":1341026980,"defaultBranch":"main","name":"horse-racing-bot","ownerLogin":"tszkit9-boop","currentUserCanPush":true,"isFork":false,"isEmpty":false,"createdAt":"2026-08-21T02:25:20.000+08:00","ownerAvatar":"https://avatars.githubusercontent.com/u/276705105?v=4","public":true,"private":false,"isOrgOwned":false},"currentUser":{"id":276705105,"login":"tszkit9-boop","userEmail":"tszkit9@gmail.com"},"uploadToken":"EG3JgmCeWoyQXfbDnAjnbjM91gbCUetv9WWo3IZnMXU1vL0M82EdwTYRaahg1_OI1-tJVU3C3G0DUpe4iyqbKw","allShortcutsEnabled":true,"treeExpanded":false,"path":"app_streamlit.py","symbolsExpanded":false,"refInfo":{"name":"main","listCacheKey":"v0:1787250580.0","canEdit":false,"currentOid":"57793ad8fde6da9161cac4dfbdd3d30d8f6501e7"},"helpUrl":"https://docs.github.com","githubDevUrl":null},"codeViewFileTreeLayoutRoute":{"fileTree":{"":{"items":[{"name":".devcontainer","path":".devcontainer","contentType":"directory"},{"name":".github","path":".github","contentType":"directory"},{"name":"public","path":"public","contentType":"directory"},{"name":"scripts","path":"scripts","contentType":"directory"},{"name":"src","path":"src","contentType":"directory"},{"name":".gitattributes","path":".gitattributes","contentType":"file"},{"name":".gitconfig","path":".gitconfig","contentType":"file"},{"name":".gitignore","path":".gitignore","contentType":"file"},{"name":"ALL_DATA_MERGED.csv","path":"ALL_DATA_MERGED.csv","contentType":"file"},{"name":"HKCJ_FULL_YEAR_DATA.csv","path":"HKCJ_FULL_YEAR_DATA.csv","contentType":"file"},{"name":"README.md","path":"README.md","contentType":"file"},{"name":"app.py","path":"app.py","contentType":"file"},{"name":"app_streamlit.py","path":"app_streamlit.py","contentType":"file"},{"name":"blink-tagger.plugin.mjs","path":"blink-tagger.plugin.mjs","contentType":"file"},{"name":"compare_results.py","path":"compare_results.py","contentType":"file"},{"name":"components.json","path":"components.json","contentType":"file"},{"name":"daily_predict.py","path":"daily_predict.py","contentType":"file"},{"name":"hk_catboost_model.cbm","path":"hk_catboost_model.cbm","contentType":"file"},{"name":"hk_racing_model.pkl","path":"hk_racing_model.pkl","contentType":"file"},{"name":"hk_ranking_model.pkl","path":"hk_ranking_model.pkl","contentType":"file"},{"name":"horse_name_mapping.csv","path":"horse_name_mapping.csv","contentType":"file"},{"name":"package.json","path":"package.json","contentType":"file"},{"name":"predict_all_races.py","path":"predict_all_races.py","contentType":"file"},{"name":"predict_race_card.py","path":"predict_race_card.py","contentType":"file"},{"name":"requirements.txt","path":"requirements.txt","contentType":"file"},{"name":"scrape_racecard_with_odds.py","path":"scrape_racecard_with_odds.py","contentType":"file"},{"name":"telegram_bot.py","path":"telegram_bot.py","contentType":"file"},{"name":"trend_report.py","path":"trend_report.py","contentType":"file"},{"name":"tsconfig.json","path":"tsconfig.json","contentType":"file"},{"name":"tsconfig.node.json","path":"tsconfig.node.json","contentType":"file"},{"name":"vite.config.ts","path":"vite.config.ts","contentType":"file"}],"totalCount":31}},"fileTreeProcessingTime":15.912728000000001,"foldersToFetch":[]},"csrf_tokens":{"/tszkit9-boop/horse-racing-bot/tree-save/main/app_streamlit.py":{"post":"1PMnoqVtJqtmQfefbGiF6K1bEj-cN3snNiK9Hn5iyNmyZPCavP9GRXP7CgJQdDBgGg0hhodwxG_m3hXwYQGu4A"},"/tszkit9-boop/horse-racing-bot/preview/main/app_streamlit.py":{"post":"UuwdExJcYhEOaioo3mAE80vVUuwEy6PQcPwev8xgxjlAQizXjLasiN4fTD3JizMh-N_dXrE50EefYJuUqMWybQ"},"/upload/policies/assets":{"post":"pCTToXQKCVyUpOkoRoejVV9Fz_0LGAfDWsaCBKB22JWB9acv5_VOETLodkO6WLezu5NQroSLMMGs8b1grTtyyw"}}},"title":"Editing horse-racing-bot/app_streamlit.py at main · tszkit9-boop/horse-racing-bot","appPayload":{},"meta":{"title":"Editing horse-racing-bot/app_streamlit.py at main · tszkit9-boop/horse-racing-bot"}}</script>
-  <div data-target="react-app.reactRoot"><meta name="github-code-view-meta-stats" id="github-code-view-meta-stats" data-hydrostats="publish"/> <!-- --> <a hidden="" id="code-view-repo-link" href="/tszkit9-boop/horse-racing-bot" data-discover="true"></a> <div class="d-none"></div><div><div style="--spacing:var(--spacing-none)" class="prc-PageLayout-PageLayoutRoot--KH-d" data-component="SplitPageLayout" data-has-sidebar="true"><div class="prc-PageLayout-SidebarWrapper-kLG4B CopilotSidePanelSidebar-module__SidePanel__L3O0C CopilotSidePanelSidebar-module__HiddenSidePanel__TBRGn" style="--spacing-column:var(--spacing-none)" data-is-hidden="false" data-position="end" data-sticky="true" data-responsive-variant="fullscreen"><div class="prc-PageLayout-VerticalDivider-9QRmK prc-PageLayout-SidebarVerticalDivider-0Rl0V" data-component="PageLayout.VerticalDivider" data-variant="line" data-position="end" style="--spacing:var(--spacing-none)"><div class="prc-PageLayout-DraggableHandle-9s6B4" data-component="PageLayout.DragHandle" role="slider" aria-label="Draggable pane splitter" aria-valuemin="450" aria-valuemax="768" aria-valuenow="544" aria-valuetext="Pane width 544 pixels" tabindex="0"></div></div><div class="prc-PageLayout-Sidebar-iciWg" data-component="SplitPageLayout.Sidebar" data-resizable="true" style="--spacing:var(--spacing-normal);--pane-min-width:450px;--pane-max-width:768px;--pane-width-custom:544px;--pane-width-size:var(--pane-width-custom);--pane-width:544px"><div class="height-full" data-testid="copilot-code-view-side-panel"><div id="copilot-side-panel-content" class="height-full"></div></div></div></div><div class="prc-PageLayout-PageLayoutWrapper-2BhU2" data-width="full"><div class="prc-PageLayout-PageLayoutContent-BneH9"><div id="repos-file-tree-sidebar" class="CodeViewFileTreeLayout-module__sidebar__n_Aau" tabindex="0"><div class="prc-PageLayout-PaneWrapper-pHPop ReposFileTreePane-module__Pane__rBZpI ReposFileTreePane-module__HideTree__AYZnm ReposFileTreePane-module__HidePane__VHAVt" style="--offset-header:0px;--spacing-row:var(--spacing-none);--spacing-column:var(--spacing-none)" data-is-hidden="false" data-position="start" data-sticky="true"><div class="prc-PageLayout-HorizontalDivider-JLVqp prc-PageLayout-PaneHorizontalDivider-9tbnE" data-component="PageLayout.HorizontalDivider" data-variant-regular="none" data-variant-narrow="none" data-position="start" style="--spacing-divider:var(--spacing-none);--spacing:var(--spacing-none)"></div><div class="prc-PageLayout-Pane-AyzHK" data-component="SplitPageLayout.Pane" data-resizable="true" style="--spacing:var(--spacing-none);--pane-min-width:256px;--pane-max-width:calc(100vw - var(--pane-max-width-diff));--pane-width-size:var(--pane-width-large);--pane-width:320px"></div><div class="prc-PageLayout-VerticalDivider-9QRmK prc-PageLayout-PaneVerticalDivider-le57g" data-component="PageLayout.VerticalDivider" data-variant-narrow="none" data-variant-regular="line" data-variant-wide="line" data-position="start" style="--spacing:var(--spacing-none)"><div class="prc-PageLayout-DraggableHandle-9s6B4" data-component="PageLayout.DragHandle" role="slider" aria-label="Draggable pane splitter" aria-valuemin="256" aria-valuemax="600" aria-valuenow="320" aria-valuetext="Pane width 320 pixels" tabindex="0"></div></div></div></div><div data-component="SplitPageLayout.Content" class="prc-PageLayout-ContentWrapper-gR9eG" data-is-hidden-narrow="false"><div class="prc-PageLayout-Content-xWL-A" data-width="full" style="--spacing:var(--spacing-none)"><div class="SharedPageLayout-module__content__IwGAp" data-selector="repos-split-pane-content" id="repos-split-pane-content" tabindex="0"><div class="tmp-pt-3"><div class="CodeView-module__contentWrapper__cG2JH"><div class="d-flex flex-column flex-items-center tmp-py-3"><span class="prc-Spinner-Box-Y-ke-" data-component="Spinner"><svg height="32px" width="32px" viewBox="0 0 16 16" fill="none" aria-hidden="true" aria-label="Loading" class="prc-Spinner-SpinnerAnimation-tutJZ"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-opacity="0.25" stroke-width="2" vector-effect="non-scaling-stroke"></circle><path d="M15 8a7.002 7.002 0 00-7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" vector-effect="non-scaling-stroke"></path></svg></span></div></div></div></div></div></div></div></div></div><div class="ScrollMarksContainer-module__scrollMarksContainer__Eu7uU" id="find-result-marks-container"></div><div class="d-none"></div><div class="d-none"></div></div> <!-- --> <!-- --> </div>
-</react-app>
+    if 'date' in df_records:
+        df_records['date'] = pd.to_datetime(df_records['date'])
+        daily = df_records.groupby(df_records['date'].dt.date).agg(
+            total=('is_hit', 'count'),
+            hit=('is_hit', lambda x: (x==True).sum())
+        ).reset_index()
+        daily['hit_rate'] = daily['hit'] / daily['total']
+        fig = px.line(daily, x='date', y='hit_rate', title='每日命中率趨勢')
+        st.plotly_chart(fig, use_container_width=True)
 
+    with st.expander("📋 查看所有記錄"):
+        st.dataframe(df_records, use_container_width=True)
 
+    # ============================================================
+    # 🔧 Admin 專用：比對賽果 + 調整權重（已搬過嚟）
+    # ============================================================
+    st.divider()
+    st.subheader("🔧 管理員操作")
+    
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        if st.button("🔄 比對賽果 + 更新統計", key="admin_update_analysis", use_container_width=True):
+            with st.spinner("正在比對賽果..."):
+                updated, msg = update_accuracy_with_results()
+                if updated > 0:
+                    st.success(f"✅ {msg}")
+                    st.rerun()
+                else:
+                    st.info(f"📭 {msg}")
+    with col_btn2:
+        if st.button("⚖️ 自動調整權重", key="admin_adjust_weights", use_container_width=True):
+            with st.spinner("正在計算最佳權重..."):
+                result = adjust_model_weights()
+                st.success(f"✅ 權重已調整：XGBoost = {result['xgb_weight']}, CatBoost = {result['cat_weight']}（命中率 {result['hit_rate']:.2%}，共 {result['total']} 場）")
+                st.rerun()
+    
+    st.caption("🔒 此操作僅限管理員使用，會影響系統預測權重")
 
+# ---------- 8.6 訂閱管理 ----------
+def admin_subscription():
+    st.subheader("⏰ 訂閱管理 & 到期提醒")
+    users = load_users()
+    paid_users = {u: data for u, data in users.items() if data.get('is_paid', False) or data.get('group') in ['VIP', 'super_admin']}
+    if not paid_users:
+        st.info("暫時沒有付費用戶")
+    else:
+        df_paid = pd.DataFrame.from_dict(paid_users, orient='index')
+        required_cols = ['is_paid', 'group', 'plan', 'paid_date', 'expiry_date']
+        for col in required_cols:
+            if col not in df_paid.columns:
+                df_paid[col] = None
+        df_paid['expiry_date'] = pd.to_datetime(df_paid['expiry_date'], errors='coerce')
+        today = datetime.now()
+        df_paid['days_left'] = (df_paid['expiry_date'] - today).dt.days
+        df_paid['status'] = df_paid['days_left'].apply(lambda x: '🟢 有效' if x > 7 else ('🟡 快到期' if x > 0 else '🔴 已過期') if pd.notna(x) else '⚪ 未設定')
+        display_cols = ['is_paid', 'group', 'plan', 'paid_date', 'expiry_date', 'days_left', 'status']
+        st.dataframe(df_paid[display_cols], use_container_width=True)
 
-  </div>
+    auto = load_json(AUTOMATION_FILE)
+    remind_days = auto.get('remind_days', 3)
+    new_remind = st.number_input("提前幾天提醒", min_value=1, value=remind_days, key="remind_days_sub")
+    if st.button("儲存提醒設定", key="save_remind_sub"):
+        auto['remind_days'] = new_remind
+        save_json(AUTOMATION_FILE, auto)
+        st.success(f"✅ 已設為提前 {new_remind} 天提醒")
+        log_admin_action(st.session_state.username, f"設定提醒天數為 {new_remind}")
 
-</turbo-frame>
+    st.divider()
+    st.subheader("⏰ 自動終止過期會員")
+    
+    if st.button("🔍 檢查並終止過期會員", key="check_expired"):
+        users = load_users()
+        today = datetime.now()
+        expired = []
+        for uid, u in users.items():
+            if u.get('group') == 'VIP' and u.get('expiry_date'):
+                try:
+                    exp = pd.to_datetime(u['expiry_date'])
+                    if exp < today:
+                        u['group'] = 'free'
+                        u['is_paid'] = False
+                        u['predictions_limit'] = CONFIG["free_limit"]
+                        u['plan'] = None
+                        u['note'] = (u.get('note', '') + f' [於 {today.strftime("%Y-%m-%d")} 自動降級]').strip()
+                        expired.append(uid)
+                except Exception as e:
+                    st.warning(f"⚠️ 檢查 {uid} 時出錯：{e}")
+        if expired:
+            save_users(users)
+            st.success(f"✅ 已將 {len(expired)} 個過期會員降級：{', '.join(expired)}")
+            log_admin_action(st.session_state.username, f"自動終止過期會員：{', '.join(expired)}")
+        else:
+            st.info("✅ 目前沒有過期會員")
 
-    </main>
-  </div>
+    st.subheader("✏️ 手動續期")
+    username = st.selectbox("選擇用戶", list(users.keys()), key="renew_user_select")
+    if username:
+        new_expiry = st.date_input("新的到期日", value=pd.to_datetime(datetime.now() + timedelta(days=30)), key="renew_date")
+        if st.button("確認續期", key="renew_confirm"):
+            users[username]['expiry_date'] = new_expiry.strftime('%Y-%m-%d %H:%M:%S')
+            save_users(users)
+            log_admin_action(st.session_state.username, f"續期用戶 {username} 至 {new_expiry}")
+            st.success(f"✅ {username} 已續期至 {new_expiry}")
+            st.rerun()
 
-  </div>
+# ---------- 8.7 系統監控 ----------
+def admin_monitoring():
+    st.subheader("📡 系統監控")
+    files = ['ALL_DATA_MERGED.csv', 'HKCJ_FULL_YEAR_DATA.csv', 'horse_name_mapping.csv',
+             'hk_racing_model.pkl', 'hk_catboost_model.cbm', 'hk_ranking_model.pkl']
+    for f in files:
+        if os.path.exists(f):
+            size = os.path.getsize(f)/1024
+            st.success(f"✅ {f} 存在 ({size:.1f} KB)")
+        else:
+            st.error(f"❌ {f} 不存在")
+    logs = load_logs()
+    if logs.get('logs'):
+        df_log = pd.DataFrame(logs['logs'][-20:])
+        st.dataframe(df_log, use_container_width=True)
 
-          <footer class="footer f6 color-fg-muted color-border-subtle tmp-pt-7 tmp-pb-6 p-responsive" role="contentinfo"  >
-  <h2 class='sr-only'>Footer</h2>
+# ---------- 8.8 內容管理 ----------
+def admin_content():
+    st.subheader("📝 內容管理")
+    content = load_json(CONTENT_FILE)
+    
+    with st.expander("📢 發佈新公告", expanded=False):
+        col1, col2 = st.columns(2)
+        with col1:
+            title = st.text_input("公告標題", placeholder="例如：今日沙田日馬", key="ann_title")
+            content_text = st.text_area("公告內容", height=80, placeholder="輸入公告詳細內容...", key="ann_content")
+        with col2:
+            ann_type = st.selectbox("公告類型", ["一般", "重要", "緊急"], key="ann_type")
+            target_group = st.selectbox("顯示對象", ["全部用戶", "免費用戶", "付費用戶", "VIP"], key="ann_target")
+            start_date = st.date_input("開始日期", value=datetime.now().date(), key="ann_start")
+            end_date = st.date_input("結束日期（留空 = 永久）", value=None, key="ann_end")
+        if st.button("📤 發佈公告", type="primary", key="publish_ann"):
+            if not title or not content_text:
+                st.warning("請填寫標題同內容")
+            else:
+                if 'announcements' not in content:
+                    content['announcements'] = []
+                new_ann = {
+                    "id": len(content['announcements']) + 1,
+                    "title": title,
+                    "content": content_text,
+                    "type": ann_type,
+                    "target": target_group,
+                    "start_date": start_date.strftime('%Y-%m-%d'),
+                    "end_date": end_date.strftime('%Y-%m-%d') if end_date else None,
+                    "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    "status": "active"
+                }
+                content['announcements'].append(new_ann)
+                save_json(CONTENT_FILE, content)
+                log_admin_action(st.session_state.username, f"發佈公告：{title}")
+                st.success("✅ 公告已發佈！")
+                st.rerun()
+    
+    st.subheader("📋 現有公告")
+    announcements = content.get('announcements', [])
+    today = datetime.now().date()
+    for ann in announcements:
+        if ann.get('status') == 'active' and ann.get('end_date'):
+            end = datetime.strptime(ann['end_date'], '%Y-%m-%d').date()
+            if end < today:
+                ann['status'] = 'expired'
+    save_json(CONTENT_FILE, content)
+    content = load_json(CONTENT_FILE)
+    active_anns = [a for a in content.get('announcements', []) if a.get('status') == 'active']
+    
+    if active_anns:
+        for ann in active_anns:
+            type_icon = {"一般": "💡", "重要": "⚠️", "緊急": "🚨"}.get(ann.get('type', '一般'), "💡")
+            target_label = ann.get('target', '全部用戶')
+            end_display = "永久" if ann.get('end_date') is None else ann.get('end_date')
+            col1, col2, col3 = st.columns([5, 3, 1])
+            with col1:
+                st.markdown(f"**{type_icon} {ann.get('title', '無標題')}**")
+                st.caption(ann.get('content', ''))
+            with col2:
+                st.write(f"🎯 {target_label}")
+                st.write(f"📅 {ann.get('start_date', '')} → {end_display}")
+            with col3:
+                if st.button("🗑️ 刪除", key=f"del_ann_{ann.get('id')}"):
+                    ann['status'] = 'deleted'
+                    save_json(CONTENT_FILE, content)
+                    st.rerun()
+            st.divider()
+    else:
+        st.info("暫時冇生效中嘅公告")
+    
+    with st.expander("📋 公告歷史（已過期/已刪除）"):
+        inactive = [a for a in content.get('announcements', []) if a.get('status') in ['expired', 'deleted']]
+        if inactive:
+            df = pd.DataFrame(inactive)
+            st.dataframe(df[['id', 'title', 'type', 'target', 'start_date', 'end_date', 'status', 'created_at']], use_container_width=True)
+        else:
+            st.info("暫無歷史記錄")
+    
+    st.write("---")
+    st.write("上傳排位表")
+    uploaded = st.file_uploader("選擇 CSV 排位表", type=['csv'], key="upload_racecard")
+    if uploaded:
+        with open('HKCJ_FULL_YEAR_DATA.csv', 'wb') as f:
+            f.write(uploaded.getbuffer())
+        st.success("✅ 排位表已更新")
 
-  
+# ---------- 8.9 自動化工具 ----------
+def admin_automation():
+    st.subheader("🤖 自動化工具")
+    auto = load_json(AUTOMATION_FILE)
+    days = st.number_input(
+        "提前幾天提醒",
+        min_value=1,
+        value=auto.get('remind_days', 3),
+        key="remind_days_auto"
+    )
+    if st.button("儲存設定", key="save_remind_auto"):
+        auto['remind_days'] = days
+        save_json(AUTOMATION_FILE, auto)
+        st.success("✅ 已儲存")
 
+# ---------- 8.10 安全與權限 ----------
+def admin_security():
+    st.subheader("🔐 安全與權限")
+    st.write("操作日誌")
+    logs = load_logs()
+    if logs.get('logs'):
+        df_log = pd.DataFrame(logs['logs'][-20:])
+        st.dataframe(df_log, use_container_width=True)
+    st.write("多管理員管理")
+    users = load_users()
+    admin_list = [u for u, d in users.items() if d.get('group') == 'super_admin']
+    st.write("現有超級管理員：", ", ".join(admin_list) if admin_list else "無")
+    new_admin = st.text_input("新增超級管理員用戶名", key="new_admin_name")
+    if st.button("設為超級管理員", key="add_admin"):
+        if new_admin in users:
+            users[new_admin]['group'] = 'super_admin'
+            users[new_admin]['is_admin'] = True
+            users[new_admin]['predictions_limit'] = -1
+            save_users(users)
+            log_admin_action(st.session_state.username, f"新增超級管理員 {new_admin}")
+            st.success(f"✅ {new_admin} 已設為超級管理員")
+            st.rerun()
+        else:
+            st.error("用戶不存在")
 
-  <div class="d-flex flex-justify-center flex-items-center flex-column-reverse flex-lg-row flex-wrap flex-lg-nowrap">
-    <div class="d-flex flex-items-center flex-shrink-0 mx-2">
-      <a aria-label="GitHub Homepage" class="footer-octicon mr-2" href="https://github.com">
-        <svg aria-hidden="true" data-component="Octicon" height="24" viewBox="0 0 24 24" version="1.1" width="24" data-view-component="true" class="octicon octicon-mark-github">
-    <path d="M10.226 17.284c-2.965-.36-5.054-2.493-5.054-5.256 0-1.123.404-2.336 1.078-3.144-.292-.741-.247-2.314.09-2.965.898-.112 2.111.36 2.83 1.01.853-.269 1.752-.404 2.853-.404 1.1 0 1.999.135 2.807.382.696-.629 1.932-1.1 2.83-.988.315.606.36 2.179.067 2.942.72.854 1.101 2 1.101 3.167 0 2.763-2.089 4.852-5.098 5.234.763.494 1.28 1.572 1.28 2.807v2.336c0 .674.561 1.056 1.235.786 4.066-1.55 7.255-5.615 7.255-10.646C23.5 6.188 18.334 1 11.978 1 5.62 1 .5 6.188.5 12.545c0 4.986 3.167 9.12 7.435 10.669.606.225 1.19-.18 1.19-.786V20.63a2.9 2.9 0 0 1-1.078.224c-1.483 0-2.359-.808-2.987-2.313-.247-.607-.517-.966-1.034-1.033-.27-.023-.359-.135-.359-.27 0-.27.45-.471.898-.471.652 0 1.213.404 1.797 1.235.45.651.921.943 1.483.943.561 0 .92-.202 1.437-.719.382-.381.674-.718.944-.943"></path>
-</svg>
-</a>
-      <span>
-        &copy; 2026 GitHub,&nbsp;Inc.
-      </span>
-    </div>
+# ---------- 8.11 付款審核（批准/拒絕後記錄消失） ----------
+def admin_payment_review():
+    st.subheader("📤 付款審核")
+    
+    proofs_data = load_payment_proofs()
+    records = proofs_data.get('proof_records', [])
+    
+    pending = [r for r in records if r.get('status') == 'pending']
+    approved = [r for r in records if r.get('status') == 'approved']
+    rejected = [r for r in records if r.get('status') == 'rejected']
+    total_income = sum(r.get('final_price', 0) for r in approved)
+    
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("⏳ 待審核", len(pending))
+    col2.metric("✅ 已批准", len(approved))
+    col3.metric("❌ 已拒絕", len(rejected))
+    col4.metric("💰 總收入", f"${total_income:.2f}")
+    st.divider()
+    
+    with st.expander("🔍 篩選與搜尋", expanded=True):
+        col_s1, col_s2, col_s3 = st.columns([2, 2, 1])
+        with col_s1:
+            search_term = st.text_input("搜尋用戶名稱", placeholder="輸入用戶名")
+        with col_s2:
+            status_filter = st.selectbox(
+                "狀態篩選",
+                ["全部", "pending", "approved", "rejected"],
+                index=1,   # 預設 pending
+                format_func=lambda x: {"pending": "待審核", "approved": "已批准", "rejected": "已拒絕", "全部": "全部"}.get(x, x)
+            )
+        with col_s3:
+            if status_filter in ["pending", "全部"] and len(pending) > 0:
+                if st.button("📦 批量批准全部待審"):
+                    for rec in pending:
+                        _approve_payment(rec, proofs_data)
+                    st.success(f"✅ 已批量批准 {len(pending)} 條記錄")
+                    st.rerun()
+    
+    filtered = records.copy()
+    if search_term:
+        filtered = [r for r in filtered if search_term.lower() in r.get('username', '').lower()]
+    if status_filter != "全部":
+        filtered = [r for r in filtered if r.get('status') == status_filter]
+    
+    if not filtered:
+        st.info("📭 沒有符合條件的記錄")
+        return
+    
+    st.subheader(f"📋 共 {len(filtered)} 條記錄")
+    
+    for idx, rec in enumerate(filtered):
+        original_idx = records.index(rec)
+        status = rec.get('status', 'pending')
+        username = rec.get('username', '未知')
+        
+        with st.container():
+            cols = st.columns([2, 2, 1.5, 1.5, 2])
+            with cols[0]:
+                st.write(f"👤 **{username}**")
+                st.caption(f"ID: {rec.get('id', '')}")
+            with cols[1]:
+                plan_name = rec.get('plan_name', '未知方案')
+                price = rec.get('final_price', 0)
+                st.write(f"📌 {plan_name}")
+                st.write(f"💰 ${price:.2f}")
+                if rec.get('discount_applied'):
+                    st.caption(f"折扣: {rec.get('discount_desc', '')}")
+            with cols[2]:
+                uploaded_at = rec.get('uploaded_at', '')
+                if uploaded_at:
+                    try:
+                        dt = datetime.fromisoformat(uploaded_at)
+                        st.caption(f"📅 {dt.strftime('%Y-%m-%d %H:%M')}")
+                    except:
+                        st.caption(uploaded_at)
+                filename = rec.get('filename')
+                if filename:
+                    filepath = os.path.join(PAYMENT_PROOFS_DIR, filename)
+                    if os.path.exists(filepath):
+                        try:
+                            image = Image.open(filepath)
+                            st.image(image, width=120)
+                        except:
+                            st.caption("圖片無法載入")
+                    else:
+                        st.caption("圖片檔案缺失")
+            with cols[3]:
+                if status == "pending":
+                    st.warning("⏳ 待審核")
+                elif status == "approved":
+                    st.success("✅ 已批准")
+                    users = load_users()
+                    user_data = users.get(username, {})
+                    expiry = user_data.get('expiry_date')
+                    if expiry:
+                        try:
+                            exp_dt = pd.to_datetime(expiry)
+                            days_left = (exp_dt - datetime.now()).days
+                            st.caption(f"到期: {exp_dt.strftime('%Y-%m-%d')} ({days_left}天)")
+                        except:
+                            pass
+                elif status == "rejected":
+                    st.error("❌ 已拒絕")
+                else:
+                    st.info(status)
+                if rec.get('approved_by'):
+                    st.caption(f"操作人: {rec['approved_by']}")
+                if rec.get('approved_at'):
+                    try:
+                        dt = datetime.fromisoformat(rec['approved_at'])
+                        st.caption(f"操作時間: {dt.strftime('%Y-%m-%d %H:%M')}")
+                    except:
+                        pass
+            with cols[4]:
+                if status == "pending":
+                    if st.button("✅ 批准", key=f"approve_{original_idx}"):
+                        _approve_payment(rec, proofs_data)
+                        st.rerun()
+                    if st.button("❌ 拒絕", key=f"reject_{original_idx}"):
+                        _reject_payment(rec, proofs_data)
+                        st.rerun()
+                elif status == "approved":
+                    if st.button("↩️ 退款", key=f"refund_{original_idx}"):
+                        _refund_payment(rec, proofs_data)
+                        st.rerun()
+                else:
+                    st.write("已處理")
+            st.divider()
+    
+    with st.expander("📜 操作日誌 (最近20條)"):
+        logs = load_logs()
+        log_entries = logs.get('logs', [])[-20:]
+        if log_entries:
+            for log in reversed(log_entries):
+                st.text(f"[{log['time']}] {log['admin']} - {log['action']}")
+        else:
+            st.info("暫無日誌")
 
-    <nav aria-label="Footer">
-      <h3 class="sr-only" id="sr-footer-heading">Footer navigation</h3>
+# ---------- 輔助函數（審核後刪除記錄） ----------
+def _approve_payment(rec, proofs_data):
+    try:
+        st.info("⏳ 開始處理批准...")
+        username = rec.get('username')
+        if not username:
+            st.error("❌ 記錄中缺少 username")
+            return
+        
+        users = load_users()
+        if username not in users:
+            st.error(f"❌ 用戶 {username} 不存在")
+            return
+        
+        plan = rec.get('plan', 'month')
+        days = get_plan_days(plan)
+        if days == 0:
+            days = 30
+        expiry = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+        
+        users[username]['is_paid'] = True
+        users[username]['group'] = 'VIP'
+        users[username]['paid_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        users[username]['expiry_date'] = expiry
+        users[username]['plan'] = plan
+        users[username]['predictions_limit'] = -1
+        
+        if save_users(users):
+            st.success(f"✅ {username} 已升級為 VIP！到期日：{expiry}")
+            log_admin_action(st.session_state.username, f"批准付款並升級 {username} 為 VIP（{plan}）")
+            
+            # 🗑️ 從記錄中刪除該申請（令佢消失）
+            if rec in proofs_data['proof_records']:
+                proofs_data['proof_records'].remove(rec)
+                save_payment_proofs(proofs_data)
+                st.success("✅ 付款申請已處理並移除。")
+            else:
+                st.warning("⚠️ 記錄已不存在")
+        else:
+            st.error("❌ 儲存 users.json 失敗")
+    except Exception as e:
+        st.error(f"❌ 錯誤：{e}")
 
-      <ul class="list-style-none d-flex flex-justify-center flex-wrap mb-2 mb-lg-0" aria-labelledby="sr-footer-heading">
+def _reject_payment(rec, proofs_data):
+    try:
+        username = rec.get('username', '未知')
+        # 🗑️ 直接刪除記錄（拒絕後消失）
+        if rec in proofs_data['proof_records']:
+            proofs_data['proof_records'].remove(rec)
+            save_payment_proofs(proofs_data)
+            st.warning(f"❌ 已拒絕 {username} 的申請，記錄已移除")
+            log_admin_action(st.session_state.username, f"拒絕付款申請：{username}")
+        else:
+            st.warning("⚠️ 記錄已不存在")
+    except Exception as e:
+        st.error(f"❌ 錯誤：{e}")
 
+def _refund_payment(rec, proofs_data):
+    try:
+        st.info("⏳ 開始處理退款...")
+        users = load_users()
+        username = rec.get('username')
+        if not username:
+            st.error("❌ 記錄中缺少 username")
+            return
+        if username not in users:
+            st.error(f"❌ 用戶 {username} 不存在")
+            return
+        users[username]['is_paid'] = False
+        users[username]['group'] = 'free'
+        users[username]['expiry_date'] = None
+        users[username]['plan'] = None
+        users[username]['predictions_limit'] = CONFIG["free_limit"]
+        if save_users(users):
+            st.success(f"✅ 用戶 {username} 已降級為免費")
+        else:
+            st.error("❌ 儲存 users.json 失敗")
+            return
+        # 退款後也刪除記錄（如果還在）
+        if rec in proofs_data['proof_records']:
+            proofs_data['proof_records'].remove(rec)
+            save_payment_proofs(proofs_data)
+        st.success(f"✅ 已為 {username} 辦理退款")
+        log_admin_action(st.session_state.username, f"退款：{username}")
+    except Exception as e:
+        st.error(f"❌ 退款錯誤：{e}")
+        import traceback
+        st.code(traceback.format_exc())
 
-          <li class="mx-2">
-            <a data-analytics-event="{&quot;category&quot;:&quot;Footer&quot;,&quot;action&quot;:&quot;go to Terms&quot;,&quot;label&quot;:&quot;text:terms&quot;}" href="https://docs.github.com/site-policy/github-terms/github-terms-of-service" data-view-component="true" class="Link--secondary Link">Terms</a>
-          </li>
+# ============================================================
+# ⚙️ 系統設定（僅超級管理員）
+# ============================================================
+def admin_system_settings():
+    users = load_users()
+    admin_username = st.session_state.get('admin_username', 'admin')
+    user_group = users.get(admin_username, {}).get('group', 'free')
+    if user_group != 'super_admin':
+        st.error("⛔ 只有超級管理員可以修改系統設定")
+        return
+    
+    st.subheader("⚙️ 系統設定")
+    st.info("修改設定後，撳「儲存設定」會自動重新整理頁面，新設定即時生效。")
+    
+    config = load_system_config()
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### 🔐 基本設定")
+        enable_registration = st.checkbox("開放註冊", value=config.get("enable_registration", True))
+        enable_payment = st.checkbox("啟用付款功能", value=config.get("enable_payment", True))
+        enable_admin = st.checkbox("啟用後台管理", value=config.get("enable_admin", True))
+        enable_vip_content = st.checkbox("🔒 三重彩/四重彩 VIP 專屬", value=config.get("enable_vip_content", True))
+        
+        st.markdown("#### 💰 價格設定")
+        price_day = st.number_input("日費價格 (HKD)", min_value=0, value=config.get("price_day", 18), step=1)
+        price_month = st.number_input("月費價格 (HKD)", min_value=0, value=config.get("price_month", 128), step=1)
+        price_quarter = st.number_input("季費價格 (HKD)", min_value=0, value=config.get("price_quarter", 328), step=1)
+        
+        st.markdown("#### 🎁 邀請獎勵設定")
+        enable_invite_reward = st.checkbox("啟用邀請獎勵", value=config.get("enable_invite_reward", True))
+        invite_reward_inviter = st.number_input("邀請人獲得免費次數", min_value=0, value=config.get("invite_reward_inviter", 1), step=1)
+        invite_reward_invitee = st.number_input("被邀請人獲得免費次數", min_value=0, value=config.get("invite_reward_invitee", 1), step=1)
+    
+    with col2:
+        st.markdown("#### 📊 預設限制")
+        free_limit = st.number_input("免費預測次數", min_value=0, value=config.get("free_limit", 2), step=1)
+        verification_expiry = st.number_input("驗證碼有效期 (分鐘)", min_value=1, value=config.get("verification_expiry", 5), step=1)
+        currency = st.text_input("貨幣單位", value=config.get("currency", "HKD"))
+        admin_password = st.text_input("管理員密碼", value=config.get("admin_password", "z54060437K"), type="password")
+        
+        st.markdown("#### 🧩 後台模組開關")
+        module_user_management = st.checkbox("用戶管理模組", value=config.get("module_user_management", True))
+        module_analytics = st.checkbox("數據分析模組", value=config.get("module_analytics", True))
+        module_finance = st.checkbox("財務管理模組", value=config.get("module_finance", True))
+        module_monitoring = st.checkbox("系統監控模組", value=config.get("module_monitoring", True))
+        module_content = st.checkbox("內容管理模組", value=config.get("module_content", True))
+        module_automation = st.checkbox("自動化工具模組", value=config.get("module_automation", True))
+        module_security = st.checkbox("安全與權限模組", value=config.get("module_security", True))
+        module_promo = st.checkbox("優惠碼模組", value=config.get("module_promo", True))
+        
+        st.markdown("#### 📢 每日免費重心推介")
+        enable_daily_free_tip = st.checkbox("啟用每日免費重心推介", value=config.get("enable_daily_free_tip", True))
+    
+    st.divider()
+    if st.button("💾 儲存設定", type="primary"):
+        new_config = {
+            "enable_registration": enable_registration,
+            "enable_payment": enable_payment,
+            "enable_admin": enable_admin,
+            "currency": currency,
+            "free_limit": free_limit,
+            "admin_password": admin_password,
+            "price_day": price_day,
+            "price_month": price_month,
+            "price_quarter": price_quarter,
+            "verification_expiry": verification_expiry,
+            "enable_vip_content": enable_vip_content,
+            "module_user_management": module_user_management,
+            "module_analytics": module_analytics,
+            "module_finance": module_finance,
+            "module_monitoring": module_monitoring,
+            "module_content": module_content,
+            "module_automation": module_automation,
+            "module_security": module_security,
+            "module_promo": module_promo,
+            "enable_daily_free_tip": enable_daily_free_tip,
+            "enable_invite_reward": enable_invite_reward,
+            "invite_reward_inviter": invite_reward_inviter,
+            "invite_reward_invitee": invite_reward_invitee,
+        }
+        if save_system_config(new_config):
+            st.success("✅ 設定已儲存！頁面將會重新整理以套用新設定。")
+            import time
+            time.sleep(1)
+            st.rerun()
+        else:
+            st.error("❌ 儲存失敗，請檢查檔案權限。")
 
-          <li class="mx-2">
-            <a data-analytics-event="{&quot;category&quot;:&quot;Footer&quot;,&quot;action&quot;:&quot;go to privacy&quot;,&quot;label&quot;:&quot;text:privacy&quot;}" href="https://docs.github.com/site-policy/privacy-policies/github-privacy-statement" data-view-component="true" class="Link--secondary Link">Privacy</a>
-          </li>
+# ============================================================
+# 🧠 AI 自我學習輔助函數
+# ============================================================
+def update_accuracy_with_results():
+    acc = load_accuracy()
+    records = acc.get('records', [])
+    if not records:
+        return 0, "沒有預測記錄"
+    try:
+        results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
+        results_df = standardize_columns_safe(results_df)
+        required = ['race_date', 'race_no', 'horse_name', 'finish_position']
+        for col in required:
+            if col not in results_df.columns:
+                return 0, f"缺少必要欄位：{col}"
+        results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
+        results_df = results_df.dropna(subset=['race_date'])
+        updated = 0
+        for rec in records:
+            if rec.get('actual_result') is not None:
+                continue
+            date_str = rec.get('date')
+            race_no = rec.get('race')
+            horse = rec.get('horse')
+            if not date_str or not race_no or not horse:
+                continue
+            matched = results_df[
+                (results_df['race_date'].dt.strftime('%Y-%m-%d') == date_str) &
+                (results_df['race_no'] == race_no) &
+                (results_df['horse_name'] == horse)
+            ]
+            if not matched.empty:
+                pos = matched.iloc[0]['finish_position']
+                rec['actual_result'] = int(pos) if pd.notna(pos) else None
+                rec['is_hit'] = (rec['actual_result'] == 1) if rec['actual_result'] is not None else None
+                updated += 1
+        if updated > 0:
+            save_accuracy(acc)
+        return updated, f"成功比對 {updated} 條記錄"
+    except Exception as e:
+        return 0, f"比對失敗：{str(e)}"
 
-          <li class="mx-2">
-            <a data-analytics-event="{&quot;category&quot;:&quot;Footer&quot;,&quot;action&quot;:&quot;go to security&quot;,&quot;label&quot;:&quot;text:security&quot;}" href="https://github.com/security" data-view-component="true" class="Link--secondary Link">Security</a>
-          </li>
+def adjust_model_weights():
+    acc = load_accuracy()
+    records = acc.get('records', [])
+    total = len([r for r in records if r.get('is_hit') is not None])
+    hit = sum(1 for r in records if r.get('is_hit') is True)
+    hit_rate = hit / total if total > 0 else 0
 
-          <li class="mx-2">
-            <a data-analytics-event="{&quot;category&quot;:&quot;Footer&quot;,&quot;action&quot;:&quot;go to status&quot;,&quot;label&quot;:&quot;text:status&quot;}" href="https://www.githubstatus.com/" data-view-component="true" class="Link--secondary Link">Status</a>
-          </li>
+    config = load_system_config()
+    current_xgb = config.get('xgb_weight', 25)
+    current_cat = config.get('cat_weight', 1)
 
-          <li class="mx-2">
-            <a data-analytics-event="{&quot;category&quot;:&quot;Footer&quot;,&quot;action&quot;:&quot;go to community&quot;,&quot;label&quot;:&quot;text:community&quot;}" href="https://github.community/" data-view-component="true" class="Link--secondary Link">Community</a>
-          </li>
+    if hit_rate >= 0.6:
+        new_xgb = min(40, current_xgb + 3)
+        new_cat = max(1, current_cat - 1)
+    elif hit_rate >= 0.5:
+        new_xgb = min(35, current_xgb + 1)
+        new_cat = max(1, current_cat)
+    elif hit_rate >= 0.4:
+        new_xgb = max(15, current_xgb - 2)
+        new_cat = min(10, current_cat + 2)
+    elif hit_rate >= 0.3:
+        new_xgb = max(10, current_xgb - 5)
+        new_cat = min(15, current_cat + 5)
+    else:
+        new_xgb = max(5, current_xgb - 8)
+        new_cat = min(20, current_cat + 8)
 
-          <li class="mx-2">
-            <a data-analytics-event="{&quot;category&quot;:&quot;Footer&quot;,&quot;action&quot;:&quot;go to docs&quot;,&quot;label&quot;:&quot;text:docs&quot;}" href="https://docs.github.com/" data-view-component="true" class="Link--secondary Link">Docs</a>
-          </li>
+    new_xgb = max(1, min(50, new_xgb))
+    new_cat = max(1, min(30, new_cat))
 
-          <li class="mx-2">
-            <a data-analytics-event="{&quot;category&quot;:&quot;Footer&quot;,&quot;action&quot;:&quot;go to contact&quot;,&quot;label&quot;:&quot;text:contact&quot;}" href="https://support.github.com?tags=dotcom-footer" data-view-component="true" class="Link--secondary Link">Contact</a>
-          </li>
+    config['xgb_weight'] = new_xgb
+    config['cat_weight'] = new_cat
+    config['last_weight_update'] = datetime.now().isoformat()
+    config['last_hit_rate'] = hit_rate
+    save_system_config(config)
 
-          <li class="mx-2" >
-  <cookie-consent-link>
-    <button
-      type="button"
-      class="Link--secondary underline-on-hover border-0 p-0 color-bg-transparent"
-      data-action="click:cookie-consent-link#showConsentManagement"
-      data-analytics-event="{&quot;location&quot;:&quot;footer&quot;,&quot;action&quot;:&quot;cookies&quot;,&quot;context&quot;:&quot;subfooter&quot;,&quot;tag&quot;:&quot;link&quot;,&quot;label&quot;:&quot;cookies_link_subfooter_footer&quot;}"
-    >
-       Manage cookies
-    </button>
-  </cookie-consent-link>
-</li>
+    return {
+        'xgb_weight': new_xgb,
+        'cat_weight': new_cat,
+        'hit_rate': hit_rate,
+        'total': total,
+        'hit': hit
+    }
 
-<li class="mx-2">
-  <cookie-consent-link>
-    <button
-      type="button"
-      class="Link--secondary underline-on-hover border-0 p-0 color-bg-transparent text-left"
-      data-action="click:cookie-consent-link#showConsentManagement"
-      data-analytics-event="{&quot;location&quot;:&quot;footer&quot;,&quot;action&quot;:&quot;dont_share_info&quot;,&quot;context&quot;:&quot;subfooter&quot;,&quot;tag&quot;:&quot;link&quot;,&quot;label&quot;:&quot;dont_share_info_link_subfooter_footer&quot;}"
-    >
-      Do not share my personal information
-    </button>
-  </cookie-consent-link>
-</li>
+# ============================================================
+# 9. 後台頁面（動態分頁）
+# ============================================================
+def admin_page():
+    if 'admin_authenticated' not in st.session_state:
+        st.session_state.admin_authenticated = False
+    
+    if not st.session_state.admin_authenticated:
+        st.title("🔐 後台管理 - 身份驗證")
+        st.markdown("請輸入管理員密碼以進入後台")
+        admin_pw = st.text_input("管理員密碼", type="password", key="admin_login_pw")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔓 解鎖後台", type="primary", key="unlock_admin"):
+                if admin_pw == CONFIG["admin_password"]:
+                    st.session_state.admin_authenticated = True
+                    st.session_state.admin_username = "admin"
+                    log_admin_action("admin", "登入後台")
+                    st.success("✅ 密碼正確！")
+                    st.rerun()
+                else:
+                    st.error("❌ 密碼錯誤！")
+        with col2:
+            if st.button("⬅️ 返回主頁", key="back_home_from_admin"):
+                st.session_state.show_admin = False
+                st.rerun()
+        return
+    
+    users = load_users()
+    admin_username = st.session_state.get('admin_username', 'admin')
+    user_group = users.get(admin_username, {}).get('group', 'free')
+    is_super_admin = (user_group == 'super_admin')
+    
+    st.title("🔐 後台管理")
+    st.info(f"👤 管理員：{admin_username} | 身份：{'超級管理員' if is_super_admin else '管理員'}")
+    if st.button("🚪 登出後台", key="logout_admin"):
+        st.session_state.admin_authenticated = False
+        st.session_state.show_admin = False
+        st.rerun()
+    st.divider()
+    
+    tab_functions = {
+        "👥 用戶管理": admin_user_management if CONFIG.get("module_user_management", True) else lambda: st.info("模組已關閉"),
+        "📊 數據分析": admin_analytics if CONFIG.get("module_analytics", True) else lambda: st.info("模組已關閉"),
+        "💰 財務": admin_finance if CONFIG.get("module_finance", True) else lambda: st.info("模組已關閉"),
+        "🎟️ 優惠碼": admin_promo_codes if CONFIG.get("module_promo", True) else lambda: st.info("模組已關閉"),
+        "📈 預測監控": admin_accuracy_monitor,
+        "⏰ 訂閱管理": admin_subscription,
+        "📤 付款審核": admin_payment_review,
+        "📡 監控": admin_monitoring if CONFIG.get("module_monitoring", True) else lambda: st.info("模組已關閉"),
+        "📝 內容": admin_content if CONFIG.get("module_content", True) else lambda: st.info("模組已關閉"),
+        "🤖 自動化": admin_automation if CONFIG.get("module_automation", True) else lambda: st.info("模組已關閉"),
+        "🔐 安全": admin_security if CONFIG.get("module_security", True) else lambda: st.info("模組已關閉"),
+    }
+    
+    base_tabs = ["👥 用戶管理", "📊 數據分析", "💰 財務", "🎟️ 優惠碼", 
+                 "📈 預測監控", "⏰ 訂閱管理", "📤 付款審核", "📡 監控", 
+                 "📝 內容", "🤖 自動化", "🔐 安全"]
+    
+    if is_super_admin:
+        tab_names = base_tabs + ["⚙️ 系統設定"]
+        tab_functions["⚙️ 系統設定"] = admin_system_settings
+    else:
+        tab_names = base_tabs
+    
+    tabs = st.tabs(tab_names)
+    for i, name in enumerate(tab_names):
+        with tabs[i]:
+            tab_functions[name]()
 
-      </ul>
-    </nav>
-  </div>
-</footer>
+# ============================================================
+# 10. 主頁面（已整合 AI 自我學習）
+# ============================================================
+def main():
+    if 'logged_in' not in st.session_state:
+        st.session_state.logged_in = False
+    if 'username' not in st.session_state:
+        st.session_state.username = None
+    if 'role' not in st.session_state:
+        st.session_state.role = 'free'
+    if 'usage_count' not in st.session_state:
+        st.session_state.usage_count = 0
+    if 'show_admin' not in st.session_state:
+        st.session_state.show_admin = False
+    if 'show_history' not in st.session_state:
+        st.session_state.show_history = False
+    if 'admin_authenticated' not in st.session_state:
+        st.session_state.admin_authenticated = False
 
+    # 公告
+    content = load_json(CONTENT_FILE)
+    announcements = content.get('announcements', [])
+    today = datetime.now().date()
+    active_anns = []
+    for ann in announcements:
+        if ann.get('status') != 'active':
+            continue
+        start = datetime.strptime(ann['start_date'], '%Y-%m-%d').date()
+        if start > today:
+            continue
+        end = ann.get('end_date')
+        if end:
+            end_date = datetime.strptime(end, '%Y-%m-%d').date()
+            if end_date < today:
+                continue
+        target = ann.get('target', '全部用戶')
+        if target != '全部用戶':
+            if not st.session_state.get('logged_in', False):
+                continue
+            user = load_users().get(st.session_state.username, {})
+            group = user.get('group', 'free')
+            if target == '付費用戶' and group not in ['paid', 'VIP', 'super_admin']:
+                continue
+            if target == 'VIP' and group not in ['VIP', 'super_admin']:
+                continue
+            if target == '免費用戶' and group != 'free':
+                continue
+        active_anns.append(ann)
 
+    for ann in active_anns:
+        ann_type = ann.get('type', '一般')
+        if ann_type == '緊急':
+            st.error(f"🚨 {ann['title']}：{ann['content']}")
+        elif ann_type == '重要':
+            st.warning(f"⚠️ {ann['title']}：{ann['content']}")
+        else:
+            st.info(f"💡 {ann['title']}：{ann['content']}")
 
-    <ghcc-consent id="ghcc" class="position-fixed bottom-0 left-0" style="z-index: 999999"
-      data-locale="en"
-      data-initial-cookie-consent-allowed=""
-      data-cookie-consent-required="false"
-    ></ghcc-consent>
+    if CONFIG["enable_registration"] and not st.session_state.logged_in:
+        login_page()
+        return
 
+    if st.session_state.show_admin and CONFIG["enable_admin"]:
+        admin_page()
+        return
 
+    # ----- 每日免費重心推介 -----
+    if CONFIG.get("enable_daily_free_tip", True):
+        try:
+            df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
+            df_sched = standardize_columns_safe(df_sched)
+            if 'race_date' in df_sched.columns:
+                df_sched['race_date'] = pd.to_datetime(df_sched['race_date'], errors='coerce')
+                df_sched = df_sched.dropna(subset=['race_date'])
+                today_dt = datetime.now().date()
+                day_races = df_sched[df_sched['race_date'].dt.date == today_dt]
+                if not day_races.empty:
+                    first_race = day_races.sort_values('race_no').iloc[0]
+                    race_date_str = first_race['race_date'].strftime('%Y-%m-%d')
+                    race_no = int(first_race['race_no'])
+                    result, pool = run_prediction(race_date_str, race_no)
+                    if result is not None and not result.empty:
+                        top1 = result.iloc[0]
+                        st.markdown("---")
+                        st.markdown("### 🌟 今日免費重心推介")
+                        st.markdown(f"""
+                        <div style="
+                            background: linear-gradient(135deg, #fff8e1, #ffecb3);
+                            border-radius: 16px;
+                            padding: 15px 20px;
+                            border: 2px solid #ffb300;
+                            box-shadow: 0 2px 8px rgba(255, 179, 0, 0.2);
+                        ">
+                            <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+                                <span style="font-size: 28px;">🏇</span>
+                                <div>
+                                    <span style="font-size: 18px; font-weight: bold;">{top1['馬匹名稱']}</span>
+                                    <span style="font-size: 14px; color: #555;">（第 {race_no} 場）</span><br>
+                                    <span style="font-size: 14px; color: #888;">勝率 <b style="color:#2e7d32;">{top1['預測勝率']:.2%}</b>　檔位 {top1['檔位']}</span>
+                                </div>
+                                <div style="margin-left: auto;">
+                                    <span style="
+                                        background: #ff6f00;
+                                        color: white;
+                                        padding: 4px 14px;
+                                        border-radius: 20px;
+                                        font-size: 12px;
+                                    ">🎯 每日重心</span>
+                                </div>
+                            </div>
+                            <div style="margin-top: 8px; font-size: 13px; color: #888;">
+                                💡 未登入？<a href="#" onclick="alert('請先註冊/登入以查看完整預測')">立即註冊</a> 查看更多彩池推薦！
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        st.markdown("---")
+        except:
+            pass
 
+    # ----- 主標題 -----
+    col1, col2, col3 = st.columns([5, 1, 1])
+    with col1:
+        st.title("🏇 賽馬預測系統")
+        st.markdown("AI 驅動・即時預測・彩池推薦")
+        st.caption(f"{datetime.now().strftime('%Y年%m月%d日')} · 36個特徵 · 三模型融合 · 六種彩池")
+    with col2:
+        if CONFIG["enable_admin"] and st.session_state.get("role") == "super_admin":
+            if st.button("🔐 後台", use_container_width=True, key="go_to_admin"):
+                st.session_state.show_admin = True
+                st.session_state.admin_authenticated = False
+                st.rerun()
+    with col3:
+        if st.session_state.get('logged_in', False):
+            if st.button("🚪 登出", use_container_width=True, key="logout_main"):
+                for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history']:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.rerun()
 
-  <div id="ajax-error-message" class="ajax-error-message flash flash-error" hidden>
-    <svg aria-hidden="true" data-component="Octicon" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-alert">
-    <path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"></path>
-</svg>
-    <button type="button" class="flash-close js-ajax-error-dismiss" aria-label="Dismiss error">
-      <svg aria-hidden="true" data-component="Octicon" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-x">
-    <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"></path>
-</svg>
-    </button>
-    You can’t perform that action at this time.
-  </div>
+    # ----- 用戶儀表板 -----
+    if CONFIG["enable_registration"] and st.session_state.logged_in:
+        show_user_dashboard(st.session_state.username)
+    elif not CONFIG["enable_registration"]:
+        st.info("🔓 目前為公開模式，任何人皆可使用")
 
-    <template id="site-details-dialog">
-  <details class="details-reset details-overlay details-overlay-dark lh-default color-fg-default hx_rsm" open>
-    <summary role="button" aria-label="Close dialog"></summary>
-    <details-dialog class="Box Box--overlay d-flex flex-column anim-fade-in fast hx_rsm-dialog hx_rsm-modal">
-      <button class="Box-btn-octicon m-0 btn-octicon position-absolute right-0 top-0" type="button" aria-label="Close dialog" data-close-dialog>
-        <svg aria-hidden="true" data-component="Octicon" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-x">
-    <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"></path>
-</svg>
-      </button>
-      <div class="octocat-spinner tmp-my-6 js-details-dialog-spinner"></div>
-    </details-dialog>
-  </details>
-</template>
+    # ============================================================
+    # 🧠 AI 自我學習 / 模型表現分析（放喺預測控制上層）
+    # ============================================================
+    st.markdown("---")
+    st.subheader("🧠 模型自我學習 & 表現分析")
+    
+    # 載入 accuracy 記錄
+    acc = load_accuracy()
+    records = acc.get('records', [])
+    
+    # 顯示基本統計
+    if records:
+        total = len([r for r in records if r.get('is_hit') is not None])
+        hit = sum(1 for r in records if r.get('is_hit') is True)
+        hit_rate = hit/total if total>0 else 0
+        
+        # 模擬 ROI（假設每注 100 蚊，獨贏派彩約 400 蚊）
+        roi = (hit * 400 - total * 100) / (total * 100) if total>0 else 0
+        
+        # 讀取當前權重
+        config = load_system_config()
+        xgb_w = config.get('xgb_weight', 25)
+        cat_w = config.get('cat_weight', 1)
+        
+        col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+        col_stat1.metric("📊 總預測", total)
+        col_stat2.metric("🎯 命中次數", hit)
+        col_stat3.metric("📈 命中率", f"{hit_rate:.2%}")
+        col_stat4.metric("💰 ROI (模擬)", f"{roi:.2%}")
+        
+        # 顯示最近 10 場命中情況
+        if len(records) >= 10:
+            recent = records[-10:]
+            hit_seq = [1 if r.get('is_hit') is True else 0 for r in recent]
+            st.caption("📊 最近 10 場命中情況： " + "".join(["✅" if h else "❌" for h in hit_seq]))
+        
+        # 顯示 fusion 權重
+        st.caption(f"⚙️ 當前模型融合權重：XGBoost **{xgb_w}** : CatBoost **{cat_w}**")
+        
+        # 特徵重要性圖表
+        with st.expander("📊 特徵重要性分析（CatBoost）"):
+            try:
+                cat_model = CatBoostClassifier()
+                cat_model.load_model('hk_catboost_model.cbm')
+                importances = cat_model.get_feature_importance()
+                feature_names = EXPECTED_FEATURES
+                if len(importances) == len(feature_names):
+                    df_imp = pd.DataFrame({
+                        '特徵': feature_names,
+                        '重要性': importances
+                    }).sort_values('重要性', ascending=False).head(15)
+                    fig = px.bar(df_imp, x='重要性', y='特徵', orientation='h', 
+                                title='Top 15 特徵重要性',
+                                color='重要性', color_continuous_scale='Blues')
+                    fig.update_layout(height=400)
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("特徵數量不匹配")
+            except Exception as e:
+                st.info(f"無法載入 CatBoost 模型：{e}")
+        
+        # 命中率趨勢圖
+        with st.expander("📈 命中率趨勢圖"):
+            if records:
+                df_records = pd.DataFrame(records)
+                if 'date' in df_records.columns and 'is_hit' in df_records.columns:
+                    df_records['date'] = pd.to_datetime(df_records['date'])
+                    df_records = df_records.dropna(subset=['date', 'is_hit'])
+                    if not df_records.empty:
+                        daily = df_records.groupby(df_records['date'].dt.date).agg(
+                            total=('is_hit', 'count'),
+                            hit=('is_hit', lambda x: (x==True).sum())
+                        ).reset_index()
+                        daily['hit_rate'] = daily['hit'] / daily['total']
+                        fig2 = px.line(daily, x='date', y='hit_rate', 
+                                       title='每日命中率趨勢',
+                                       markers=True)
+                        fig2.update_layout(yaxis_tickformat='.0%')
+                        st.plotly_chart(fig2, use_container_width=True)
+                    else:
+                        st.info("未有足夠數據")
+                else:
+                    st.info("未有日期或命中數據")
+            else:
+                st.info("暫時未有預測記錄")
+    else:
+        st.info("暫時未有預測記錄，未能進行自我學習分析。請先執行預測。")
 
-    <div class="Popover js-hovercard-content position-absolute" style="display: none; outline: none;">
-  <div class="Popover-message Popover-message--bottom-left Popover-message--large Box color-shadow-large" style="width:360px;">
-  </div>
-</div>
+    # ============================================================
+    # 🎯 預測控制（原本嘅）
+    # ============================================================
+    st.markdown("---")
+    st.subheader("🎯 賽事預測控制")
+    col_date, col_race, col_btn = st.columns([2, 2, 1])
+    with col_date:
+        date = st.date_input("📅 選擇日期", value=pd.to_datetime("2025-04-09"), key="predict_date_mid")
+    with col_race:
+        race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="predict_race_mid")
+    with col_btn:
+        predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
 
-    <template id="snippet-clipboard-copy-button">
-  <div class="zeroclipboard-container position-absolute right-0 top-0">
-    <clipboard-copy aria-label="Copy code to clipboard" class="ClipboardButton btn js-clipboard-copy m-2 p-0" data-copy-feedback="Copied!" data-tooltip-direction="w">
-      <svg aria-hidden="true" data-component="Octicon" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-copy js-clipboard-copy-icon m-2 tmp-m-2">
-    <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"></path><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"></path>
-</svg>
-      <svg aria-hidden="true" data-component="Octicon" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-check js-clipboard-check-icon color-fg-success d-none m-2 tmp-m-2">
-    <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"></path>
-</svg>
-    </clipboard-copy>
-  </div>
-</template>
-<template id="snippet-clipboard-copy-button-unpositioned">
-  <div class="zeroclipboard-container">
-    <clipboard-copy aria-label="Copy code to clipboard" class="ClipboardButton btn btn-invisible js-clipboard-copy m-2 p-0 d-flex flex-justify-center flex-items-center" data-copy-feedback="Copied!" data-tooltip-direction="w">
-      <svg aria-hidden="true" data-component="Octicon" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-copy js-clipboard-copy-icon">
-    <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"></path><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"></path>
-</svg>
-      <svg aria-hidden="true" data-component="Octicon" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-check js-clipboard-check-icon color-fg-success d-none">
-    <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"></path>
-</svg>
-    </clipboard-copy>
-  </div>
-</template>
+    # ----- 側邊欄 -----
+    with st.sidebar:
+        st.header("🎯 用戶資訊")
+        if CONFIG["enable_registration"] and st.session_state.logged_in:
+            st.write(f"👤 用戶：{st.session_state.username}")
+            users = load_users()
+            user_data = users.get(st.session_state.username, {})
+            limit = user_data.get('predictions_limit', CONFIG['free_limit'])
+            if limit == -1:
+                st.success("♾️ 無限預測次數")
+            else:
+                used = user_data.get('free_usage', 0)
+                remain = max(0, limit - used)
+                st.info(f"📊 剩餘免費場次：{remain} 場")
+            if st.button("📋 我的預測記錄", key="show_history_btn_side"):
+                st.session_state.show_history = not st.session_state.show_history
+            if st.button("🚪 登出", key="logout_btn_side"):
+                for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history']:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.rerun()
+            
+            st.divider()
+            st.caption("💬 聯絡管理員")
+            st.markdown("Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
+            st.markdown("[🔗 點擊連結搵我哋](https://t.me/bryhjdjbrbxibvrjskofndhiebdpaq)")
+            
+            st.divider()
+            st.subheader("📌 導航")
+            is_super_admin = user_data.get('group') == 'super_admin'
+            pages = ["主頁面", "預測", "賽程", "馬匹查詢", "騎師查詢", "對比", "趨勢", "用戶儀表板", "預測歷史"]
+            if is_super_admin:
+                pages.append("後台管理")
+            selected = st.selectbox("前往", pages, index=0, key="nav_select_side")
+            if selected != st.session_state.get('page', '主頁面'):
+                st.session_state.page = selected
+                st.rerun()
 
+    # ----- 顯示歷史記錄 -----
+    if CONFIG["enable_registration"] and st.session_state.logged_in and st.session_state.get('show_history', False):
+        st.subheader("📋 我的預測記錄")
+        show_prediction_history(st.session_state.username)
+        st.divider()
 
-    <style>
-      .user-mention[href$="/tszkit9-boop"] {
-        color: var(--color-user-mention-fg);
-        background-color: var(--bgColor-attention-muted, var(--color-attention-subtle));
-        border-radius: 2px;
-        margin-left: -2px;
-        margin-right: -2px;
-      }
-      .user-mention[href$="/tszkit9-boop"]:before,
-      .user-mention[href$="/tszkit9-boop"]:after {
-        content: '';
-        display: inline-block;
-        width: 2px;
-      }
-    </style>
+    # ----- 今日賽程 -----
+    st.subheader("📅 今日賽程")
+    try:
+        df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
+        df_sched = standardize_columns_safe(df_sched)
+        if 'race_date' in df_sched.columns:
+            df_sched['race_date'] = pd.to_datetime(df_sched['race_date'], errors='coerce')
+            df_sched = df_sched.dropna(subset=['race_date'])
+            today = datetime.now().date()
+            day_races = df_sched[df_sched['race_date'].dt.date == today]
+            if day_races.empty:
+                st.info("今日沒有賽事")
+            else:
+                for course in day_races['race_course'].unique():
+                    races = day_races[day_races['race_course'] == course]['race_no'].unique()
+                    st.write(f"🏟️ **{course}**：第 {', '.join(map(str, sorted(races)))} 場")
+        else:
+            st.info("今日沒有賽事")
+    except:
+        st.info("今日沒有賽事")
 
+    # ----- 執行預測 -----
+    if predict_btn:
+        users = load_users()
+        user_data = users.get(st.session_state.username, {})
+        limit = user_data.get('predictions_limit', CONFIG['free_limit'])
+        used = user_data.get('free_usage', 0)
+        user_group = user_data.get('group', 'free')
+        
+        if CONFIG.get("enable_vip_content", True):
+            is_vip = user_group in ['VIP', 'super_admin']
+        else:
+            is_vip = True
+        
+        if CONFIG["enable_payment"] and limit != -1 and used >= limit:
+            show_paywall()
+        else:
+            date_str = date.strftime('%Y-%m-%d')
+            with st.spinner(f"執行預測 {date_str} 第 {race_no} 場..."):
+                result, pool = run_prediction(date_str, race_no)
+                if result is not None:
+                    st.success(f"✅ {date_str} 第 {race_no} 場 預測完成")
+                    
+                    top4 = result.head(4)
+                    top1 = top4.iloc[0]
+                    
+                    st.markdown("---")
+                    st.markdown(f"""
+                    <div style="
+                        background: linear-gradient(135deg, #1a237e, #0d47a1, #1565c0);
+                        border-radius: 20px;
+                        padding: 25px 30px;
+                        text-align: center;
+                        box-shadow: 0 8px 32px rgba(21, 101, 192, 0.4);
+                        border: 2px solid rgba(255, 215, 0, 0.3);
+                        position: relative;
+                        overflow: hidden;
+                    ">
+                        <div style="position: absolute; top: -30px; right: -30px; font-size: 100px; opacity: 0.1;">🏆</div>
+                        <div style="position: absolute; bottom: -20px; left: -20px; font-size: 80px; opacity: 0.08;">⭐</div>
+                        <span style="font-size: 16px; color: #ffd54f; font-weight: bold; letter-spacing: 3px; background: rgba(255,215,0,0.15); padding: 4px 16px; border-radius: 20px;">🏆 獨贏首選</span><br>
+                        <span style="font-size: 48px; color: #ffffff; font-weight: 900; letter-spacing: 3px; text-shadow: 0 2px 8px rgba(0,0,0,0.3); display: inline-block; margin-top: 8px;">{top1['馬匹名稱']}</span><br>
+                        <div style="display: flex; justify-content: center; gap: 30px; margin-top: 10px; flex-wrap: wrap;">
+                            <span style="font-size: 18px; color: #bbdefb;">檔位 <b style="color: #ffffff; font-size: 22px;">{top1['檔位']}</b></span>
+                            <span style="font-size: 18px; color: #bbdefb;">勝率 <b style="color: #69f0ae; font-size: 22px;">{top1['預測勝率']:.2%}</b></span>
+                            <span style="font-size: 18px; color: #bbdefb;">值博指數 <b style="color: #ffd54f; font-size: 22px;">{top1['值博指數']:.4f}</b></span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🔗 連贏推薦</h3>", unsafe_allow_html=True)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.markdown(f"""
+                        <div style="background: linear-gradient(135deg, #e3f2fd, #bbdefb); border-radius: 14px; padding: 16px 20px; text-align: center; box-shadow: 0 4px 12px rgba(13, 71, 161, 0.15); border-left: 5px solid #0d47a1;">
+                            <span style="font-size: 28px;">🏇</span>
+                            <h4 style="margin: 4px 0 2px 0; color: #0d47a1;">{top4.iloc[0]['馬匹名稱']}</h4>
+                            <div style="display: flex; justify-content: center; gap: 20px; font-size: 14px; color: #555;">
+                                <span>檔位 <b>{top4.iloc[0]['檔位']}</b></span>
+                                <span>勝率 <b style="color:#2e7d32;">{top4.iloc[0]['預測勝率']:.2%}</b></span>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    with col2:
+                        st.markdown(f"""
+                        <div style="background: linear-gradient(135deg, #e3f2fd, #bbdefb); border-radius: 14px; padding: 16px 20px; text-align: center; box-shadow: 0 4px 12px rgba(13, 71, 161, 0.15); border-left: 5px solid #0d47a1;">
+                            <span style="font-size: 28px;">🏇</span>
+                            <h4 style="margin: 4px 0 2px 0; color: #0d47a1;">{top4.iloc[1]['馬匹名稱']}</h4>
+                            <div style="display: flex; justify-content: center; gap: 20px; font-size: 14px; color: #555;">
+                                <span>檔位 <b>{top4.iloc[1]['檔位']}</b></span>
+                                <span>勝率 <b style="color:#2e7d32;">{top4.iloc[1]['預測勝率']:.2%}</b></span>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    st.caption("💡 連贏：揀 2 隻馬，跑出前 2 名（不分順序）即中")
+                    
+                    if is_vip:
+                        st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🥉 三重彩推薦（4 隻複式）</h3>", unsafe_allow_html=True)
+                        cols = st.columns(4)
+                        colors = ['#fce4ec', '#f3e5f5', '#e8eaf6', '#e0f7fa']
+                        for i in range(4):
+                            row = top4.iloc[i]
+                            with cols[i]:
+                                st.markdown(f"""
+                                <div style="background: {colors[i]}; border-radius: 12px; padding: 14px 10px; text-align: center; box-shadow: 0 3px 10px rgba(0,0,0,0.08); border: 1px solid rgba(0,0,0,0.05);">
+                                    <span style="font-size: 24px;">🏇</span>
+                                    <h5 style="margin: 2px 0; color: #333; font-size: 15px;">{row['馬匹名稱']}</h5>
+                                    <div style="font-size: 13px; color: #555;">檔位 <b>{row['檔位']}</b><br>勝率 <b style="color:#2e7d32;">{row['預測勝率']:.2%}</b></div>
+                                </div>
+                                """, unsafe_allow_html=True)
+                        st.caption("💡 三重彩：揀 3 隻馬，順序估中冠亞季軍。以上 4 隻馬可做複式三重彩（4 選 3）")
+                    else:
+                        st.markdown("""
+                        <div style="background: linear-gradient(135deg, #fff3e0, #ffe0b2); border-radius: 16px; padding: 30px 20px; text-align: center; border: 2px dashed #ff6f00; margin: 10px 0;">
+                            <span style="font-size: 48px;">🔒</span>
+                            <h3 style="color: #e65100; margin: 10px 0;">三重彩推薦</h3>
+                            <p style="color: #bf360c; font-size: 16px;">此內容僅限 <b>VIP 會員</b> 查看</p>
+                            <p style="color: #888; font-size: 14px;">升級 VIP 即可解鎖三重彩、四重彩等獨家彩池推薦</p>
+                            <div style="margin-top: 15px;"><span style="background: #ff6f00; color: white; padding: 8px 24px; border-radius: 20px; font-weight: bold; font-size: 14px;">💎 立即升級 VIP</span></div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    if is_vip:
+                        st.markdown("<h3 style='margin-top: 25px; margin-bottom: 10px;'>🏅 四重彩推薦（4 隻複式）</h3>", unsafe_allow_html=True)
+                        cols = st.columns(4)
+                        colors2 = ['#e8f5e9', '#e0f2f1', '#fff3e0', '#fbe9e7']
+                        for i in range(4):
+                            row = top4.iloc[i]
+                            with cols[i]:
+                                st.markdown(f"""
+                                <div style="background: {colors2[i]}; border-radius: 12px; padding: 14px 10px; text-align: center; box-shadow: 0 3px 10px rgba(0,0,0,0.08); border: 1px solid rgba(0,0,0,0.05);">
+                                    <span style="font-size: 24px;">🏇</span>
+                                    <h5 style="margin: 2px 0; color: #333; font-size: 15px;">{row['馬匹名稱']}</h5>
+                                    <div style="font-size: 13px; color: #555;">檔位 <b>{row['檔位']}</b><br>勝率 <b style="color:#2e7d32;">{row['預測勝率']:.2%}</b></div>
+                                </div>
+                                """, unsafe_allow_html=True)
+                        st.caption("💡 四重彩：揀 4 隻馬，順序估中冠亞季殿軍。以上 4 隻馬可做複式四重彩（4 選 4）")
+                    else:
+                        st.markdown("""
+                        <div style="background: linear-gradient(135deg, #e8f5e9, #c8e6c9); border-radius: 16px; padding: 20px 20px; text-align: center; border: 2px dashed #2e7d32; margin: 10px 0;">
+                            <span style="font-size: 36px;">🔒</span>
+                            <h4 style="color: #1b5e20; margin: 5px 0;">四重彩推薦</h4>
+                            <p style="color: #555; font-size: 14px;">升級 VIP 即可解鎖四重彩推薦</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    st.divider()
+                    st.markdown("""
+                    <h3 style='margin-bottom: 10px;'>📋 總結投注建議</h3>
+                    <div style="background: linear-gradient(135deg, #f1f8e9, #dcedc8); border-radius: 16px; padding: 20px 24px; border: 2px solid #2e7d32; box-shadow: 0 4px 16px rgba(46, 125, 50, 0.15);">
+                    """, unsafe_allow_html=True)
+                    
+                    if is_vip:
+                        st.markdown(f"""
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 30px; font-size: 15px;">
+                            <div>🏆 <b>獨贏</b>：<span style="color: #1a237e; font-weight: bold;">{top4.iloc[0]['馬匹名稱']}</span></div>
+                            <div>🔗 <b>連贏</b>：<span style="color: #0d47a1; font-weight: bold;">{top4.iloc[0]['馬匹名稱']} + {top4.iloc[1]['馬匹名稱']}</span></div>
+                            <div style="grid-column: span 2;">🥉 <b>三重彩</b>：<span style="color: #4a148c; font-weight: bold;">{top4.iloc[0]['馬匹名稱']}、{top4.iloc[1]['馬匹名稱']}、{top4.iloc[2]['馬匹名稱']}、{top4.iloc[3]['馬匹名稱']}</span>（複式 4 選 3）</div>
+                            <div style="grid-column: span 2;">🏅 <b>四重彩</b>：<span style="color: #1b5e20; font-weight: bold;">{top4.iloc[0]['馬匹名稱']}、{top4.iloc[1]['馬匹名稱']}、{top4.iloc[2]['馬匹名稱']}、{top4.iloc[3]['馬匹名稱']}</span>（複式 4 選 4）</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"""
+                        <div style="font-size: 15px;">
+                            <div>🏆 <b>獨贏</b>：<span style="color: #1a237e; font-weight: bold;">{top4.iloc[0]['馬匹名稱']}</span></div>
+                            <div>🔗 <b>連贏</b>：<span style="color: #0d47a1; font-weight: bold;">{top4.iloc[0]['馬匹名稱']} + {top4.iloc[1]['馬匹名稱']}</span></div>
+                            <div style="margin-top: 12px; padding: 12px; background: #fff3e0; border-radius: 10px; text-align: center; border: 1px dashed #ff6f00;">
+                                <span style="font-size: 20px;">🔒</span>
+                                <span style="color: #e65100; font-weight: bold;"> 三重彩及四重彩推薦僅限 VIP 會員查看</span>
+                                <br><span style="font-size: 13px; color: #888;">升級 VIP 即可解鎖完整投注建議</span>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    st.markdown("</div>", unsafe_allow_html=True)
+                    
+                    st.subheader("🎯 彩池推薦（詳細）")
+                    st.text(pool)
 
-    </div>
-    <div id="js-global-screen-reader-notice" class="sr-only mt-n1" aria-live="polite" aria-atomic="true" ></div>
-    <div id="js-global-screen-reader-notice-assertive" class="sr-only mt-n1" aria-live="assertive" aria-atomic="true"></div>
-  </body>
-</html>
+                    if CONFIG["enable_registration"] and st.session_state.logged_in:
+                        winner_name = top4.iloc[0]['馬匹名稱']
+                        prob = top4.iloc[0]['預測勝率']
+                        record_prediction(st.session_state.username, date_str, race_no, winner_name, prob)
+                        users = load_users()
+                        if st.session_state.username in users:
+                            users[st.session_state.username]['free_usage'] = users[st.session_state.username].get('free_usage', 0) + 1
+                            users[st.session_state.username]['total_usage'] = users[st.session_state.username].get('total_usage', 0) + 1
+                            save_users(users)
+                        st.session_state.usage_count += 1
+                        st.info("📝 預測已記錄到你的歷史")
 
+    # ----- 頁腳 -----
+    st.divider()
+    st.warning("⚠️ **免責聲明**：本系統提供之預測僅供參考，不構成投注建議。賽馬活動涉及風險，用戶應量力而為，本系統不對任何投注損失負責。用戶必須年滿18歲。使用本服務即表示同意以上條款。")
+    
+    col_f1, col_f2, col_f3 = st.columns(3)
+    with col_f1:
+        st.caption(f"🕐 最後更新：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    with col_f2:
+        st.caption("🔐 數據來源：HKJC | 系統版本：v14.0-用戶體驗版")
+    with col_f3:
+        st.caption("💬 Telegram：@bryhjdjbrbxibvrjskofndhiebdpaq")
+
+if __name__ == '__main__':
+    main()
