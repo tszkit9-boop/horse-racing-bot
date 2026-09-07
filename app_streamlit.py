@@ -3590,20 +3590,20 @@ def main():
                 # ----- 載入賽果數據 -----
                 results_file = "ALL_DATA_MERGED.csv"
                 results_df = None
-                if os.path.exists(results_file):
-                    try:
-                        results_df = pd.read_csv(results_file, encoding='utf-8-sig')
-                        # 標準化欄位
-                        results_df = standardize_columns_safe(results_df)
-                        if 'race_date' in results_df.columns:
-                            results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
-                            results_df['race_date_str'] = results_df['race_date'].dt.strftime('%Y-%m-%d')
-                        if 'horse_name' not in results_df.columns and '馬名' in results_df.columns:
-                            results_df.rename(columns={'馬名': 'horse_name'}, inplace=True)
-                        if 'finish_position' not in results_df.columns and '名次' in results_df.columns:
-                            results_df.rename(columns={'名次': 'finish_position'}, inplace=True)
-                    except:
-                        results_df = None
+if os.path.exists(results_file):
+    try:
+        results_df = pd.read_csv(results_file, encoding='utf-8-sig')
+        results_df = standardize_columns_safe(results_df)
+        results_df = results_df.loc[:, ~results_df.columns.duplicated()]   # ← 加呢行
+        if 'race_date' in results_df.columns:
+            results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
+            results_df['race_date_str'] = results_df['race_date'].dt.strftime('%Y-%m-%d')
+        if 'horse_name' not in results_df.columns and '馬名' in results_df.columns:
+            results_df.rename(columns={'馬名': 'horse_name'}, inplace=True)
+        if 'finish_position' not in results_df.columns and '名次' in results_df.columns:
+            results_df.rename(columns={'名次': 'finish_position'}, inplace=True)
+    except:
+        results_df = None
 
                 # ----- 比對預測 vs 賽果 -----
                 hit_count = 0
