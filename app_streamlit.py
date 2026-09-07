@@ -3721,6 +3721,17 @@ def main():
     else:
         st.warning("⚠️ 尚未有任何預測紀錄，請先執行預測")
 
+    # 🔍 DEBUG: 顯示每個場次嘅 all_horses 長度
+    if predictions:
+        st.write("🔍 Debug: 各場次 all_horses 長度")
+        debug_info = {}
+        for key, val in predictions.items():
+            if '_' in key:
+                race_no = key.split('_')[1]
+                horse_list = val.get('all_horses', [])
+                debug_info[race_no] = len(horse_list)
+        st.write(debug_info)
+
     # 2. 讀取真實賽果
     result_file = "race_results_clean.csv"
     df_results = pd.DataFrame()
@@ -3735,9 +3746,10 @@ def main():
                 df_results['race_date'] = pd.to_datetime(df_results['race_date'], errors='coerce')
                 latest_date = df_results['race_date'].max()
                 df_results = df_results[df_results['race_date'] == latest_date].copy()
-                # 🔥 確保 race_no 係 int
                 df_results['race_no'] = df_results['race_no'].astype(int)
                 st.info(f"📅 顯示最新日期：{latest_date.strftime('%Y-%m-%d')}")
+                # 🔍 DEBUG: 顯示賽果中有幾多場
+                st.write(f"🔍 Debug: 賽果中共有 {df_results['race_no'].nunique()} 場，場次編號：{sorted(df_results['race_no'].unique())}")
         except Exception as e:
             st.error(f"❌ 讀取賽果失敗：{e}")
             df_results = pd.DataFrame()
@@ -3760,17 +3772,14 @@ def main():
             if not isinstance(value, dict):
                 continue
             horse_list = value.get('all_horses', [])
-            # 🔥 如果 horse_list 係空，試用 top_horse
-            if not horse_list:
+            # 如果 horse_list 係空或唔係 list，用 top_horse
+            if not horse_list or not isinstance(horse_list, list):
                 top = value.get('top_horse')
                 if top:
                     horse_list = [top]
                 else:
                     continue
-            # 🔥 確保 horse_list 係 list，而且只取前 4 名
-            if isinstance(horse_list, str):
-                horse_list = [horse_list]
-            # 🔥 只取前 4 名
+            # 只取前 4 名
             for idx, horse in enumerate(horse_list[:4], 1):
                 pred_list.append({
                     '日期': date_str,
@@ -3780,23 +3789,20 @@ def main():
                 })
         if pred_list:
             st.info(f"✅ 成功解析 {len(pred_list)} 筆預測（頭四名）")
+            # 🔍 DEBUG: 顯示預測中每個場次有幾多條
+            df_pred_debug = pd.DataFrame(pred_list)
+            st.write(f"🔍 Debug: 預測場次分佈：\n{df_pred_debug.groupby('場次').size()}")
         else:
             st.warning("⚠️ 無法解析預測紀錄")
 
     # 4. 比對並顯示
     if pred_list and not df_results.empty:
         df_pred = pd.DataFrame(pred_list)
-        # 🔥 確保場次係 int
         df_pred['場次'] = df_pred['場次'].astype(int)
-        
-        # 🔥 獲取每場冠軍
         df_winner = df_results[df_results['finish_position'] == 1][['race_no', 'horse_name']].copy()
         df_winner.rename(columns={'horse_name': '真實頭馬'}, inplace=True)
         df_winner['race_no'] = df_winner['race_no'].astype(int)
-        
-        # 🔥 合併
         df_compare = df_pred.merge(df_winner, left_on='場次', right_on='race_no', how='left')
-        
         if not df_compare.empty:
             df_compare['結果'] = df_compare.apply(
                 lambda row: '命中' if row['預測馬'] == row['真實頭馬'] else '失準',
@@ -3804,7 +3810,6 @@ def main():
             )
             df_compare = df_compare.sort_values(['日期', '場次', '預測名次'])
             display_df = df_compare[['日期', '場次', '預測名次', '預測馬', '真實頭馬', '結果']].copy()
-            
             def highlight_row(row):
                 if row['結果'] == '命中':
                     return ['background-color: #90EE90; color: black'] * len(row)
@@ -3812,7 +3817,6 @@ def main():
                     return ['background-color: #FF6B6B; color: white'] * len(row)
                 else:
                     return [''] * len(row)
-            
             styled_df = display_df.style.apply(highlight_row, axis=1)
             st.dataframe(
                 styled_df,
