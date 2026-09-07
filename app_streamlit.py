@@ -3885,11 +3885,15 @@ def main():
     try:
         df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
         df_sched = standardize_columns_safe(df_sched)
-        if 'race_date' in df_sched.columns:
-            df_sched['race_date'] = pd.to_datetime(df_sched['race_date'], errors='coerce')
-            df_sched = df_sched.dropna(subset=['race_date'])
-            today = datetime.now().date()
-            day_races = df_sched[df_sched['race_date'].dt.date == today]
+    # 假設你讀取咗 df_results
+    if 'race_date' in df_results.columns:
+    # 將日期欄轉為 datetime
+    df_results['race_date'] = pd.to_datetime(df_results['race_date'], errors='coerce')
+    # 搵最新日期
+    latest_date = df_results['race_date'].max()
+    st.info(f"📅 最新賽果日期：{latest_date.strftime('%Y-%m-%d')}")
+    # 過濾只顯示最新日期
+    df_results = df_results[df_results['race_date'] == latest_date]
             if day_races.empty:
                 st.info("今日沒有賽事")
             else:
