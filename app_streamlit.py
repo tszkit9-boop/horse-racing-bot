@@ -775,7 +775,7 @@ def update_accuracy_with_results():
         required = ['race_date', 'race_no', 'horse_name', 'finish_position']
         for col in required:
             if col not in results_df.columns:
-                return 0, f"缺少必要欄位: {col}"
+    return 0, f"缺少必要欄位: {col}"
         
         # 強制讀取 2026/09/05 之後嘅數據
         results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
