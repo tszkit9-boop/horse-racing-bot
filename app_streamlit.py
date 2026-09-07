@@ -3606,101 +3606,42 @@ def main():
                         st.warning(f"讀取賽果失敗：{e}")
                         results_df = None
 
-                # ----- 比對預測 vs 賽果 -----
-                hit_count = 0
-                total_count = 0
-                compare_list = []
+# ---------- 比對預測 vs 賽果（頭四名） ----------
+# 先排序拎頭四名（如果有預測勝率就用佢排）
+if '預測勝率' in df_compare.columns:
+    df_compare = df_compare.sort_values('預測勝率', ascending=False).head(4)
+else:
+    df_compare = df_compare.head(4)
 
-                if results_df is not None and not results_df.empty:
-                    for key, pred in ai_data.items():
-                        date_str = pred.get('date')
-                        race_no = pred.get('race')
-                        top_horse = pred.get('top_horse')
-                        if not date_str or not race_no or not top_horse:
-                            continue
-                        matched = results_df[
-                            (results_df['race_date_str'] == date_str) &
-                            (results_df['race_no'] == race_no) &
-                            (results_df['horse_name'] == top_horse)
-                        ]
-                        total_count += 1
-                        if not matched.empty:
-                            finish_pos = matched.iloc[0].get('finish_position')
-                            if pd.notna(finish_pos) and finish_pos == 1:
-                                hit_count += 1
-                                compare_list.append({
-                                    "日期": date_str,
-                                    "場次": race_no,
-                                    "預測頭馬": top_horse,
-                                    "真實頭馬": top_horse,
-                                    "結果": "✅ 命中"
-                                })
-                            else:
-                                real_winner = results_df[
-                                    (results_df['race_date_str'] == date_str) &
-                                    (results_df['race_no'] == race_no) &
-                                    (results_df['finish_position'] == 1)
-                                ]
-                                real_horse = real_winner.iloc[0]['horse_name'] if not real_winner.empty else "未知"
-                                compare_list.append({
-                                    "日期": date_str,
-                                    "場次": race_no,
-                                    "預測頭馬": top_horse,
-                                    "真實頭馬": real_horse,
-                                    "結果": "❌ 失準"
-                                })
-                        else:
-                            compare_list.append({
-                                "日期": date_str,
-                                "場次": race_no,
-                                "預測頭馬": top_horse,
-                                "真實頭馬": "⏳ 待比對",
-                                "結果": "⏳ 待比對（賽果未匹配）"
-                            })
-                else:
-                    for key, pred in ai_data.items():
-                        compare_list.append({
-                            "日期": pred.get('date', ''),
-                            "場次": pred.get('race', ''),
-                            "預測頭馬": pred.get('top_horse', ''),
-                            "真實頭馬": "⏳ 請上傳賽果",
-                            "結果": "⏳ 待比對"
-                        })
-                    total_count = len(ai_data)
-                    hit_count = 0
+# 新增『結果』欄（比對預測同真實馬名）
+df_compare['結果'] = df_compare.apply(
+    lambda row: '命中' if row['預測馬'] == row['真實馬'] else '失準',
+    axis=1
+)
 
-                # ----- 顯示統計 -----
-                total = len(ai_data)
-                st.metric("📊 已預測場次", total)
-                if results_df is not None and not results_df.empty and total_count > 0:
-                    hit_rate = hit_count / total_count
-                    col1, col2 = st.columns(2)
-                    col1.metric("🎯 命中場次", hit_count)
-                    col2.metric("📈 命中率", f"{hit_rate:.1%}")
-                else:
-                    st.info("📌 上傳賽果 CSV 後可顯示命中率")
+# 上色函數
+def color_result(val):
+    if val == '命中':
+        return 'background-color: #90EE90; color: black'
+    elif val == '失準':
+        return 'background-color: #FF6B6B; color: white'
+    else:
+        return 'background-color: #fff3cd; color: #856404;'
 
-                # ----- 顯示對比表格（修正變數名） -----
-                if compare_list:
-                    st.subheader("📋 預測 vs 賽果記錄")
-                    df_compare = pd.DataFrame(compare_list)
-                    df_compare = df_compare.sort_values('日期', ascending=False)
-                    
-                    def color_result(val):
-                        if "✅" in str(val):
-                            return "background-color: #d4edda; color: #155724;"
-                        elif "❌" in str(val):
-                            return "background-color: #f8d7da; color: #721c24;"
-                        else:
-                            return "background-color: #fff3cd; color: #856404;"
-                    
-                    # 正確使用 df_compare（唔係 df.compare）
-                    styled_df = df_compare.style.applymap(color_result, subset=['結果'])
-                    st.dataframe(
-                        styled_df,
-                        use_container_width=True,
-                        hide_index=True
-                    )
+# 套用樣式
+styled_df = df_compare.style.applymap(color_result, subset=['結果'])
+
+# 顯示
+st.dataframe(
+    styled_df,
+    use_container_width=True,
+    hide_index=True
+)
+
+# --- 管理員下載按鈕 ---
+if st.session_state.get('role') == 'super_admin':
+    # 呢度原本嘅下載 code 保留
+    pass
 
                 # ----- 管理員下載按鈕 -----
                 if st.session_state.get('role') == 'super_admin':
