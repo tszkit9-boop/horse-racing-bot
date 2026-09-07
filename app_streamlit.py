@@ -767,6 +767,7 @@ def update_accuracy_with_results():
         return 0, "沒有預測記錄"
     try:
     try:
+    try:
         results_df = pd.read_csv('ALL_DATA_MERGED.csv', encoding='utf-8-sig')
         results_df = standardize_columns_safe(results_df)
         results_df = results_df.loc[:, ~results_df.columns.duplicated()]
@@ -787,15 +788,10 @@ def update_accuracy_with_results():
         # 4. 去掉日期解析失敗（變咗 NaT）嘅行
         results_df = results_df.dropna(subset=['race_date'])
 
-        # 5. 強制印出嚟睇下個檔入面有咩欄位！(確認讀取成功)
-        st.write("CSV 讀取成功，入面嘅欄位係：", results_df.columns.tolist())
-        st.write(results_df.head())
-
         updated = 0
-        # (呢度繼續你原本落去嘅代碼...)
-
+        # 如果原本下面仲有代碼，請保持喺呢個縮排度...
+        
     except Exception as e:
-        # 呢個 Except 一定要加，如果唔係就會報錯！
         return 0, f"讀取賽果時出錯: {e}"
 st.dataframe(results_df.head())
         results_df = standardize_columns_safe(results_df)
