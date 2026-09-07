@@ -3628,33 +3628,26 @@ def main():
     df_results = pd.DataFrame()
     if os.path.exists(result_file):
         try:
-            # 先嘗試正常讀取（有 header）
             df_results = pd.read_csv(result_file, encoding='utf-8-sig')
-            
-            # 如果讀出嚟得一行且有大量 column（header 錯），改用無 header 模式
             if df_results.shape[0] == 1 and df_results.shape[1] > 50:
                 df_results = pd.read_csv(result_file, header=None, encoding='utf-8-sig')
-                # 自動偵測邊一欄係日期
                 date_col_idx = None
                 for i, val in enumerate(df_results.iloc[0].astype(str)):
                     if '2026' in val or '2025' in val or '/' in val or '-' in val:
                         date_col_idx = i
                         break
-                # 設定欄位名（場次、名次、馬名、日期...）
                 cols = ['場次', '名次', '馬名', '騎師', '練馬師', '檔位', '體重']
                 if date_col_idx is not None:
                     cols.append('日期')
                 cols += [f'col{i}' for i in range(len(cols), df_results.shape[1])]
                 df_results.columns = cols[:df_results.shape[1]]
             
-            # 嘗試搵日期欄位（無論叫咩名）
             date_col = None
             for col in df_results.columns:
                 if any(keyword in str(col).lower() for keyword in ['日期', 'date', 'race_date', '比賽日期', '賽日']):
                     date_col = col
                     break
             
-            # 如果有日期欄位，顯示數據範圍，但唔過濾（等用戶睇到所有數據）
             if date_col:
                 df_results[date_col] = pd.to_datetime(df_results[date_col], errors='coerce')
                 min_date = df_results[date_col].min()
@@ -3662,7 +3655,6 @@ def main():
                 st.info(f"✅ 賽果數據日期範圍：{min_date.date()} 至 {max_date.date()}")
             else:
                 st.info(f"✅ 成功讀取 {len(df_results)} 條賽果紀錄（無日期欄位）")
-            
         except Exception as e:
             st.error(f"❌ 讀取賽果失敗：{e}")
             df_results = pd.DataFrame()
@@ -3716,7 +3708,6 @@ def main():
     if pred_list and not df_results.empty:
         df_pred = pd.DataFrame(pred_list)
 
-        # 搵出名次欄位
         winner_col = None
         for col in ['名次', '排名', 'position', 'place']:
             if col in df_results.columns:
@@ -3725,7 +3716,6 @@ def main():
         if winner_col is None:
             st.error("❌ 賽果檔案欠缺名次欄位")
         else:
-            # 搵出馬名欄位
             horse_col = None
             for col in ['馬名', 'horse', 'name', '馬匹']:
                 if col in df_results.columns:
