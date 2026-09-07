@@ -3697,7 +3697,7 @@ def main():
                         else:
                             return "background-color: #fff3cd; color: #856404;"
                     st.dataframe(
-                        df_compare.style.applymap(color_result, subset=['結果']),
+                        df_compare.style.applymap(color_result, subset=['結果'])
                         use_container_width=True,
                         hide_index=True
                     )
