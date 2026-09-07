@@ -1626,7 +1626,7 @@ def admin_automation():
         st.success("✅ 已儲存")
 
 # ---------- 8.10 安全與權限 ----------
-def admin_security():
+    def admin_security():
     st.subheader("🔐 安全與權限")
     st.write("操作日誌")
     logs = load_logs()
