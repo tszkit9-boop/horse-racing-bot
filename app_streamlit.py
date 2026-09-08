@@ -271,47 +271,54 @@ def get_virtual_balance(username):
     return users[username].get('virtual_balance', 0)
 
 def place_bet(username, race_date, race_no, horse_name, bet_amount, bet_type="win"):
-    try:
-        users = load_users()
-        if username not in users:
-            return False, "用戶不存在"
-        user = users[username]
-        balance = user.get('virtual_balance', 0)
-        if bet_amount <= 0:
-            return False, "投注金額必須大於 0"
-        if bet_amount > balance:
-            return False, f"餘額不足（餘額：${balance}）"
-        
-        # 扣減餘額
-        user['virtual_balance'] = balance - bet_amount
-        
-        # 記錄投注
-        if 'bets' not in user:
-            user['bets'] = []
-        bet = {
-            "date": race_date,
-            "race": race_no,
-            "horse": horse_name,
-            "amount": bet_amount,
-            "bet_type": bet_type,
-            "placed_at": datetime.now().isoformat(),
-            "result": None,
-            "payout": 0,
-            "odds": None,
-            "settled": False
-        }
-        user['bets'].append(bet)
-        
-        # 🔥 嘗試儲存，並檢查結果
-        success = save_users(users)
-        if success:
-            return True, f"已投注 ${bet_amount} 喺 {horse_name}"
-        else:
-            # 回滾：還原餘額
-            user['virtual_balance'] = balance
-            return False, "儲存失敗（檔案寫入錯誤），請檢查系統日誌"
-    except Exception as e:
-        return False, f"投注過程發生錯誤：{str(e)}"
+    users = load_users()
+    if username not in users:
+        return False, "用戶不存在"
+    user = users[username]
+    balance = user.get('virtual_balance', 0)
+    if bet_amount <= 0:
+        return False, "投注金額必須大於 0"
+    if bet_amount > balance:
+        return False, f"餘額不足（餘額：${balance}）"
+    
+    # 扣減餘額
+    user['virtual_balance'] = balance - bet_amount
+    
+    # 記錄投注
+    if 'bets' not in user:
+        user['bets'] = []
+    bet = {
+        "date": race_date,
+        "race": race_no,
+        "horse": horse_name,
+        "amount": bet_amount,
+        "bet_type": bet_type,
+        "placed_at": datetime.now().isoformat(),
+        "result": None,
+        "payout": 0,
+        "odds": None,
+        "settled": False
+    }
+    user['bets'].append(bet)
+    
+    # 儲存
+    success = save_users(users)
+    if success:
+        # 驗證是否真係寫入
+        verify = load_users()
+        if username in verify:
+            verify_balance = verify[username].get('virtual_balance', 0)
+            if verify_balance == user['virtual_balance']:
+                return True, f"已投注 ${bet_amount} 喺 {horse_name}"
+            else:
+                # 寫入不一致，回滾
+                user['virtual_balance'] = balance
+                return False, "儲存驗證失敗，請重試"
+        return True, f"已投注 ${bet_amount} 喺 {horse_name}"
+    else:
+        # 回滾
+        user['virtual_balance'] = balance
+        return False, "儲存失敗，請檢查伺服器權限"
 
 # ============================================================
 # 用戶系統
@@ -1364,6 +1371,15 @@ def show_betting_interface(username):
         st.info("請先登入")
         return
     
+    # 如果剛剛投注成功，顯示訊息
+    if 'bet_success_msg' in st.session_state:
+        st.success(st.session_state.bet_success_msg)
+        del st.session_state.bet_success_msg
+    if 'bet_error_msg' in st.session_state:
+        st.error(st.session_state.bet_error_msg)
+        del st.session_state.bet_error_msg
+    
+    # 重新載入用戶數據（確保最新）
     users = load_users()
     user = users.get(username, {})
     balance = user.get('virtual_balance', 0)
@@ -1418,11 +1434,13 @@ def show_betting_interface(username):
                 with st.form(key="place_bet_form"):
                     horse_options = result['horse_name'].tolist()
                     selected_horse = st.selectbox("揀馬", horse_options, key="bet_horse_select")
+                    # 投注金額上限為當前餘額
+                    max_bet = int(balance) if balance > 0 else 1
                     bet_amount = st.number_input(
                         "投注金額",
                         min_value=1,
-                        max_value=int(balance) if balance > 0 else 1,
-                        value=min(100, int(balance)) if balance > 0 else 1,
+                        max_value=max_bet,
+                        value=min(100, max_bet),
                         step=10,
                         key="bet_amount_input"
                     )
@@ -1440,11 +1458,12 @@ def show_betting_interface(username):
                         else:
                             success, msg = place_bet(username, date_str, bet_race, selected_horse, bet_amount)
                             if success:
-                                st.success(f"✅ {msg}")
-                                # 強制刷新頁面，更新餘額
+                                # 將成功訊息放入 session_state，然後重新整理頁面
+                                st.session_state.bet_success_msg = msg
                                 st.rerun()
                             else:
-                                st.error(f"❌ {msg}")
+                                st.session_state.bet_error_msg = msg
+                                st.rerun()
             else:
                 st.warning("無法載入預測數據")
     
