@@ -301,11 +301,11 @@ def place_bet(username, race_date, race_no, horse_name, bet_amount, bet_type="wi
     }
     user['bets'].append(bet)
     
-    # 儲存
+    # 🔥 儲存並檢查結果
     if save_users(users):
         return True, f"已投注 ${bet_amount} 喺 {horse_name}"
     else:
-        # 回滾
+        # 回滾：還原餘額
         user['virtual_balance'] = balance
         return False, "儲存失敗，請稍後再試"
 
