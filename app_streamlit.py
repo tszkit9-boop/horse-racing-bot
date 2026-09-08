@@ -777,6 +777,7 @@ def update_accuracy_with_results():
         
         updated = 0
         for rec in records:
+            # 如果已經比對過就跳過
             if rec.get('actual_result') is not None:
                 continue
             date_str = rec.get('date')
@@ -784,6 +785,7 @@ def update_accuracy_with_results():
             horse = rec.get('horse')
             if not date_str or not race_no or not horse:
                 continue
+            # 搵匹配嘅賽果
             mask = (results_df['race_date'].dt.strftime('%Y-%m-%d') == date_str) & \
                    (results_df['race_no'] == race_no) & \
                    (results_df['horse_name'] == horse)
@@ -793,6 +795,8 @@ def update_accuracy_with_results():
                 rec['actual_result'] = int(pos) if pd.notna(pos) else None
                 rec['is_hit'] = (rec['actual_result'] == 1) if rec['actual_result'] is not None else None
                 updated += 1
+                
+                # 如果命中，更新用戶記錄
                 if rec.get('is_hit') == True:
                     username = rec.get('username')
                     if username:
@@ -806,6 +810,7 @@ def update_accuracy_with_results():
                         update_user_exp(username, is_hit=True)
                     check_badges(username)
                     settle_user_bets(username, date_str, rec.get('race'), results_df)
+        
         if updated > 0:
             save_accuracy(acc)
         return updated, f"成功比對 {updated} 條記錄"
@@ -1536,7 +1541,12 @@ def show_leaderboard():
 def show_user_dashboard(username):
     if not username:
         return
-    stats = get_user_stats(username)
+    # 獲取用戶統計，如果出錯就用預設值
+    try:
+        stats = get_user_stats(username)
+    except:
+        stats = {'total_predictions': 0, 'free_used': 0, 'is_paid': False, 'group': 'free', 'plan': None}
+    
     users = load_users()
     user_data = users.get(username, {})
     group = user_data.get('group', 'free')
@@ -1551,6 +1561,7 @@ def show_user_dashboard(username):
     badges = user_data.get('badges', [])
     next_level_exp = get_level_info(exp)[1]
     virtual_balance = user_data.get('virtual_balance', 0)
+    
     if group == 'super_admin':
         level_display = "👑 超級管理員"
     elif group == 'VIP':
@@ -1559,11 +1570,15 @@ def show_user_dashboard(username):
         level_display = "💎 付費用戶"
     else:
         level_display = "🆓 免費用戶"
+    
     st.markdown("---")
     col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("👤 用戶", username)
     col2.metric("🏷️ 級別", level_display)
-    col3.metric("📊 總預測次數", stats['total_predictions'])
+    # 強制轉為 int 確保顯示
+    total_pred = int(stats.get('total_predictions', 0))
+    col3.metric("📊 總預測次數", total_pred)
+    
     limit = user_data.get('predictions_limit', CONFIG['free_limit'])
     if limit == -1:
         col4.metric("📊 剩餘場次", "♾️ 無限")
@@ -1572,6 +1587,7 @@ def show_user_dashboard(username):
         remain = max(0, limit - used)
         col4.metric("📊 剩餘場次", remain)
     col5.metric("💰 虛擬幣", f"${virtual_balance:,.0f}")
+    
     st.markdown("---")
     st.subheader("🏅 用戶等級 & 勳章")
     col_level1, col_level2, col_level3 = st.columns(3)
@@ -1615,7 +1631,7 @@ def show_user_dashboard(username):
     today_count = sum(1 for h in history if h.get('date') == today)
     col_p1, col_p2, col_p3, col_p4 = st.columns(4)
     with col_p1:
-        st.metric("📈 總預測", stats['total_predictions'])
+        st.metric("📈 總預測", total_pred)
     with col_p2:
         st.metric("📅 今日已用", today_count)
     with col_p3:
@@ -1812,16 +1828,14 @@ def get_future_races():
         if 'race_date' in df.columns:
             df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce')
             df = df.dropna(subset=['race_date'])
-            today = datetime.now().date()
-            future = df[df['race_date'].dt.date >= today]
-            if not future.empty:
-                dates = future['race_date'].dt.date.unique()
-                dates = sorted(dates)
-                race_courses = []
-                for d in dates:
-                    course = future[future['race_date'].dt.date == d]['race_course'].iloc[0] if 'race_course' in future.columns else '賽馬'
-                    race_courses.append(course)
-                return dates, race_courses
+            # 暫時移除 future 過濾，顯示所有日期
+            dates = df['race_date'].dt.date.unique()
+            dates = sorted(dates)
+            race_courses = []
+            for d in dates:
+                course = df[df['race_date'].dt.date == d]['race_course'].iloc[0] if 'race_course' in df.columns else '賽馬'
+                race_courses.append(course)
+            return dates, race_courses
     except Exception as e:
         print(f"讀取排位表失敗：{e}")
     return [], []
@@ -2847,11 +2861,15 @@ def admin_auto_maintenance():
     st.divider()
     st.subheader("⚡ 單獨執行")
     col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        if st.button("🔄 比對賽果", use_container_width=True):
+with col1:
+    if st.button("🔄 比對賽果", use_container_width=True):
+        with st.spinner("正在比對賽果..."):
             updated, msg = update_accuracy_with_results()
-            st.success(f"✅ {msg}")
-            st.rerun()
+            if updated > 0:
+                st.success(f"✅ {msg}")
+            else:
+                st.info(f"ℹ️ {msg}")
+        st.rerun()
     with col2:
         if st.button("⚖️ 調整權重", use_container_width=True):
             result = adjust_model_weights()
