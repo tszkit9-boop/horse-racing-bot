@@ -1822,7 +1822,6 @@ def get_future_races():
             df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce')
             df = df.dropna(subset=['race_date'])
             today = datetime.now().date()
-            # 🔥 只保留今天或之後嘅日期
             future = df[df['race_date'].dt.date >= today]
             if not future.empty:
                 dates = future['race_date'].dt.date.unique()
@@ -2737,7 +2736,7 @@ def admin_auto_maintenance():
         st.write(f"• {task}")
     st.divider()
     
-    if st.button("🚀 執行全部維護任務", type="primary", use_container_width=True):
+    if st.button("🚀 執行全部維護任務", type="primary", use_container_width=True, key="btn_full_maintenance"):
         results = []
         progress_bar = st.progress(0)
         status_text = st.empty()
@@ -2804,7 +2803,7 @@ def admin_auto_maintenance():
             'users.json', 'system_config.json', 'finance.json',
             'promo_codes.json', 'admin_log.json', 'accuracy.json',
             'payment_proofs.json', 'HKCJ_FULL_YEAR_DATA.csv', 'ALL_DATA_MERGED.csv',
-            'race_results_clean.csv'  # 加入新檔案檢查
+            'race_results_clean.csv'
         ]
         file_status = []
         for f in files_to_check:
@@ -2865,9 +2864,11 @@ def admin_auto_maintenance():
     
     st.divider()
     st.subheader("⚡ 單獨執行")
+    
+    # 🔥 為每個按鈕加入唯一 key
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        if st.button("🔄 比對賽果", use_container_width=True):
+        if st.button("🔄 比對賽果", use_container_width=True, key="btn_compare"):
             with st.spinner("正在比對賽果..."):
                 updated, msg = update_accuracy_with_results()
                 if updated > 0:
@@ -2876,13 +2877,13 @@ def admin_auto_maintenance():
                     st.info(f"ℹ️ {msg}")
             st.rerun()
     with col2:
-        if st.button("⚖️ 調整權重", use_container_width=True):
+        if st.button("⚖️ 調整權重", use_container_width=True, key="btn_adjust_weights"):
             with st.spinner("正在計算最佳權重..."):
                 result = adjust_model_weights()
                 st.success(f"✅ XGB={result['xgb_weight']}, Cat={result['cat_weight']}（命中率 {result['hit_rate']:.2%}）")
             st.rerun()
     with col3:
-        if st.button("⏰ 終止過期會員", use_container_width=True):
+        if st.button("⏰ 終止過期會員", use_container_width=True, key="btn_expire"):
             users = load_users()
             today = datetime.now()
             expired = []
@@ -2905,7 +2906,7 @@ def admin_auto_maintenance():
                 st.info("✅ 目前沒有過期會員")
             st.rerun()
     with col4:
-        if st.button("🎯 更新 AI 命中率", use_container_width=True):
+        if st.button("🎯 更新 AI 命中率", use_container_width=True, key="btn_update_ai"):
             with st.spinner("正在比對..."):
                 hit_count, msg = update_ai_accuracy()
                 st.success(f"✅ 比對完成：{msg}")
