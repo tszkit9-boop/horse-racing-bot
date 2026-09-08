@@ -1137,7 +1137,6 @@ def load_horse_name_map():
     return {}
 
 def generate_pool_recommendations(df, top_n=6):
-    """生成六種彩池推薦（獨贏、位置、連贏、位置Q、三重彩、單T、四重彩）"""
     if df.empty:
         return "⚠️ 無數據"
     horse_names = df['horse_name'].tolist()
@@ -1147,29 +1146,40 @@ def generate_pool_recommendations(df, top_n=6):
         for i in indices:
             score *= probs[i]
         return score / len(indices)
-    rec = "【獨贏】\n"
-    for i, row in df.head(3).iterrows():
-        rec += f"  {row['horse_name']}（{row['預測勝率']:.1%}）\n"
+    
+    rec = ""
+    # 獨贏：只顯示第 1 名
+    if len(horse_names) >= 1:
+        rec += "【獨贏】\n"
+        rec += f"  {horse_names[0]}（{probs[0]:.1%}）\n"
+    
+    # 位置：顯示前 4 名（不變）
     rec += "\n【位置】\n"
-    for i, row in df.head(4).iterrows():
-        rec += f"  {row['horse_name']}（{row['預測勝率']:.1%}）\n"
+    for i in range(min(4, len(horse_names))):
+        rec += f"  {horse_names[i]}（{probs[i]:.1%}）\n"
+    
+    # 連贏：只顯示 3 對
     rec += "\n【連贏】\n"
     pairs = []
-    for i in range(min(len(horse_names), 5)):
-        for j in range(i+1, min(len(horse_names), 6)):
+    for i in range(min(len(horse_names), 4)):
+        for j in range(i+1, min(len(horse_names), 5)):
             pairs.append((combo_score([i, j]), i, j))
     pairs.sort(reverse=True)
-    for _, i, j in pairs[:5]:
+    for _, i, j in pairs[:3]:
         rec += f"  {horse_names[i]} + {horse_names[j]}\n"
+    
+    # 位置Q：顯示 6 對（不變）
     rec += "\n【位置Q】\n"
     q_pairs = []
-    for i in range(min(len(horse_names), 6)):
-        for j in range(i+1, min(len(horse_names), 8)):
+    for i in range(min(len(horse_names), 5)):
+        for j in range(i+1, min(len(horse_names), 7)):
             if j < len(horse_names):
                 q_pairs.append((combo_score([i, j]), i, j))
     q_pairs.sort(reverse=True)
     for _, i, j in q_pairs[:6]:
         rec += f"  {horse_names[i]} + {horse_names[j]}\n"
+    
+    # 三重彩/單T：只顯示 3 組（每組 3 匹）
     rec += "\n【三重彩 / 單T】\n"
     tierce = []
     for i in range(min(len(horse_names), 4)):
@@ -1178,8 +1188,10 @@ def generate_pool_recommendations(df, top_n=6):
                 if i != j and i != k and j != k:
                     tierce.append((combo_score([i, j, k]), i, j, k))
     tierce.sort(reverse=True)
-    for _, i, j, k in tierce[:5]:
+    for _, i, j, k in tierce[:3]:
         rec += f"  {horse_names[i]} > {horse_names[j]} > {horse_names[k]}\n"
+    
+    # 四重彩：只顯示 3 組（每組 4 匹）
     rec += "\n【四重彩】\n"
     quartet = []
     for i in range(min(len(horse_names), 4)):
@@ -1191,6 +1203,7 @@ def generate_pool_recommendations(df, top_n=6):
     quartet.sort(reverse=True)
     for _, i, j, k, l in quartet[:3]:
         rec += f"  {horse_names[i]} > {horse_names[j]} > {horse_names[k]} > {horse_names[l]}\n"
+    
     return rec
 
 def run_prediction(date_str, race_no):
