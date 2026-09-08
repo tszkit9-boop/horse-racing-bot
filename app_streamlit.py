@@ -1384,14 +1384,12 @@ def show_betting_interface(username):
     st.divider()
     st.subheader("📝 投注")
     
-    # 日期和場次選擇
     col_date, col_race = st.columns(2)
     with col_date:
         date = st.date_input("📅 選擇日期", value=pd.to_datetime("2026-09-06"), key="bet_date_input")
     with col_race:
         bet_race = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="bet_race_select")
     
-    # 按鈕：顯示預測
     if st.button("🔍 睇預測 & 投注", key="show_bet_options"):
         date_str = date.strftime('%Y-%m-%d')
         with st.spinner("載入預測..."):
@@ -1407,7 +1405,6 @@ def show_betting_interface(username):
                 display_df['值博指數'] = display_df['值博指數'].apply(lambda x: f"{x:.4f}")
                 st.dataframe(display_df, use_container_width=True)
                 
-                # 投注表單
                 st.subheader("💸 落注")
                 with st.form(key="place_bet_form"):
                     horse_options = result['horse_name'].tolist()
@@ -1435,7 +1432,7 @@ def show_betting_interface(username):
                             success, msg = place_bet(username, date_str, bet_race, selected_horse, bet_amount)
                             if success:
                                 st.success(f"✅ {msg}")
-                                # 更新餘額顯示
+                                # 強制刷新頁面，更新餘額
                                 st.rerun()
                             else:
                                 st.error(f"❌ {msg}")
