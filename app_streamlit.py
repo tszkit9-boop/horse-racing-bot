@@ -1252,7 +1252,7 @@ def run_prediction(date_str, race_no):
     filtered = df_date[df_date['race_no'] == race_no]
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
-    # 賠率估算（保留所有馬匹）
+    # 賠率估算
     win_odds = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0)
     win_odds = win_odds.replace(0, 4.0)
     inv_odds = 1 / win_odds
@@ -1266,6 +1266,7 @@ def run_prediction(date_str, race_no):
     )
     result_df = result_df.sort_values('預測勝率', ascending=False)
 
+    # 儲存 AI 預測
     ai_file = "ai_predictions.json"
     ai_data = {}
     if os.path.exists(ai_file):
@@ -1289,8 +1290,45 @@ def run_prediction(date_str, race_no):
 
     st.success(f"✅ AI 預測已儲存（共 {len(ai_data)} 筆記錄）")
 
-    # 完整彩池推薦
-    pool_text = generate_pool_recommendations(result_df)
+    # 🔥 ========== 彩池推薦（根據用戶權限過濾） ==========
+    # 生成完整彩池推薦
+    full_pool_text = generate_pool_recommendations(result_df)
+    
+    # 檢查用戶權限
+    config = load_system_config()
+    enable_vip_content = config.get("enable_vip_content", True)
+    
+    # 獲取當前用戶身份
+    username = st.session_state.get('username')
+    user_group = 'free'  # 預設為 free
+    if username:
+        users = load_users()
+        user_data = users.get(username, {})
+        user_group = user_data.get('group', 'free')
+    
+    # 判斷是否為 VIP 或 super_admin
+    is_vip = user_group in ['VIP', 'super_admin']
+    
+    # 如果啟用了 VIP 內容過濾，而且用戶不是 VIP，就移除三重彩同四重彩
+    if enable_vip_content and not is_vip:
+        # 分割彩池推薦，只保留非 VIP 部分（獨贏、位置、連贏、位置Q）
+        lines = full_pool_text.split('\n')
+        filtered_lines = []
+        skip = False
+        for line in lines:
+            if '【三重彩' in line or '【四重彩' in line:
+                skip = True
+                continue
+            if skip and line.strip() == '':
+                skip = False
+                continue
+            if not skip:
+                filtered_lines.append(line)
+        pool_text = '\n'.join(filtered_lines)
+        # 加返個提示
+        pool_text += "\n\n🔒 三重彩 / 四重彩 為 VIP 專屬內容，請升級至 VIP 查看"
+    else:
+        pool_text = full_pool_text
 
     return result_df, pool_text
 
