@@ -271,61 +271,77 @@ def get_virtual_balance(username):
     return users[username].get('virtual_balance', 0)
 
 def place_bet(username, race_date, race_no, horse_name, bet_amount, bet_type="win"):
+    """
+    直接讀寫 users.json，並驗證寫入是否成功
+    """
+    import json
+    import os
+    from datetime import datetime
+
+    file_path = "users.json"
+    
     try:
-        # 讀取用戶數據
-        with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
+        # 讀取現有用戶數據
+        with open(file_path, 'r', encoding='utf-8') as f:
             users = json.load(f)
-        
-        if username not in users:
-            return False, "用戶不存在"
-        user = users[username]
-        balance = user.get('virtual_balance', 0)
-        
-        if bet_amount <= 0:
-            return False, "投注金額必須大於 0"
-        if bet_amount > balance:
-            return False, f"餘額不足（餘額：${balance}）"
-        
-        # 計算新餘額
-        new_balance = balance - bet_amount
-        user['virtual_balance'] = new_balance
-        
-        # 記錄投注
-        if 'bets' not in user:
-            user['bets'] = []
-        bet = {
-            "date": race_date,
-            "race": race_no,
-            "horse": horse_name,
-            "amount": bet_amount,
-            "bet_type": bet_type,
-            "placed_at": datetime.now().isoformat(),
-            "result": None,
-            "payout": 0,
-            "odds": None,
-            "settled": False
-        }
-        user['bets'].append(bet)
-        
-        # 寫入檔案（強制覆蓋）
-        with open(USER_DATA_FILE, 'w', encoding='utf-8') as f:
+    except Exception as e:
+        return False, f"讀取 users.json 失敗：{e}"
+
+    if username not in users:
+        return False, "用戶不存在"
+    
+    user = users[username]
+    balance = user.get('virtual_balance', 0)
+    
+    if bet_amount <= 0:
+        return False, "投注金額必須大於 0"
+    if bet_amount > balance:
+        return False, f"餘額不足（餘額：${balance}）"
+    
+    # 計算新餘額
+    new_balance = balance - bet_amount
+    user['virtual_balance'] = new_balance
+    
+    # 新增投注記錄
+    if 'bets' not in user:
+        user['bets'] = []
+    bet = {
+        "date": race_date,
+        "race": race_no,
+        "horse": horse_name,
+        "amount": bet_amount,
+        "bet_type": bet_type,
+        "placed_at": datetime.now().isoformat(),
+        "result": None,
+        "payout": 0,
+        "odds": None,
+        "settled": False
+    }
+    user['bets'].append(bet)
+    
+    # 寫入檔案
+    try:
+        with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(users, f, ensure_ascii=False, indent=2)
-        
-        # 驗證寫入是否成功
-        with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
+    except Exception as e:
+        # 寫入失敗，回滾
+        user['virtual_balance'] = balance
+        return False, f"寫入 users.json 失敗：{e}"
+    
+    # 驗證寫入是否成功
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
             verify_data = json.load(f)
-        
-        if username in verify_data and verify_data[username].get('virtual_balance') == new_balance:
+        if verify_data[username].get('virtual_balance') == new_balance:
             return True, f"已投注 ${bet_amount} 喺 {horse_name}"
         else:
-            # 驗證失敗，回滾（還原餘額）
+            # 驗證失敗，回滾
             user['virtual_balance'] = balance
-            with open(USER_DATA_FILE, 'w', encoding='utf-8') as f:
+            with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(users, f, ensure_ascii=False, indent=2)
-            return False, "儲存驗證失敗，請檢查檔案權限"
-    
+            return False, "儲存驗證失敗：檔案內容與預期不符"
     except Exception as e:
-        return False, f"投注錯誤：{str(e)}"
+        return False, f"驗證寫入失敗：{e}"
 
 # ============================================================
 # 用戶系統
@@ -809,45 +825,62 @@ def update_accuracy_with_results():
         return 0, f"比對失敗：{str(e)}"
 
 def settle_bets(username, race_date, race_no, results_df):
+    """
+    結算指定場次嘅投注，如果投注馬跑第一，加錢
+    """
+    import json
+    import pandas as pd
+    file_path = "users.json"
+    
     try:
-        with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
+        with open(file_path, 'r', encoding='utf-8') as f:
             users = json.load(f)
-        if username not in users:
-            return
-        user = users[username]
-        bets = user.get('bets', [])
-        updated = False
-        for bet in bets:
-            if bet.get('settled', False):
-                continue
-            if bet.get('date') != race_date or bet.get('race') != race_no:
-                continue
-            horse = bet.get('horse')
-            matched = results_df[
-                (results_df['race_date'].dt.strftime('%Y-%m-%d') == race_date) &
-                (results_df['race_no'] == race_no) &
-                (results_df['horse_name'] == horse)
-            ]
-            if not matched.empty:
-                pos = matched.iloc[0]['finish_position']
-                is_win = (pos == 1)
-                bet['result'] = 'win' if is_win else 'lose'
-                bet['settled'] = True
-                if is_win:
-                    odds = matched.iloc[0].get('win_odds', 4.0)
-                    if pd.isna(odds) or odds <= 0:
-                        odds = 4.0
-                    bet['odds'] = float(odds)
-                    payout = bet['amount'] * odds
-                    bet['payout'] = payout
-                    user['virtual_balance'] = user.get('virtual_balance', 0) + payout
-                    updated = True
-        if updated:
-            with open(USER_DATA_FILE, 'w', encoding='utf-8') as f:
+    except:
+        return
+    
+    if username not in users:
+        return
+    
+    user = users[username]
+    bets = user.get('bets', [])
+    updated = False
+    
+    for bet in bets:
+        # 只處理未結算嘅投注
+        if bet.get('settled', False):
+            continue
+        if bet.get('date') != race_date or bet.get('race') != race_no:
+            continue
+        
+        horse = bet.get('horse')
+        # 搵匹配嘅賽果（假設 results_df 已經係 DataFrame）
+        matched = results_df[
+            (results_df['race_date'].dt.strftime('%Y-%m-%d') == race_date) &
+            (results_df['race_no'] == race_no) &
+            (results_df['horse_name'] == horse)
+        ]
+        if not matched.empty:
+            pos = matched.iloc[0]['finish_position']
+            is_win = (pos == 1)
+            bet['result'] = 'win' if is_win else 'lose'
+            bet['settled'] = True
+            if is_win:
+                odds = matched.iloc[0].get('win_odds', 4.0)
+                if pd.isna(odds) or odds <= 0:
+                    odds = 4.0
+                bet['odds'] = float(odds)
+                payout = bet['amount'] * odds
+                bet['payout'] = payout
+                # 加錢
+                user['virtual_balance'] = user.get('virtual_balance', 0) + payout
+                updated = True
+    
+    if updated:
+        try:
+            with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(users, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print(f"結算錯誤：{e}")
-
+        except:
+            pass
 # ============================================================
 # 模型載入
 # ============================================================
@@ -1344,23 +1377,24 @@ def show_betting_interface(username):
         st.info("請先登入")
         return
     
-    # 處理投注結果（如果有）
-    if 'bet_result_msg' in st.session_state:
-        msg_type, msg = st.session_state.bet_result_msg
+    # 顯示投注結果訊息（如果有）
+    if 'bet_result' in st.session_state:
+        msg_type, msg = st.session_state.bet_result
         if msg_type == 'success':
             st.success(msg)
         else:
             st.error(msg)
-        del st.session_state.bet_result_msg
+        del st.session_state.bet_result
     
-    # 直接讀取檔案獲取最新數據
+    # 直接讀取 users.json 獲取最新餘額
+    import json
     try:
-        with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
+        with open("users.json", 'r', encoding='utf-8') as f:
             users = json.load(f)
         user = users.get(username, {})
         balance = user.get('virtual_balance', 0)
     except:
-        st.error("無法讀取用戶數據，請檢查 users.json")
+        st.error("無法讀取 users.json，請檢查檔案是否存在")
         return
     
     st.subheader("💰 投注模擬器")
@@ -1413,11 +1447,13 @@ def show_betting_interface(username):
                 with st.form(key="place_bet_form"):
                     horse_options = result['horse_name'].tolist()
                     selected_horse = st.selectbox("揀馬", horse_options, key="bet_horse_select")
+                    # 動態更新最大投注金額
+                    max_bet = int(balance) if balance > 0 else 1
                     bet_amount = st.number_input(
                         "投注金額",
                         min_value=1,
-                        max_value=int(balance) if balance > 0 else 1,
-                        value=min(100, int(balance)) if balance > 0 else 1,
+                        max_value=max_bet,
+                        value=min(100, max_bet),
                         step=10,
                         key="bet_amount_input"
                     )
@@ -1430,20 +1466,19 @@ def show_betting_interface(username):
                     if submit_bet:
                         # 再次檢查餘額
                         try:
-                            with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
+                            with open("users.json", 'r', encoding='utf-8') as f:
                                 temp_users = json.load(f)
                             current_balance = temp_users.get(username, {}).get('virtual_balance', 0)
                         except:
                             current_balance = 0
-                        
                         if bet_amount > current_balance:
                             st.error(f"❌ 餘額不足（餘額：${current_balance:,.0f}）")
                         else:
                             success, msg = place_bet(username, date_str, bet_race, selected_horse, bet_amount)
                             if success:
-                                st.session_state.bet_result_msg = ('success', msg)
+                                st.session_state.bet_result = ('success', msg)
                             else:
-                                st.session_state.bet_result_msg = ('error', msg)
+                                st.session_state.bet_result = ('error', msg)
                             st.rerun()
             else:
                 st.warning("無法載入預測數據")
