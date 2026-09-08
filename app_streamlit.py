@@ -301,24 +301,22 @@ def place_bet(username, race_date, race_no, horse_name, bet_amount, bet_type="wi
     }
     user['bets'].append(bet)
     
-    # 儲存
-    success = save_users(users)
-    if success:
-        # 驗證是否真係寫入
-        verify = load_users()
-        if username in verify:
-            verify_balance = verify[username].get('virtual_balance', 0)
-            if verify_balance == user['virtual_balance']:
-                return True, f"已投注 ${bet_amount} 喺 {horse_name}"
-            else:
-                # 寫入不一致，回滾
-                user['virtual_balance'] = balance
-                return False, "儲存驗證失敗，請重試"
-        return True, f"已投注 ${bet_amount} 喺 {horse_name}"
-    else:
-        # 回滾
+    # 嘗試寫入
+    try:
+        with open(USER_DATA_FILE, 'w', encoding='utf-8') as f:
+            json.dump(users, f, ensure_ascii=False, indent=2)
+        # 驗證寫入是否成功
+        with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
+            verify_data = json.load(f)
+        if username in verify_data and verify_data[username].get('virtual_balance') == user['virtual_balance']:
+            return True, f"已投注 ${bet_amount} 喺 {horse_name}"
+        else:
+            # 寫入不一致，回滾
+            user['virtual_balance'] = balance
+            return False, "儲存驗證失敗，請重試"
+    except Exception as e:
         user['virtual_balance'] = balance
-        return False, "儲存失敗，請檢查伺服器權限"
+        return False, f"儲存錯誤：{str(e)}"
 
 # ============================================================
 # 用戶系統
@@ -801,19 +799,21 @@ def update_accuracy_with_results():
     except Exception as e:
         return 0, f"比對失敗：{str(e)}"
 
-def settle_user_bets(username, race_date, race_no, results_df):
+def settle_bets(username, race_date, race_no, results_df):
     users = load_users()
     if username not in users:
         return
     user = users[username]
     bets = user.get('bets', [])
     updated = False
+    
     for bet in bets:
         if bet.get('settled', False):
             continue
         if bet.get('date') != race_date or bet.get('race') != race_no:
             continue
         horse = bet.get('horse')
+        # 搵匹配嘅賽果
         matched = results_df[
             (results_df['race_date'].dt.strftime('%Y-%m-%d') == race_date) &
             (results_df['race_no'] == race_no) &
@@ -825,55 +825,23 @@ def settle_user_bets(username, race_date, race_no, results_df):
             bet['result'] = 'win' if is_win else 'lose'
             bet['settled'] = True
             if is_win:
+                # 搵賠率（如果沒有就預設 4.0）
                 odds = matched.iloc[0].get('win_odds', 4.0)
                 if pd.isna(odds) or odds <= 0:
                     odds = 4.0
                 bet['odds'] = float(odds)
                 payout = bet['amount'] * odds
                 bet['payout'] = payout
+                # 加錢
                 user['virtual_balance'] = user.get('virtual_balance', 0) + payout
                 updated = True
+    
     if updated:
-        save_users(users)
-
-def adjust_model_weights():
-    acc = load_accuracy()
-    records = acc.get('records', [])
-    total = len([r for r in records if r.get('is_hit') is not None])
-    hit = sum(1 for r in records if r.get('is_hit') is True)
-    hit_rate = hit / total if total > 0 else 0
-    config = load_system_config()
-    current_xgb = config.get('xgb_weight', 25)
-    current_cat = config.get('cat_weight', 1)
-    if hit_rate >= 0.6:
-        new_xgb = min(40, current_xgb + 3)
-        new_cat = max(1, current_cat - 1)
-    elif hit_rate >= 0.5:
-        new_xgb = min(35, current_xgb + 1)
-        new_cat = max(1, current_cat)
-    elif hit_rate >= 0.4:
-        new_xgb = max(15, current_xgb - 2)
-        new_cat = min(10, current_cat + 2)
-    elif hit_rate >= 0.3:
-        new_xgb = max(10, current_xgb - 5)
-        new_cat = min(15, current_cat + 5)
-    else:
-        new_xgb = max(5, current_xgb - 8)
-        new_cat = min(20, current_cat + 8)
-    new_xgb = max(1, min(50, new_xgb))
-    new_cat = max(1, min(30, new_cat))
-    config['xgb_weight'] = new_xgb
-    config['cat_weight'] = new_cat
-    config['last_weight_update'] = datetime.now().isoformat()
-    config['last_hit_rate'] = hit_rate
-    save_system_config(config)
-    return {
-        'xgb_weight': new_xgb,
-        'cat_weight': new_cat,
-        'hit_rate': hit_rate,
-        'total': total,
-        'hit': hit
-    }
+        try:
+            with open(USER_DATA_FILE, 'w', encoding='utf-8') as f:
+                json.dump(users, f, ensure_ascii=False, indent=2)
+        except:
+            pass
 
 # ============================================================
 # 模型載入
@@ -1371,15 +1339,7 @@ def show_betting_interface(username):
         st.info("請先登入")
         return
     
-    # 如果剛剛投注成功，顯示訊息
-    if 'bet_success_msg' in st.session_state:
-        st.success(st.session_state.bet_success_msg)
-        del st.session_state.bet_success_msg
-    if 'bet_error_msg' in st.session_state:
-        st.error(st.session_state.bet_error_msg)
-        del st.session_state.bet_error_msg
-    
-    # 重新載入用戶數據（確保最新）
+    # 強制從檔案重新載入用戶數據
     users = load_users()
     user = users.get(username, {})
     balance = user.get('virtual_balance', 0)
@@ -1434,13 +1394,11 @@ def show_betting_interface(username):
                 with st.form(key="place_bet_form"):
                     horse_options = result['horse_name'].tolist()
                     selected_horse = st.selectbox("揀馬", horse_options, key="bet_horse_select")
-                    # 投注金額上限為當前餘額
-                    max_bet = int(balance) if balance > 0 else 1
                     bet_amount = st.number_input(
                         "投注金額",
                         min_value=1,
-                        max_value=max_bet,
-                        value=min(100, max_bet),
+                        max_value=int(balance) if balance > 0 else 1,
+                        value=min(100, int(balance)) if balance > 0 else 1,
                         step=10,
                         key="bet_amount_input"
                     )
@@ -1451,19 +1409,17 @@ def show_betting_interface(username):
                         st.caption(f"餘額：${balance:,.0f}")
                     
                     if submit_bet:
-                        # 再次檢查餘額
                         current_balance = get_virtual_balance(username)
                         if bet_amount > current_balance:
                             st.error(f"❌ 餘額不足（餘額：${current_balance:,.0f}）")
                         else:
                             success, msg = place_bet(username, date_str, bet_race, selected_horse, bet_amount)
                             if success:
-                                # 將成功訊息放入 session_state，然後重新整理頁面
-                                st.session_state.bet_success_msg = msg
+                                st.success(f"✅ {msg}")
+                                # 強制重新整理頁面以更新餘額
                                 st.rerun()
                             else:
-                                st.session_state.bet_error_msg = msg
-                                st.rerun()
+                                st.error(f"❌ {msg}")
             else:
                 st.warning("無法載入預測數據")
     
