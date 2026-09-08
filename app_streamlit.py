@@ -1153,22 +1153,23 @@ def generate_pool_recommendations(df, top_n=6):
         rec += "【獨贏】\n"
         rec += f"  {horse_names[0]}（{probs[0]:.1%}）\n"
     
-    # 位置：顯示前 4 名（不變）
+    # 位置：顯示前 4 名（如果你都想改為 1 名，可以再話我知）
     rec += "\n【位置】\n"
     for i in range(min(4, len(horse_names))):
         rec += f"  {horse_names[i]}（{probs[i]:.1%}）\n"
     
-    # 連贏：只顯示 3 對
+    # 連贏：只顯示最佳 1 對
     rec += "\n【連贏】\n"
     pairs = []
     for i in range(min(len(horse_names), 4)):
         for j in range(i+1, min(len(horse_names), 5)):
             pairs.append((combo_score([i, j]), i, j))
     pairs.sort(reverse=True)
-    for _, i, j in pairs[:3]:
+    if pairs:
+        _, i, j = pairs[0]
         rec += f"  {horse_names[i]} + {horse_names[j]}\n"
     
-    # 位置Q：顯示 6 對（不變）
+    # 位置Q：只顯示最佳 1 對
     rec += "\n【位置Q】\n"
     q_pairs = []
     for i in range(min(len(horse_names), 5)):
@@ -1176,10 +1177,11 @@ def generate_pool_recommendations(df, top_n=6):
             if j < len(horse_names):
                 q_pairs.append((combo_score([i, j]), i, j))
     q_pairs.sort(reverse=True)
-    for _, i, j in q_pairs[:6]:
+    if q_pairs:
+        _, i, j = q_pairs[0]
         rec += f"  {horse_names[i]} + {horse_names[j]}\n"
     
-    # 三重彩/單T：只顯示 3 組（每組 3 匹）
+    # 三重彩/單T：只顯示最佳 1 組（3 匹）
     rec += "\n【三重彩 / 單T】\n"
     tierce = []
     for i in range(min(len(horse_names), 4)):
@@ -1188,10 +1190,11 @@ def generate_pool_recommendations(df, top_n=6):
                 if i != j and i != k and j != k:
                     tierce.append((combo_score([i, j, k]), i, j, k))
     tierce.sort(reverse=True)
-    for _, i, j, k in tierce[:3]:
+    if tierce:
+        _, i, j, k = tierce[0]
         rec += f"  {horse_names[i]} > {horse_names[j]} > {horse_names[k]}\n"
     
-    # 四重彩：只顯示 3 組（每組 4 匹）
+    # 四重彩：只顯示最佳 1 組（4 匹）
     rec += "\n【四重彩】\n"
     quartet = []
     for i in range(min(len(horse_names), 4)):
@@ -1201,11 +1204,11 @@ def generate_pool_recommendations(df, top_n=6):
                     if len(set([i, j, k, l])) == 4:
                         quartet.append((combo_score([i, j, k, l]), i, j, k, l))
     quartet.sort(reverse=True)
-    for _, i, j, k, l in quartet[:3]:
+    if quartet:
+        _, i, j, k, l = quartet[0]
         rec += f"  {horse_names[i]} > {horse_names[j]} > {horse_names[k]} > {horse_names[l]}\n"
     
     return rec
-
 def run_prediction(date_str, race_no):
     import os
     import pandas as pd
