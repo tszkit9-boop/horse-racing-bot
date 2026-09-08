@@ -1239,6 +1239,9 @@ def run_prediction(date_str, race_no):
     )
     result_df = result_df.sort_values('預測勝率', ascending=False)
 
+    # 🔥 確保馬名沒有 NaN，全部轉為純文字
+    result_df['horse_name'] = result_df['horse_name'].fillna('未知').astype(str)
+
     # 儲存 AI 預測
     ai_file = "ai_predictions.json"
     ai_data = {}
@@ -1252,39 +1255,31 @@ def run_prediction(date_str, race_no):
     key = f"{date_str}_{race_no}"
     ai_data[key] = {
         "date": date_str,
-        "race": race_no,
-        "top_horse": result_df.iloc[0]['horse_name'],
+        "race": int(race_no),
+        "top_horse": str(result_df.iloc[0]['horse_name']),
         "top_prob": float(result_df.iloc[0]['預測勝率']),
         "all_horses": result_df['horse_name'].tolist(),
         "predicted_at": datetime.now().isoformat()
     }
-    with open(ai_file, 'w', encoding='utf-8') as f:
-        json.dump(ai_data, f, ensure_ascii=False, indent=2)
+    try:
+        with open(ai_file, 'w', encoding='utf-8') as f:
+            json.dump(ai_data, f, ensure_ascii=False, indent=2)
+        st.success(f"✅ AI 預測已儲存（共 {len(ai_data)} 筆記錄）")
+    except Exception as e:
+        st.error(f"❌ 儲存預測失敗：{e}")
 
-    st.success(f"✅ AI 預測已儲存（共 {len(ai_data)} 筆記錄）")
-
-    # 🔥 ========== 彩池推薦（根據用戶權限過濾） ==========
-    # 生成完整彩池推薦
+    # 彩池推薦（根據用戶權限過濾）
     full_pool_text = generate_pool_recommendations(result_df)
-    
-    # 檢查用戶權限
     config = load_system_config()
     enable_vip_content = config.get("enable_vip_content", True)
-    
-    # 獲取當前用戶身份
     username = st.session_state.get('username')
-    user_group = 'free'  # 預設為 free
+    user_group = 'free'
     if username:
         users = load_users()
         user_data = users.get(username, {})
         user_group = user_data.get('group', 'free')
-    
-    # 判斷是否為 VIP 或 super_admin
     is_vip = user_group in ['VIP', 'super_admin']
-    
-    # 如果啟用了 VIP 內容過濾，而且用戶不是 VIP，就移除三重彩同四重彩
     if enable_vip_content and not is_vip:
-        # 分割彩池推薦，只保留非 VIP 部分（獨贏、位置、連贏、位置Q）
         lines = full_pool_text.split('\n')
         filtered_lines = []
         skip = False
@@ -1298,7 +1293,6 @@ def run_prediction(date_str, race_no):
             if not skip:
                 filtered_lines.append(line)
         pool_text = '\n'.join(filtered_lines)
-        # 加返個提示
         pool_text += "\n\n🔒 三重彩 / 四重彩 為 VIP 專屬內容，請升級至 VIP 查看"
     else:
         pool_text = full_pool_text
