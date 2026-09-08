@@ -766,7 +766,6 @@ def update_accuracy_with_results():
     if not records:
         return 0, "沒有預測記錄"
     try:
-        # 直接讀取新賽果檔案
         results_df = pd.read_csv('race_results_clean.csv', encoding='utf-8-sig')
         required = ['race_date', 'race_no', 'horse_name', 'finish_position']
         for col in required:
@@ -774,10 +773,8 @@ def update_accuracy_with_results():
                 return 0, f"賽果檔案缺少必要欄位：{col}"
         results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
         results_df = results_df.dropna(subset=['race_date'])
-        
         updated = 0
         for rec in records:
-            # 如果已經比對過就跳過
             if rec.get('actual_result') is not None:
                 continue
             date_str = rec.get('date')
@@ -785,7 +782,6 @@ def update_accuracy_with_results():
             horse = rec.get('horse')
             if not date_str or not race_no or not horse:
                 continue
-            # 搵匹配嘅賽果
             mask = (results_df['race_date'].dt.strftime('%Y-%m-%d') == date_str) & \
                    (results_df['race_no'] == race_no) & \
                    (results_df['horse_name'] == horse)
@@ -795,8 +791,6 @@ def update_accuracy_with_results():
                 rec['actual_result'] = int(pos) if pd.notna(pos) else None
                 rec['is_hit'] = (rec['actual_result'] == 1) if rec['actual_result'] is not None else None
                 updated += 1
-                
-                # 如果命中，更新用戶記錄
                 if rec.get('is_hit') == True:
                     username = rec.get('username')
                     if username:
@@ -810,7 +804,6 @@ def update_accuracy_with_results():
                         update_user_exp(username, is_hit=True)
                     check_badges(username)
                     settle_user_bets(username, date_str, rec.get('race'), results_df)
-        
         if updated > 0:
             save_accuracy(acc)
         return updated, f"成功比對 {updated} 條記錄"
@@ -2740,14 +2733,17 @@ def admin_auto_maintenance():
     for task in tasks:
         st.write(f"• {task}")
     st.divider()
+    
     if st.button("🚀 執行全部維護任務", type="primary", use_container_width=True):
         results = []
         progress_bar = st.progress(0)
         status_text = st.empty()
+        
         status_text.text("🔄 比對賽果中...")
         updated, msg = update_accuracy_with_results()
         results.append(f"🔄 比對賽果：{msg}")
         progress_bar.progress(15)
+        
         status_text.text("⚖️ 調整權重中...")
         try:
             weight_result = adjust_model_weights()
@@ -2755,6 +2751,7 @@ def admin_auto_maintenance():
         except Exception as e:
             results.append(f"⚖️ 調整權重：失敗 - {str(e)}")
         progress_bar.progress(30)
+        
         status_text.text("⏰ 檢查過期會員中...")
         users = load_users()
         today = datetime.now()
@@ -2778,6 +2775,7 @@ def admin_auto_maintenance():
         else:
             results.append("⏰ 檢查過期會員：目前沒有過期會員")
         progress_bar.progress(45)
+        
         status_text.text("📊 同步用戶數據中...")
         try:
             if 'temp_new_users' in st.session_state:
@@ -2797,11 +2795,13 @@ def admin_auto_maintenance():
         except Exception as e:
             results.append(f"📊 同步用戶數據：失敗 - {str(e)}")
         progress_bar.progress(60)
+        
         status_text.text("📝 檢查系統檔案中...")
         files_to_check = [
             'users.json', 'system_config.json', 'finance.json',
             'promo_codes.json', 'admin_log.json', 'accuracy.json',
-            'payment_proofs.json', 'HKCJ_FULL_YEAR_DATA.csv', 'ALL_DATA_MERGED.csv'
+            'payment_proofs.json', 'HKCJ_FULL_YEAR_DATA.csv', 'ALL_DATA_MERGED.csv',
+            'race_results_clean.csv'  # 加入新檔案檢查
         ]
         file_status = []
         for f in files_to_check:
@@ -2811,6 +2811,7 @@ def admin_auto_maintenance():
             file_status.append(f"{status} {f} ({size} bytes)" if exists else f"{status} {f} (不存在)")
         results.append(f"📝 檢查系統檔案：{' | '.join(file_status[:5])}")
         progress_bar.progress(80)
+        
         status_text.text("📥 自動備份中...")
         try:
             backup_data = {
@@ -2858,18 +2859,54 @@ def admin_auto_maintenance():
             col1.metric("📊 已比對預測", total)
             col2.metric("🎯 命中次數", hit)
             col3.metric("📈 整體命中率", f"{hit_rate:.2%}")
+    
     st.divider()
     st.subheader("⚡ 單獨執行")
     col1, col2, col3, col4 = st.columns(4)
-with col1:
-    if st.button("🔄 比對賽果", use_container_width=True):
-        with st.spinner("正在比對賽果..."):
-            updated, msg = update_accuracy_with_results()
-            if updated > 0:
-                st.success(f"✅ {msg}")
+    with col1:
+        if st.button("🔄 比對賽果", use_container_width=True):
+            with st.spinner("正在比對賽果..."):
+                updated, msg = update_accuracy_with_results()
+                if updated > 0:
+                    st.success(f"✅ {msg}")
+                else:
+                    st.info(f"ℹ️ {msg}")
+            st.rerun()
+    with col2:
+        if st.button("⚖️ 調整權重", use_container_width=True):
+            with st.spinner("正在計算最佳權重..."):
+                result = adjust_model_weights()
+                st.success(f"✅ XGB={result['xgb_weight']}, Cat={result['cat_weight']}（命中率 {result['hit_rate']:.2%}）")
+            st.rerun()
+    with col3:
+        if st.button("⏰ 終止過期會員", use_container_width=True):
+            users = load_users()
+            today = datetime.now()
+            expired = []
+            for uid, u in users.items():
+                if u.get('group') == 'VIP' and u.get('expiry_date'):
+                    try:
+                        exp = pd.to_datetime(u['expiry_date'])
+                        if exp < today:
+                            u['group'] = 'free'
+                            u['is_paid'] = False
+                            u['predictions_limit'] = CONFIG["free_limit"]
+                            u['plan'] = None
+                            expired.append(uid)
+                    except:
+                        pass
+            if expired:
+                save_users(users)
+                st.success(f"✅ 已將 {len(expired)} 個過期會員降級：{', '.join(expired)}")
             else:
-                st.info(f"ℹ️ {msg}")
-        st.rerun()
+                st.info("✅ 目前沒有過期會員")
+            st.rerun()
+    with col4:
+        if st.button("🎯 更新 AI 命中率", use_container_width=True):
+            with st.spinner("正在比對..."):
+                hit_count, msg = update_ai_accuracy()
+                st.success(f"✅ 比對完成：{msg}")
+            st.rerun()
     with col2:
         if st.button("⚖️ 調整權重", use_container_width=True):
             result = adjust_model_weights()
