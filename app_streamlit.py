@@ -1821,14 +1821,17 @@ def get_future_races():
         if 'race_date' in df.columns:
             df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce')
             df = df.dropna(subset=['race_date'])
-            # 暫時移除 future 過濾，顯示所有日期
-            dates = df['race_date'].dt.date.unique()
-            dates = sorted(dates)
-            race_courses = []
-            for d in dates:
-                course = df[df['race_date'].dt.date == d]['race_course'].iloc[0] if 'race_course' in df.columns else '賽馬'
-                race_courses.append(course)
-            return dates, race_courses
+            today = datetime.now().date()
+            # 🔥 只保留今天或之後嘅日期
+            future = df[df['race_date'].dt.date >= today]
+            if not future.empty:
+                dates = future['race_date'].dt.date.unique()
+                dates = sorted(dates)
+                race_courses = []
+                for d in dates:
+                    course = future[future['race_date'].dt.date == d]['race_course'].iloc[0] if 'race_course' in future.columns else '賽馬'
+                    race_courses.append(course)
+                return dates, race_courses
     except Exception as e:
         print(f"讀取排位表失敗：{e}")
     return [], []
@@ -1848,7 +1851,7 @@ def display_race_calendar():
         hours = (datetime.combine(next_date, datetime.min.time()) - datetime.now()).seconds // 3600
         time_str = f"⏳ 今日開跑！仲有約 **{hours} 小時**"
     else:
-        time_str = "⏳ 已過期"
+        time_str = "⏳ 已過期"  # 理論上唔會出現，因為已經過濾咗
     st.markdown(f"""
     <div style="background: linear-gradient(135deg, #1a237e, #0d47a1); border-radius: 12px; padding: 15px 20px; color: white; margin-bottom: 15px;">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
