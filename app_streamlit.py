@@ -271,43 +271,47 @@ def get_virtual_balance(username):
     return users[username].get('virtual_balance', 0)
 
 def place_bet(username, race_date, race_no, horse_name, bet_amount, bet_type="win"):
-    users = load_users()
-    if username not in users:
-        return False, "用戶不存在"
-    user = users[username]
-    balance = user.get('virtual_balance', 0)
-    if bet_amount <= 0:
-        return False, "投注金額必須大於 0"
-    if bet_amount > balance:
-        return False, f"餘額不足（餘額：${balance}）"
-    
-    # 扣減餘額
-    user['virtual_balance'] = balance - bet_amount
-    
-    # 記錄投注
-    if 'bets' not in user:
-        user['bets'] = []
-    bet = {
-        "date": race_date,
-        "race": race_no,
-        "horse": horse_name,
-        "amount": bet_amount,
-        "bet_type": bet_type,
-        "placed_at": datetime.now().isoformat(),
-        "result": None,
-        "payout": 0,
-        "odds": None,
-        "settled": False
-    }
-    user['bets'].append(bet)
-    
-    # 🔥 儲存並檢查結果
-    if save_users(users):
-        return True, f"已投注 ${bet_amount} 喺 {horse_name}"
-    else:
-        # 回滾：還原餘額
-        user['virtual_balance'] = balance
-        return False, "儲存失敗，請稍後再試"
+    try:
+        users = load_users()
+        if username not in users:
+            return False, "用戶不存在"
+        user = users[username]
+        balance = user.get('virtual_balance', 0)
+        if bet_amount <= 0:
+            return False, "投注金額必須大於 0"
+        if bet_amount > balance:
+            return False, f"餘額不足（餘額：${balance}）"
+        
+        # 扣減餘額
+        user['virtual_balance'] = balance - bet_amount
+        
+        # 記錄投注
+        if 'bets' not in user:
+            user['bets'] = []
+        bet = {
+            "date": race_date,
+            "race": race_no,
+            "horse": horse_name,
+            "amount": bet_amount,
+            "bet_type": bet_type,
+            "placed_at": datetime.now().isoformat(),
+            "result": None,
+            "payout": 0,
+            "odds": None,
+            "settled": False
+        }
+        user['bets'].append(bet)
+        
+        # 🔥 嘗試儲存，並檢查結果
+        success = save_users(users)
+        if success:
+            return True, f"已投注 ${bet_amount} 喺 {horse_name}"
+        else:
+            # 回滾：還原餘額
+            user['virtual_balance'] = balance
+            return False, "儲存失敗（檔案寫入錯誤），請檢查系統日誌"
+    except Exception as e:
+        return False, f"投注過程發生錯誤：{str(e)}"
 
 # ============================================================
 # 用戶系統
@@ -395,7 +399,12 @@ def load_users():
     return users
 
 def save_users(users):
-    return save_json(USER_DATA_FILE, users)
+    try:
+        with open(USER_DATA_FILE, 'w', encoding='utf-8') as f:
+            json.dump(users, f, ensure_ascii=False, indent=2)
+        return True
+    except:
+        return False
 
 def authenticate(username, password):
     users = load_users()
