@@ -10,7 +10,6 @@ import numpy as np
 import pickle
 import os
 import json
-import re                     # 🔥 加呢行
 from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
@@ -272,38 +271,16 @@ def get_virtual_balance(username):
     return users[username].get('virtual_balance', 0)
 
 def place_bet(username, race_date, race_no, horse_name, bet_amount, bet_type="win"):
-    """
-    直接讀寫 users.json，並驗證寫入是否成功
-    """
-    import json
-    import os
-    from datetime import datetime
-
-    file_path = "users.json"
-    
-    try:
-        # 讀取現有用戶數據
-        with open(file_path, 'r', encoding='utf-8') as f:
-            users = json.load(f)
-    except Exception as e:
-        return False, f"讀取 users.json 失敗：{e}"
-
+    users = load_users()
     if username not in users:
         return False, "用戶不存在"
-    
     user = users[username]
     balance = user.get('virtual_balance', 0)
-    
     if bet_amount <= 0:
         return False, "投注金額必須大於 0"
     if bet_amount > balance:
         return False, f"餘額不足（餘額：${balance}）"
-    
-    # 計算新餘額
-    new_balance = balance - bet_amount
-    user['virtual_balance'] = new_balance
-    
-    # 新增投注記錄
+    user['virtual_balance'] = balance - bet_amount
     if 'bets' not in user:
         user['bets'] = []
     bet = {
@@ -319,30 +296,43 @@ def place_bet(username, race_date, race_no, horse_name, bet_amount, bet_type="wi
         "settled": False
     }
     user['bets'].append(bet)
-    
-    # 寫入檔案
-    try:
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(users, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        # 寫入失敗，回滾
-        user['virtual_balance'] = balance
-        return False, f"寫入 users.json 失敗：{e}"
-    
-    # 驗證寫入是否成功
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            verify_data = json.load(f)
-        if verify_data[username].get('virtual_balance') == new_balance:
-            return True, f"已投注 ${bet_amount} 喺 {horse_name}"
-        else:
-            # 驗證失敗，回滾
-            user['virtual_balance'] = balance
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(users, f, ensure_ascii=False, indent=2)
-            return False, "儲存驗證失敗：檔案內容與預期不符"
-    except Exception as e:
-        return False, f"驗證寫入失敗：{e}"
+    save_users(users)
+    return True, f"已投注 ${bet_amount} 喺 {horse_name}"
+
+def settle_bets(username, race_date, race_no, results_df):
+    users = load_users()
+    if username not in users:
+        return
+    user = users[username]
+    bets = user.get('bets', [])
+    updated = False
+    for bet in bets:
+        if bet.get('settled', False):
+            continue
+        if bet.get('date') != race_date or bet.get('race') != race_no:
+            continue
+        horse = bet.get('horse')
+        matched = results_df[
+            (results_df['race_date'].dt.strftime('%Y-%m-%d') == race_date) &
+            (results_df['race_no'] == race_no) &
+            (results_df['horse_name'] == horse)
+        ]
+        if not matched.empty:
+            pos = matched.iloc[0]['finish_position']
+            is_win = (pos == 1)
+            bet['result'] = 'win' if is_win else 'lose'
+            bet['settled'] = True
+            if is_win:
+                odds = matched.iloc[0].get('win_odds', 4.0)
+                if pd.isna(odds) or odds <= 0:
+                    odds = 4.0
+                bet['odds'] = float(odds)
+                payout = bet['amount'] * odds
+                bet['payout'] = payout
+                user['virtual_balance'] = user.get('virtual_balance', 0) + payout
+                updated = True
+    if updated:
+        save_users(users)
 
 # ============================================================
 # 用戶系統
@@ -430,12 +420,7 @@ def load_users():
     return users
 
 def save_users(users):
-    try:
-        with open(USER_DATA_FILE, 'w', encoding='utf-8') as f:
-            json.dump(users, f, ensure_ascii=False, indent=2)
-        return True
-    except:
-        return False
+    return save_json(USER_DATA_FILE, users)
 
 def authenticate(username, password):
     users = load_users()
@@ -781,6 +766,7 @@ def update_accuracy_with_results():
     if not records:
         return 0, "沒有預測記錄"
     try:
+        # 直接讀取新賽果檔案
         results_df = pd.read_csv('race_results_clean.csv', encoding='utf-8-sig')
         required = ['race_date', 'race_no', 'horse_name', 'finish_position']
         for col in required:
@@ -788,6 +774,7 @@ def update_accuracy_with_results():
                 return 0, f"賽果檔案缺少必要欄位：{col}"
         results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
         results_df = results_df.dropna(subset=['race_date'])
+        
         updated = 0
         for rec in records:
             if rec.get('actual_result') is not None:
@@ -825,36 +812,19 @@ def update_accuracy_with_results():
     except Exception as e:
         return 0, f"比對失敗：{str(e)}"
 
-def settle_bets(username, race_date, race_no, results_df):
-    """
-    結算指定場次嘅投注，如果投注馬跑第一，加錢
-    """
-    import json
-    import pandas as pd
-    file_path = "users.json"
-    
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            users = json.load(f)
-    except:
-        return
-    
+def settle_user_bets(username, race_date, race_no, results_df):
+    users = load_users()
     if username not in users:
         return
-    
     user = users[username]
     bets = user.get('bets', [])
     updated = False
-    
     for bet in bets:
-        # 只處理未結算嘅投注
         if bet.get('settled', False):
             continue
         if bet.get('date') != race_date or bet.get('race') != race_no:
             continue
-        
         horse = bet.get('horse')
-        # 搵匹配嘅賽果（假設 results_df 已經係 DataFrame）
         matched = results_df[
             (results_df['race_date'].dt.strftime('%Y-%m-%d') == race_date) &
             (results_df['race_no'] == race_no) &
@@ -872,16 +842,50 @@ def settle_bets(username, race_date, race_no, results_df):
                 bet['odds'] = float(odds)
                 payout = bet['amount'] * odds
                 bet['payout'] = payout
-                # 加錢
                 user['virtual_balance'] = user.get('virtual_balance', 0) + payout
                 updated = True
-    
     if updated:
-        try:
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(users, f, ensure_ascii=False, indent=2)
-        except:
-            pass
+        save_users(users)
+
+def adjust_model_weights():
+    acc = load_accuracy()
+    records = acc.get('records', [])
+    total = len([r for r in records if r.get('is_hit') is not None])
+    hit = sum(1 for r in records if r.get('is_hit') is True)
+    hit_rate = hit / total if total > 0 else 0
+    config = load_system_config()
+    current_xgb = config.get('xgb_weight', 25)
+    current_cat = config.get('cat_weight', 1)
+    if hit_rate >= 0.6:
+        new_xgb = min(40, current_xgb + 3)
+        new_cat = max(1, current_cat - 1)
+    elif hit_rate >= 0.5:
+        new_xgb = min(35, current_xgb + 1)
+        new_cat = max(1, current_cat)
+    elif hit_rate >= 0.4:
+        new_xgb = max(15, current_xgb - 2)
+        new_cat = min(10, current_cat + 2)
+    elif hit_rate >= 0.3:
+        new_xgb = max(10, current_xgb - 5)
+        new_cat = min(15, current_cat + 5)
+    else:
+        new_xgb = max(5, current_xgb - 8)
+        new_cat = min(20, current_cat + 8)
+    new_xgb = max(1, min(50, new_xgb))
+    new_cat = max(1, min(30, new_cat))
+    config['xgb_weight'] = new_xgb
+    config['cat_weight'] = new_cat
+    config['last_weight_update'] = datetime.now().isoformat()
+    config['last_hit_rate'] = hit_rate
+    save_system_config(config)
+    return {
+        'xgb_weight': new_xgb,
+        'cat_weight': new_cat,
+        'hit_rate': hit_rate,
+        'total': total,
+        'hit': hit
+    }
+
 # ============================================================
 # 模型載入
 # ============================================================
@@ -1138,6 +1142,7 @@ def load_horse_name_map():
     return {}
 
 def generate_pool_recommendations(df, top_n=6):
+    """生成六種彩池推薦（獨贏、位置、連贏、位置Q、三重彩、單T、四重彩）"""
     if df.empty:
         return "⚠️ 無數據"
     horse_names = df['horse_name'].tolist()
@@ -1147,42 +1152,29 @@ def generate_pool_recommendations(df, top_n=6):
         for i in indices:
             score *= probs[i]
         return score / len(indices)
-    
-    rec = ""
-    # 獨贏：只顯示第 1 名
-    if len(horse_names) >= 1:
-        rec += "【獨贏】\n"
-        rec += f"  {horse_names[0]}（{probs[0]:.1%}）\n"
-    
-    # 位置：顯示前 4 名（如果你都想改為 1 名，可以再話我知）
+    rec = "【獨贏】\n"
+    for i, row in df.head(3).iterrows():
+        rec += f"  {row['horse_name']}（{row['預測勝率']:.1%}）\n"
     rec += "\n【位置】\n"
-    for i in range(min(4, len(horse_names))):
-        rec += f"  {horse_names[i]}（{probs[i]:.1%}）\n"
-    
-    # 連贏：只顯示最佳 1 對
+    for i, row in df.head(4).iterrows():
+        rec += f"  {row['horse_name']}（{row['預測勝率']:.1%}）\n"
     rec += "\n【連贏】\n"
     pairs = []
-    for i in range(min(len(horse_names), 4)):
-        for j in range(i+1, min(len(horse_names), 5)):
+    for i in range(min(len(horse_names), 5)):
+        for j in range(i+1, min(len(horse_names), 6)):
             pairs.append((combo_score([i, j]), i, j))
     pairs.sort(reverse=True)
-    if pairs:
-        _, i, j = pairs[0]
+    for _, i, j in pairs[:5]:
         rec += f"  {horse_names[i]} + {horse_names[j]}\n"
-    
-    # 位置Q：只顯示最佳 1 對
     rec += "\n【位置Q】\n"
     q_pairs = []
-    for i in range(min(len(horse_names), 5)):
-        for j in range(i+1, min(len(horse_names), 7)):
+    for i in range(min(len(horse_names), 6)):
+        for j in range(i+1, min(len(horse_names), 8)):
             if j < len(horse_names):
                 q_pairs.append((combo_score([i, j]), i, j))
     q_pairs.sort(reverse=True)
-    if q_pairs:
-        _, i, j = q_pairs[0]
+    for _, i, j in q_pairs[:6]:
         rec += f"  {horse_names[i]} + {horse_names[j]}\n"
-    
-    # 三重彩/單T：只顯示最佳 1 組（3 匹）
     rec += "\n【三重彩 / 單T】\n"
     tierce = []
     for i in range(min(len(horse_names), 4)):
@@ -1191,11 +1183,8 @@ def generate_pool_recommendations(df, top_n=6):
                 if i != j and i != k and j != k:
                     tierce.append((combo_score([i, j, k]), i, j, k))
     tierce.sort(reverse=True)
-    if tierce:
-        _, i, j, k = tierce[0]
+    for _, i, j, k in tierce[:5]:
         rec += f"  {horse_names[i]} > {horse_names[j]} > {horse_names[k]}\n"
-    
-    # 四重彩：只顯示最佳 1 組（4 匹）
     rec += "\n【四重彩】\n"
     quartet = []
     for i in range(min(len(horse_names), 4)):
@@ -1205,11 +1194,10 @@ def generate_pool_recommendations(df, top_n=6):
                     if len(set([i, j, k, l])) == 4:
                         quartet.append((combo_score([i, j, k, l]), i, j, k, l))
     quartet.sort(reverse=True)
-    if quartet:
-        _, i, j, k, l = quartet[0]
+    for _, i, j, k, l in quartet[:3]:
         rec += f"  {horse_names[i]} > {horse_names[j]} > {horse_names[k]} > {horse_names[l]}\n"
-    
     return rec
+
 def run_prediction(date_str, race_no):
     import os
     import pandas as pd
@@ -1229,21 +1217,17 @@ def run_prediction(date_str, race_no):
         st.error(f"❌ 讀取失敗：{e}")
         return None, None
 
-    # ----- 標準化欄位名（支援中英文） -----
     rename_map = {
         '馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
         '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
-        '負磅': 'weight', '馬號': 'horse_no',
-        '賠率': 'win_odds', '獨贏賠率': 'win_odds', 'Odds': 'win_odds', 'win_odds': 'win_odds'
+        '負磅': 'weight', '馬號': 'horse_id', '賠率': 'win_odds'
     }
-    for old, new in rename_map.items():
-        if old in df.columns and old != new:
-            df.rename(columns={old: new}, inplace=True)
+    existing = [col for col in rename_map if col in df.columns]
+    if existing:
+        df.rename(columns={col: rename_map[col] for col in existing}, inplace=True)
 
-    # 檢查必要欄位
     if 'race_date' not in df.columns:
-        st.error("❌ 缺少 '比賽日期' 欄位")
-        st.write("📋 目前欄位：", df.columns.tolist())
+        st.error("❌ 缺少 '比賽日期'")
         return None, None
 
     df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce')
@@ -1252,42 +1236,28 @@ def run_prediction(date_str, race_no):
 
     available_dates = sorted(df['race_date_str'].unique())
     if date_str not in available_dates:
-        st.warning(f"⚠️ 日期 {date_str} 無數據，改用 {available_dates[-1]}")
+        st.warning(f"⚠️ 改用 {available_dates[-1]}")
         date_str = available_dates[-1]
 
     df_date = df[df['race_date_str'] == date_str]
     if race_no not in df_date['race_no'].unique():
         available_races = sorted(df_date['race_no'].unique())
         if available_races:
-            st.info(f"🔄 場次 {race_no} 無數據，改用第 {available_races[0]} 場")
+            st.info(f"🔄 改用第 {available_races[0]} 場")
             race_no = available_races[0]
         else:
             st.error("❌ 無場次")
             return None, None
 
-    filtered = df_date[df_date['race_no'] == race_no].copy()
+    filtered = df_date[df_date['race_no'] == race_no]
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
-    # ----- 自動偵測賠率欄位 -----
-    odds_col = None
-    for col in ['win_odds', '賠率', '獨贏賠率', 'odds', 'WinOdds', 'Odds']:
-        if col in filtered.columns:
-            odds_col = col
-            break
-
-    if odds_col is None:
-        st.error("❌ 排位表中找不到賠率欄位！")
-        st.write("📋 目前欄位有：", filtered.columns.tolist())
-        st.info("💡 請確保排位表包含 '賠率' 或 'win_odds' 欄位")
-        return None, None
-
-    # 使用找到嘅賠率欄位
-    win_odds = pd.to_numeric(filtered[odds_col], errors='coerce').fillna(4.0)
+    # 賠率估算（保留所有馬匹）
+    win_odds = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0)
     win_odds = win_odds.replace(0, 4.0)
     inv_odds = 1 / win_odds
     final_pred = inv_odds / inv_odds.sum()
 
-    # 建立結果 DataFrame
     result_df = filtered[['horse_name', 'draw', 'weight', 'jockey', 'trainer']].copy()
     result_df['預測勝率'] = final_pred
     result_df['值博指數'] = result_df['預測勝率'] * 10
@@ -1295,9 +1265,7 @@ def run_prediction(date_str, race_no):
         lambda x: '⭐⭐⭐ 高' if x > 0.2 else '⭐⭐ 中' if x > 0.1 else '⭐ 低'
     )
     result_df = result_df.sort_values('預測勝率', ascending=False)
-    result_df['horse_name'] = result_df['horse_name'].fillna('未知').astype(str)
 
-    # 儲存 AI 預測
     ai_file = "ai_predictions.json"
     ai_data = {}
     if os.path.exists(ai_file):
@@ -1310,49 +1278,22 @@ def run_prediction(date_str, race_no):
     key = f"{date_str}_{race_no}"
     ai_data[key] = {
         "date": date_str,
-        "race": int(race_no),
-        "top_horse": str(result_df.iloc[0]['horse_name']),
+        "race": race_no,
+        "top_horse": result_df.iloc[0]['horse_name'],
         "top_prob": float(result_df.iloc[0]['預測勝率']),
         "all_horses": result_df['horse_name'].tolist(),
         "predicted_at": datetime.now().isoformat()
     }
-    try:
-        with open(ai_file, 'w', encoding='utf-8') as f:
-            json.dump(ai_data, f, ensure_ascii=False, indent=2)
-        st.success(f"✅ AI 預測已儲存（共 {len(ai_data)} 筆記錄）")
-    except Exception as e:
-        st.error(f"❌ 儲存預測失敗：{e}")
+    with open(ai_file, 'w', encoding='utf-8') as f:
+        json.dump(ai_data, f, ensure_ascii=False, indent=2)
 
-    # 彩池推薦
-    full_pool_text = generate_pool_recommendations(result_df)
-    config = load_system_config()
-    enable_vip_content = config.get("enable_vip_content", True)
-    username = st.session_state.get('username')
-    user_group = 'free'
-    if username:
-        users = load_users()
-        user_data = users.get(username, {})
-        user_group = user_data.get('group', 'free')
-    is_vip = user_group in ['VIP', 'super_admin']
-    if enable_vip_content and not is_vip:
-        lines = full_pool_text.split('\n')
-        filtered_lines = []
-        skip = False
-        for line in lines:
-            if '【三重彩' in line or '【四重彩' in line:
-                skip = True
-                continue
-            if skip and line.strip() == '':
-                skip = False
-                continue
-            if not skip:
-                filtered_lines.append(line)
-        pool_text = '\n'.join(filtered_lines)
-        pool_text += "\n\n🔒 三重彩 / 四重彩 為 VIP 專屬內容，請升級至 VIP 查看"
-    else:
-        pool_text = full_pool_text
+    st.success(f"✅ AI 預測已儲存（共 {len(ai_data)} 筆記錄）")
+
+    # 完整彩池推薦
+    pool_text = generate_pool_recommendations(result_df)
 
     return result_df, pool_text
+
 # ============================================================
 # 用戶功能
 # ============================================================
@@ -1408,30 +1349,11 @@ def show_betting_interface(username):
     if not username:
         st.info("請先登入")
         return
-    
-    # 顯示投注結果訊息（如果有）
-    if 'bet_result' in st.session_state:
-        msg_type, msg = st.session_state.bet_result
-        if msg_type == 'success':
-            st.success(msg)
-        else:
-            st.error(msg)
-        del st.session_state.bet_result
-    
-    # 直接讀取 users.json 獲取最新餘額
-    import json
-    try:
-        with open("users.json", 'r', encoding='utf-8') as f:
-            users = json.load(f)
-        user = users.get(username, {})
-        balance = user.get('virtual_balance', 0)
-    except:
-        st.error("無法讀取 users.json，請檢查檔案是否存在")
-        return
-    
+    users = load_users()
+    user = users.get(username, {})
+    balance = user.get('virtual_balance', 0)
     st.subheader("💰 投注模擬器")
     st.caption("用虛擬幣體驗投注樂趣，唔使真錢！")
-    
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("💎 虛擬幣結餘", f"${balance:,.0f}")
@@ -1439,7 +1361,7 @@ def show_betting_interface(username):
         today = datetime.now().strftime('%Y-%m-%d')
         last_claim = user.get('last_claim_date', '')
         if last_claim != today and CONFIG.get("virtual_coin_enabled", True):
-            if st.button("🎁 領取每日獎勵", use_container_width=True, key="claim_btn"):
+            if st.button("🎁 領取每日獎勵", use_container_width=True):
                 amount, msg = claim_daily_virtual_coin(username)
                 if amount > 0:
                     st.success(f"✅ {msg}")
@@ -1450,18 +1372,15 @@ def show_betting_interface(username):
             st.success("✅ 今日已領取")
     with col3:
         st.caption(f"📅 每日派發：${CONFIG.get('daily_virtual_coin', 1000)}")
-    
     st.divider()
     st.subheader("📝 投注")
-    
     col_date, col_race = st.columns(2)
     with col_date:
-        date = st.date_input("📅 選擇日期", value=pd.to_datetime("2026-09-06"), key="bet_date_input")
+        date = st.date_input("📅 選擇日期", value=pd.to_datetime("2026-09-06"), key="predict_date_mid")
     with col_race:
-        bet_race = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="bet_race_select")
-    
+        bet_race = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="bet_race")
     if st.button("🔍 睇預測 & 投注", key="show_bet_options"):
-        date_str = date.strftime('%Y-%m-%d')
+        date_str = bet_date.strftime('%Y-%m-%d')
         with st.spinner("載入預測..."):
             result, pool = run_prediction(date_str, bet_race)
             if result is not None and not result.empty:
@@ -1474,47 +1393,28 @@ def show_betting_interface(username):
                 display_df['預測勝率'] = display_df['預測勝率'].apply(lambda x: f"{x:.2%}")
                 display_df['值博指數'] = display_df['值博指數'].apply(lambda x: f"{x:.4f}")
                 st.dataframe(display_df, use_container_width=True)
-                
                 st.subheader("💸 落注")
                 with st.form(key="place_bet_form"):
                     horse_options = result['horse_name'].tolist()
-                    selected_horse = st.selectbox("揀馬", horse_options, key="bet_horse_select")
-                    # 動態更新最大投注金額
-                    max_bet = int(balance) if balance > 0 else 1
-                    bet_amount = st.number_input(
-                        "投注金額",
-                        min_value=1,
-                        max_value=max_bet,
-                        value=min(100, max_bet),
-                        step=10,
-                        key="bet_amount_input"
-                    )
+                    selected_horse = st.selectbox("揀馬", horse_options, key="bet_horse")
+                    bet_amount = st.number_input("投注金額", min_value=1, max_value=int(balance), value=min(100, int(balance)), step=10, key="bet_amount")
                     col_btn1, col_btn2 = st.columns(2)
                     with col_btn1:
                         submit_bet = st.form_submit_button("✅ 確認投注", type="primary")
                     with col_btn2:
                         st.caption(f"餘額：${balance:,.0f}")
-                    
                     if submit_bet:
-                        # 再次檢查餘額
-                        try:
-                            with open("users.json", 'r', encoding='utf-8') as f:
-                                temp_users = json.load(f)
-                            current_balance = temp_users.get(username, {}).get('virtual_balance', 0)
-                        except:
-                            current_balance = 0
-                        if bet_amount > current_balance:
-                            st.error(f"❌ 餘額不足（餘額：${current_balance:,.0f}）")
+                        if bet_amount > balance:
+                            st.error(f"❌ 餘額不足（餘額：${balance:,.0f}）")
                         else:
                             success, msg = place_bet(username, date_str, bet_race, selected_horse, bet_amount)
                             if success:
-                                st.session_state.bet_result = ('success', msg)
+                                st.success(f"✅ {msg}")
+                                st.rerun()
                             else:
-                                st.session_state.bet_result = ('error', msg)
-                            st.rerun()
+                                st.error(f"❌ {msg}")
             else:
                 st.warning("無法載入預測數據")
-    
     st.divider()
     st.subheader("📋 我的投注記錄")
     bets = user.get('bets', [])
@@ -1598,12 +1498,7 @@ def show_leaderboard():
 def show_user_dashboard(username):
     if not username:
         return
-    # 獲取用戶統計，如果出錯就用預設值
-    try:
-        stats = get_user_stats(username)
-    except:
-        stats = {'total_predictions': 0, 'free_used': 0, 'is_paid': False, 'group': 'free', 'plan': None}
-    
+    stats = get_user_stats(username)
     users = load_users()
     user_data = users.get(username, {})
     group = user_data.get('group', 'free')
@@ -1618,7 +1513,6 @@ def show_user_dashboard(username):
     badges = user_data.get('badges', [])
     next_level_exp = get_level_info(exp)[1]
     virtual_balance = user_data.get('virtual_balance', 0)
-    
     if group == 'super_admin':
         level_display = "👑 超級管理員"
     elif group == 'VIP':
@@ -1627,15 +1521,11 @@ def show_user_dashboard(username):
         level_display = "💎 付費用戶"
     else:
         level_display = "🆓 免費用戶"
-    
     st.markdown("---")
     col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("👤 用戶", username)
     col2.metric("🏷️ 級別", level_display)
-    # 強制轉為 int 確保顯示
-    total_pred = int(stats.get('total_predictions', 0))
-    col3.metric("📊 總預測次數", total_pred)
-    
+    col3.metric("📊 總預測次數", stats['total_predictions'])
     limit = user_data.get('predictions_limit', CONFIG['free_limit'])
     if limit == -1:
         col4.metric("📊 剩餘場次", "♾️ 無限")
@@ -1644,7 +1534,6 @@ def show_user_dashboard(username):
         remain = max(0, limit - used)
         col4.metric("📊 剩餘場次", remain)
     col5.metric("💰 虛擬幣", f"${virtual_balance:,.0f}")
-    
     st.markdown("---")
     st.subheader("🏅 用戶等級 & 勳章")
     col_level1, col_level2, col_level3 = st.columns(3)
@@ -1688,7 +1577,7 @@ def show_user_dashboard(username):
     today_count = sum(1 for h in history if h.get('date') == today)
     col_p1, col_p2, col_p3, col_p4 = st.columns(4)
     with col_p1:
-        st.metric("📈 總預測", total_pred)
+        st.metric("📈 總預測", stats['total_predictions'])
     with col_p2:
         st.metric("📅 今日已用", today_count)
     with col_p3:
@@ -1914,7 +1803,7 @@ def display_race_calendar():
         hours = (datetime.combine(next_date, datetime.min.time()) - datetime.now()).seconds // 3600
         time_str = f"⏳ 今日開跑！仲有約 **{hours} 小時**"
     else:
-        time_str = "⏳ 已過期"  # 理論上唔會出現，因為已經過濾咗
+        time_str = "⏳ 已過期"
     st.markdown(f"""
     <div style="background: linear-gradient(135deg, #1a237e, #0d47a1); border-radius: 12px; padding: 15px 20px; color: white; margin-bottom: 15px;">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
@@ -2799,17 +2688,14 @@ def admin_auto_maintenance():
     for task in tasks:
         st.write(f"• {task}")
     st.divider()
-    
-    if st.button("🚀 執行全部維護任務", type="primary", use_container_width=True, key="btn_full_maintenance"):
+    if st.button("🚀 執行全部維護任務", type="primary", use_container_width=True):
         results = []
         progress_bar = st.progress(0)
         status_text = st.empty()
-        
         status_text.text("🔄 比對賽果中...")
         updated, msg = update_accuracy_with_results()
         results.append(f"🔄 比對賽果：{msg}")
         progress_bar.progress(15)
-        
         status_text.text("⚖️ 調整權重中...")
         try:
             weight_result = adjust_model_weights()
@@ -2817,7 +2703,6 @@ def admin_auto_maintenance():
         except Exception as e:
             results.append(f"⚖️ 調整權重：失敗 - {str(e)}")
         progress_bar.progress(30)
-        
         status_text.text("⏰ 檢查過期會員中...")
         users = load_users()
         today = datetime.now()
@@ -2841,7 +2726,6 @@ def admin_auto_maintenance():
         else:
             results.append("⏰ 檢查過期會員：目前沒有過期會員")
         progress_bar.progress(45)
-        
         status_text.text("📊 同步用戶數據中...")
         try:
             if 'temp_new_users' in st.session_state:
@@ -2861,13 +2745,11 @@ def admin_auto_maintenance():
         except Exception as e:
             results.append(f"📊 同步用戶數據：失敗 - {str(e)}")
         progress_bar.progress(60)
-        
         status_text.text("📝 檢查系統檔案中...")
         files_to_check = [
             'users.json', 'system_config.json', 'finance.json',
             'promo_codes.json', 'admin_log.json', 'accuracy.json',
-            'payment_proofs.json', 'HKCJ_FULL_YEAR_DATA.csv', 'ALL_DATA_MERGED.csv',
-            'race_results_clean.csv'
+            'payment_proofs.json', 'HKCJ_FULL_YEAR_DATA.csv', 'ALL_DATA_MERGED.csv'
         ]
         file_status = []
         for f in files_to_check:
@@ -2877,7 +2759,6 @@ def admin_auto_maintenance():
             file_status.append(f"{status} {f} ({size} bytes)" if exists else f"{status} {f} (不存在)")
         results.append(f"📝 檢查系統檔案：{' | '.join(file_status[:5])}")
         progress_bar.progress(80)
-        
         status_text.text("📥 自動備份中...")
         try:
             backup_data = {
@@ -2925,29 +2806,21 @@ def admin_auto_maintenance():
             col1.metric("📊 已比對預測", total)
             col2.metric("🎯 命中次數", hit)
             col3.metric("📈 整體命中率", f"{hit_rate:.2%}")
-    
     st.divider()
     st.subheader("⚡ 單獨執行")
-    
-    # 🔥 只有一組按鈕，每個按鈕有唯一 key
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        if st.button("🔄 比對賽果", use_container_width=True, key="btn_compare"):
-            with st.spinner("正在比對賽果..."):
-                updated, msg = update_accuracy_with_results()
-                if updated > 0:
-                    st.success(f"✅ {msg}")
-                else:
-                    st.info(f"ℹ️ {msg}")
+        if st.button("🔄 比對賽果", use_container_width=True):
+            updated, msg = update_accuracy_with_results()
+            st.success(f"✅ {msg}")
             st.rerun()
     with col2:
-        if st.button("⚖️ 調整權重", use_container_width=True, key="btn_adjust_weights"):
-            with st.spinner("正在計算最佳權重..."):
-                result = adjust_model_weights()
-                st.success(f"✅ XGB={result['xgb_weight']}, Cat={result['cat_weight']}（命中率 {result['hit_rate']:.2%}）")
+        if st.button("⚖️ 調整權重", use_container_width=True):
+            result = adjust_model_weights()
+            st.success(f"✅ XGB={result['xgb_weight']}, Cat={result['cat_weight']}（命中率 {result['hit_rate']:.2%}）")
             st.rerun()
     with col3:
-        if st.button("⏰ 終止過期會員", use_container_width=True, key="btn_expire"):
+        if st.button("⏰ 終止過期會員", use_container_width=True):
             users = load_users()
             today = datetime.now()
             expired = []
@@ -2970,10 +2843,9 @@ def admin_auto_maintenance():
                 st.info("✅ 目前沒有過期會員")
             st.rerun()
     with col4:
-        if st.button("🎯 更新 AI 命中率", use_container_width=True, key="btn_update_ai"):
-            with st.spinner("正在比對..."):
-                hit_count, msg = update_ai_accuracy()
-                st.success(f"✅ 比對完成：{msg}")
+        if st.button("🎯 更新 AI 命中率", use_container_width=True):
+            hit_count, msg = update_ai_accuracy()
+            st.success(f"✅ 比對完成：{msg}")
             st.rerun()
 
 def update_ai_accuracy():
@@ -3800,8 +3672,10 @@ def main():
     # ============================================================
     # 🤖 AI 預測表現 + 真實賽果對比（公開）
     # ============================================================
-    # ========== AI 預測表現及賽果對比（可揀日期＋場次） ==========
+    # ========== AI 預測表現及賽果對比（揀場次顯示） ==========
+    # ========== AI 預測表現及賽果對比（揀日期 + 揀場次） ==========
     with st.expander("🤖 AI 預測表現 & 賽果對比（點擊展開）", expanded=False):
+        
         # 1. 讀取 AI 預測紀錄
         ai_file = "ai_predictions.json"
         predictions = {}
@@ -3824,25 +3698,22 @@ def main():
                 df_results = pd.read_csv(result_file, encoding='utf-8-sig')
                 required_cols = ['race_date', 'race_no', 'horse_name', 'finish_position']
                 if not all(col in df_results.columns for col in required_cols):
-                    st.error(f"❌ 賽果檔案缺少必要欄位，應包含：{', '.join(required_cols)}")
+                    st.error(f"❌ 賽果檔案缺少必要欄位")
                     df_results = pd.DataFrame()
                 else:
-                    # 清洗馬名（去除括號及內容）
                     df_results['horse_name'] = df_results['horse_name'].str.strip()
-                    df_results['horse_name'] = df_results['horse_name'].str.replace(r'\s*\([^)]*\)', '', regex=True).str.strip()
                     df_results['finish_position'] = pd.to_numeric(df_results['finish_position'], errors='coerce')
                     df_results['race_no'] = pd.to_numeric(df_results['race_no'], errors='coerce').astype(int)
                     df_results['race_date'] = pd.to_datetime(df_results['race_date'], errors='coerce')
-                    df_results = df_results.dropna(subset=['race_date'])
             except Exception as e:
                 st.error(f"❌ 讀取賽果失敗：{e}")
                 df_results = pd.DataFrame()
         else:
             st.warning("⚠️ 找不到賽果檔案 race_results_clean.csv")
 
-        # 3. 將預測紀錄轉為 DataFrame（清洗馬名）
+        # 3. 將 predictions 轉換成 DataFrame
         pred_list = []
-        if predictions and not df_results.empty:
+        if predictions:
             for key, value in predictions.items():
                 if '_' not in key:
                     continue
@@ -3862,9 +3733,7 @@ def main():
                         horse_list = [top]
                     else:
                         continue
-                # 清洗每匹馬名（去除括號及內容）
                 cleaned = [str(h).strip() for h in horse_list if str(h).strip()]
-                cleaned = [re.sub(r'\s*\([^)]*\)', '', h).strip() for h in cleaned]  # 需要 import re
                 for idx, horse in enumerate(cleaned[:4], 1):
                     pred_list.append({
                         '日期': date_str,
@@ -3872,48 +3741,64 @@ def main():
                         '預測名次': idx,
                         '預測馬': horse
                     })
-            if pred_list:
-                st.info(f"✅ 成功解析 {len(pred_list)} 筆預測（頭四名）")
-            else:
-                st.warning("⚠️ 無法解析預測紀錄")
-
-        # 4. 日期選擇器同場次選擇器
+        
+        # 4. 如果預測同賽果都有數據，顯示選擇器
         if pred_list and not df_results.empty:
             df_pred = pd.DataFrame(pred_list)
             df_pred['場次'] = df_pred['場次'].astype(int)
             df_pred['預測名次'] = df_pred['預測名次'].astype(int)
-            df_pred['預測馬'] = df_pred['預測馬'].str.replace(r'\s*\([^)]*\)', '', regex=True).str.strip()
-
-            pred_dates = set(df_pred['日期'].unique())
-            result_dates = set(df_results['race_date'].dt.strftime('%Y-%m-%d').unique())
-            available_dates = sorted(pred_dates & result_dates)
-
+            
+            # 取得所有有預測嘅日期
+            pred_dates = sorted(df_pred['日期'].unique())
+            # 同時只顯示有賽果嘅日期
+            result_dates = df_results['race_date'].dt.strftime('%Y-%m-%d').unique()
+            available_dates = [d for d in pred_dates if d in result_dates]
+            
             if available_dates:
-                selected_date = st.selectbox("📅 選擇日期", available_dates)
-
+                # 🔥 日期選擇器
+                selected_date = st.selectbox(
+                    "📅 選擇日期",
+                    available_dates,
+                    format_func=lambda x: x
+                )
+                
+                # 過濾該日期嘅預測
                 df_pred_date = df_pred[df_pred['日期'] == selected_date].copy()
+                # 過濾該日期嘅賽果
                 df_result_date = df_results[df_results['race_date'].dt.strftime('%Y-%m-%d') == selected_date].copy()
-
-                pred_races = set(df_pred_date['場次'].unique())
-                result_races = set(df_result_date['race_no'].unique())
-                available_races = sorted(pred_races & result_races)
-
+                
+                # 取得該日期有預測嘅場次
+                pred_races = sorted(df_pred_date['場次'].unique())
+                result_races = sorted(df_result_date['race_no'].unique())
+                available_races = [r for r in pred_races if r in result_races]
+                
                 if available_races:
-                    selected_race = st.selectbox("🏇 選擇場次", available_races, format_func=lambda x: f"第 {x} 場")
-
+                    # 🔥 場次選擇器
+                    selected_race = st.selectbox(
+                        "🏇 選擇場次",
+                        available_races,
+                        format_func=lambda x: f"第 {x} 場"
+                    )
+                    
+                    # 過濾該場嘅預測
                     df_pred_race = df_pred_date[df_pred_date['場次'] == selected_race].copy()
+                    # 過濾該場嘅賽果（頭4名）
                     df_result_race = df_result_date[df_result_date['race_no'] == selected_race].copy()
                     df_result_race = df_result_race.sort_values('finish_position').head(4)
+                    
+                    # 合併
                     df_result_race.rename(columns={'finish_position': '真實名次', 'horse_name': '真實馬'}, inplace=True)
-                    df_result_race['真實馬'] = df_result_race['真實馬'].str.replace(r'\s*\([^)]*\)', '', regex=True).str.strip()
-
                     df_compare = df_pred_race.merge(df_result_race, left_on='預測名次', right_on='真實名次', how='left')
-                    df_compare['結果'] = df_compare.apply(lambda row: '命中' if row['預測馬'] == row['真實馬'] else '失準', axis=1)
+                    df_compare['結果'] = df_compare.apply(
+                        lambda row: '命中' if row['預測馬'] == row['真實馬'] else '失準',
+                        axis=1
+                    )
+                    
                     display_df = df_compare[['預測名次', '預測馬', '真實名次', '真實馬', '結果']].copy()
                     display_df.columns = ['名次', '預測馬', '真實名次', '真實馬', '結果']
-
+                    
                     st.write(f"📊 {selected_date} 第 {selected_race} 場 預測 vs 賽果")
-
+                    
                     def highlight_row(row):
                         if row['結果'] == '命中':
                             return ['background-color: #d4edda; color: black'] * len(row)
@@ -3921,13 +3806,17 @@ def main():
                             return ['background-color: #f8d7da; color: black'] * len(row)
                         else:
                             return ['background-color: white; color: black'] * len(row)
-
+                    
                     styled_df = display_df.style.apply(highlight_row, axis=1)
-                    st.dataframe(styled_df, use_container_width=True, hide_index=True)
+                    st.dataframe(
+                        styled_df,
+                        use_container_width=True,
+                        hide_index=True
+                    )
                 else:
-                    st.info("ℹ️ 所選日期沒有可比較嘅場次")
+                    st.info(f"ℹ️ {selected_date} 沒有可比對嘅場次（預測同賽果場次不匹配）")
             else:
-                st.info("ℹ️ 沒有同時存在預測同賽果嘅日期")
+                st.info("ℹ️ 沒有日期同時有預測同賽果數據")
         else:
             st.info("ℹ️ 請確保已有預測紀錄及賽果數據")
     # ============================================================
