@@ -1228,17 +1228,21 @@ def run_prediction(date_str, race_no):
         st.error(f"❌ 讀取失敗：{e}")
         return None, None
 
+    # ----- 標準化欄位名（支援中英文） -----
     rename_map = {
         '馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
         '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
-        '負磅': 'weight', '馬號': 'horse_no', '賠率': 'win_odds'
+        '負磅': 'weight', '馬號': 'horse_no',
+        '賠率': 'win_odds', '獨贏賠率': 'win_odds', 'Odds': 'win_odds', 'win_odds': 'win_odds'
     }
-    existing = [col for col in rename_map if col in df.columns]
-    if existing:
-        df.rename(columns={col: rename_map[col] for col in existing}, inplace=True)
+    for old, new in rename_map.items():
+        if old in df.columns and old != new:
+            df.rename(columns={old: new}, inplace=True)
 
+    # 檢查必要欄位
     if 'race_date' not in df.columns:
-        st.error("❌ 缺少 '比賽日期'")
+        st.error("❌ 缺少 '比賽日期' 欄位")
+        st.write("📋 目前欄位：", df.columns.tolist())
         return None, None
 
     df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce')
@@ -1247,14 +1251,14 @@ def run_prediction(date_str, race_no):
 
     available_dates = sorted(df['race_date_str'].unique())
     if date_str not in available_dates:
-        st.warning(f"⚠️ 改用 {available_dates[-1]}")
+        st.warning(f"⚠️ 日期 {date_str} 無數據，改用 {available_dates[-1]}")
         date_str = available_dates[-1]
 
     df_date = df[df['race_date_str'] == date_str]
     if race_no not in df_date['race_no'].unique():
         available_races = sorted(df_date['race_no'].unique())
         if available_races:
-            st.info(f"🔄 改用第 {available_races[0]} 場")
+            st.info(f"🔄 場次 {race_no} 無數據，改用第 {available_races[0]} 場")
             race_no = available_races[0]
         else:
             st.error("❌ 無場次")
@@ -1263,12 +1267,26 @@ def run_prediction(date_str, race_no):
     filtered = df_date[df_date['race_no'] == race_no].copy()
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
-    # 🔥 修正：直接使用 filtered['win_odds']，確保係 Series
-    win_odds = pd.to_numeric(filtered['win_odds'], errors='coerce').fillna(4.0)
+    # ----- 自動偵測賠率欄位 -----
+    odds_col = None
+    for col in ['win_odds', '賠率', '獨贏賠率', 'odds', 'WinOdds', 'Odds']:
+        if col in filtered.columns:
+            odds_col = col
+            break
+
+    if odds_col is None:
+        st.error("❌ 排位表中找不到賠率欄位！")
+        st.write("📋 目前欄位有：", filtered.columns.tolist())
+        st.info("💡 請確保排位表包含 '賠率' 或 'win_odds' 欄位")
+        return None, None
+
+    # 使用找到嘅賠率欄位
+    win_odds = pd.to_numeric(filtered[odds_col], errors='coerce').fillna(4.0)
     win_odds = win_odds.replace(0, 4.0)
     inv_odds = 1 / win_odds
     final_pred = inv_odds / inv_odds.sum()
 
+    # 建立結果 DataFrame
     result_df = filtered[['horse_name', 'draw', 'weight', 'jockey', 'trainer']].copy()
     result_df['預測勝率'] = final_pred
     result_df['值博指數'] = result_df['預測勝率'] * 10
@@ -1304,7 +1322,7 @@ def run_prediction(date_str, race_no):
     except Exception as e:
         st.error(f"❌ 儲存預測失敗：{e}")
 
-    # 彩池推薦（已按你之前要求調整數量）
+    # 彩池推薦
     full_pool_text = generate_pool_recommendations(result_df)
     config = load_system_config()
     enable_vip_content = config.get("enable_vip_content", True)
