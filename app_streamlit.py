@@ -2688,14 +2688,17 @@ def admin_auto_maintenance():
     for task in tasks:
         st.write(f"• {task}")
     st.divider()
-    if st.button("🚀 執行全部維護任務", type="primary", use_container_width=True):
+
+    if st.button("🚀 執行全部維護任務", type="primary", use_container_width=True, key="btn_full_maintenance"):
         results = []
         progress_bar = st.progress(0)
         status_text = st.empty()
+
         status_text.text("🔄 比對賽果中...")
         updated, msg = update_accuracy_with_results()
         results.append(f"🔄 比對賽果：{msg}")
         progress_bar.progress(15)
+
         status_text.text("⚖️ 調整權重中...")
         try:
             weight_result = adjust_model_weights()
@@ -2703,6 +2706,7 @@ def admin_auto_maintenance():
         except Exception as e:
             results.append(f"⚖️ 調整權重：失敗 - {str(e)}")
         progress_bar.progress(30)
+
         status_text.text("⏰ 檢查過期會員中...")
         users = load_users()
         today = datetime.now()
@@ -2726,6 +2730,7 @@ def admin_auto_maintenance():
         else:
             results.append("⏰ 檢查過期會員：目前沒有過期會員")
         progress_bar.progress(45)
+
         status_text.text("📊 同步用戶數據中...")
         try:
             if 'temp_new_users' in st.session_state:
@@ -2745,11 +2750,13 @@ def admin_auto_maintenance():
         except Exception as e:
             results.append(f"📊 同步用戶數據：失敗 - {str(e)}")
         progress_bar.progress(60)
+
         status_text.text("📝 檢查系統檔案中...")
         files_to_check = [
             'users.json', 'system_config.json', 'finance.json',
             'promo_codes.json', 'admin_log.json', 'accuracy.json',
-            'payment_proofs.json', 'HKCJ_FULL_YEAR_DATA.csv', 'ALL_DATA_MERGED.csv'
+            'payment_proofs.json', 'HKCJ_FULL_YEAR_DATA.csv', 'ALL_DATA_MERGED.csv',
+            'race_results_clean.csv'
         ]
         file_status = []
         for f in files_to_check:
@@ -2759,6 +2766,7 @@ def admin_auto_maintenance():
             file_status.append(f"{status} {f} ({size} bytes)" if exists else f"{status} {f} (不存在)")
         results.append(f"📝 檢查系統檔案：{' | '.join(file_status[:5])}")
         progress_bar.progress(80)
+
         status_text.text("📥 自動備份中...")
         try:
             backup_data = {
@@ -2806,9 +2814,10 @@ def admin_auto_maintenance():
             col1.metric("📊 已比對預測", total)
             col2.metric("🎯 命中次數", hit)
             col3.metric("📈 整體命中率", f"{hit_rate:.2%}")
-       st.divider()
+
+    st.divider()
     st.subheader("⚡ 單獨執行")
-    
+
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         if st.button("🔄 比對賽果", use_container_width=True, key="btn_compare"):
@@ -2866,7 +2875,6 @@ def admin_auto_maintenance():
                 except Exception as e:
                     st.error(f"❌ 更新 AI 命中率失敗：{str(e)}")
             st.rerun()
-
 def update_ai_accuracy():
     ai_file = "ai_predictions.json"
     results_file = "race_results_clean.csv"
