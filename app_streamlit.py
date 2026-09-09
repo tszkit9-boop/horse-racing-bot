@@ -1231,7 +1231,7 @@ def run_prediction(date_str, race_no):
     rename_map = {
         '馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
         '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
-        '負磅': 'weight', '馬號': 'horse_id', '賠率': 'win_odds'
+        '負磅': 'weight', '馬號': 'horse_no', '賠率': 'win_odds'
     }
     existing = [col for col in rename_map if col in df.columns]
     if existing:
@@ -1260,11 +1260,11 @@ def run_prediction(date_str, race_no):
             st.error("❌ 無場次")
             return None, None
 
-    filtered = df_date[df_date['race_no'] == race_no]
+    filtered = df_date[df_date['race_no'] == race_no].copy()
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
-    # 賠率估算
-    win_odds = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0)
+    # 🔥 修正：直接使用 filtered['win_odds']，確保係 Series
+    win_odds = pd.to_numeric(filtered['win_odds'], errors='coerce').fillna(4.0)
     win_odds = win_odds.replace(0, 4.0)
     inv_odds = 1 / win_odds
     final_pred = inv_odds / inv_odds.sum()
@@ -1276,8 +1276,6 @@ def run_prediction(date_str, race_no):
         lambda x: '⭐⭐⭐ 高' if x > 0.2 else '⭐⭐ 中' if x > 0.1 else '⭐ 低'
     )
     result_df = result_df.sort_values('預測勝率', ascending=False)
-
-    # 🔥 確保馬名沒有 NaN，全部轉為純文字
     result_df['horse_name'] = result_df['horse_name'].fillna('未知').astype(str)
 
     # 儲存 AI 預測
@@ -1306,7 +1304,7 @@ def run_prediction(date_str, race_no):
     except Exception as e:
         st.error(f"❌ 儲存預測失敗：{e}")
 
-    # 彩池推薦（根據用戶權限過濾）
+    # 彩池推薦（已按你之前要求調整數量）
     full_pool_text = generate_pool_recommendations(result_df)
     config = load_system_config()
     enable_vip_content = config.get("enable_vip_content", True)
@@ -1336,7 +1334,6 @@ def run_prediction(date_str, race_no):
         pool_text = full_pool_text
 
     return result_df, pool_text
-
 # ============================================================
 # 用戶功能
 # ============================================================
