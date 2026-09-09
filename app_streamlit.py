@@ -2806,46 +2806,65 @@ def admin_auto_maintenance():
             col1.metric("📊 已比對預測", total)
             col2.metric("🎯 命中次數", hit)
             col3.metric("📈 整體命中率", f"{hit_rate:.2%}")
-    st.divider()
+       st.divider()
     st.subheader("⚡ 單獨執行")
+    
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        if st.button("🔄 比對賽果", use_container_width=True):
-            updated, msg = update_accuracy_with_results()
-            st.success(f"✅ {msg}")
+        if st.button("🔄 比對賽果", use_container_width=True, key="btn_compare"):
+            with st.spinner("正在比對賽果..."):
+                try:
+                    updated, msg = update_accuracy_with_results()
+                    if updated > 0:
+                        st.success(f"✅ {msg}")
+                    else:
+                        st.warning(f"⚠️ {msg}")
+                except Exception as e:
+                    st.error(f"❌ 比對賽果失敗：{str(e)}")
             st.rerun()
     with col2:
-        if st.button("⚖️ 調整權重", use_container_width=True):
-            result = adjust_model_weights()
-            st.success(f"✅ XGB={result['xgb_weight']}, Cat={result['cat_weight']}（命中率 {result['hit_rate']:.2%}）")
+        if st.button("⚖️ 調整權重", use_container_width=True, key="btn_adjust_weights"):
+            with st.spinner("正在計算最佳權重..."):
+                try:
+                    result = adjust_model_weights()
+                    st.success(f"✅ XGB={result['xgb_weight']}, Cat={result['cat_weight']}（命中率 {result['hit_rate']:.2%}）")
+                except Exception as e:
+                    st.error(f"❌ 調整權重失敗：{str(e)}")
             st.rerun()
     with col3:
-        if st.button("⏰ 終止過期會員", use_container_width=True):
-            users = load_users()
-            today = datetime.now()
-            expired = []
-            for uid, u in users.items():
-                if u.get('group') == 'VIP' and u.get('expiry_date'):
-                    try:
-                        exp = pd.to_datetime(u['expiry_date'])
-                        if exp < today:
-                            u['group'] = 'free'
-                            u['is_paid'] = False
-                            u['predictions_limit'] = CONFIG["free_limit"]
-                            u['plan'] = None
-                            expired.append(uid)
-                    except:
-                        pass
-            if expired:
-                save_users(users)
-                st.success(f"✅ 已將 {len(expired)} 個過期會員降級：{', '.join(expired)}")
-            else:
-                st.info("✅ 目前沒有過期會員")
+        if st.button("⏰ 終止過期會員", use_container_width=True, key="btn_expire"):
+            try:
+                users = load_users()
+                today = datetime.now()
+                expired = []
+                for uid, u in users.items():
+                    if u.get('group') == 'VIP' and u.get('expiry_date'):
+                        try:
+                            exp = pd.to_datetime(u['expiry_date'])
+                            if exp < today:
+                                u['group'] = 'free'
+                                u['is_paid'] = False
+                                u['predictions_limit'] = CONFIG["free_limit"]
+                                u['plan'] = None
+                                expired.append(uid)
+                        except:
+                            pass
+                if expired:
+                    save_users(users)
+                    st.success(f"✅ 已將 {len(expired)} 個過期會員降級：{', '.join(expired)}")
+                else:
+                    st.info("✅ 目前沒有過期會員")
+            except Exception as e:
+                st.error(f"❌ 終止過期會員失敗：{str(e)}")
             st.rerun()
     with col4:
-        if st.button("🎯 更新 AI 命中率", use_container_width=True):
-            hit_count, msg = update_ai_accuracy()
-            st.success(f"✅ 比對完成：{msg}")
+        if st.button("🎯 更新 AI 命中率", use_container_width=True, key="btn_update_ai"):
+            with st.spinner("正在比對..."):
+                try:
+                    hit_count, msg = update_ai_accuracy()
+                    st.success(f"✅ 比對完成：{msg}")
+                except Exception as e:
+                    st.error(f"❌ 更新 AI 命中率失敗：{str(e)}")
             st.rerun()
 
 def update_ai_accuracy():
