@@ -305,12 +305,26 @@ def admin_gift_prize(admin_username, target_user, prize):
 
 def show_lottery_interface(username):
     from zoneinfo import ZoneInfo
+    import time
+    
     HK_TZ = ZoneInfo("Asia/Hong_Kong")
     
-    if not username: st.info("請先登入"); return
+    if not username:
+        st.info("請先登入")
+        return
     config = load_lottery_config()
-    if not config.get('enabled', True): st.warning("🎰 抽獎活動暫時關閉"); return
+    if not config.get('enabled', True):
+        st.warning("🎰 抽獎活動暫時關閉")
+        return
+    
+    # 初始化 session_state
+    if 'lottery_drawing' not in st.session_state:
+        st.session_state.lottery_drawing = False
+    if 'lottery_result' not in st.session_state:
+        st.session_state.lottery_result = None
+    
     st.subheader("🎰 每日抽獎")
+    
     can_draw, msg = user_can_draw_today(username)
     max_draws = config.get('draws_per_day', 1)
     users = load_users()
@@ -318,29 +332,126 @@ def show_lottery_interface(username):
     max_draws += extra
     drawn = get_user_draws_today(username)
     
+    # ===== 統計資訊 =====
     col_info1, col_info2, col_info3 = st.columns(3)
-    col_info1.metric("今日已抽", f"{drawn}/{max_draws}")
-    col_info2.metric("狀態", "✅ 可抽獎" if can_draw else "⏰ 已抽完")
-    col_info3.metric("獎品數量", len(config.get('prizes', [])))
+    col_info1.metric("🎯 今日已抽", f"{drawn}/{max_draws}")
+    col_info2.metric("📊 狀態", "✅ 可抽獎" if can_draw else "⏰ 已抽完")
+    col_info3.metric("🎁 獎品數量", len(config.get('prizes', [])))
     
+    st.divider()
+    
+    # ===== 中獎展示頁面 =====
+    if st.session_state.lottery_result is not None:
+        prize = st.session_state.lottery_result
+        
+        # 慶祝動畫
+        st.balloons()
+        
+        # 中獎卡片
+        st.markdown(f"""
+        <div style="
+            background: linear-gradient(135deg, #ffd700, #ff8c00);
+            border-radius: 24px;
+            padding: 40px 30px;
+            text-align: center;
+            color: white;
+            box-shadow: 0 10px 40px rgba(255, 140, 0, 0.4);
+            margin: 20px 0;
+            animation: pulse 1.5s ease-in-out;
+        ">
+            <div style="font-size: 80px; margin-bottom: 10px;">🎉</div>
+            <div style="font-size: 32px; font-weight: bold; margin-bottom: 20px;">恭喜中獎！</div>
+            <div style="font-size: 80px; margin: 20px 0;">{prize.get('icon', '🎁')}</div>
+            <div style="font-size: 28px; font-weight: bold; background: rgba(255,255,255,0.2); padding: 15px 30px; border-radius: 15px; display: inline-block;">
+                {prize.get('name', '')}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # 額外彩帶效果
+        st.markdown("""
+        <style>
+        @keyframes pulse {
+            0% { transform: scale(0.8); opacity: 0; }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        # 顯示獎品詳情
+        st.markdown("### 📋 獎品詳情")
+        col_p1, col_p2, col_p3 = st.columns(3)
+        col_p1.metric("🎁 獎品", prize.get('name', ''))
+        col_p2.metric("🏷️ 類型", {
+            'virtual_coin': '💰 虛擬幣',
+            'vip_days': '👑 VIP',
+            'free_predictions': '🎯 免費預測',
+            'promo_code': '🎟️ 優惠碼',
+            'custom': '🎁 自訂',
+            'nothing': '😢 無獎品'
+        }.get(prize.get('type', ''), '未知'))
+        col_p3.metric("⏰ 抽獎時間", datetime.now(HK_TZ).strftime('%H:%M:%S'))
+        
+        # 如果係優惠碼，特別顯示
+        if prize.get('type') == 'promo_code':
+            st.info("💡 你嘅優惠碼已經自動加到「🎟️ 優惠碼」系統，付款時可以使用！")
+        
+        if st.button("🎰 再抽一次" if can_draw else "✅ 完成", 
+                     type="primary", use_container_width=True, key="close_result"):
+            st.session_state.lottery_result = None
+            st.rerun()
+        
+        return
+    
+    # ===== 抽獎動畫中 =====
+    if st.session_state.lottery_drawing:
+        with st.spinner("🎰 抽獎中..."):
+            time.sleep(0.5)
+            success, message, prize = draw_lottery(username)
+            st.session_state.lottery_drawing = False
+            if success and prize:
+                st.session_state.lottery_result = prize
+            else:
+                st.error(message)
+            st.rerun()
+        return
+    
+    # ===== 抽獎頁面 =====
     if can_draw:
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            st.markdown("""<div style="text-align: center; padding: 30px; background: linear-gradient(135deg, #ffd700, #ff8c00); border-radius: 20px; color: white;"><div style="font-size: 60px;">🎁</div><div style="font-size: 24px; font-weight: bold; margin-top: 10px;">試吓你嘅運氣！</div></div>""", unsafe_allow_html=True)
-            st.markdown("<br>", unsafe_allow_html=True)
+        # 抽獎機卡片
+        st.markdown("""
+        <div style="
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 24px;
+            padding: 40px 20px;
+            text-align: center;
+            color: white;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+            margin: 20px 0;
+        ">
+            <div style="font-size: 100px; animation: bounce 1s infinite;">🎰</div>
+            <div style="font-size: 28px; font-weight: bold; margin-top: 15px;">每日大抽獎</div>
+            <div style="font-size: 14px; opacity: 0.9; margin-top: 8px;">撳下面嘅掣試吓你嘅運氣！</div>
+        </div>
+        <style>
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
+        with col_btn2:
             if st.button("🎰 立即抽獎", type="primary", use_container_width=True, key="btn_draw_lottery"):
-                success, message, prize = draw_lottery(username)
-                if success:
-                    st.balloons()
-                    st.success(f"🎉 {message}")
-                    if prize:
-                        st.markdown(f"""<div style="text-align: center; padding: 20px; background: #f0fdf4; border-radius: 12px; border: 2px solid #22c55e;"><div style="font-size: 48px;">{prize.get('icon', '🎁')}</div><div style="font-size: 20px; font-weight: bold; color: #15803d; margin-top: 10px;">{prize.get('name', '')}</div></div>""", unsafe_allow_html=True)
-                    st.rerun()
-                else: st.warning(message)
+                st.session_state.lottery_drawing = True
+                st.rerun()
     else:
+        # 已抽完
         st.warning(f"⏰ {msg}，聽日再嚟啦！")
         
-        # 🔥 用香港時區計算
+        # 倒數計時器
         now = datetime.now(HK_TZ)
         tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         time_left = tomorrow - now
@@ -350,12 +461,20 @@ def show_lottery_interface(username):
         seconds = total_seconds % 60
         
         st.markdown(f"""
-        <div style="background: linear-gradient(135deg, #1a237e, #0d47a1); border-radius: 16px; padding: 25px; text-align: center; color: white; margin: 15px 0;">
-            <div style="font-size: 14px; opacity: 0.8;">⏰ 距離下次抽獎仲有（香港時間）</div>
-            <div style="font-size: 42px; font-weight: bold; margin-top: 10px; letter-spacing: 2px;">
+        <div style="
+            background: linear-gradient(135deg, #1a237e, #0d47a1);
+            border-radius: 20px;
+            padding: 30px;
+            text-align: center;
+            color: white;
+            margin: 20px 0;
+            box-shadow: 0 8px 25px rgba(26, 35, 126, 0.3);
+        ">
+            <div style="font-size: 16px; opacity: 0.85;">⏰ 距離下次抽獎仲有（香港時間）</div>
+            <div style="font-size: 48px; font-weight: bold; margin-top: 15px; letter-spacing: 3px; font-family: monospace;">
                 {hours:02d}:{minutes:02d}:{seconds:02d}
             </div>
-            <div style="font-size: 12px; opacity: 0.7; margin-top: 8px;">每晚 00:00（香港時間）自動重置抽獎機會</div>
+            <div style="font-size: 13px; opacity: 0.7; margin-top: 10px;">每晚 00:00（香港時間）自動重置抽獎機會</div>
         </div>
         """, unsafe_allow_html=True)
         
@@ -363,6 +482,8 @@ def show_lottery_interface(username):
             st.rerun()
     
     st.divider()
+    
+    # ===== 獎品一覽 =====
     st.subheader("🎁 獎品一覽")
     prizes = config.get('prizes', [])
     if prizes:
@@ -370,9 +491,49 @@ def show_lottery_interface(username):
         for idx, p in enumerate(prizes):
             with cols[idx % 4]:
                 stock = p.get('stock', -1)
-                stock_text = "無限" if stock == -1 else f"剩 {stock} 份"
-                st.markdown(f"""<div style="padding: 12px; background: #f8fafc; border-radius: 10px; text-align: center; margin-bottom: 10px;"><div style="font-size: 30px;">{p.get('icon', '🎁')}</div><div style="font-size: 13px; font-weight: bold; margin-top: 5px;">{p.get('name', '')}</div><div style="font-size: 11px; color: #64748b; margin-top: 3px;">{stock_text}</div></div>""", unsafe_allow_html=True)
+                stock_text = "♾️ 無限" if stock == -1 else f"剩 {stock} 份"
+                
+                # 根據類型決定顏色
+                prize_type = p.get('type', '')
+                if prize_type == 'virtual_coin':
+                    bg_color = 'linear-gradient(135deg, #fef3c7, #fde68a)'
+                    border_color = '#f59e0b'
+                elif prize_type == 'vip_days':
+                    bg_color = 'linear-gradient(135deg, #fef3c7, #fde047)'
+                    border_color = '#eab308'
+                elif prize_type == 'free_predictions':
+                    bg_color = 'linear-gradient(135deg, #dbeafe, #bfdbfe)'
+                    border_color = '#3b82f6'
+                elif prize_type == 'promo_code':
+                    bg_color = 'linear-gradient(135deg, #fce7f3, #fbcfe8)'
+                    border_color = '#ec4899'
+                else:
+                    bg_color = 'linear-gradient(135deg, #f1f5f9, #e2e8f0)'
+                    border_color = '#94a3b8'
+                
+                st.markdown(f"""
+                <div style="
+                    padding: 16px;
+                    background: {bg_color};
+                    border-radius: 14px;
+                    border: 2px solid {border_color};
+                    text-align: center;
+                    margin-bottom: 12px;
+                    min-height: 140px;
+                ">
+                    <div style="font-size: 36px;">{p.get('icon', '🎁')}</div>
+                    <div style="font-size: 14px; font-weight: bold; margin-top: 8px; color: #1e293b;">
+                        {p.get('name', '')}
+                    </div>
+                    <div style="font-size: 11px; color: #64748b; margin-top: 5px;">
+                        {stock_text}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+    
     st.divider()
+    
+    # ===== 抽獎記錄 =====
     st.subheader("📋 我嘅抽獎記錄")
     records = load_lottery_records()
     user_records = [r for r in records.get('records', []) if r.get('username') == username]
@@ -381,7 +542,8 @@ def show_lottery_interface(username):
         display_cols = ['draw_date', 'prize_name', 'source']
         available_cols = [c for c in display_cols if c in df_records.columns]
         st.dataframe(df_records[available_cols], use_container_width=True, hide_index=True)
-    else: st.info("📭 尚未抽過獎")
+    else:
+        st.info("📭 尚未抽過獎")
 
 # ============================================================
 # 🛍️ 虛擬商城系統
