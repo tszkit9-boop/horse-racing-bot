@@ -2745,7 +2745,8 @@ def main():
     with col_f3:
         st.caption("💬 Telegram：@bryhjdjbrbxibvrjskofndhiebdpaq")
 
-if __name__ == '__main__'
+if __name__ == '__main__':
+    main()
 # ============================================================
 # 登入/註冊
 # ============================================================
