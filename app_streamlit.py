@@ -768,7 +768,6 @@ def update_accuracy_with_results():
                             save_users(users)
                         update_user_exp(username, is_hit=True)
                     check_badges(username)
-                    settle_bets(username, date_str, rec.get('race'), results_df)
         if updated > 0:
             save_accuracy(acc)
         return updated, f"成功比對 {updated} 條記錄"
@@ -1198,7 +1197,6 @@ def show_user_dashboard(username):
         col4.metric("📊 剩餘場次", "♾️ 無限")
     else:
         col4.metric("📊 剩餘場次", max(0, limit - user_data.get('free_usage', 0)))
-    col5.metric("💰 虛擬幣", f"${virtual_balance:,.0f}")
     st.markdown("---")
     st.subheader("🏅 用戶等級 & 勳章")
     col_level1, col_level2, col_level3 = st.columns(3)
@@ -1362,7 +1360,6 @@ def login_page():
                             'invite_code': new_user.upper() + str(random.randint(100, 999)),
                             'invited_by': invited_by, 'invite_rewards': 0, 'invite_count': 0,
                             'level': '🥉 銅牌會員', 'exp': 0, 'badges': [],
-                            'virtual_balance': CONFIG.get('daily_virtual_coin', 1000),
                             'last_claim_date': '', 'bets': []
                         }
                         users[new_user] = new_user_data
@@ -1583,7 +1580,7 @@ def admin_auto_maintenance():
         try:
             backup_data = {"users": load_users(), "accuracy": load_accuracy(),
                            "finance": load_finance(), "payment_proofs": load_payment_proofs(),
-                           "bets": load_bets(), "backup_time": datetime.now().isoformat()}
+                           "backup_time": datetime.now().isoformat()}
             backup_json = json.dumps(backup_data, ensure_ascii=False, indent=2)
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             backup_filename = f"backup_{timestamp}.json"
@@ -1616,7 +1613,6 @@ def admin_auto_maintenance():
             st.info(msg)
         del st.session_state.operation_result
 
-    col1, col2, col3, col4 = st.columns(4)
     with col1:
         if st.button("🔄 比對賽果", use_container_width=True, key="btn_compare"):
             try:
@@ -1815,25 +1811,7 @@ def admin_user_management():
                                             index=level_options.index(current_level) if current_level in level_options else 0,
                                             key="edit_level")
                     new_exp = st.number_input("📊 經驗值", min_value=0, value=user.get('exp', 0), step=10, key="edit_exp")
-                st.markdown("---")
-                st.subheader("💰 虛擬幣調整")
-                col_coin1, col_coin2 = st.columns(2)
-                with col_coin1:
-                    current_balance = user.get('virtual_balance', 0)
-                    st.metric("當前結餘", f"${current_balance:,.0f}")
-                with col_coin2:
-                    coin_adjust = st.number_input("調整金額（+ 加錢，- 扣錢）", value=0, step=100, key="coin_adjust")
-                    if st.button("✅ 確認調整虛擬幣", key="apply_coin_adjust"):
-                        if coin_adjust != 0:
-                            new_balance = current_balance + coin_adjust
-                            if new_balance < 0:
-                                st.error("❌ 餘額不能為負數")
-                            else:
-                                users[username]['virtual_balance'] = new_balance
-                                with open(user_file, 'w', encoding='utf-8') as f:
-                                    json.dump(users, f, ensure_ascii=False, indent=2)
-                                st.success(f"✅ 新餘額：${new_balance:,.0f}")
-                                st.rerun()
+
                 if st.button("💾 儲存變更", key="save_user_changes"):
                     users[username]['group'] = new_group
                     users[username]['is_paid'] = new_is_paid
@@ -2144,7 +2122,7 @@ def admin_payment_review():
 # ============================================================
 def admin_monitoring():
     st.subheader("📡 系統監控")
-    files = ['ALL_DATA_MERGED.csv', 'HKCJ_FULL_YEAR_DATA.csv', 'hk_racing_model.pkl', 'hk_catboost_model.cbm', 'bets.json']
+    files = ['ALL_DATA_MERGED.csv', 'HKCJ_FULL_YEAR_DATA.csv', 'hk_racing_model.pkl', 'hk_catboost_model.cbm']
     for f in files:
         if os.path.exists(f):
             size = os.path.getsize(f)/1024
@@ -2673,48 +2651,7 @@ def main():
             else:
                 st.info("ℹ️ 沒有同時存在預測同賽果嘅日期")
 
-    # ========== 虛擬投注 ==========
-    if st.session_state.get('logged_in', False):
-        st.markdown("---")
-        st.subheader("🎮 虛擬投注")
-        col_v1, col_v2, col_v3 = st.columns([1, 1, 2])
-        with col_v1:
-            if st.button("💰 投注模擬器", use_container_width=True, key="btn_bet"):
-                st.session_state.show_bet = not st.session_state.get('show_bet', False)
-                st.session_state.show_leaderboard = False
-        with col_v2:
-            if st.button("🏆 排行榜", use_container_width=True, key="btn_leaderboard"):
-                st.session_state.show_leaderboard = not st.session_state.get('show_leaderboard', False)
-                st.session_state.show_bet = False
-        with col_v3:
-            balance = get_user_real_balance(st.session_state.username)
-            st.info(f"💎 你嘅虛擬幣結餘：**${balance:,.0f}**")
-        if st.session_state.get('show_bet', False):
-            show_betting_interface(st.session_state.username)
-        if st.session_state.get('show_leaderboard', False):
-            show_leaderboard()
-        if st.session_state.get('role') == 'super_admin':
-            st.markdown("---")
-            st.subheader("🎁 管理員贈送虛擬幣")
-            with st.form(key="admin_gift_form"):
-                col_g1, col_g2, col_g3 = st.columns([2, 1, 1])
-                with col_g1:
-                    target_user = st.selectbox("選擇用戶", list(load_users().keys()), key="gift_user")
-                with col_g2:
-                    gift_amount = st.number_input("金額", min_value=1, value=100, step=50, key="gift_amount")
-                with col_g3:
-                    submit_gift = st.form_submit_button("🎁 贈送")
-                if submit_gift:
-                    if target_user == st.session_state.username:
-                        st.error("❌ 唔可以送俾自己")
-                    else:
-                        users = load_users()
-                        if target_user in users:
-                            users[target_user]['virtual_balance'] = users[target_user].get('virtual_balance', 0) + gift_amount
-                            save_users(users)
-                            log_admin_action(st.session_state.username, f"贈送 ${gift_amount} 虛擬幣給 {target_user}")
-                            st.success(f"✅ 已贈送 ${gift_amount} 給 {target_user}")
-                            st.rerun()
+
 
     # ====== 付款功能 ======
     st.markdown("---")
