@@ -20,6 +20,7 @@ from catboost import CatBoostClassifier
 import plotly.express as px
 import plotly.graph_objects as go
 import random
+from zoneinfo import ZoneInfo
 from PIL import Image
 
 st.set_page_config(page_title="🏇 賽馬預測系統", page_icon="🐎", layout="wide",
@@ -303,6 +304,9 @@ def admin_gift_prize(admin_username, target_user, prize):
     return True, f"✅ 已贈送 {prize.get('name')} 給 {target_user}"
 
 def show_lottery_interface(username):
+    from zoneinfo import ZoneInfo
+    HK_TZ = ZoneInfo("Asia/Hong_Kong")
+    
     if not username: st.info("請先登入"); return
     config = load_lottery_config()
     if not config.get('enabled', True): st.warning("🎰 抽獎活動暫時關閉"); return
@@ -334,11 +338,10 @@ def show_lottery_interface(username):
                     st.rerun()
                 else: st.warning(message)
     else:
-        # 🔥 顯示倒數計時器
         st.warning(f"⏰ {msg}，聽日再嚟啦！")
         
-        # 計算距離明天 00:00 嘅時間
-        now = datetime.now()
+        # 🔥 用香港時區計算
+        now = datetime.now(HK_TZ)
         tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         time_left = tomorrow - now
         total_seconds = int(time_left.total_seconds())
@@ -348,11 +351,11 @@ def show_lottery_interface(username):
         
         st.markdown(f"""
         <div style="background: linear-gradient(135deg, #1a237e, #0d47a1); border-radius: 16px; padding: 25px; text-align: center; color: white; margin: 15px 0;">
-            <div style="font-size: 14px; opacity: 0.8;">⏰ 距離下次抽獎仲有</div>
+            <div style="font-size: 14px; opacity: 0.8;">⏰ 距離下次抽獎仲有（香港時間）</div>
             <div style="font-size: 42px; font-weight: bold; margin-top: 10px; letter-spacing: 2px;">
                 {hours:02d}:{minutes:02d}:{seconds:02d}
             </div>
-            <div style="font-size: 12px; opacity: 0.7; margin-top: 8px;">每晚 00:00 自動重置抽獎機會</div>
+            <div style="font-size: 12px; opacity: 0.7; margin-top: 8px;">每晚 00:00（香港時間）自動重置抽獎機會</div>
         </div>
         """, unsafe_allow_html=True)
         
