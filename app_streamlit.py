@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版
-整合所有功能：預測、投注、用戶管理、後台、活動日誌
+賽馬預測系統 - 完整版 (v16.0)
+所有功能整合：預測、投注、用戶管理、後台、活動日誌
 """
 
 import streamlit as st
@@ -25,9 +25,7 @@ from PIL import Image
 # 🔒 隱藏 Streamlit 平台 UI
 # ============================================================
 st.set_page_config(
-    page_title="🏇 賽馬預測系統",
-    page_icon="🐎",
-    layout="wide",
+    page_title="🏇 賽馬預測系統", page_icon="🐎", layout="wide",
     initial_sidebar_state="expanded",
     menu_items={'Get Help': None, 'Report a bug': None, 'About': None}
 )
@@ -41,7 +39,6 @@ st.markdown("""
     header { display: none !important; }
     button[kind="share"] { display: none !important; }
     a[href*="streamlit.io"] { display: none !important; }
-    .st-emotion-cache-1r6slb0 { display: none !important; }
     [data-testid="stHeader"] { display: none !important; }
     [data-testid="stDecoration"] { display: none !important; }
     .stApp > header { display: none !important; }
@@ -128,6 +125,7 @@ CONTENT_FILE = 'content.json'
 AUTOMATION_FILE = 'automation.json'
 PAYMENT_PROOFS_FILE = 'payment_proofs.json'
 ACTIVITY_LOG_FILE = 'user_activity_log.json'
+BETS_FILE = 'bets.json'
 
 if not os.path.exists('payment_proofs'):
     os.makedirs('payment_proofs')
@@ -144,9 +142,7 @@ def log_user_activity(username, action, details=""):
         log['logs'] = []
     log['logs'].append({
         'timestamp': datetime.now().isoformat(),
-        'username': username,
-        'action': action,
-        'details': details
+        'username': username, 'action': action, 'details': details
     })
     if len(log['logs']) > 10000:
         log['logs'] = log['logs'][-10000:]
@@ -301,8 +297,6 @@ def load_users():
                 users["admin"]["virtual_balance"] = 10000
             if "last_claim_date" not in users["admin"]:
                 users["admin"]["last_claim_date"] = ""
-            if "bets" not in users["admin"]:
-                users["admin"]["bets"] = []
         for uid, u in users.items():
             if 'plan' not in u: u['plan'] = None
             if 'paid_date' not in u: u['paid_date'] = None
@@ -349,23 +343,6 @@ def authenticate(username, password):
 def get_user(username):
     users = load_users()
     return users.get(username)
-
-def get_remaining_predictions(username):
-    user = get_user(username)
-    if not user:
-        return 0
-    if user.get('group') in ['VIP', 'paid', 'super_admin']:
-        return 9999
-    limit = user.get('predictions_limit', CONFIG['free_limit'])
-    used = user.get('free_usage', 0)
-    return max(0, limit - used)
-
-def update_user(username, updates):
-    users = load_users()
-    if username in users:
-        users[username].update(updates)
-        return save_users(users)
-    return False
 
 def log_admin_action(admin, action):
     logs = load_logs()
@@ -546,6 +523,186 @@ def show_paywall():
                 st.error(msg)
 
 # ============================================================
+# 💰 投注系統（新方案：獨立 bets.json，動態計算餘額）
+# ============================================================
+def load_bets():
+    if os.path.exists(BETS_FILE):
+        try:
+            with open(BETS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return {"bets": []}
+    return {"bets": []}
+
+def save_bets(bets_data):
+    try:
+        with open(BETS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(bets_data, f, ensure_ascii=False, indent=2)
+        return True
+    except:
+        return False
+
+def get_user_real_balance(username):
+    users = load_users()
+    if username not in users:
+        return 0
+    initial_balance = users[username].get('virtual_balance', 0)
+    bets_data = load_bets()
+    user_bets = [b for b in bets_data.get('bets', []) if b.get('username') == username]
+    total_staked = sum(b.get('amount', 0) for b in user_bets)
+    total_payout = sum(b.get('payout', 0) for b in user_bets)
+    return initial_balance - total_staked + total_payout
+
+def place_bet(username, race_date, race_no, horse_name, bet_amount, bet_type="win"):
+    if bet_amount <= 0:
+        st.session_state.bet_result = ('error', "❌ 投注金額必須大於 0")
+        return
+    current_balance = get_user_real_balance(username)
+    if bet_amount > current_balance:
+        st.session_state.bet_result = ('error', f"❌ 餘額不足（餘額：${current_balance:,.0f}）")
+        return
+    bets_data = load_bets()
+    bets_data['bets'].append({
+        "username": username, "date": race_date, "race": race_no,
+        "horse": horse_name, "amount": bet_amount, "bet_type": bet_type,
+        "placed_at": datetime.now().isoformat(),
+        "result": None, "payout": 0, "odds": None, "settled": False
+    })
+    if save_bets(bets_data):
+        new_balance = get_user_real_balance(username)
+        st.session_state.bet_result = ('success', f"✅ 已投注 ${bet_amount} 喺 {horse_name}，新餘額：${new_balance:,.0f}")
+        log_user_activity(username, 'bet', f"{race_date} 第{race_no}場 {horse_name} ${bet_amount}")
+    else:
+        st.session_state.bet_result = ('error', "❌ 投注失敗，請稍後再試")
+
+def show_betting_interface(username):
+    if not username:
+        st.info("請先登入")
+        return
+    if 'bet_result' in st.session_state:
+        msg_type, msg = st.session_state.bet_result
+        if msg_type == 'success':
+            st.success(msg)
+        else:
+            st.error(msg)
+        del st.session_state.bet_result
+
+    balance = get_user_real_balance(username)
+
+    st.subheader("💰 投注模擬器")
+    st.caption("用虛擬幣體驗投注樂趣，唔使真錢！")
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("💎 虛擬幣結餘", f"${balance:,.0f}")
+    with col2:
+        today = datetime.now().strftime('%Y-%m-%d')
+        users = load_users()
+        user = users.get(username, {})
+        if user.get('last_claim_date', '') != today and CONFIG.get("virtual_coin_enabled", True):
+            if st.button("🎁 領取每日獎勵", use_container_width=True, key="claim_btn"):
+                amount, msg = claim_daily_virtual_coin(username)
+                if amount > 0:
+                    st.success(f"✅ {msg}")
+                    st.rerun()
+                else:
+                    st.info(msg)
+        else:
+            st.success("✅ 今日已領取")
+    with col3:
+        st.caption(f"📅 每日派發：${CONFIG.get('daily_virtual_coin', 1000)}")
+
+    st.divider()
+    st.subheader("📝 投注")
+
+    col_date, col_race = st.columns(2)
+    with col_date:
+        date = st.date_input("📅 選擇日期", value=pd.to_datetime("2026-09-06"), key="bet_date_input")
+    with col_race:
+        bet_race = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=0, key="bet_race_select")
+
+    if st.button("🔍 睇預測 & 投注", key="show_bet_options"):
+        date_str = date.strftime('%Y-%m-%d')
+        with st.spinner("載入預測..."):
+            result, pool = run_prediction(date_str, bet_race)
+            if result is not None and not result.empty:
+                display_df = result[['horse_name', 'draw', '預測勝率', '值博指數', '信心指數']].copy()
+                display_df.rename(columns={'horse_name': '馬名', 'draw': '檔位'}, inplace=True)
+                display_df['預測勝率'] = display_df['預測勝率'].apply(lambda x: f"{x:.2%}")
+                display_df['值博指數'] = display_df['值博指數'].apply(lambda x: f"{x:.4f}")
+                st.dataframe(display_df, use_container_width=True)
+
+                st.subheader("💸 落注")
+                max_bet = int(balance) if balance > 0 else 1
+
+                with st.form(key="place_bet_form", clear_on_submit=True):
+                    horse_options = result['horse_name'].tolist()
+                    selected_horse = st.selectbox("揀馬", horse_options, key="bet_horse_select")
+                    bet_amount = st.number_input(
+                        "投注金額", min_value=1, max_value=max_bet,
+                        value=min(100, max_bet), step=10, key="bet_amount_input"
+                    )
+                    st.caption(f"💰 當前餘額：${balance:,.0f}")
+                    submit_bet = st.form_submit_button("✅ 確認投注", type="primary")
+                    if submit_bet:
+                        place_bet(username, date_str, bet_race, selected_horse, bet_amount)
+                        st.rerun()
+            else:
+                st.warning("無法載入預測數據")
+
+    st.divider()
+    st.subheader("📋 我的投注記錄")
+
+    bets_data = load_bets()
+    user_bets = [b for b in bets_data.get('bets', []) if b.get('username') == username]
+
+    if user_bets:
+        df_bets = pd.DataFrame(user_bets[-20:][::-1])
+        display_cols = ['date', 'race', 'horse', 'amount', 'result', 'payout']
+        available_cols = [col for col in display_cols if col in df_bets.columns]
+        st.dataframe(df_bets[available_cols], use_container_width=True)
+        settled = [b for b in user_bets if b.get('settled', False)]
+        wins = [b for b in settled if b.get('result') == 'win']
+        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+        col_s1.metric("📊 總投注", len(user_bets))
+        col_s2.metric("✅ 已結算", len(settled))
+        col_s3.metric("🏆 命中", len(wins))
+        col_s4.metric("📈 命中率", f"{len(wins)/len(settled)*100:.1f}%" if settled else "0%")
+    else:
+        st.info("📭 尚未有任何投注記錄")
+
+def settle_bets(username, race_date, race_no, results_df):
+    bets_data = load_bets()
+    updated = False
+    for bet in bets_data.get('bets', []):
+        if bet.get('username') != username:
+            continue
+        if bet.get('settled', False):
+            continue
+        if bet.get('date') != race_date or bet.get('race') != race_no:
+            continue
+        horse = bet.get('horse')
+        matched = results_df[
+            (results_df['race_date'].dt.strftime('%Y-%m-%d') == race_date) &
+            (results_df['race_no'] == race_no) &
+            (results_df['horse_name'] == horse)
+        ]
+        if not matched.empty:
+            pos = matched.iloc[0]['finish_position']
+            is_win = (pos == 1)
+            bet['result'] = 'win' if is_win else 'lose'
+            bet['settled'] = True
+            if is_win:
+                odds = matched.iloc[0].get('win_odds', 4.0)
+                if pd.isna(odds) or odds <= 0:
+                    odds = 4.0
+                bet['odds'] = float(odds)
+                bet['payout'] = bet['amount'] * odds
+                updated = True
+    if updated:
+        save_bets(bets_data)
+
+# ============================================================
 # AI 自我學習
 # ============================================================
 def update_accuracy_with_results():
@@ -597,264 +754,6 @@ def update_accuracy_with_results():
         return updated, f"成功比對 {updated} 條記錄"
     except Exception as e:
         return 0, f"比對失敗：{str(e)}"
-
-# ============================================================
-# 投注模擬器（完整版）
-# ============================================================
-def place_bet(username, race_date, race_no, horse_name, bet_amount, bet_type="win"):
-    """
-    投注：扣錢並寫入 users.json
-    結果存入 st.session_state.bet_result
-    """
-    file_path = USER_DATA_FILE
-
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            users = json.load(f)
-
-        if username not in users:
-            st.session_state.bet_result = ('error', "❌ 用戶不存在")
-            return
-
-        user = users[username]
-        balance = user.get('virtual_balance', 0)
-
-        if bet_amount <= 0:
-            st.session_state.bet_result = ('error', "❌ 投注金額必須大於 0")
-            return
-
-        if bet_amount > balance:
-            st.session_state.bet_result = ('error', f"❌ 餘額不足（餘額：${balance}）")
-            return
-
-        # 扣錢
-        new_balance = balance - bet_amount
-        user['virtual_balance'] = new_balance
-
-        # 記錄投注
-        if 'bets' not in user:
-            user['bets'] = []
-        user['bets'].append({
-            "date": race_date,
-            "race": race_no,
-            "horse": horse_name,
-            "amount": bet_amount,
-            "bet_type": bet_type,
-            "placed_at": datetime.now().isoformat(),
-            "result": None,
-            "payout": 0,
-            "odds": None,
-            "settled": False
-        })
-
-        # 寫入檔案
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(users, f, ensure_ascii=False, indent=2)
-
-        # 驗證
-        with open(file_path, 'r', encoding='utf-8') as f:
-            verify = json.load(f)
-        actual_balance = verify[username].get('virtual_balance', None)
-
-        if actual_balance == new_balance:
-            st.session_state.bet_result = ('success', f"✅ 已投注 ${bet_amount} 喺 {horse_name}，新餘額：${new_balance:,.0f}")
-        else:
-            # 回滾
-            user['virtual_balance'] = balance
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(users, f, ensure_ascii=False, indent=2)
-            st.session_state.bet_result = ('error', f"❌ 儲存驗證失敗（預期 ${new_balance}，實際 ${actual_balance}）")
-
-    except Exception as e:
-        st.session_state.bet_result = ('error', f"❌ 投注錯誤：{str(e)}")
-
-
-def show_betting_interface(username):
-    """
-    投注模擬器界面
-    """
-    if not username:
-        st.info("請先登入")
-        return
-
-    # 顯示投注結果
-    if 'bet_result' in st.session_state:
-        msg_type, msg = st.session_state.bet_result
-        if msg_type == 'success':
-            st.success(msg)
-        else:
-            st.error(msg)
-        del st.session_state.bet_result
-
-    # 重新讀取 users.json
-    try:
-        with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
-            users = json.load(f)
-        user = users.get(username, {})
-        balance = user.get('virtual_balance', 0)
-    except Exception as e:
-        st.error(f"無法讀取 users.json：{e}")
-        return
-
-    st.subheader("💰 投注模擬器")
-    st.caption("用虛擬幣體驗投注樂趣，唔使真錢！")
-
-    # 餘額顯示
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("💎 虛擬幣結餘", f"${balance:,.0f}")
-    with col2:
-        today = datetime.now().strftime('%Y-%m-%d')
-        if user.get('last_claim_date', '') != today and CONFIG.get("virtual_coin_enabled", True):
-            if st.button("🎁 領取每日獎勵", use_container_width=True, key="claim_btn"):
-                amount, msg = claim_daily_virtual_coin(username)
-                if amount > 0:
-                    st.success(f"✅ {msg}")
-                    st.rerun()
-                else:
-                    st.info(msg)
-        else:
-            st.success("✅ 今日已領取")
-    with col3:
-        st.caption(f"📅 每日派發：${CONFIG.get('daily_virtual_coin', 1000)}")
-
-    st.divider()
-    st.subheader("📝 投注")
-
-    col_date, col_race = st.columns(2)
-    with col_date:
-        date = st.date_input("📅 選擇日期", value=pd.to_datetime("2026-09-06"), key="bet_date_input")
-    with col_race:
-        bet_race = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="bet_race_select")
-
-    if st.button("🔍 睇預測 & 投注", key="show_bet_options"):
-        date_str = date.strftime('%Y-%m-%d')
-        with st.spinner("載入預測..."):
-            result, pool = run_prediction(date_str, bet_race)
-            if result is not None and not result.empty:
-                display_df = result[['horse_name', 'draw', '預測勝率', '值博指數', '信心指數']].copy()
-                display_df.rename(columns={'horse_name': '馬名', 'draw': '檔位'}, inplace=True)
-                display_df['預測勝率'] = display_df['預測勝率'].apply(lambda x: f"{x:.2%}")
-                display_df['值博指數'] = display_df['值博指數'].apply(lambda x: f"{x:.4f}")
-                st.dataframe(display_df, use_container_width=True)
-
-                st.subheader("💸 落注")
-
-                # 重新讀取最新餘額
-                try:
-                    with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
-                        temp_users = json.load(f)
-                    current_balance = temp_users.get(username, {}).get('virtual_balance', 0)
-                except:
-                    current_balance = 0
-
-                with st.form(key="place_bet_form"):
-                    horse_options = result['horse_name'].tolist()
-                    selected_horse = st.selectbox("揀馬", horse_options, key="bet_horse_select")
-
-                    max_bet = int(current_balance) if current_balance > 0 else 1
-                    bet_amount = st.number_input(
-                        "投注金額",
-                        min_value=1,
-                        max_value=max_bet,
-                        value=min(100, max_bet),
-                        step=10,
-                        key="bet_amount_input"
-                    )
-                    st.caption(f"💰 當前餘額：${current_balance:,.0f}")
-
-                    submit_bet = st.form_submit_button("✅ 確認投注", type="primary")
-
-                    if submit_bet:
-                        if bet_amount > current_balance:
-                            st.error(f"❌ 餘額不足（餘額：${current_balance:,.0f}）")
-                        else:
-                            place_bet(username, date_str, bet_race, selected_horse, bet_amount)
-                            st.rerun()
-            else:
-                st.warning("無法載入預測數據")
-
-    st.divider()
-    st.subheader("📋 我的投注記錄")
-
-    # 重新讀取投注記錄
-    try:
-        with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
-            users = json.load(f)
-        user = users.get(username, {})
-        bets = user.get('bets', [])
-    except:
-        bets = []
-
-    if bets:
-        df_bets = pd.DataFrame(bets[-20:][::-1])
-        display_cols = ['date', 'race', 'horse', 'amount', 'result', 'payout']
-        available_cols = [col for col in display_cols if col in df_bets.columns]
-        st.dataframe(df_bets[available_cols], use_container_width=True)
-
-        settled = [b for b in bets if b.get('settled', False)]
-        wins = [b for b in settled if b.get('result') == 'win']
-        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
-        col_s1.metric("📊 總投注", len(bets))
-        col_s2.metric("✅ 已結算", len(settled))
-        col_s3.metric("🏆 命中", len(wins))
-        col_s4.metric("📈 命中率", f"{len(wins)/len(settled)*100:.1f}%" if settled else "0%")
-    else:
-        st.info("📭 尚未有任何投注記錄")
-
-
-def settle_bets(username, race_date, race_no, results_df):
-    """
-    結算投注：如果投注馬跑第一，加錢
-    """
-    file_path = USER_DATA_FILE
-
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            users = json.load(f)
-
-        if username not in users:
-            return
-
-        user = users[username]
-        bets = user.get('bets', [])
-        updated = False
-
-        for bet in bets:
-            if bet.get('settled', False):
-                continue
-            if bet.get('date') != race_date or bet.get('race') != race_no:
-                continue
-
-            horse = bet.get('horse')
-
-            matched = results_df[
-                (results_df['race_date'].dt.strftime('%Y-%m-%d') == race_date) &
-                (results_df['race_no'] == race_no) &
-                (results_df['horse_name'] == horse)
-            ]
-
-            if not matched.empty:
-                pos = matched.iloc[0]['finish_position']
-                is_win = (pos == 1)
-                bet['result'] = 'win' if is_win else 'lose'
-                bet['settled'] = True
-
-                if is_win:
-                    odds = matched.iloc[0].get('win_odds', 4.0)
-                    if pd.isna(odds) or odds <= 0:
-                        odds = 4.0
-                    bet['odds'] = float(odds)
-                    payout = bet['amount'] * odds
-                    bet['payout'] = payout
-                    user['virtual_balance'] = user.get('virtual_balance', 0) + payout
-                    updated = True
-
-        if updated:
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(users, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print(f"結算錯誤：{e}")
 
 def adjust_model_weights():
     acc = load_accuracy()
@@ -1080,7 +979,6 @@ def run_prediction(date_str, race_no):
     filtered = df_date[df_date['race_no'] == race_no].copy()
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
-    # 自動偵測賠率欄位
     odds_col = None
     for col in ['win_odds', '賠率', '獨贏賠率', 'odds', 'WinOdds', 'Odds']:
         if col in filtered.columns:
@@ -1105,7 +1003,6 @@ def run_prediction(date_str, race_no):
     result_df = result_df.sort_values('預測勝率', ascending=False)
     result_df['horse_name'] = result_df['horse_name'].fillna('未知').astype(str)
 
-    # 儲存 AI 預測
     ai_file = "ai_predictions.json"
     ai_data = {}
     if os.path.exists(ai_file):
@@ -1197,75 +1094,6 @@ def get_user_stats(username):
         'group': user.get('group', 'free'),
         'plan': user.get('plan', None)
     }
-
-# ============================================================
-# 投注模擬器
-# ============================================================
-def place_bet(username, race_date, race_no, horse_name, bet_amount, bet_type="win"):
-    """
-    投注：扣錢並寫入 users.json，立即驗證
-    """
-    import os
-    file_path = USER_DATA_FILE  # 即 'users.json'
-
-    try:
-        # 1. 讀取現有用戶數據
-        with open(file_path, 'r', encoding='utf-8') as f:
-            users = json.load(f)
-
-        if username not in users:
-            return False, "用戶不存在"
-
-        user = users[username]
-        balance = user.get('virtual_balance', 0)
-
-        if bet_amount <= 0:
-            return False, "投注金額必須大於 0"
-        if bet_amount > balance:
-            return False, f"餘額不足（餘額：${balance}）"
-
-        # 2. 扣錢
-        new_balance = balance - bet_amount
-        user['virtual_balance'] = new_balance
-
-        # 3. 記錄投注
-        if 'bets' not in user:
-            user['bets'] = []
-        user['bets'].append({
-            "date": race_date,
-            "race": race_no,
-            "horse": horse_name,
-            "amount": bet_amount,
-            "bet_type": bet_type,
-            "placed_at": datetime.now().isoformat(),
-            "result": None,
-            "payout": 0,
-            "odds": None,
-            "settled": False
-        })
-
-        # 4. 寫入檔案
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(users, f, ensure_ascii=False, indent=2)
-            f.flush()
-
-        # 5. 立即驗證寫入是否成功
-        with open(file_path, 'r', encoding='utf-8') as f:
-            verify = json.load(f)
-
-        actual_balance = verify[username].get('virtual_balance', None)
-
-        if actual_balance == new_balance:
-            return True, f"✅ 已投注 ${bet_amount} 喺 {horse_name}，新餘額：${new_balance:,.0f}"
-        else:
-            # 驗證失敗，回滾
-            user['virtual_balance'] = balance
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(users, f, ensure_ascii=False, indent=2)
-            return False, f"❌ 儲存驗證失敗（預期 ${new_balance}，實際 ${actual_balance}）"
-
-    except Exception as e:
-        return False, f"❌ 投注錯誤：{str(e)}"
 
 # ============================================================
 # 排行榜
@@ -1402,7 +1230,6 @@ def show_user_dashboard(username):
         if st.button("🚀 去預測", use_container_width=True, key="quick_predict"):
             st.session_state.page = "預測"
             st.rerun()
-
 
 # ============================================================
 # 登入/註冊
@@ -1728,7 +1555,7 @@ def admin_auto_maintenance():
             results.append("⏰ 目前沒有過期會員")
         progress_bar.progress(60)
         status_text.text("📝 檢查系統檔案中...")
-        files_to_check = ['users.json', 'system_config.json', 'accuracy.json', 'race_results_clean.csv']
+        files_to_check = ['users.json', 'system_config.json', 'accuracy.json', 'race_results_clean.csv', 'bets.json']
         file_status = [f"{'✅' if os.path.exists(f) else '❌'} {f}" for f in files_to_check]
         results.append(f"📝 檔案檢查：{' | '.join(file_status)}")
         progress_bar.progress(80)
@@ -1736,7 +1563,7 @@ def admin_auto_maintenance():
         try:
             backup_data = {"users": load_users(), "accuracy": load_accuracy(),
                            "finance": load_finance(), "payment_proofs": load_payment_proofs(),
-                           "backup_time": datetime.now().isoformat()}
+                           "bets": load_bets(), "backup_time": datetime.now().isoformat()}
             backup_json = json.dumps(backup_data, ensure_ascii=False, indent=2)
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             backup_filename = f"backup_{timestamp}.json"
@@ -1948,7 +1775,6 @@ def admin_user_management():
                                             index=['free','paid','VIP','super_admin'].index(user.get('group','free')),
                                             key="edit_group")
                     new_is_paid = st.checkbox("付費狀態", value=user.get('is_paid', False), key="edit_is_paid")
-                    # 🔥 修正：確保 default_expiry 係 datetime.date
                     current_expiry = user.get('expiry_date', None)
                     if current_expiry:
                         try:
@@ -1993,7 +1819,6 @@ def admin_user_management():
                     users[username]['is_paid'] = new_is_paid
                     users[username]['level'] = new_level
                     users[username]['exp'] = new_exp
-                    # 🔥 確保 new_expiry 有 strftime 方法
                     try:
                         users[username]['expiry_date'] = new_expiry.strftime('%Y-%m-%d %H:%M:%S')
                     except:
@@ -2092,7 +1917,7 @@ def admin_analytics():
             st.plotly_chart(fig, use_container_width=True)
 
 # ============================================================
-# 後台：馬匹/騎師/練馬師排行榜
+# 後台：排行榜
 # ============================================================
 def admin_horse_ranking():
     st.subheader("🏇 馬匹勝率排行榜")
@@ -2100,7 +1925,7 @@ def admin_horse_ranking():
     records = acc.get('records', [])
     valid_records = [r for r in records if r.get('is_hit') is not None]
     if not valid_records:
-        st.info("暫時未有足夠數據（最少需要 1 場已比對嘅預測記錄）")
+        st.info("暫時未有足夠數據")
         return
     horse_stats = {}
     for rec in valid_records:
@@ -2120,12 +1945,10 @@ def admin_horse_ranking():
 
 def admin_jockey_ranking():
     st.subheader("👨‍🏫 騎師勝率排行榜")
-    st.info("💡 騎師數據需要從排位表檔案提取，建議喺預測時記錄騎師名稱")
     st.info("暫時未有足夠數據")
 
 def admin_trainer_ranking():
     st.subheader("👨‍🏫 練馬師勝率排行榜")
-    st.info("💡 練馬師數據需要從排位表檔案提取")
     st.info("暫時未有足夠數據")
 
 def admin_course_analysis():
@@ -2301,7 +2124,7 @@ def admin_payment_review():
 # ============================================================
 def admin_monitoring():
     st.subheader("📡 系統監控")
-    files = ['ALL_DATA_MERGED.csv', 'HKCJ_FULL_YEAR_DATA.csv', 'hk_racing_model.pkl', 'hk_catboost_model.cbm']
+    files = ['ALL_DATA_MERGED.csv', 'HKCJ_FULL_YEAR_DATA.csv', 'hk_racing_model.pkl', 'hk_catboost_model.cbm', 'bets.json']
     for f in files:
         if os.path.exists(f):
             size = os.path.getsize(f)/1024
@@ -2386,7 +2209,8 @@ def admin_user_monitor():
     with col3:
         action_options = {
             "全部動作": None, "🔑 登入": "login", "🔮 預測": "predict",
-            "💳 付款申請": "payment_submit", "✏️ 修改資料": "profile_update"
+            "💳 付款申請": "payment_submit", "✏️ 修改資料": "profile_update",
+            "💰 投注": "bet"
         }
         selected_action_label = st.selectbox("🎯 篩選動作", list(action_options.keys()), key="monitor_action")
         selected_action = action_options[selected_action_label]
@@ -2411,7 +2235,8 @@ def admin_user_monitor():
     col_s4.metric("🔮 預測次數", len(df[df['action'] == 'predict']))
 
     action_names = {'login': '🔑 登入', 'predict': '🔮 預測',
-                    'payment_submit': '💳 付款申請', 'profile_update': '✏️ 修改資料'}
+                    'payment_submit': '💳 付款申請', 'profile_update': '✏️ 修改資料',
+                    'bet': '💰 投注', 'logout': '🚪 登出'}
 
     st.markdown("---")
     st.subheader("📈 動作分佈")
@@ -2437,11 +2262,9 @@ def admin_user_monitor():
 
     csv = display_df.to_csv(index=False, encoding='utf-8-sig')
     st.download_button(
-        label="📥 下載活動記錄 CSV",
-        data=csv,
+        label="📥 下載活動記錄 CSV", data=csv,
         file_name=f"user_monitor_{datetime.now().strftime('%Y%m%d')}.csv",
-        mime="text/csv",
-        key="download_user_monitor"
+        mime="text/csv", key="download_user_monitor"
     )
 
 # ============================================================
@@ -2628,7 +2451,6 @@ def main():
             with st.popover("👤 個人中心", use_container_width=True):
                 st.markdown(f"**👤 {st.session_state.username}**")
                 st.divider()
-                # 修改密碼
                 with st.form("change_password_form_header"):
                     st.markdown("#### 🔑 修改密碼")
                     old_pw = st.text_input("當前密碼", type="password", key="hdr_old_pw")
@@ -2650,7 +2472,6 @@ def main():
                             else:
                                 st.error("❌ 當前密碼錯誤")
                 st.divider()
-                # 查看預測紀錄
                 st.markdown("#### 📊 我的預測紀錄")
                 users = load_users()
                 user_data = users.get(st.session_state.username, {})
@@ -2846,9 +2667,7 @@ def main():
                 st.session_state.show_leaderboard = not st.session_state.get('show_leaderboard', False)
                 st.session_state.show_bet = False
         with col_v3:
-            users = load_users()
-            user_data = users.get(st.session_state.username, {})
-            balance = user_data.get('virtual_balance', 0)
+            balance = get_user_real_balance(st.session_state.username)
             st.info(f"💎 你嘅虛擬幣結餘：**${balance:,.0f}**")
         if st.session_state.get('show_bet', False):
             show_betting_interface(st.session_state.username)
@@ -2911,7 +2730,7 @@ def main():
     with col_f1:
         st.caption(f"🕐 最後更新：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     with col_f2:
-        st.caption("🔐 數據來源：HKJC | 系統版本：v15.0")
+        st.caption("🔐 數據來源：HKJC | 系統版本：v16.0")
     with col_f3:
         st.caption("💬 Telegram：@bryhjdjbrbxibvrjskofndhiebdpaq")
 
