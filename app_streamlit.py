@@ -589,7 +589,27 @@ def show_betting_interface(username):
 
     balance = get_user_real_balance(username)
 
-    st.subheader("💰 投注模擬器")
+    st.subheader("💰 投注模擬器")    
+    # 🔥 診斷：測試寫入權限
+    with st.expander("🔧 系統診斷（點擊展開）", expanded=False):
+        col_d1, col_d2 = st.columns(2)
+        with col_d1:
+            if st.button("🧪 測試寫入 bets.json", key="test_write_bets"):
+                try:
+                    test_data = {"bets": [], "test": True}
+                    with open(BETS_FILE, 'w', encoding='utf-8') as f:
+                        json.dump(test_data, f, ensure_ascii=False, indent=2)
+                    st.success(f"✅ 成功寫入 {BETS_FILE}")
+                    if os.path.exists(BETS_FILE):
+                        st.info(f"📂 檔案大小：{os.path.getsize(BETS_FILE)} bytes")
+                except Exception as e:
+                    st.error(f"❌ 寫入失敗：{e}")
+        with col_d2:
+            if st.button("📂 檢查檔案狀態", key="check_files"):
+                st.write(f"bets.json 存在：{os.path.exists(BETS_FILE)}")
+                st.write(f"users.json 存在：{os.path.exists(USER_DATA_FILE)}")
+                st.write(f"當前目錄：{os.getcwd()}")
+                st.write(f"目錄可寫：{os.access('.', os.W_OK)}")
     st.caption("用虛擬幣體驗投注樂趣，唔使真錢！")
 
     col1, col2, col3 = st.columns(3)
