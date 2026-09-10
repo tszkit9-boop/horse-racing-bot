@@ -2492,7 +2492,7 @@ def main():
         admin_page()
         return
 
-    col1, col2, col3 = st.columns([5, 1, 1])
+    col1, col2, col3, col4 = st.columns([5, 1, 1, 1])
     with col1:
         st.title("🏇 賽馬預測系統")
         st.markdown("AI 驅動・即時預測・彩池推薦")
@@ -2504,6 +2504,46 @@ def main():
                 st.session_state.admin_authenticated = False
                 st.rerun()
     with col3:
+        if st.session_state.get('logged_in', False):
+            with st.popover("👤 個人中心", use_container_width=True):
+                st.markdown(f"**👤 {st.session_state.username}**")
+                st.divider()
+                # 修改密碼
+                with st.form("change_password_form_header"):
+                    st.markdown("#### 🔑 修改密碼")
+                    old_pw = st.text_input("當前密碼", type="password", key="hdr_old_pw")
+                    new_pw = st.text_input("新密碼", type="password", key="hdr_new_pw")
+                    confirm_pw = st.text_input("確認新密碼", type="password", key="hdr_confirm_pw")
+                    submitted = st.form_submit_button("更新密碼", use_container_width=True)
+                    if submitted:
+                        if not old_pw or not new_pw or not confirm_pw:
+                            st.error("請填寫所有欄位")
+                        elif new_pw != confirm_pw:
+                            st.error("新密碼與確認密碼不一致")
+                        else:
+                            users = load_users()
+                            if st.session_state.username in users and users[st.session_state.username].get('password') == old_pw:
+                                users[st.session_state.username]['password'] = new_pw
+                                save_users(users)
+                                log_user_activity(st.session_state.username, 'profile_update', '修改密碼')
+                                st.success("✅ 密碼已更新")
+                            else:
+                                st.error("❌ 當前密碼錯誤")
+                st.divider()
+                # 查看預測紀錄
+                st.markdown("#### 📊 我的預測紀錄")
+                users = load_users()
+                user_data = users.get(st.session_state.username, {})
+                history = user_data.get('history', [])
+                if history:
+                    df_history = pd.DataFrame(history[-10:][::-1])
+                    display_cols = ['date', 'race', 'horse', 'is_hit']
+                    available_cols = [c for c in display_cols if c in df_history.columns]
+                    st.dataframe(df_history[available_cols], use_container_width=True, hide_index=True)
+                    st.caption(f"共 {len(history)} 筆預測紀錄（只顯示最近 10 筆）")
+                else:
+                    st.info("暫時未有預測紀錄")
+    with col4:
         if st.session_state.get('logged_in', False):
             if st.button("🚪 登出", use_container_width=True, key="logout_main"):
                 log_user_activity(st.session_state.username, 'logout', '用戶登出')
