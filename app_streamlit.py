@@ -1530,7 +1530,7 @@ def admin_auto_maintenance():
     st.subheader("🤖 自動維護")
     st.info("一鍵執行所有維護任務")
     tasks = ["🔄 比對賽果 + 更新統計", "⚖️ 調整模型權重", "⏰ 檢查並終止過期會員",
-             "📊 同步用戶數據", "📝 檢查系統檔案狀態", "📥 自動備份所有數據"]
+             "📝 檢查系統檔案狀態", "📥 自動備份所有數據"]
     for task in tasks:
         st.write(f"• {task}")
     st.divider()
@@ -1539,10 +1539,14 @@ def admin_auto_maintenance():
         results = []
         progress_bar = st.progress(0)
         status_text = st.empty()
+
+        # 1. 比對賽果
         status_text.text("🔄 比對賽果中...")
         updated, msg = update_accuracy_with_results()
         results.append(f"🔄 比對賽果：{msg}")
         progress_bar.progress(20)
+
+        # 2. 調整權重
         status_text.text("⚖️ 調整權重中...")
         try:
             weight_result = adjust_model_weights()
@@ -1550,6 +1554,8 @@ def admin_auto_maintenance():
         except Exception as e:
             results.append(f"⚖️ 調整權重：失敗 - {str(e)}")
         progress_bar.progress(40)
+
+        # 3. 檢查過期會員
         status_text.text("⏰ 檢查過期會員中...")
         users = load_users()
         today = datetime.now()
@@ -1571,28 +1577,41 @@ def admin_auto_maintenance():
         else:
             results.append("⏰ 目前沒有過期會員")
         progress_bar.progress(60)
+
+        # 4. 檢查系統檔案
         status_text.text("📝 檢查系統檔案中...")
-        files_to_check = ['users.json', 'system_config.json', 'accuracy.json', 'race_results_clean.csv', 'bets.json']
+        files_to_check = ['users.json', 'system_config.json', 'accuracy.json', 'race_results_clean.csv']
         file_status = [f"{'✅' if os.path.exists(f) else '❌'} {f}" for f in files_to_check]
         results.append(f"📝 檔案檢查：{' | '.join(file_status)}")
         progress_bar.progress(80)
+
+        # 5. 自動備份
         status_text.text("📥 自動備份中...")
         try:
-            backup_data = {"users": load_users(), "accuracy": load_accuracy(),
-                           "finance": load_finance(), "payment_proofs": load_payment_proofs(),
-                           "backup_time": datetime.now().isoformat()}
+            backup_data = {
+                "users": load_users(),
+                "accuracy": load_accuracy(),
+                "finance": load_finance(),
+                "payment_proofs": load_payment_proofs(),
+                "backup_time": datetime.now().isoformat()
+            }
             backup_json = json.dumps(backup_data, ensure_ascii=False, indent=2)
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             backup_filename = f"backup_{timestamp}.json"
             with open(backup_filename, 'w', encoding='utf-8') as f:
                 f.write(backup_json)
-            st.download_button(label=f"📥 下載備份 ({timestamp})", data=backup_json,
-                              file_name=backup_filename, mime="application/json",
-                              key=f"auto_backup_{timestamp}")
+            st.download_button(
+                label=f"📥 下載備份 ({timestamp})",
+                data=backup_json,
+                file_name=backup_filename,
+                mime="application/json",
+                key=f"auto_backup_{timestamp}"
+            )
             results.append(f"📥 自動備份：✅ 備份完成")
         except Exception as e:
             results.append(f"📥 自動備份：❌ 失敗 - {str(e)}")
         progress_bar.progress(100)
+
         status_text.text("✅ 所有維護任務已完成！")
         st.success("✅ 自動維護完成！")
         st.divider()
@@ -1603,6 +1622,7 @@ def admin_auto_maintenance():
     st.divider()
     st.subheader("⚡ 單獨執行")
 
+    # 顯示操作結果
     if 'operation_result' in st.session_state:
         msg_type, msg = st.session_state.operation_result
         if msg_type == 'success':
@@ -1613,22 +1633,33 @@ def admin_auto_maintenance():
             st.info(msg)
         del st.session_state.operation_result
 
+    # 🔥 確保呢行存在
+    col1, col2, col3, col4 = st.columns(4)
+
     with col1:
         if st.button("🔄 比對賽果", use_container_width=True, key="btn_compare"):
             try:
                 updated, msg = update_accuracy_with_results()
-                st.session_state.operation_result = ('success' if updated > 0 else 'info', f"{'✅' if updated > 0 else 'ℹ️'} {msg}")
+                st.session_state.operation_result = (
+                    'success' if updated > 0 else 'info',
+                    f"{'✅' if updated > 0 else 'ℹ️'} {msg}"
+                )
             except Exception as e:
                 st.session_state.operation_result = ('error', f"❌ 比對賽果失敗：{str(e)}")
             st.rerun()
+
     with col2:
         if st.button("⚖️ 調整權重", use_container_width=True, key="btn_adjust_weights"):
             try:
                 result = adjust_model_weights()
-                st.session_state.operation_result = ('success', f"✅ XGB={result['xgb_weight']}, Cat={result['cat_weight']}")
+                st.session_state.operation_result = (
+                    'success',
+                    f"✅ XGB={result['xgb_weight']}, Cat={result['cat_weight']}"
+                )
             except Exception as e:
                 st.session_state.operation_result = ('error', f"❌ 調整權重失敗：{str(e)}")
             st.rerun()
+
     with col3:
         if st.button("⏰ 終止過期會員", use_container_width=True, key="btn_expire"):
             try:
@@ -1654,6 +1685,7 @@ def admin_auto_maintenance():
             except Exception as e:
                 st.session_state.operation_result = ('error', f"❌ 失敗：{str(e)}")
             st.rerun()
+
     with col4:
         if st.button("🎯 更新 AI 命中率", use_container_width=True, key="btn_update_ai"):
             try:
