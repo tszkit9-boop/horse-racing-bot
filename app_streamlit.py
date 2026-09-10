@@ -669,7 +669,6 @@ def show_betting_interface(username):
         st.info("請先登入")
         return
 
-    # 顯示投注結果（如果有）
     if 'bet_result' in st.session_state:
         msg_type, msg = st.session_state.bet_result
         if msg_type == 'success':
@@ -678,12 +677,12 @@ def show_betting_interface(username):
             st.error(msg)
         del st.session_state.bet_result
 
-    # 每次重新讀取 users.json，確保餘額係最新
     try:
         with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
             users = json.load(f)
         user = users.get(username, {})
         balance = user.get('virtual_balance', 0)
+        st.write(f"🔍 [DEBUG] show_betting_interface 讀取餘額：${balance}")
     except Exception as e:
         st.error(f"無法讀取 users.json：{e}")
         return
@@ -691,7 +690,6 @@ def show_betting_interface(username):
     st.subheader("💰 投注模擬器")
     st.caption("用虛擬幣體驗投注樂趣，唔使真錢！")
 
-    # ---------- 餘額顯示 ----------
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("💎 虛擬幣結餘", f"${balance:,.0f}")
@@ -724,20 +722,17 @@ def show_betting_interface(username):
         with st.spinner("載入預測..."):
             result, pool = run_prediction(date_str, bet_race)
             if result is not None and not result.empty:
-                # 顯示預測表格
                 display_df = result[['horse_name', 'draw', '預測勝率', '值博指數', '信心指數']].copy()
                 display_df.rename(columns={'horse_name': '馬名', 'draw': '檔位'}, inplace=True)
                 display_df['預測勝率'] = display_df['預測勝率'].apply(lambda x: f"{x:.2%}")
                 display_df['值博指數'] = display_df['值博指數'].apply(lambda x: f"{x:.4f}")
                 st.dataframe(display_df, use_container_width=True)
 
-                # 投注表單
                 st.subheader("💸 落注")
                 with st.form(key="place_bet_form"):
                     horse_options = result['horse_name'].tolist()
                     selected_horse = st.selectbox("揀馬", horse_options, key="bet_horse_select")
 
-                    # 重新讀取最新餘額
                     try:
                         with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
                             temp_users = json.load(f)
@@ -759,10 +754,12 @@ def show_betting_interface(username):
                     submit_bet = st.form_submit_button("✅ 確認投注", type="primary")
 
                     if submit_bet:
+                        st.write(f"🔍 [DEBUG] 表單已提交！bet_amount={bet_amount}, current_balance={current_balance}")
                         if bet_amount > current_balance:
                             st.error(f"❌ 餘額不足（餘額：${current_balance:,.0f}）")
                         else:
                             success, msg = place_bet(username, date_str, bet_race, selected_horse, bet_amount)
+                            st.write(f"🔍 [DEBUG] place_bet 回傳：success={success}, msg={msg}")
                             if success:
                                 st.session_state.bet_result = ('success', msg)
                             else:
@@ -773,8 +770,6 @@ def show_betting_interface(username):
 
     st.divider()
     st.subheader("📋 我的投注記錄")
-
-    # 重新讀取投注記錄
     try:
         with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
             users = json.load(f)
@@ -798,7 +793,6 @@ def show_betting_interface(username):
         col_s4.metric("📈 命中率", f"{len(wins)/len(settled)*100:.1f}%" if settled else "0%")
     else:
         st.info("📭 尚未有任何投注記錄")
-
 
 def settle_bets(username, race_date, race_no, results_df):
     """
