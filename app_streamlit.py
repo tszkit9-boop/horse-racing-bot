@@ -1148,53 +1148,183 @@ def generate_pool_recommendations(df):
     return rec
 
 def run_prediction(date_str, race_no):
-    if not os.path.exists("racecard_uploaded.csv"):
-        st.error("❌ 找不到 racecard_uploaded.csv"); return None, None
-    try: df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
-    except Exception as e: st.error(f"❌ 讀取失敗：{e}"); return None, None
-    rename_map = {'馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no', '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer', '負磅': 'weight', '馬號': 'horse_no', '賠率': 'win_odds', '獨贏賠率': 'win_odds', 'Odds': 'win_odds'}
+    import os
+    import pandas as pd
+    import numpy as np
+    import json
+    import pickle
+    from datetime import datetime
+    from catboost import CatBoostClassifier
+
+    # 優先讀取有統計特徵嘅檔案，冇就用原本嘅
+    if os.path.exists("racecard_with_stats.csv"):
+        data_file = "racecard_with_stats.csv"
+    elif os.path.exists("racecard_uploaded.csv"):
+        data_file = "racecard_uploaded.csv"
+    else:
+        st.error("❌ 找不到排位表檔案")
+        return None, None
+
+    try:
+        df = pd.read_csv(data_file, encoding='utf-8-sig')
+    except Exception as e:
+        st.error(f"❌ 讀取失敗：{e}")
+        return None, None
+
+    # 標準化欄位名
+    rename_map = {
+        '馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
+        '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
+        '負磅': 'weight', '馬號': 'horse_no', '賠率': 'win_odds',
+        '獨贏賠率': 'win_odds', 'Odds': 'win_odds'
+    }
     for old, new in rename_map.items():
-        if old in df.columns and old != new: df.rename(columns={old: new}, inplace=True)
-    if 'race_date' not in df.columns: st.error("❌ 缺少 '比賽日期'"); return None, None
+        if old in df.columns and old != new:
+            df.rename(columns={old: new}, inplace=True)
+
+    if 'race_date' not in df.columns:
+        st.error("❌ 缺少 '比賽日期' 欄位")
+        return None, None
+
     df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce')
     df = df.dropna(subset=['race_date'])
     df['race_date_str'] = df['race_date'].dt.strftime('%Y-%m-%d')
+
     available_dates = sorted(df['race_date_str'].unique())
-    if date_str not in available_dates: st.warning(f"⚠️ 改用 {available_dates[-1]}"); date_str = available_dates[-1]
+    if date_str not in available_dates:
+        st.warning(f"⚠️ 日期 {date_str} 無數據，改用 {available_dates[-1]}")
+        date_str = available_dates[-1]
+
     df_date = df[df['race_date_str'] == date_str]
     if race_no not in df_date['race_no'].unique():
         available_races = sorted(df_date['race_no'].unique())
-        if available_races: st.info(f"🔄 改用第 {available_races[0]} 場"); race_no = available_races[0]
-        else: st.error("❌ 無場次"); return None, None
+        if available_races:
+            st.info(f"🔄 場次 {race_no} 無數據，改用第 {available_races[0]} 場")
+            race_no = available_races[0]
+        else:
+            st.error("❌ 無場次")
+            return None, None
+
     filtered = df_date[df_date['race_no'] == race_no].copy()
-    st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場")
-    odds_col = None
-    for col in ['win_odds', '賠率', '獨贏賠率', 'odds', 'WinOdds', 'Odds']:
-        if col in filtered.columns: odds_col = col; break
-    if odds_col is not None: win_odds = pd.to_numeric(filtered[odds_col], errors='coerce').fillna(4.0)
-    else: st.warning("⚠️ 冇賠率欄位，用預設 4.0"); win_odds = pd.Series([4.0] * len(filtered), index=filtered.index)
-    win_odds = win_odds.replace(0, 4.0)
-    inv_odds = 1 / win_odds
-    final_pred = inv_odds / inv_odds.sum()
+    st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
+
+    # ========== 真正用模型 ==========
+    # 模型需要嘅 36 個特徵（中文名）
+    MODEL_FEATURES = [
+        'draw', 'weight', 'distance', 'Rtg.', '近3場平均名次',
+        '騎師近50場勝率', '練馬師近50場勝率', '同路程歷史勝率', '同路程歷史平均名次',
+        'win_odds', '體重變化', '騎練組合勝率', '詳細賽道歷史勝率', '詳細賽道歷史平均名次',
+        '出賽相隔日數', '賠率場次排名', '評分變化', '騎馬合作勝率', '近14日出賽次數',
+        '場地狀況勝率', '試閘歷史勝率', '父系歷史勝率', '父系同程勝率',
+        '前速指標', '後勁指標', '最近試閘名次', '最近試閘時間',
+        '騎師近5場勝率', '騎師近10場勝率', '檔位勝率', '最近傷患日數',
+        '過去30日內有傷患', '過去60日內有傷患', '過去90日內有傷患',
+        '傷患總次數', '傷患嚴重程度'
+    ]
+
+    # 建立特徵矩陣（缺嘅補 0）
+    X = pd.DataFrame()
+    for feat in MODEL_FEATURES:
+        # 嘗試直接搵
+        if feat in filtered.columns:
+            X[feat] = pd.to_numeric(filtered[feat], errors='coerce').fillna(0)
+        # 嘗試用映射
+        elif feat == 'draw' and 'draw' in filtered.columns:
+            X[feat] = pd.to_numeric(filtered['draw'], errors='coerce').fillna(0)
+        elif feat == 'weight' and 'weight' in filtered.columns:
+            X[feat] = pd.to_numeric(filtered['weight'], errors='coerce').fillna(0)
+        elif feat == 'win_odds' and 'win_odds' in filtered.columns:
+            X[feat] = pd.to_numeric(filtered['win_odds'], errors='coerce').fillna(4.0)
+        elif feat == '近3場平均名次' and 'avg_rank_last3' in filtered.columns:
+            X[feat] = pd.to_numeric(filtered['avg_rank_last3'], errors='coerce').fillna(99)
+        elif feat == '出賽相隔日數' and 'days_since_last_run' in filtered.columns:
+            X[feat] = pd.to_numeric(filtered['days_since_last_run'], errors='coerce').fillna(999)
+        elif feat == '近14日出賽次數' and 'races_last14days' in filtered.columns:
+            X[feat] = pd.to_numeric(filtered['races_last14days'], errors='coerce').fillna(0)
+        else:
+            X[feat] = 0
+
+    # 嘗試載入模型
+    model_used = False
+    try:
+        with open('hk_racing_model.pkl', 'rb') as f:
+            xgb_obj = pickle.load(f)
+            xgb_model = xgb_obj[0] if isinstance(xgb_obj, tuple) else xgb_obj
+
+        cat_model = CatBoostClassifier()
+        cat_model.load_model('hk_catboost_model.cbm')
+
+        # XGBoost 預測
+        xgb_pred = xgb_model.predict_proba(X)[:, 1]
+
+        # CatBoost 預測
+        cat_pred = cat_model.predict_proba(X)[:, 1]
+
+        # 加權融合
+        config = load_system_config()
+        xgb_w = config.get('xgb_weight', 25)
+        cat_w = config.get('cat_weight', 1)
+        final_pred = (xgb_pred * xgb_w + cat_pred * cat_w) / (xgb_w + cat_w)
+
+        model_used = True
+        st.info(f"🤖 使用 AI 模型預測（XGBoost {xgb_w} : CatBoost {cat_w}）")
+
+    except Exception as e:
+        st.warning(f"⚠️ 模型載入失敗，改用賠率估算：{e}")
+        # Fallback：賠率估算
+        odds_col = None
+        for col in ['win_odds', '賠率', '獨贏賠率', 'odds']:
+            if col in filtered.columns:
+                odds_col = col
+                break
+        if odds_col is not None:
+            win_odds = pd.to_numeric(filtered[odds_col], errors='coerce').fillna(4.0)
+        else:
+            win_odds = pd.Series([4.0] * len(filtered), index=filtered.index)
+        win_odds = win_odds.replace(0, 4.0)
+        inv_odds = 1 / win_odds
+        final_pred = inv_odds / inv_odds.sum()
+
+    # 建立結果
     result_df = filtered[['horse_name', 'draw', 'weight', 'jockey', 'trainer']].copy()
     result_df['預測勝率'] = final_pred
     result_df['值博指數'] = result_df['預測勝率'] * 10
-    result_df['信心指數'] = result_df['預測勝率'].apply(lambda x: '⭐⭐⭐ 高' if x > 0.2 else '⭐⭐ 中' if x > 0.1 else '⭐ 低')
+    result_df['信心指數'] = result_df['預測勝率'].apply(
+        lambda x: '⭐⭐⭐ 高' if x > 0.2 else '⭐⭐ 中' if x > 0.1 else '⭐ 低'
+    )
     result_df = result_df.sort_values('預測勝率', ascending=False)
     result_df['horse_name'] = result_df['horse_name'].fillna('未知').astype(str)
+
+    # 儲存預測記錄
     ai_file = "ai_predictions.json"
     ai_data = {}
     if os.path.exists(ai_file):
         try:
-            with open(ai_file, 'r', encoding='utf-8') as f: ai_data = json.load(f)
-        except: ai_data = {}
+            with open(ai_file, 'r', encoding='utf-8') as f:
+                ai_data = json.load(f)
+        except:
+            ai_data = {}
+
     key = f"{date_str}_{race_no}"
-    ai_data[key] = {"date": date_str, "race": int(race_no), "top_horse": str(result_df.iloc[0]['horse_name']), "top_prob": float(result_df.iloc[0]['預測勝率']), "all_horses": result_df['horse_name'].tolist(), "predicted_at": datetime.now().isoformat()}
+    ai_data[key] = {
+        "date": date_str,
+        "race": int(race_no),
+        "top_horse": str(result_df.iloc[0]['horse_name']),
+        "top_prob": float(result_df.iloc[0]['預測勝率']),
+        "all_horses": result_df['horse_name'].tolist(),
+        "model_used": model_used,
+        "predicted_at": datetime.now().isoformat()
+    }
     try:
-        with open(ai_file, 'w', encoding='utf-8') as f: json.dump(ai_data, f, ensure_ascii=False, indent=2)
-        st.success(f"✅ AI 預測已儲存（共 {len(ai_data)} 筆）")
-        if st.session_state.get('username'): log_user_activity(st.session_state.username, 'predict', f"{date_str} 第{race_no}場")
-    except Exception as e: st.error(f"❌ 儲存失敗：{e}")
+        with open(ai_file, 'w', encoding='utf-8') as f:
+            json.dump(ai_data, f, ensure_ascii=False, indent=2)
+        st.success(f"✅ AI 預測已儲存（共 {len(ai_data)} 筆記錄）")
+        if st.session_state.get('username'):
+            log_user_activity(st.session_state.username, 'predict', f"{date_str} 第{race_no}場")
+    except Exception as e:
+        st.error(f"❌ 儲存預測失敗：{e}")
+
+    # 彩池推薦
     full_pool_text = generate_pool_recommendations(result_df)
     config = load_system_config()
     enable_vip_content = config.get("enable_vip_content", True)
@@ -1206,14 +1336,22 @@ def run_prediction(date_str, race_no):
     is_vip = user_group in ['VIP', 'super_admin']
     if enable_vip_content and not is_vip:
         lines = full_pool_text.split('\n')
-        filtered_lines = []; skip = False
+        filtered_lines = []
+        skip = False
         for line in lines:
-            if '【三重彩' in line or '【四重彩' in line: skip = True; continue
-            if skip and line.strip() == '': skip = False; continue
-            if not skip: filtered_lines.append(line)
+            if '【三重彩' in line or '【四重彩' in line:
+                skip = True
+                continue
+            if skip and line.strip() == '':
+                skip = False
+                continue
+            if not skip:
+                filtered_lines.append(line)
         pool_text = '\n'.join(filtered_lines)
         pool_text += "\n\n🔒 三重彩 / 四重彩 為 VIP 專屬內容"
-    else: pool_text = full_pool_text
+    else:
+        pool_text = full_pool_text
+
     return result_df, pool_text
 
 def get_user_stats(username):
