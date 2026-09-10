@@ -1253,37 +1253,7 @@ def show_user_dashboard(username):
             st.session_state.page = "預測"
             st.rerun()
 
-    # 🔑 修改密碼
-    with st.expander("🔑 修改密碼", expanded=False):
-        with st.form("change_password_form"):
-            old_pw = st.text_input("當前密碼", type="password")
-            new_pw = st.text_input("新密碼", type="password")
-            confirm_pw = st.text_input("確認新密碼", type="password")
-            submitted = st.form_submit_button("更新密碼")
-            if submitted:
-                if not old_pw or not new_pw or not confirm_pw:
-                    st.error("請填寫所有欄位")
-                elif new_pw != confirm_pw:
-                    st.error("新密碼與確認密碼不一致")
-                else:
-                    users = load_users()
-                    if username in users and users[username].get('password') == old_pw:
-                        users[username]['password'] = new_pw
-                        save_users(users)
-                        log_user_activity(username, 'profile_update', '修改密碼')
-                        st.success("✅ 密碼已更新")
-                    else:
-                        st.error("❌ 當前密碼錯誤")
 
-    # 📊 查看預測紀錄
-    with st.expander("📊 我的預測紀錄", expanded=False):
-        history = user_data.get('history', [])
-        if history:
-            df_history = pd.DataFrame(history[-50:][::-1])
-            st.dataframe(df_history, use_container_width=True)
-            st.caption(f"共 {len(history)} 筆預測紀錄")
-        else:
-            st.info("暫時未有預測紀錄")
 # ============================================================
 # 登入/註冊
 # ============================================================
