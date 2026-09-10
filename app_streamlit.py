@@ -2629,7 +2629,7 @@ def admin_page():
         st.rerun()
     st.divider()
 
-    tab_functions = {
+      tab_functions = {
         "📊 儀表板": admin_dashboard,
         "👥 用戶管理": admin_user_management,
         "📊 次數管理": admin_manage_predictions,
@@ -2650,6 +2650,7 @@ def admin_page():
         "🤖 自動化": admin_automation,
         "🔐 安全": admin_security,
         "👁️ 用戶監控": admin_user_monitor,
+        "🎰 抽獎設定": admin_lottery_config,          # 🔥 加呢行
     }
     tab_names = list(tab_functions.keys())
     if is_super_admin:
