@@ -2052,24 +2052,102 @@ def admin_lottery_config():
 def admin_shop_config():
     st.subheader("🛍️ 商城設定")
     config = load_shop_config()
+
+    # ========== 全局設定 ==========
     with st.form(key="shop_global_form"):
         enabled = st.checkbox("開啟商城", value=config.get('enabled', True))
         if st.form_submit_button("💾 儲存", type="primary"):
             config['enabled'] = enabled
-            if save_shop_config(config): st.success("✅ 已儲存"); st.rerun()
+            if save_shop_config(config):
+                st.success("✅ 已儲存")
+                st.rerun()
+
     st.divider()
+
+    # ========== 商品列表（可直接編輯） ==========
+    st.markdown("### 🎁 商品列表（可直接編輯）")
+    st.caption("💡 直接喺表格入面改價錢、庫存、名稱，改完撳「💾 儲存所有變更」")
+
     items = config.get('items', [])
+
     if items:
-        df_items = pd.DataFrame(items)
-        display_cols = ['id', 'name', 'type', 'value', 'price', 'stock']
-        available_cols = [c for c in display_cols if c in df_items.columns]
-        st.dataframe(df_items[available_cols], use_container_width=True)
+        df_edit = pd.DataFrame(items)
+        display_cols = ['id', 'icon', 'name', 'type', 'value', 'price', 'stock', 'desc']
+        available_cols = [c for c in display_cols if c in df_edit.columns]
+        df_display = df_edit[available_cols].copy()
+
+        edited_df = st.data_editor(
+            df_display,
+            use_container_width=True,
+            hide_index=True,
+            num_rows="fixed",
+            column_config={
+                "id": st.column_config.NumberColumn("ID", disabled=True, width="small"),
+                "icon": st.column_config.TextColumn("圖示", width="small"),
+                "name": st.column_config.TextColumn("名稱", width="medium"),
+                "type": st.column_config.SelectboxColumn(
+                    "類型",
+                    options=["predictions", "vip_days", "lottery_draws", "title", "mystery_box"],
+                    width="medium"
+                ),
+                "value": st.column_config.TextColumn("數值", width="small"),
+                "price": st.column_config.NumberColumn("價格（幣）", min_value=1, step=100, width="small"),
+                "stock": st.column_config.NumberColumn("庫存（-1=∞）", min_value=-1, step=1, width="small"),
+                "desc": st.column_config.TextColumn("描述", width="large"),
+            },
+            key="shop_items_editor"
+        )
+
+        col_save1, col_save2 = st.columns([1, 3])
+        with col_save1:
+            if st.button("💾 儲存所有變更", type="primary", use_container_width=True, key="save_all_shop_items"):
+                new_items = []
+                for _, row in edited_df.iterrows():
+                    item = {
+                        "id": int(row.get('id', 0)),
+                        "icon": str(row.get('icon', '🎁')),
+                        "name": str(row.get('name', '')),
+                        "type": str(row.get('type', 'predictions')),
+                        "value": row.get('value', 0),
+                        "price": int(row.get('price', 1000)),
+                        "stock": int(row.get('stock', -1)),
+                        "desc": str(row.get('desc', ''))
+                    }
+                    if item['type'] in ['predictions', 'vip_days', 'lottery_draws']:
+                        try:
+                            item['value'] = int(item['value'])
+                        except:
+                            pass
+                    new_items.append(item)
+
+                config['items'] = new_items
+                if save_shop_config(config):
+                    st.success("✅ 已儲存所有商品變更！")
+                    st.rerun()
+                else:
+                    st.error("❌ 儲存失敗")
+        with col_save2:
+            st.caption("⚠️ 記得改完之後撳「💾 儲存所有變更」先生效")
+    else:
+        st.info("暫無商品")
+
+    st.divider()
+
+    # ========== 新增物品 ==========
     with st.expander("➕ 新增物品", expanded=False):
         with st.form(key="add_shop_item_form"):
             col1, col2 = st.columns(2)
             with col1:
                 item_name = st.text_input("物品名稱", key="new_shop_name")
-                item_type = st.selectbox("物品類型", ["predictions", "vip_days", "lottery_draws", "title", "mystery_box"], format_func=lambda x: {"predictions": "🎯 額外預測次數", "vip_days": "👑 VIP 天數", "lottery_draws": "🎰 額外抽獎次數", "title": "💎 特殊稱號", "mystery_box": "🎁 神秘禮盒"}.get(x, x), key="new_shop_type")
+                item_type = st.selectbox("物品類型",
+                    ["predictions", "vip_days", "lottery_draws", "title", "mystery_box"],
+                    format_func=lambda x: {
+                        "predictions": "🎯 額外預測次數",
+                        "vip_days": "👑 VIP 天數",
+                        "lottery_draws": "🎰 額外抽獎次數",
+                        "title": "💎 特殊稱號",
+                        "mystery_box": "🎁 神秘禮盒"
+                    }.get(x, x), key="new_shop_type")
                 item_value = st.text_input("物品數值", key="new_shop_value")
             with col2:
                 item_price = st.number_input("價格", min_value=1, value=1000, step=100, key="new_shop_price")
@@ -2079,45 +2157,40 @@ def admin_shop_config():
             if st.form_submit_button("✅ 新增", type="primary"):
                 if item_name:
                     if item_type in ['predictions', 'vip_days', 'lottery_draws']:
-                        try: value = int(item_value)
-                        except: st.error("數值必須係數字"); st.stop()
-                    else: value = item_value
+                        try:
+                            value = int(item_value)
+                        except:
+                            st.error("數值必須係數字")
+                            st.stop()
+                    else:
+                        value = item_value
                     new_id = max([i.get('id', 0) for i in items], default=0) + 1
-                    items.append({"id": new_id, "name": item_name, "type": item_type, "value": value, "price": item_price, "stock": item_stock, "icon": item_icon, "desc": item_desc})
+                    items.append({
+                        "id": new_id, "name": item_name, "type": item_type,
+                        "value": value, "price": item_price,
+                        "stock": item_stock, "icon": item_icon, "desc": item_desc
+                    })
                     config['items'] = items
-                    if save_shop_config(config): st.success(f"✅ 已新增"); st.rerun()
+                    if save_shop_config(config):
+                        st.success(f"✅ 已新增")
+                        st.rerun()
+
+    # ========== 刪除物品 ==========
     if items:
-        with st.expander("✏️ 編輯 / 刪除物品", expanded=False):
+        with st.expander("🗑️ 刪除物品", expanded=False):
             item_options = {f"[{i.get('id')}] {i.get('name')}": i for i in items}
-            selected_label = st.selectbox("選擇物品", list(item_options.keys()), key="edit_shop_item_select")
+            selected_label = st.selectbox("選擇物品", list(item_options.keys()), key="delete_shop_item_select")
             selected_item = item_options[selected_label]
-            col_e1, col_e2 = st.columns(2)
-            with col_e1:
-                new_price = st.number_input("新價格", min_value=1, value=int(selected_item.get('price', 1000)), key="edit_shop_price")
-                new_stock = st.number_input("新庫存", min_value=-1, value=int(selected_item.get('stock', -1)), key="edit_shop_stock")
-            with col_e2:
-                new_name = st.text_input("新名稱", value=selected_item.get('name', ''), key="edit_shop_name")
-                new_icon = st.text_input("新圖示", value=selected_item.get('icon', '🎁'), key="edit_shop_icon")
-                new_desc = st.text_input("新描述", value=selected_item.get('desc', ''), key="edit_shop_desc")
-            col_btn1, col_btn2 = st.columns(2)
-            with col_btn1:
-                if st.button("💾 儲存", use_container_width=True, key="save_shop_item_edit"):
-                    for i in items:
-                        if i.get('id') == selected_item.get('id'):
-                            i['price'] = new_price
-                            i['stock'] = new_stock
-                            i['name'] = new_name
-                            i['icon'] = new_icon
-                            i['desc'] = new_desc
-                            break
-                    config['items'] = items
-                    if save_shop_config(config): st.success("✅ 已更新"); st.rerun()
-            with col_btn2:
-                if st.button("🗑️ 刪除", use_container_width=True, key="delete_shop_item"):
-                    items = [i for i in items if i.get('id') != selected_item.get('id')]
-                    config['items'] = items
-                    if save_shop_config(config): st.success("✅ 已刪除"); st.rerun()
+            if st.button("🗑️ 確認刪除", key="delete_shop_item_btn"):
+                items = [i for i in items if i.get('id') != selected_item.get('id')]
+                config['items'] = items
+                if save_shop_config(config):
+                    st.success("✅ 已刪除")
+                    st.rerun()
+
     st.divider()
+
+    # ========== 銷售記錄 ==========
     st.markdown("### 📋 銷售記錄")
     purchases = load_shop_purchases()
     all_purchases = purchases.get('purchases', [])
@@ -2126,6 +2199,8 @@ def admin_shop_config():
         display_cols = ['purchased_at', 'username', 'item_name', 'price']
         available_cols = [c for c in display_cols if c in df_all.columns]
         st.dataframe(df_all[available_cols], use_container_width=True)
+    else:
+        st.info("暫無銷售記錄")
 
 def admin_system_settings():
     users = load_users()
