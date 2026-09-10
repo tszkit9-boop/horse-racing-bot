@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版 (v18.2)
-包含每日抽獎、虛擬商城、管理員贈送虛擬幣
+賽馬預測系統 - 完整版 (v18.3)
+包含每日抽獎、虛擬商城、管理員贈送虛擬幣、抽獎自動生成優惠碼
 """
 
 import streamlit as st
@@ -12,6 +12,7 @@ import pickle
 import os
 import json
 import re
+import string
 from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
@@ -63,11 +64,9 @@ def load_system_config():
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                 config = json.load(f)
             for key, value in DEFAULT_CONFIG.items():
-                if key not in config:
-                    config[key] = value
+                if key not in config: config[key] = value
             return config
-        except:
-            return DEFAULT_CONFIG.copy()
+        except: return DEFAULT_CONFIG.copy()
     else:
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
             json.dump(DEFAULT_CONFIG, f, ensure_ascii=False, indent=2)
@@ -78,20 +77,17 @@ def save_system_config(config):
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
         return True
-    except:
-        return False
+    except: return False
 
 CONFIG = load_system_config()
 
 def load_json(file_path, default=None):
-    if default is None:
-        default = {}
+    if default is None: default = {}
     if os.path.exists(file_path):
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except:
-            return default
+        except: return default
     return default
 
 def save_json(file_path, data):
@@ -99,8 +95,7 @@ def save_json(file_path, data):
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         return True
-    except:
-        return False
+    except: return False
 
 USER_DATA_FILE = 'users.json'
 FINANCE_FILE = 'finance.json'
@@ -116,10 +111,8 @@ LOTTERY_RECORDS_FILE = 'lottery_records.json'
 SHOP_CONFIG_FILE = 'shop_config.json'
 SHOP_PURCHASES_FILE = 'shop_purchases.json'
 
-if not os.path.exists('payment_proofs'):
-    os.makedirs('payment_proofs')
-if 'payment_requests' not in st.session_state:
-    st.session_state.payment_requests = {"requests": []}
+if not os.path.exists('payment_proofs'): os.makedirs('payment_proofs')
+if 'payment_requests' not in st.session_state: st.session_state.payment_requests = {"requests": []}
 
 # ============================================================
 # 用戶活動日誌
@@ -157,7 +150,8 @@ DEFAULT_LOTTERY_CONFIG = {
         {"id": 3, "name": "💰 1000 虛擬幣", "type": "virtual_coin", "value": 1000, "weight": 5, "stock": -1, "icon": "💎"},
         {"id": 4, "name": "👑 VIP 1 天", "type": "vip_days", "value": 1, "weight": 10, "stock": -1, "icon": "👑"},
         {"id": 5, "name": "🎯 免費預測 3 次", "type": "free_predictions", "value": 3, "weight": 20, "stock": -1, "icon": "🎯"},
-        {"id": 6, "name": "🎁 優惠碼：SAVE20", "type": "custom", "value": "SAVE20", "weight": 10, "stock": -1, "icon": "🎁"},
+        {"id": 6, "name": "🎟️ 20% 折扣優惠碼", "type": "promo_code", "value": "auto", "weight": 10, "stock": -1, "icon": "🎟️",
+         "discount_type": "percentage", "discount_value": 20, "valid_days": 7},
         {"id": 7, "name": "😢 謝謝參與", "type": "nothing", "value": 0, "weight": 10, "stock": -1, "icon": "😢"}
     ]
 }
@@ -214,6 +208,14 @@ def user_can_draw_today(username):
     if drawn >= max_draws: return False, f"今日已抽 {drawn}/{max_draws} 次"
     return True, f"今日可抽 {max_draws - drawn} 次"
 
+def generate_promo_code_for_prize():
+    """生成獨特嘅優惠碼"""
+    promos = load_promos()
+    code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
+    while code in promos:
+        code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
+    return code
+
 def apply_prize_to_user(username, prize):
     users = load_users()
     if username not in users: return False, "用戶不存在"
@@ -241,6 +243,27 @@ def apply_prize_to_user(username, prize):
         if users[username].get('predictions_limit', 0) != -1:
             users[username]['predictions_limit'] = users[username].get('predictions_limit', 0) + prize_value
         message = f"獲得 {prize_value} 次免費預測！"
+    elif prize_type == 'promo_code':
+        # 🔥 自動生成優惠碼
+        discount_type = prize.get('discount_type', 'percentage')
+        discount_value = prize.get('discount_value', 20)
+        valid_days = prize.get('valid_days', 7)
+        code = generate_promo_code_for_prize()
+        promos = load_promos()
+        expiry = (datetime.now() + timedelta(days=valid_days)).isoformat()
+        promos[code] = {
+            "used": False, "expiry": expiry,
+            "created_at": datetime.now().isoformat(),
+            "discount_type": discount_type,
+            "discount_value": discount_value,
+            "used_by": None,
+            "source": f"抽獎獲得（{username}）"
+        }
+        save_promos(promos)
+        if discount_type == 'percentage': discount_text = f"{discount_value}% 折扣"
+        elif discount_type == 'fixed': discount_text = f"減 ${discount_value}"
+        else: discount_text = "全免"
+        message = f"🎟️ 獲得優惠碼：`{code}`（{discount_text}，{valid_days} 天內有效）"
     elif prize_type == 'custom': message = f"獲得：{prize_value}"
     elif prize_type == 'nothing': message = "謝謝參與！"
     save_users(users)
@@ -262,9 +285,7 @@ def draw_lottery(username):
     chosen = available[-1]
     for i, p in enumerate(available):
         cumulative += weights[i]
-        if rand <= cumulative:
-            chosen = p
-            break
+        if rand <= cumulative: chosen = p; break
     if chosen.get('stock', -1) > 0:
         for p in config['prizes']:
             if p.get('id') == chosen.get('id'):
@@ -1680,7 +1701,7 @@ def admin_promo_codes():
                 elif discount_type == 'free': discount_text = "全免"
                 else: discount_text = str(discount_value)
                 status = "✅ 已使用" if data.get('used', False) else ("🔴 已過期" if is_expired else "🟢 可使用")
-                display_data.append({"優惠碼": code, "折扣": discount_text, "狀態": status, "使用用戶": data.get('used_by', '-') or '-', "到期日": expiry_str})
+                display_data.append({"優惠碼": code, "折扣": discount_text, "狀態": status, "使用用戶": data.get('used_by', '-') or '-', "來源": data.get('source', '-'), "到期日": expiry_str})
             st.dataframe(pd.DataFrame(display_data), use_container_width=True, hide_index=True)
         else:
             st.info("暫無優惠碼")
@@ -1699,7 +1720,7 @@ def admin_promo_codes():
             if st.form_submit_button("🎁 產生優惠碼", type="primary"):
                 code = generate_promo_code().upper()
                 expiry = (datetime.now() + timedelta(days=duration)).isoformat()
-                promos[code] = {"used": False, "expiry": expiry, "created_at": datetime.now().isoformat(), "discount_type": discount_type, "discount_value": discount_value, "used_by": None}
+                promos[code] = {"used": False, "expiry": expiry, "created_at": datetime.now().isoformat(), "discount_type": discount_type, "discount_value": discount_value, "used_by": None, "source": "手動產生"}
                 save_promos(promos)
                 st.success(f"✅ 優惠碼：`{code}`")
                 st.rerun()
@@ -1878,8 +1899,36 @@ def admin_lottery_config():
             col1, col2 = st.columns(2)
             with col1:
                 prize_name = st.text_input("獎品名稱", key="new_prize_name")
-                prize_type = st.selectbox("獎品類型", ["virtual_coin", "vip_days", "free_predictions", "custom", "nothing"], format_func=lambda x: {"virtual_coin": "💰 虛擬幣", "vip_days": "👑 VIP 天數", "free_predictions": "🎯 免費預測次數", "custom": "🎁 自訂文字", "nothing": "😢 謝謝參與"}.get(x, x), key="new_prize_type")
-                prize_value = st.text_input("獎品數值", key="new_prize_value")
+                prize_type = st.selectbox("獎品類型", 
+                    ["virtual_coin", "vip_days", "free_predictions", "promo_code", "custom", "nothing"],
+                    format_func=lambda x: {
+                        "virtual_coin": "💰 虛擬幣", "vip_days": "👑 VIP 天數",
+                        "free_predictions": "🎯 免費預測次數", 
+                        "promo_code": "🎟️ 優惠碼（自動生成）",
+                        "custom": "🎁 自訂文字",
+                        "nothing": "😢 謝謝參與"
+                    }.get(x, x), key="new_prize_type")
+                
+                # 🔥 特殊處理：優惠碼設定
+                if prize_type == 'promo_code':
+                    st.markdown("**🎟️ 優惠碼設定：**")
+                    promo_discount_type = st.selectbox("折扣類型", 
+                        ["percentage", "fixed", "free"],
+                        format_func=lambda x: {"percentage": "百分比", "fixed": "固定金額", "free": "全免"}.get(x, x),
+                        key="new_prize_promo_type")
+                    if promo_discount_type == 'percentage':
+                        promo_discount_value = st.number_input("折扣百分比", min_value=1, max_value=100, value=20, key="new_prize_promo_value")
+                    elif promo_discount_type == 'fixed':
+                        promo_discount_value = st.number_input("減免金額", min_value=1, value=20, key="new_prize_promo_value")
+                    else:
+                        promo_discount_value = 0
+                    promo_valid_days = st.number_input("有效期（天）", min_value=1, value=7, key="new_prize_promo_days")
+                    prize_value = "auto"
+                else:
+                    prize_value = st.text_input("獎品數值", key="new_prize_value")
+                    promo_discount_type = None
+                    promo_discount_value = 0
+                    promo_valid_days = 0
             with col2:
                 prize_weight = st.number_input("權重", min_value=1, value=10, step=1, key="new_prize_weight")
                 prize_stock = st.number_input("庫存（-1 = 無限）", min_value=-1, value=-1, step=1, key="new_prize_stock")
@@ -1889,9 +1938,20 @@ def admin_lottery_config():
                     if prize_type in ['virtual_coin', 'vip_days', 'free_predictions']:
                         try: value = int(prize_value)
                         except: st.error("數值必須係數字"); st.stop()
+                    elif prize_type == 'promo_code':
+                        value = "auto"
                     else: value = prize_value
                     new_id = max([p.get('id', 0) for p in prizes], default=0) + 1
-                    prizes.append({"id": new_id, "name": prize_name, "type": prize_type, "value": value, "weight": prize_weight, "stock": prize_stock, "icon": prize_icon})
+                    new_prize = {
+                        "id": new_id, "name": prize_name, "type": prize_type,
+                        "value": value, "weight": prize_weight,
+                        "stock": prize_stock, "icon": prize_icon
+                    }
+                    if prize_type == 'promo_code':
+                        new_prize['discount_type'] = promo_discount_type
+                        new_prize['discount_value'] = promo_discount_value
+                        new_prize['valid_days'] = promo_valid_days
+                    prizes.append(new_prize)
                     config['prizes'] = prizes
                     if save_lottery_config(config): st.success(f"✅ 已新增"); st.rerun()
     with st.expander("✏️ 編輯 / 刪除獎品", expanded=False):
@@ -2215,7 +2275,7 @@ def main():
     else: st.info("請先登入以使用付款功能")
     st.divider()
     st.warning("⚠️ 預測僅供參考，不構成投注建議。")
-    st.caption(f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | v18.2")
+    st.caption(f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | v18.3")
 
 if __name__ == '__main__':
     main()
