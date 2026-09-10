@@ -1254,11 +1254,14 @@ def run_prediction(date_str, race_no):
         cat_model = CatBoostClassifier()
         cat_model.load_model('hk_catboost_model.cbm')
 
+        # 🔥 轉為 NumPy array，避免特徵名稱檢查
+        X_array = X.values.astype(float)
+
         # XGBoost 預測
-        xgb_pred = xgb_model.predict_proba(X)[:, 1]
+        xgb_pred = xgb_model.predict_proba(X_array)[:, 1]
 
         # CatBoost 預測
-        cat_pred = cat_model.predict_proba(X)[:, 1]
+        cat_pred = cat_model.predict_proba(X_array)[:, 1]
 
         # 加權融合
         config = load_system_config()
@@ -1267,7 +1270,7 @@ def run_prediction(date_str, race_no):
         final_pred = (xgb_pred * xgb_w + cat_pred * cat_w) / (xgb_w + cat_w)
 
         model_used = True
-        st.info(f"🤖 使用 AI 模型預測（XGBoost {xgb_w} : CatBoost {cat_w}）")
+        st.success(f"🤖 使用 AI 模型預測（XGBoost {xgb_w} : CatBoost {cat_w}）")
 
     except Exception as e:
         st.warning(f"⚠️ 模型載入失敗，改用賠率估算：{e}")
@@ -1284,7 +1287,6 @@ def run_prediction(date_str, race_no):
         win_odds = win_odds.replace(0, 4.0)
         inv_odds = 1 / win_odds
         final_pred = inv_odds / inv_odds.sum()
-
     # 建立結果
     result_df = filtered[['horse_name', 'draw', 'weight', 'jockey', 'trainer']].copy()
     result_df['預測勝率'] = final_pred
