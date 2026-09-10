@@ -2629,7 +2629,7 @@ def admin_page():
         st.rerun()
     st.divider()
 
-      tab_functions = {
+    tab_functions = {
         "📊 儀表板": admin_dashboard,
         "👥 用戶管理": admin_user_management,
         "📊 次數管理": admin_manage_predictions,
