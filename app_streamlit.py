@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版 (v18.3)
-包含每日抽獎、虛擬商城、管理員贈送虛擬幣、抽獎自動生成優惠碼
+賽馬預測系統 - 完整版 (v18.4)
+包含抽獎、商城、管理員贈送、額外抽獎次數管理
 """
 
 import streamlit as st
@@ -209,7 +209,6 @@ def user_can_draw_today(username):
     return True, f"今日可抽 {max_draws - drawn} 次"
 
 def generate_promo_code_for_prize():
-    """生成獨特嘅優惠碼"""
     promos = load_promos()
     code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
     while code in promos:
@@ -244,21 +243,13 @@ def apply_prize_to_user(username, prize):
             users[username]['predictions_limit'] = users[username].get('predictions_limit', 0) + prize_value
         message = f"獲得 {prize_value} 次免費預測！"
     elif prize_type == 'promo_code':
-        # 🔥 自動生成優惠碼
         discount_type = prize.get('discount_type', 'percentage')
         discount_value = prize.get('discount_value', 20)
         valid_days = prize.get('valid_days', 7)
         code = generate_promo_code_for_prize()
         promos = load_promos()
         expiry = (datetime.now() + timedelta(days=valid_days)).isoformat()
-        promos[code] = {
-            "used": False, "expiry": expiry,
-            "created_at": datetime.now().isoformat(),
-            "discount_type": discount_type,
-            "discount_value": discount_value,
-            "used_by": None,
-            "source": f"抽獎獲得（{username}）"
-        }
+        promos[code] = {"used": False, "expiry": expiry, "created_at": datetime.now().isoformat(), "discount_type": discount_type, "discount_value": discount_value, "used_by": None, "source": f"抽獎獲得（{username}）"}
         save_promos(promos)
         if discount_type == 'percentage': discount_text = f"{discount_value}% 折扣"
         elif discount_type == 'fixed': discount_text = f"減 ${discount_value}"
@@ -294,12 +285,7 @@ def draw_lottery(username):
         save_lottery_config(config)
     success, message = apply_prize_to_user(username, chosen)
     records = load_lottery_records()
-    records['records'].append({
-        "username": username, "draw_date": datetime.now().strftime('%Y-%m-%d'),
-        "draw_time": datetime.now().isoformat(), "prize_id": chosen.get('id'),
-        "prize_name": chosen.get('name'), "prize_type": chosen.get('type'),
-        "prize_value": chosen.get('value'), "source": "抽獎"
-    })
+    records['records'].append({"username": username, "draw_date": datetime.now().strftime('%Y-%m-%d'), "draw_time": datetime.now().isoformat(), "prize_id": chosen.get('id'), "prize_name": chosen.get('name'), "prize_type": chosen.get('type'), "prize_value": chosen.get('value'), "source": "抽獎"})
     if len(records['records']) > 5000: records['records'] = records['records'][-5000:]
     save_lottery_records(records)
     log_user_activity(username, 'lottery', f"抽中 {chosen.get('name')}")
@@ -311,12 +297,7 @@ def admin_gift_prize(admin_username, target_user, prize):
     success, message = apply_prize_to_user(target_user, prize)
     if not success: return False, message
     records = load_lottery_records()
-    records['records'].append({
-        "username": target_user, "draw_date": datetime.now().strftime('%Y-%m-%d'),
-        "draw_time": datetime.now().isoformat(), "prize_id": prize.get('id'),
-        "prize_name": prize.get('name'), "prize_type": prize.get('type'),
-        "prize_value": prize.get('value'), "source": f"管理員 {admin_username} 贈送"
-    })
+    records['records'].append({"username": target_user, "draw_date": datetime.now().strftime('%Y-%m-%d'), "draw_time": datetime.now().isoformat(), "prize_id": prize.get('id'), "prize_name": prize.get('name'), "prize_type": prize.get('type'), "prize_value": prize.get('value'), "source": f"管理員 {admin_username} 贈送"})
     save_lottery_records(records)
     log_admin_action(admin_username, f"贈送 {prize.get('name')} 給 {target_user}")
     return True, f"✅ 已贈送 {prize.get('name')} 給 {target_user}"
@@ -438,12 +419,7 @@ def purchase_item(username, item):
     if current_balance < item_price:
         return False, f"❌ 餘額不足（餘額：${current_balance:,.0f}，需要：${item_price:,.0f}）"
     purchases = load_shop_purchases()
-    purchases['purchases'].append({
-        "username": username, "item_id": item.get('id'),
-        "item_name": item.get('name'), "item_type": item.get('type'),
-        "item_value": item.get('value'), "price": item_price,
-        "purchased_at": datetime.now().isoformat()
-    })
+    purchases['purchases'].append({"username": username, "item_id": item.get('id'), "item_name": item.get('name'), "item_type": item.get('type'), "item_value": item.get('value'), "price": item_price, "purchased_at": datetime.now().isoformat()})
     if not save_shop_purchases(purchases): return False, "❌ 購買記錄儲存失敗"
     users = load_users()
     if username not in users: return False, "❌ 用戶不存在"
@@ -1355,6 +1331,7 @@ def admin_user_management():
         st.dataframe(df[available_cols], use_container_width=True)
     st.divider()
 
+    # ========== 新增用戶 ==========
     with st.expander("➕ 新增用戶", expanded=False):
         col1, col2 = st.columns(2)
         with col1:
@@ -1395,6 +1372,8 @@ def admin_user_management():
                     st.rerun()
 
     st.divider()
+
+    # ========== 刪除用戶 ==========
     st.subheader("🗑️ 刪除用戶")
     try:
         with open(user_file, 'r', encoding='utf-8') as f:
@@ -1416,6 +1395,8 @@ def admin_user_management():
                     st.rerun()
 
     st.divider()
+
+    # ========== 查看用戶視角 ==========
     st.subheader("👁️ 查看用戶視角")
     try:
         with open(user_file, 'r', encoding='utf-8') as f:
@@ -1439,6 +1420,8 @@ def admin_user_management():
                 st.info("呢個用戶暫時冇任何預測記錄")
 
     st.divider()
+
+    # ========== 編輯用戶 ==========
     with st.expander("✏️ 編輯用戶", expanded=False):
         try:
             with open(user_file, 'r', encoding='utf-8') as f:
@@ -1482,6 +1465,9 @@ def admin_user_management():
                     new_exp = st.number_input("📊 經驗值", min_value=0, value=user.get('exp', 0), step=10, key="edit_exp")
                     current_limit = user.get('predictions_limit', CONFIG.get('free_limit', 2))
                     new_limit = st.number_input("預測次數上限（-1 = 無限）", min_value=-1, value=int(current_limit), step=1, key="edit_limit")
+                    # 🔥 額外抽獎次數
+                    current_extra_draws = user.get('extra_lottery_draws', 0)
+                    new_extra_draws = st.number_input("🎰 額外抽獎次數", min_value=0, value=int(current_extra_draws), step=1, key="edit_extra_draws")
                     all_badges = ["🏆 首勝", "🔥 三連勝", "⚡ 五連勝", "💯 百場預測", "🎯 命中大師", "👥 社交達人", "💰 付費會員", "🏇 馬匹專家", "🎰 抽獎達人", "🛍️ 購物達人"]
                     current_badges = user.get('badges', [])
                     new_badges = st.multiselect("🎖️ 勳章", all_badges,
@@ -1525,6 +1511,7 @@ def admin_user_management():
                     users[username]['exp'] = new_exp
                     users[username]['badges'] = new_badges
                     users[username]['predictions_limit'] = new_limit
+                    users[username]['extra_lottery_draws'] = new_extra_draws
                     if new_password:
                         users[username]['password'] = new_password
                     try:
@@ -1539,6 +1526,60 @@ def admin_user_management():
             st.info("暫無用戶可編輯")
 
     st.divider()
+
+    # ========== 🎰 管理抽獎次數（獨立區塊） ==========
+    st.subheader("🎰 管理抽獎次數")
+    try:
+        with open(user_file, 'r', encoding='utf-8') as f:
+            users = json.load(f)
+    except:
+        users = {}
+    if users:
+        col_d1, col_d2 = st.columns(2)
+        with col_d1:
+            draw_target_user = st.selectbox("選擇用戶", list(users.keys()), key="draw_target_user")
+        with col_d2:
+            current_extra = users.get(draw_target_user, {}).get('extra_lottery_draws', 0)
+            st.metric("目前額外抽獎次數", current_extra)
+
+        col_op1, col_op2, col_op3 = st.columns(3)
+        with col_op1:
+            add_draws = st.number_input("增加次數", min_value=1, value=1, step=1, key="add_draws")
+            if st.button("➕ 增加", use_container_width=True, key="btn_add_draws"):
+                if draw_target_user in users:
+                    users[draw_target_user]['extra_lottery_draws'] = current_extra + add_draws
+                    with open(user_file, 'w', encoding='utf-8') as f:
+                        json.dump(users, f, ensure_ascii=False, indent=2)
+                    log_admin_action(st.session_state.get('admin_username', 'admin'), f"為 {draw_target_user} 增加 {add_draws} 次抽獎")
+                    st.success(f"✅ 已為 {draw_target_user} 增加 {add_draws} 次抽獎（總計：{current_extra + add_draws}）")
+                    st.rerun()
+        with col_op2:
+            reduce_draws = st.number_input("減少次數", min_value=1, value=1, step=1, key="reduce_draws")
+            if st.button("➖ 減少", use_container_width=True, key="btn_reduce_draws"):
+                if draw_target_user in users:
+                    new_val = max(0, current_extra - reduce_draws)
+                    users[draw_target_user]['extra_lottery_draws'] = new_val
+                    with open(user_file, 'w', encoding='utf-8') as f:
+                        json.dump(users, f, ensure_ascii=False, indent=2)
+                    log_admin_action(st.session_state.get('admin_username', 'admin'), f"為 {draw_target_user} 減少 {reduce_draws} 次抽獎")
+                    st.success(f"✅ 已為 {draw_target_user} 減少 {reduce_draws} 次抽獎（總計：{new_val}）")
+                    st.rerun()
+        with col_op3:
+            set_draws = st.number_input("設定為指定次數", min_value=0, value=int(current_extra), step=1, key="set_draws")
+            if st.button("✅ 設定", use_container_width=True, key="btn_set_draws"):
+                if draw_target_user in users:
+                    users[draw_target_user]['extra_lottery_draws'] = set_draws
+                    with open(user_file, 'w', encoding='utf-8') as f:
+                        json.dump(users, f, ensure_ascii=False, indent=2)
+                    log_admin_action(st.session_state.get('admin_username', 'admin'), f"將 {draw_target_user} 抽獎次數設為 {set_draws}")
+                    st.success(f"✅ 已將 {draw_target_user} 抽獎次數設為 {set_draws}")
+                    st.rerun()
+    else:
+        st.info("暫無用戶")
+
+    st.divider()
+
+    # ========== 🎁 管理員贈送虛擬幣 ==========
     st.subheader("🎁 管理員贈送虛擬幣")
     try:
         with open(user_file, 'r', encoding='utf-8') as f:
@@ -1909,7 +1950,6 @@ def admin_lottery_config():
                         "nothing": "😢 謝謝參與"
                     }.get(x, x), key="new_prize_type")
                 
-                # 🔥 特殊處理：優惠碼設定
                 if prize_type == 'promo_code':
                     st.markdown("**🎟️ 優惠碼設定：**")
                     promo_discount_type = st.selectbox("折扣類型", 
@@ -2275,7 +2315,7 @@ def main():
     else: st.info("請先登入以使用付款功能")
     st.divider()
     st.warning("⚠️ 預測僅供參考，不構成投注建議。")
-    st.caption(f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | v18.3")
+    st.caption(f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | v18.4")
 
 if __name__ == '__main__':
     main()
