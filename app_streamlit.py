@@ -313,10 +313,12 @@ def show_lottery_interface(username):
     extra = users.get(username, {}).get('extra_lottery_draws', 0)
     max_draws += extra
     drawn = get_user_draws_today(username)
+    
     col_info1, col_info2, col_info3 = st.columns(3)
     col_info1.metric("今日已抽", f"{drawn}/{max_draws}")
     col_info2.metric("狀態", "✅ 可抽獎" if can_draw else "⏰ 已抽完")
     col_info3.metric("獎品數量", len(config.get('prizes', [])))
+    
     if can_draw:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
@@ -331,7 +333,32 @@ def show_lottery_interface(username):
                         st.markdown(f"""<div style="text-align: center; padding: 20px; background: #f0fdf4; border-radius: 12px; border: 2px solid #22c55e;"><div style="font-size: 48px;">{prize.get('icon', '🎁')}</div><div style="font-size: 20px; font-weight: bold; color: #15803d; margin-top: 10px;">{prize.get('name', '')}</div></div>""", unsafe_allow_html=True)
                     st.rerun()
                 else: st.warning(message)
-    else: st.info(f"⏰ {msg}，聽日再嚟啦！")
+    else:
+        # 🔥 顯示倒數計時器
+        st.warning(f"⏰ {msg}，聽日再嚟啦！")
+        
+        # 計算距離明天 00:00 嘅時間
+        now = datetime.now()
+        tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        time_left = tomorrow - now
+        total_seconds = int(time_left.total_seconds())
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+        
+        st.markdown(f"""
+        <div style="background: linear-gradient(135deg, #1a237e, #0d47a1); border-radius: 16px; padding: 25px; text-align: center; color: white; margin: 15px 0;">
+            <div style="font-size: 14px; opacity: 0.8;">⏰ 距離下次抽獎仲有</div>
+            <div style="font-size: 42px; font-weight: bold; margin-top: 10px; letter-spacing: 2px;">
+                {hours:02d}:{minutes:02d}:{seconds:02d}
+            </div>
+            <div style="font-size: 12px; opacity: 0.7; margin-top: 8px;">每晚 00:00 自動重置抽獎機會</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if st.button("🔄 重新整理", use_container_width=True, key="refresh_countdown"):
+            st.rerun()
+    
     st.divider()
     st.subheader("🎁 獎品一覽")
     prizes = config.get('prizes', [])
