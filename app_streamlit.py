@@ -563,6 +563,9 @@ def run_prediction(date_str, race_no):
     race_df = race_df.dropna(subset=['race_date'])
     race_df['race_date_str'] = race_df['race_date'].dt.strftime('%Y-%m-%d')
 
+    # 轉換 race_no 做數字
+    race_df['race_no'] = pd.to_numeric(race_df['race_no'], errors='coerce').fillna(0).astype(int)
+
     available_dates = sorted(race_df['race_date_str'].unique())
     if not available_dates:
         st.error("❌ 無可用日期")
@@ -572,22 +575,25 @@ def run_prediction(date_str, race_no):
         st.warning(f"⚠️ {date_str} 冇數據，自動改用 {available_dates[-1]}")
         date_str = available_dates[-1]
 
+    # 確保 race_no 係數字
+    try:
+        race_no = int(race_no)
+    except Exception:
+        race_no = 1
+
     df_date = race_df[race_df['race_date_str'] == date_str]
     if 'race_no' not in df_date.columns:
         st.error("❌ 缺少 '場次'")
         return None, None
 
-    if race_no not in df_date['race_no'].unique():
-        avail = sorted(df_date['race_no'].unique())
-        if avail:
-            race_no = avail[0]
-        else:
-            st.error("❌ 無場次")
-            return None, None
+    avail_races = sorted(df_date['race_no'].unique())
+    if race_no not in avail_races:
+        st.warning(f"⚠️ {date_str} 冇第 {race_no} 場，改用第 {avail_races[0]} 場")
+        race_no = avail_races[0]
 
     filtered = df_date[df_date['race_no'] == race_no].copy().reset_index(drop=True)
     if filtered.empty:
-        st.error("❌ 無馬匹數據")
+        st.error(f"❌ {date_str} 第 {race_no} 場冇馬匹數據")
         return None, None
 
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
