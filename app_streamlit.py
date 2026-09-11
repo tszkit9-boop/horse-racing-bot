@@ -491,45 +491,62 @@ def _build_features(race_df, history_df):
 
     return result
 def _repair_racecard(df):
-    """自動修復混合格式嘅 racecard CSV"""
-    # 讀取原始檔案（唔用 header）
-    df_raw = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig', header=None, dtype=str)
+    """終極版：逐行讀取，明確判斷格式"""
+    import csv
 
-    std_cols = ['horse_id', 'horse_name', 'draw', 'weight', 'jockey',
-                'trainer', 'race_no', 'race_date', 'win_odds']
+    # 直接讀原始檔案，唔用 pandas 嘅 header
+    rows = []
+    with open("racecard_uploaded.csv", "r", encoding="utf-8-sig") as f:
+        reader = csv.reader(f)
+        for row in reader:
+            rows.append(row)
 
-    # 中文格式欄位順序：馬號,馬名,檔位,負磅,騎師,練馬師,場次,比賽日期,賠率
-    cn_cols = ['horse_id', 'horse_name', 'draw', 'weight', 'jockey',
-               'trainer', 'race_no', 'race_date', 'win_odds']
+    if len(rows) < 2:
+        return pd.DataFrame()
 
-    # 英文格式欄位順序：race_date,race_no,horse_no,horse_name,draw,weight,jockey,trainer,win_odds
-    en_cols = ['race_date', 'race_no', 'horse_id', 'horse_name',
-               'draw', 'weight', 'jockey', 'trainer', 'win_odds']
+    cn_rows = []  # 中文格式
+    en_rows = []  # 英文格式
 
-    parts = []
+    for row in rows:
+        if len(row) < 9:
+            continue
 
-    for _, row in df_raw.iterrows():
-        first_val = str(row[0]).strip()
+        first = str(row[0]).strip()
 
-        # 跳過 header 行
-        if first_val.lower() in ['馬號', 'race_date', 'nan', '']:
+        # 跳過 header
+        if first in ['馬號', 'race_date', ''] or first.lower() == 'nan':
             continue
 
         # 中文格式：第一列係純數字（馬號）
-        if first_val.isdigit():
-            row_df = pd.DataFrame([row.values], columns=cn_cols)
-            parts.append(row_df)
+        if first.isdigit():
+            cn_rows.append(row[:9])
 
         # 英文格式：第一列係日期（YYYY-MM-DD）
-        elif len(first_val) == 10 and first_val[4] == '-' and first_val[7] == '-':
-            row_df = pd.DataFrame([row.values], columns=en_cols)
-            parts.append(row_df)
+        elif len(first) == 10 and first[4] == '-' and first[7] == '-':
+            en_rows.append(row[:9])
 
-    if not parts:
-        return pd.DataFrame(columns=std_cols)
+    # 轉 DataFrame
+    std_cols = ['horse_id', 'horse_name', 'draw', 'weight', 'jockey',
+                'trainer', 'race_no', 'race_date', 'win_odds']
 
-    result = pd.concat(parts, ignore_index=True)
-    result = result[std_cols]
+    frames = []
+
+    # 中文格式（欄位順序：馬號,馬名,檔位,負磅,騎師,練馬師,場次,比賽日期,賠率）
+    if cn_rows:
+        df_cn = pd.DataFrame(cn_rows, columns=std_cols)
+        frames.append(df_cn)
+
+    # 英文格式（欄位順序：race_date,race_no,horse_no,horse_name,draw,weight,jockey,trainer,win_odds）
+    if en_rows:
+        df_en = pd.DataFrame(en_rows, columns=['race_date', 'race_no', 'horse_id', 'horse_name',
+                                                'draw', 'weight', 'jockey', 'trainer', 'win_odds'])
+        df_en = df_en[std_cols]
+        frames.append(df_en)
+
+    if not frames:
+        return pd.DataFrame()
+
+    result = pd.concat(frames, ignore_index=True)
     return result
 
 def run_prediction(date_str, race_no):
@@ -540,7 +557,11 @@ def run_prediction(date_str, race_no):
 
     try:
         race_df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
-        race_df = _repair_racecard(race_df)
+        race_df = _repair_racecard(race_df)        
+        # Debug：顯示修復結果
+        if not race_df.empty:
+            st.write(f"📋 修復後日期：{sorted(race_df['race_date'].unique())}")
+            st.write(f"📋 修復後總行數：{len(race_df)}")
     except Exception as e:
         st.error(f"❌ 讀取失敗：{e}")
         return None, None
