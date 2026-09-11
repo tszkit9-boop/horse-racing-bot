@@ -555,11 +555,11 @@ def admin_lottery_config():
         ["virtual_coin", "vip_days", "free_predictions", "promo_code", "custom", "nothing"],
         format_func=lambda x: {
             "virtual_coin": "🪙 虛擬幣",
-            "vip_days": "👑 VIP 天數",
-            "free_predictions": "🔮 免費預測次數",
+            "vip_days": "👑 VIP",
+            "free_predictions": "🔮 預測",
             "promo_code": "🎟️ 優惠碼",
-            "custom": "🎁 自訂獎品",
-            "nothing": "😅 謝謝參與"
+            "custom": "🎁 自訂",
+            "nothing": "😅 無獎"
         }.get(x, x),
         key="lot_type"
     )
