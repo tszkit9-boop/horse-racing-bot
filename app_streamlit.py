@@ -552,18 +552,7 @@ def run_prediction(date_str, race_no):
         st.error("❌ 無可用日期")
         return None, None
     # 顯示所有可用日期讓用戶揀
-    if len(available_dates) > 1:
-        date_str = st.selectbox(
-            "📅 選擇日期",
-            available_dates,
-            index=len(available_dates) - 1,
-            key="pred_date_selector"
-        )
-    else:
-        date_str = available_dates[0]
-        st.info(f"📅 只有一日數據：**{date_str}**")
-
-    df_date = race_df[race_df['race_date_str'] == date_str]
+      df_date = race_df[race_df['race_date_str'] == date_str]
     if 'race_no' not in df_date.columns:
         st.error("❌ 缺少 '場次'")
         return None, None
