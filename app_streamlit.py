@@ -658,7 +658,8 @@ def run_prediction(date_str, race_no):
             else:
                 X_cat = features_df[features_36].fillna(0).values
 
-            pred_cat = cat_model.predict_proba(X_cat)[:, 1]
+            pred_cat = cat_model.predict_proba(X_cat)[:, 1]            
+            st.write(f"✅ CatBoost 預測成功：{len(pred_cat)} 匹馬")
             models_used.append(f"CatBoost({n_cat}特徵)")
         except Exception as e:
             st.warning(f"⚠️ CatBoost 失敗：{e}")
