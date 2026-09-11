@@ -570,7 +570,20 @@ def admin_horse_ranking():
         df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
 
         # 確認 Pla 欄位
-        if 'Pla' not in df.columns:
+           # 自動搵出 Pla 欄位（避免隱藏字元問題）
+        pos_col = None
+        for c in df.columns:
+            if str(c).lower().strip() == 'pla':
+                pos_col = c
+                break
+
+        if not pos_col:
+            st.error(f"❌ 搵唔到 Pla 欄位！所有欄位：{df.columns.tolist()}")
+            return
+
+        st.write(f"**名次欄位**：`{pos_col}`")
+        st.write(f"**非空數量**：{df[pos_col].notna().sum()}")
+        st.write(f"**樣本**：{df[pos_col].head(10).tolist()}")
             st.error(f"❌ 搵唔到 Pla 欄位！所有欄位：{df.columns.tolist()[:20]}")
             return
 
