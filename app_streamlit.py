@@ -2112,7 +2112,20 @@ def main():
             else:
                 st.info("ℹ️ 沒有日期同時有預測同賽果數據")
         else:
-            st.info("ℹ️ 請確保已有預測紀錄及賽果數據")
+            st.info("ℹ️ 請確保已有預測紀錄及賽果數據")    
+    # ===== 付款功能 =====
+    st.divider()
+    st.subheader("💳 付款功能")
+    if st.session_state.get('logged_in', False):
+        if st.button("💳 前往付款", use_container_width=True, key="go_payment_btn"):
+            st.session_state.show_payment = True
+        if st.session_state.get('show_payment', False):
+            show_paywall()
+            if st.button("⬅️ 返回", key="back_pay_btn"):
+                st.session_state.show_payment = False
+                st.rerun()
+    else:
+        st.info("請先登入以使用付款功能")
 
     st.divider()
     st.warning("⚠️ 免責聲明：本系統預測僅供參考，不構成投注建議。賽馬活動涉及風險，用戶應量力而為。用戶必須年滿18歲。")
