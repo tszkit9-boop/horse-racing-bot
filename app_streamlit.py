@@ -3000,6 +3000,7 @@ def main():
         admin_page()
         return
     col1, col2, col3, col4 = st.columns([5, 1, 1, 1])
+
     with col1:
         # ===== 賽事倒數計時器 =====
         try:
@@ -3050,46 +3051,31 @@ def main():
                         <div style="font-size:12px;opacity:0.85;margin-top:8px;">📍 {target.strftime('%Y年%m月%d日 %H:%M')} · {venue}</div>
                     </div>
                     """, unsafe_allow_html=True)
-        except Exception as e:
-            pass  # 如果倒數計時器出錯，唔影響主程式
+        except Exception:
+            pass  # 倒數計時器出錯都唔會影響主程式
 
         st.title("🏇 賽馬預測系統")
         st.markdown("AI 驅動・即時預測・彩池推薦")
-        st.caption(f"{datetime.now().strftime('%Y年%m月%d日')}")    
+        st.caption(f"{datetime.now().strftime('%Y年%m月%d日')}")
+
     with col2:
-        if CONFIG["enable_admin"] and st.session_state.get("role") == "super_admin":
-            if st.button("🔐 後台", use_container_width=True, key="go_to_admin"):
+        if CONFIG.get("enable_admin") and st.session_state.get("role") == "super_admin":
+            if st.button("🔐 後台", use_container_width=True, key="go_to_admin_btn"):
                 st.session_state.show_admin = True
                 st.session_state.admin_authenticated = False
                 st.rerun()
 
     with col3:
-        # ... 個人中心 ...
+        if st.session_state.get("logged_in", False):
+            with st.popover("👤 個人中心", use_container_width=True):
+                st.write(f"歡迎，{st.session_state.get('username', '用戶')}！")
+                # 你可以在這裡加入更多個人中心內容
 
     with col4:
-        # ... 登入/登出 ...
-    with col3:
-        if st.session_state.get('logged_in', False):
-            with st.popover("👤 個人中心", use_container_width=True):
-                st.markdown(f"**👤 {st.session_state.username}**")
-                st.divider()
-                with st.form("change_password_form"):
-                    st.markdown("#### 🔑 修改密碼")
-                    old_pw = st.text_input("當前密碼", type="password")
-                    new_pw = st.text_input("新密碼", type="password")
-                    if st.form_submit_button("更新"):
-                        users = load_users()
-                        if users.get(st.session_state.username, {}).get('password') == old_pw:
-                            users[st.session_state.username]['password'] = new_pw
-                            save_users(users)
-                            st.success("✅ 密碼已更新")
-                        else: st.error("❌ 密碼錯誤")
-    with col4:
-        if st.session_state.get('logged_in', False):
-            if st.button("🚪 登出", use_container_width=True, key="logout_main"):
-                log_user_activity(st.session_state.username, 'logout', '用戶登出')
-                for key in ['logged_in', 'username', 'role']:
-                    if key in st.session_state: del st.session_state[key]
+        if st.session_state.get("logged_in", False):
+            if st.button("🚪 登出", use_container_width=True):
+                st.session_state.logged_in = False
+                st.session_state.username = None
                 st.rerun()
     st.markdown("---")
 
