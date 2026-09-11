@@ -3055,7 +3055,19 @@ def main():
 
         st.title("🏇 賽馬預測系統")
         st.markdown("AI 驅動・即時預測・彩池推薦")
-        st.caption(f"{datetime.now().strftime('%Y年%m月%d日')}")
+        st.caption(f"{datetime.now().strftime('%Y年%m月%d日')}")    
+    with col2:
+        if CONFIG["enable_admin"] and st.session_state.get("role") == "super_admin":
+            if st.button("🔐 後台", use_container_width=True, key="go_to_admin"):
+                st.session_state.show_admin = True
+                st.session_state.admin_authenticated = False
+                st.rerun()
+
+    with col3:
+        # ... 個人中心 ...
+
+    with col4:
+        # ... 登入/登出 ...
     with col3:
         if st.session_state.get('logged_in', False):
             with st.popover("👤 個人中心", use_container_width=True):
