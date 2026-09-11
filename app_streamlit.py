@@ -1749,35 +1749,57 @@ def admin_user_management():
 
     st.divider()
 
-    # ===== 8. 下載 users.json =====
-    st.subheader("📥 下載用戶資料")
-    col_a, col_b = st.columns(2)
-    with col_a:
+def admin_downloads():
+    st.subheader("📥 下載中心")
+    st.divider()
+
+    # ===== users.json =====
+    st.markdown("### 👥 用戶名單")
+    if os.path.exists("users.json"):
+        size = os.path.getsize("users.json") / 1024
+        st.caption(f"📁 users.json（{size:.1f} KB）")
         try:
-            with open(user_file, 'r', encoding='utf-8') as f:
+            with open("users.json", "rb") as f:
                 data = f.read()
             st.download_button(
                 label="📥 下載 users.json",
                 data=data,
-                file_name=f"users_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                file_name="users.json",
                 mime="application/json",
                 use_container_width=True,
                 key="dl_users_json"
             )
         except Exception as e:
-            st.error(f"讀取失敗：{e}")
-    with col_b:
-        if users:
-            df_export = pd.DataFrame.from_dict(users, orient='index')
-            csv_data = df_export.to_csv(index=False).encode('utf-8-sig')
+            st.error(f"❌ 讀取失敗：{e}")
+    else:
+        st.info("ℹ️ 未有 users.json")
+
+    st.divider()
+
+    # ===== ai_predictions.json =====
+    st.markdown("### 🤖 AI 預測記錄")
+    if os.path.exists("ai_predictions.json"):
+        size = os.path.getsize("ai_predictions.json") / 1024
+        st.caption(f"📁 ai_predictions.json（{size:.1f} KB）")
+        try:
+            with open("ai_predictions.json", "rb") as f:
+                data = f.read()
             st.download_button(
-                label="📥 下載 users.csv",
-                data=csv_data,
-                file_name=f"users_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv",
+                label="📥 下載 ai_predictions.json",
+                data=data,
+                file_name="ai_predictions.json",
+                mime="application/json",
                 use_container_width=True,
-                key="dl_users_csv"
+                key="dl_ai_pred"
             )
+        except Exception as e:
+            st.error(f"❌ 讀取失敗：{e}")
+    else:
+        st.info("ℹ️ 未有 ai_predictions.json")
+        except Exception as e:
+            st.error(f"❌ 讀取失敗：{e}")
+    else:
+        st.info("ℹ️ 未有 ai_predictions.json（執行過預測先會有）")
 
 def admin_manage_predictions():
     st.subheader("📊 管理用戶次數")
@@ -2502,6 +2524,7 @@ def admin_page():
     tabs_def = [
         ("📊 儀表板", admin_dashboard),
         ("👥 用戶管理", admin_user_management),
+        ("📥 下載中心", admin_downloads),
         ("📊 次數管理", admin_manage_predictions),
         ("📊 數據分析", admin_analytics),
         ("🏇 馬匹排行榜", admin_horse_ranking),
