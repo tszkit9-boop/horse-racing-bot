@@ -601,39 +601,43 @@ def admin_jockey_ranking():
 
         temp = pd.DataFrame()
         temp['jockey'] = df['jockey'].astype(str).str.strip()
-
-        # 用 finish_position 做名次（同馬匹排行榜一樣）
         temp['finish_position'] = pd.to_numeric(df['finish_position'], errors='coerce')
 
-        st.write(f"**過濾前**：{len(temp)} 行")
         temp = temp.dropna(subset=['finish_position'])
-        st.write(f"**過濾 finish_position 後**：{len(temp)} 行")
-
         temp = temp[~temp['jockey'].str.lower().isin(['nan', 'none', ''])]
-        st.write(f"**過濾 jockey 空值後**：{len(temp)} 行")
 
         if temp.empty:
             st.warning("⚠️ 過濾後數據為空！")
             return
 
-        total = temp.groupby('jockey').size().reset_index(name='總出賽')
-        wins = temp[temp['finish_position'] == 1].groupby('jockey').size().reset_index(name='勝出')
-        stats = pd.merge(total, wins, on='jockey', how='left').fillna({'勝出': 0})
-        stats['勝出'] = stats['勝出'].astype(int)
-        stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
-        stats = stats.sort_values('勝出', ascending=False)
+        # 用 value_counts 代替 groupby（更穩定）
+        total_counts = temp['jockey'].value_counts()
+        wins_counts = temp[temp['finish_position'] == 1]['jockey'].value_counts()
 
+        stats = pd.DataFrame({
+            '騎師': total_counts.index,
+            '總出賽': total_counts.values
+        })
+        stats['勝出'] = stats['騎師'].map(wins_counts).fillna(0).astype(int)
+        stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
+        stats = stats.sort_values('勝出', ascending=False).reset_index(drop=True)
+
+        # 中文對照
         jmap = {}
         if os.path.exists("jockey_mapping.json"):
             try:
                 jmap = load_json("jockey_mapping.json")
             except Exception:
                 pass
-        stats['騎師'] = stats['jockey'].map(jmap).fillna(stats['jockey'])
+        if jmap:
+            stats['騎師'] = stats['騎師'].map(jmap).fillna(stats['騎師'])
+
         st.success(f"✅ 共 {len(stats)} 位騎師")
-        st.dataframe(stats[['騎師', '總出賽', '勝出', '勝率']].head(30), use_container_width=True)
+        st.dataframe(stats.head(30), use_container_width=True)
     except Exception as e:
         st.error(f"讀取失敗：{e}")
+        import traceback
+        st.code(traceback.format_exc())
 
 
 def admin_trainer_ranking():
@@ -646,23 +650,23 @@ def admin_trainer_ranking():
         temp['trainer'] = df['trainer'].astype(str).str.strip()
         temp['finish_position'] = pd.to_numeric(df['finish_position'], errors='coerce')
 
-        st.write(f"**過濾前**：{len(temp)} 行")
         temp = temp.dropna(subset=['finish_position'])
-        st.write(f"**過濾 finish_position 後**：{len(temp)} 行")
-
         temp = temp[~temp['trainer'].str.lower().isin(['nan', 'none', ''])]
-        st.write(f"**過濾 trainer 空值後**：{len(temp)} 行")
 
         if temp.empty:
             st.warning("⚠️ 過濾後數據為空！")
             return
 
-        total = temp.groupby('trainer').size().reset_index(name='總出賽')
-        wins = temp[temp['finish_position'] == 1].groupby('trainer').size().reset_index(name='勝出')
-        stats = pd.merge(total, wins, on='trainer', how='left').fillna({'勝出': 0})
-        stats['勝出'] = stats['勝出'].astype(int)
+        total_counts = temp['trainer'].value_counts()
+        wins_counts = temp[temp['finish_position'] == 1]['trainer'].value_counts()
+
+        stats = pd.DataFrame({
+            '練馬師': total_counts.index,
+            '總出賽': total_counts.values
+        })
+        stats['勝出'] = stats['練馬師'].map(wins_counts).fillna(0).astype(int)
         stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
-        stats = stats.sort_values('勝出', ascending=False)
+        stats = stats.sort_values('勝出', ascending=False).reset_index(drop=True)
 
         tmap = {}
         if os.path.exists("trainer_mapping.json"):
@@ -670,11 +674,15 @@ def admin_trainer_ranking():
                 tmap = load_json("trainer_mapping.json")
             except Exception:
                 pass
-        stats['練馬師'] = stats['trainer'].map(tmap).fillna(stats['trainer'])
+        if tmap:
+            stats['練馬師'] = stats['練馬師'].map(tmap).fillna(stats['練馬師'])
+
         st.success(f"✅ 共 {len(stats)} 位練馬師")
-        st.dataframe(stats[['練馬師', '總出賽', '勝出', '勝率']].head(30), use_container_width=True)
+        st.dataframe(stats.head(30), use_container_width=True)
     except Exception as e:
         st.error(f"讀取失敗：{e}")
+        import traceback
+        st.code(traceback.format_exc())
 def admin_lottery_config():
     st.subheader("🎰 抽獎設定")
     config = load_lottery_config()
