@@ -592,14 +592,14 @@ def admin_horse_ranking():
     try:
         df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig', low_memory=False)
         df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
+        df = df.reset_index(drop=True)
 
-        # 優先使用中文馬名「馬名」，如果冇就用 horse_name
+        # 優先使用中文馬名「馬名」
         horse_col = None
         for c in df.columns:
             if str(c).strip() == '馬名':
                 horse_col = c
                 break
-
         if not horse_col:
             horse_col = 'horse_name'
             st.caption("ℹ️ 冇中文馬名欄位，顯示英文名")
@@ -609,9 +609,12 @@ def admin_horse_ranking():
         pos_series, pos_name = _get_pos_series(df)
         st.caption(f"📊 使用名次欄位：**{pos_name}**（有效數據：{pos_series.notna().sum()}）")
 
-        temp = pd.DataFrame()
-        temp['馬匹'] = df[horse_col].astype(str).str.strip()
-        temp['名次'] = pos_series
+        # 用 df 直接加欄位，避免 index 對唔上
+        temp = df[[horse_col]].copy()
+        temp.columns = ['馬匹']
+        temp['名次'] = pos_series.values  # 用 .values 避免 index 對唔上
+
+        temp['馬匹'] = temp['馬匹'].astype(str).str.strip()
         temp = temp.dropna(subset=['名次'])
         temp = temp[~temp['馬匹'].str.lower().isin(['nan', 'none', ''])]
 
@@ -630,6 +633,8 @@ def admin_horse_ranking():
         st.dataframe(stats.head(30), use_container_width=True)
     except Exception as e:
         st.error(f"讀取失敗：{e}")
+        import traceback
+        st.code(traceback.format_exc())
 
 
 def admin_jockey_ranking():
