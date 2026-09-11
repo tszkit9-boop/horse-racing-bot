@@ -3177,86 +3177,83 @@ def admin_system_settings():
     admin_username = st.session_state.get('admin_username', 'admin')
     user_group = users.get(admin_username, {}).get('group', 'free')
     if user_group != 'super_admin':
-        st.error("⛔ 只有超級管理員可以修改")
+        st.error("⛔ 只有超級管理員可以修改系統設定")
         return
-def admin_system_config():
     st.subheader("⚙️ 系統設定")
-    st.write("✅ 測試成功！系統設定載入正常！")
-def admin_page():
-    if 'admin_authenticated' not in st.session_state:
-        st.session_state.admin_authenticated = False
-    if not st.session_state.admin_authenticated:
-        st.title("🔐 後台管理 - 身份驗證")
-        admin_pw = st.text_input("管理員密碼", type="password", key="admin_login_pw")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("🔓 解鎖後台", type="primary", key="unlock_admin"):
-                if admin_pw == CONFIG["admin_password"]:
-                    st.session_state.admin_authenticated = True
-                    st.session_state.admin_username = "admin"
-                    st.rerun()
-                else: st.error("❌ 密碼錯誤！")
-        with col2:
-            if st.button("⬅️ 返回主頁", key="back_home_from_admin"):
-                st.session_state.show_admin = False
-                st.rerun()
-        return
-    users = load_users()
-    admin_username = st.session_state.get('admin_username', 'admin')
-    user_group = users.get(admin_username, {}).get('group', 'free')
-    is_super_admin = (user_group == 'super_admin')
-    st.title("🔐 後台管理")
-    st.info(f"👤 管理員：{admin_username}")
-    if st.button("🚪 登出後台", key="logout_admin"):
-        st.session_state.admin_authenticated = False
-        st.session_state.show_admin = False
-        st.rerun()
+    st.info("修改設定後，撳「儲存設定」會自動重新整理頁面，新設定即時生效。")
+    config = load_system_config()
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("#### 🔐 基本設定")
+        enable_registration = st.checkbox("開放註冊", value=config.get("enable_registration", True))
+        enable_payment = st.checkbox("啟用付款功能", value=config.get("enable_payment", True))
+        enable_admin = st.checkbox("啟用後台管理", value=config.get("enable_admin", True))
+        enable_vip_content = st.checkbox("🔒 三重彩/四重彩 VIP 專屬", value=config.get("enable_vip_content", True))
+        st.markdown("#### 💰 價格設定")
+        price_day = st.number_input("日費價格 (HKD)", min_value=0, value=config.get("price_day", 18), step=1)
+        price_month = st.number_input("月費價格 (HKD)", min_value=0, value=config.get("price_month", 128), step=1)
+        price_quarter = st.number_input("季費價格 (HKD)", min_value=0, value=config.get("price_quarter", 328), step=1)
+        st.markdown("#### 🎁 邀請獎勵設定")
+        enable_invite_reward = st.checkbox("啟用邀請獎勵", value=config.get("enable_invite_reward", True))
+        invite_reward_inviter = st.number_input("邀請人獲得免費次數", min_value=0, value=config.get("invite_reward_inviter", 1), step=1)
+        invite_reward_invitee = st.number_input("被邀請人獲得免費次數", min_value=0, value=config.get("invite_reward_invitee", 1), step=1)
+    with col2:
+        st.markdown("#### 📊 預設限制")
+        free_limit = st.number_input("免費預測次數", min_value=0, value=config.get("free_limit", 2), step=1)
+        verification_expiry = st.number_input("驗證碼有效期 (分鐘)", min_value=1, value=config.get("verification_expiry", 5), step=1)
+        currency = st.text_input("貨幣單位", value=config.get("currency", "HKD"))
+        admin_password = st.text_input("管理員密碼", value=config.get("admin_password", "z54060437K"), type="password")
+        st.markdown("#### 💰 虛擬幣設定")
+        virtual_coin_enabled = st.checkbox("啟用虛擬幣功能", value=config.get("virtual_coin_enabled", True))
+        daily_virtual_coin = st.number_input("每日派發虛擬幣金額", min_value=0, value=config.get("daily_virtual_coin", 1000), step=100)
+        st.markdown("#### 🧩 後台模組開關")
+        module_user_management = st.checkbox("用戶管理模組", value=config.get("module_user_management", True))
+        module_analytics = st.checkbox("數據分析模組", value=config.get("module_analytics", True))
+        module_finance = st.checkbox("財務管理模組", value=config.get("module_finance", True))
+        module_monitoring = st.checkbox("系統監控模組", value=config.get("module_monitoring", True))
+        module_content = st.checkbox("內容管理模組", value=config.get("module_content", True))
+        module_automation = st.checkbox("自動化工具模組", value=config.get("module_automation", True))
+        module_security = st.checkbox("安全與權限模組", value=config.get("module_security", True))
+        module_promo = st.checkbox("優惠碼模組", value=config.get("module_promo", True))
+        st.markdown("#### 📢 每日免費重心推介")
+        enable_daily_free_tip = st.checkbox("啟用每日免費重心推介", value=config.get("enable_daily_free_tip", True))
     st.divider()
-    tab_functions = {
-        "📊 儀表板": admin_dashboard,
-        "👥 用戶管理": admin_user_management,
-        "📊 次數管理": admin_manage_predictions,
-        "📊 數據分析": admin_analytics,
-        "🏇 馬匹排行榜": admin_horse_ranking,
-        "👨‍🏫 騎師排行榜": admin_jockey_ranking,
-        "👨‍🏫 練馬師排行榜": admin_trainer_ranking,
-        "📊 場地/路程分析": admin_course_analysis,
-        "📅 每月報告": admin_monthly_report,
-        "💰 財務": admin_finance,
-        "🎟️ 優惠碼": admin_promo_codes,
-        "📈 預測監控": admin_accuracy_monitor,
-        "⏰ 訂閱管理": admin_subscription,
-        "📤 付款審核": admin_payment_review,
-        "📡 監控": admin_monitoring,
-        "📝 內容": admin_content,
-        "🤖 自動維護": admin_auto_maintenance,
-        "🤖 自動化": admin_automation,
-        "🔐 安全": admin_security,
-        "👁️ 用戶監控": admin_user_monitor,
-        "🎰 抽獎設定": admin_lottery_config,
-        "🛍️ 商城設定": admin_shop_config,
-    }
-    tab_names = list(tab_functions.keys())
-    if is_super_admin:
-        tab_names.append("⚙️ 系統設定")
-        tab_functions["⚙️ 系統設定"] = admin_system_settings
-    tabs = st.tabs(tab_names)
-    for i, name in enumerate(tab_names):
-        with tabs[i]:
-            tab_functions[name]()
+    if st.button("💾 儲存設定", type="primary"):
+        new_config = {
+            "enable_registration": enable_registration,
+            "enable_payment": enable_payment,
+            "enable_admin": enable_admin,
+            "currency": currency,
+            "free_limit": free_limit,
+            "admin_password": admin_password,
+            "price_day": price_day,
+            "price_month": price_month,
+            "price_quarter": price_quarter,
+            "verification_expiry": verification_expiry,
+            "enable_vip_content": enable_vip_content,
+            "module_user_management": module_user_management,
+            "module_analytics": module_analytics,
+            "module_finance": module_finance,
+            "module_monitoring": module_monitoring,
+            "module_content": module_content,
+            "module_automation": module_automation,
+            "module_security": module_security,
+            "module_promo": module_promo,
+            "enable_daily_free_tip": enable_daily_free_tip,
+            "enable_invite_reward": enable_invite_reward,
+            "invite_reward_inviter": invite_reward_inviter,
+            "invite_reward_invitee": invite_reward_invitee,
+            "virtual_coin_enabled": virtual_coin_enabled,
+            "daily_virtual_coin": daily_virtual_coin,
+        }
+        if save_system_config(new_config):
+            st.success("✅ 設定已儲存！頁面將會重新整理以套用新設定。")
+            import time
+            time.sleep(1)
+            st.rerun()
+        else:
+            st.error("❌ 儲存失敗，請檢查檔案權限。")
 
-def main():
-    if 'logged_in' not in st.session_state: st.session_state.logged_in = False
-    if 'username' not in st.session_state: st.session_state.username = None
-    if 'role' not in st.session_state: st.session_state.role = 'free'
-    if 'show_admin' not in st.session_state: st.session_state.show_admin = False
-    if 'admin_authenticated' not in st.session_state: st.session_state.admin_authenticated = False
-    if 'show_lottery' not in st.session_state: st.session_state.show_lottery = False
-    if 'show_shop' not in st.session_state: st.session_state.show_shop = False
-    if CONFIG["enable_registration"] and not st.session_state.logged_in:
-        login_page()
-        return
-    if st.session_state.show_admin and CONFIG["enable_admin"]:
         admin_page()
         return
     col1, col2, col3, col4 = st.columns([5, 1, 1, 1])
