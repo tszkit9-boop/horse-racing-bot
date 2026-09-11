@@ -598,9 +598,21 @@ def admin_jockey_ranking():
     try:
         df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig', low_memory=False)
         df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
+        df = df.loc[:, ~df.columns.duplicated()]
+
+        st.write(f"**jockey 欄位類型**：{type(df['jockey']).__name__}")
+
+        # 安全提取 jockey（如果係 DataFrame，攞第一列）
+        jockey_series = df['jockey']
+        if isinstance(jockey_series, pd.DataFrame):
+            jockey_series = jockey_series.iloc[:, 0]
+            st.warning("⚠️ 偵測到重複 jockey 欄位，已自動取第一列")
+
+        st.write(f"**jockey 非空數量**：{jockey_series.notna().sum()}")
+        st.write(f"**jockey 樣本**：{jockey_series.head(5).tolist()}")
 
         temp = pd.DataFrame()
-        temp['jockey'] = df['jockey'].astype(str).str.strip()
+        temp['jockey'] = jockey_series.astype(str).str.strip()
         temp['finish_position'] = pd.to_numeric(df['finish_position'], errors='coerce')
 
         temp = temp.dropna(subset=['finish_position'])
@@ -635,9 +647,20 @@ def admin_trainer_ranking():
     try:
         df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig', low_memory=False)
         df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
+        df = df.loc[:, ~df.columns.duplicated()]
+
+        st.write(f"**trainer 欄位類型**：{type(df['trainer']).__name__}")
+
+        trainer_series = df['trainer']
+        if isinstance(trainer_series, pd.DataFrame):
+            trainer_series = trainer_series.iloc[:, 0]
+            st.warning("⚠️ 偵測到重複 trainer 欄位，已自動取第一列")
+
+        st.write(f"**trainer 非空數量**：{trainer_series.notna().sum()}")
+        st.write(f"**trainer 樣本**：{trainer_series.head(5).tolist()}")
 
         temp = pd.DataFrame()
-        temp['trainer'] = df['trainer'].astype(str).str.strip()
+        temp['trainer'] = trainer_series.astype(str).str.strip()
         temp['finish_position'] = pd.to_numeric(df['finish_position'], errors='coerce')
 
         temp = temp.dropna(subset=['finish_position'])
