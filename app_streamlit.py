@@ -754,7 +754,7 @@ def show_shop_interface(username):
                     st.success(f"✅ 已購買 {item.get('name')}！")
                     st.rerun()
         st.divider()
-    def admin_dashboard():
+def admin_dashboard():
     st.subheader("📊 系統儀表板")
     users = load_users()
     acc = load_accuracy()
