@@ -586,7 +586,6 @@ def _get_pos_series(df):
 
     return pos, '未知'
 
-
 def admin_horse_ranking():
     st.subheader("🏇 馬匹勝率排行榜")
     try:
@@ -594,32 +593,44 @@ def admin_horse_ranking():
         df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
         df = df.reset_index(drop=True)
 
-        # 優先使用中文馬名「馬名」
+        # 先檢查「馬名」有冇實際數據
         horse_col = None
-        for c in df.columns:
-            if str(c).strip() == '馬名':
-                horse_col = c
-                break
+        if '馬名' in df.columns:
+            non_empty = df['馬名'].dropna().astype(str).str.strip()
+            non_empty = non_empty[~non_empty.isin(['', 'nan', 'None', '-'])]
+            st.write(f"**馬名** 欄位非空數量：{len(non_empty)}")
+            if len(non_empty) > 100:
+                horse_col = '馬名'
+                st.success("✅ 使用中文馬名欄位：馬名")
+            else:
+                st.warning("⚠️ 馬名欄位數據不足，改用英文 horse_name")
+
         if not horse_col:
             horse_col = 'horse_name'
-            st.caption("ℹ️ 冇中文馬名欄位，顯示英文名")
-        else:
-            st.caption(f"✅ 使用中文馬名欄位：{horse_col}")
+            if 'horse_name' in df.columns:
+                st.info(f"ℹ️ 使用英文馬名欄位：horse_name")
+            else:
+                st.error("❌ 冇可用嘅馬名欄位")
+                return
 
         pos_series, pos_name = _get_pos_series(df)
         st.caption(f"📊 使用名次欄位：**{pos_name}**（有效數據：{pos_series.notna().sum()}）")
 
-        # 用 df 直接加欄位，避免 index 對唔上
         temp = df[[horse_col]].copy()
         temp.columns = ['馬匹']
-        temp['名次'] = pos_series.values  # 用 .values 避免 index 對唔上
+        temp['名次'] = pos_series.values
 
         temp['馬匹'] = temp['馬匹'].astype(str).str.strip()
         temp = temp.dropna(subset=['名次'])
         temp = temp[~temp['馬匹'].str.lower().isin(['nan', 'none', ''])]
 
+        st.write(f"**過濾後剩餘**：{len(temp)} 行")
+
         if temp.empty:
             st.warning("⚠️ 過濾後數據為空！")
+            with st.expander("🔍 診斷"):
+                st.write(f"馬名樣本：{df[horse_col].head(10).tolist()}")
+                st.write(f"名次樣本：{pos_series.head(10).tolist()}")
             return
 
         total = temp['馬匹'].value_counts()
