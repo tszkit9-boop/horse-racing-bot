@@ -6,6 +6,8 @@
 """
 
 import streamlit as st
+from datetime import datetime, timedelta
+import pytz
 import pandas as pd
 import numpy as np
 import pickle
@@ -1593,17 +1595,113 @@ def get_future_races():
     except: pass
     return [], []
 
-def display_race_calendar():
-    dates, courses = get_future_races()
-    if not dates: st.info("📭 暫時未有未來賽事資料"); return
-    next_date = dates[0]
-    next_course = courses[0] if courses else "賽馬"
-    today = datetime.now().date()
-    delta = (next_date - today).days
-    if delta > 0: time_str = f"⏳ 仲有 **{delta} 天**"
-    elif delta == 0: time_str = f"⏳ 今日開跑！"
-    else: time_str = "⏳ 已過期"
-    st.markdown(f"""<div style="background: linear-gradient(135deg, #1a237e, #0d47a1); border-radius: 12px; padding: 15px 20px; color: white; margin-bottom: 15px;"><div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;"><div><span style="font-size: 20px;">🏇 下一場賽事</span><br><span style="font-size: 16px; opacity: 0.9;">{next_course}　📅 {next_date.strftime('%Y年%m月%d日')}</span></div><div style="font-size: 22px; font-weight: bold; background: rgba(255,255,255,0.15); padding: 8px 20px; border-radius: 30px;">{time_str}</div></div></div>""", unsafe_allow_html=True)
+# ==========================================================
+# ⏰ 賽事倒數計時器
+# ==========================================================
+def get_next_race_day():
+    """
+    自動計算下一個賽事日：
+    - 星期三：跑馬地夜馬（19:15 開始）
+    - 星期日：沙田日馬（12:30 開始）
+    如果今日就係賽事日，回傳今日
+    """
+    hk_tz = pytz.timezone("Asia/Hong_Kong")
+    now = datetime.now(hk_tz)
+    weekday = now.weekday()  # 0=Mon, 2=Wed, 6=Sun
+
+    # 今日係賽事日？
+    if weekday == 2:  # 星期三
+        race_time = now.replace(hour=19, minute=15, second=0, microsecond=0)
+        if now < race_time:
+            return race_time, "跑馬地夜馬", "HV"
+        else:
+            # 今日夜馬已開跑，搵下一個賽事日
+            pass
+    elif weekday == 6:  # 星期日
+        race_time = now.replace(hour=12, minute=30, second=0, microsecond=0)
+        if now < race_time:
+            return race_time, "沙田日馬", "ST"
+
+    # 搵下一個賽事日
+    for i in range(1, 8):
+        future = now + timedelta(days=i)
+        wd = future.weekday()
+        if wd == 2:  # 下個星期三
+            return future.replace(hour=19, minute=15, second=0, microsecond=0), "跑馬地夜馬", "HV"
+        elif wd == 6:  # 下個星期日
+            return future.replace(hour=12, minute=30, second=0, microsecond=0), "沙田日馬", "ST"
+
+    return None, None, None
+
+
+@st.fragment(run_every=1)
+def render_countdown():
+    """每秒自動更新嘅倒數計時器"""
+    hk_tz = pytz.timezone("Asia/Hong_Kong")
+    now = datetime.now(hk_tz)
+    target, race_name, venue = get_next_race_day()
+
+    if not target:
+        st.info("📅 暫無未來賽事資料")
+        return
+
+    diff = target - now
+    total_seconds = int(diff.total_seconds())
+
+    if total_seconds <= 0:
+        st.success(f"🏇 **{race_name}** 已經開始！加油！")
+        return
+
+    days = total_seconds // 86400
+    hours = (total_seconds % 86400) // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+
+    # 判斷係咪今日
+    is_today = (target.date() == now.date())
+
+    if is_today:
+        bg = "linear-gradient(135deg, #ff6b6b, #ee5a24)"
+        title = f"🔥 今日有賽事！{race_name}"
+    else:
+        bg = "linear-gradient(135deg, #667eea, #764ba2)"
+        title = f"⏰ 距離下場賽事：{race_name}"
+
+    st.markdown(f"""
+    <div style="
+        background: {bg};
+        padding: 20px 24px;
+        border-radius: 16px;
+        color: white;
+        box-shadow: 0 6px 20px rgba(102,126,234,0.35);
+        margin-bottom: 16px;
+    ">
+        <div style="font-size: 15px; opacity: 0.9; margin-bottom: 8px;">
+            {title}
+        </div>
+        <div style="display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap;">
+            <div style="text-align: center;">
+                <div style="font-size: 42px; font-weight: 800; line-height: 1;">{days}</div>
+                <div style="font-size: 12px; opacity: 0.8;">日</div>
+            </div>
+            <div style="text-align: center;">
+                <div style="font-size: 42px; font-weight: 800; line-height: 1;">{hours:02d}</div>
+                <div style="font-size: 12px; opacity: 0.8;">時</div>
+            </div>
+            <div style="text-align: center;">
+                <div style="font-size: 42px; font-weight: 800; line-height: 1;">{minutes:02d}</div>
+                <div style="font-size: 12px; opacity: 0.8;">分</div>
+            </div>
+            <div style="text-align: center;">
+                <div style="font-size: 42px; font-weight: 800; line-height: 1;">{seconds:02d}</div>
+                <div style="font-size: 12px; opacity: 0.8;">秒</div>
+            </div>
+        </div>
+        <div style="font-size: 13px; opacity: 0.85; margin-top: 10px;">
+            📍 {target.strftime('%Y年%m月%d日 %H:%M')} · {venue}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 # ============================================================
 # 後台功能
 # ============================================================
@@ -2902,7 +3000,9 @@ def main():
         admin_page()
         return
     col1, col2, col3, col4 = st.columns([5, 1, 1, 1])
-    with col1:
+    with col1:    
+    # 賽事倒數計時器
+    render_countdown()
         st.title("🏇 賽馬預測系統")
         st.markdown("AI 驅動・即時預測・彩池推薦")
         st.caption(f"{datetime.now().strftime('%Y年%m月%d日')}")
