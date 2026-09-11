@@ -1634,15 +1634,29 @@ def admin_dashboard():
 
 def admin_auto_maintenance():
     st.subheader("🤖 自動維護")
+    st.info("一鍵執行所有維護任務")
+    tasks = ["🔄 比對賽果 + 更新統計", "⚖️ 調整模型權重", "⏰ 檢查並終止過期會員",
+             "📝 檢查系統檔案狀態", "📥 自動備份所有數據"]
+    for task in tasks:
+        st.write(f"• {task}")
+    st.divider()
+
     if st.button("🚀 執行全部維護任務", type="primary", use_container_width=True, key="btn_full_maintenance"):
         results = []
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        status_text.text("🔄 比對賽果中...")
         updated, msg = update_accuracy_with_results()
         results.append(f"🔄 比對賽果：{msg}")
+        progress_bar.progress(20)
+        status_text.text("⚖️ 調整權重中...")
         try:
             weight_result = adjust_model_weights()
             results.append(f"⚖️ 調整權重：XGB={weight_result['xgb_weight']}, Cat={weight_result['cat_weight']}")
         except Exception as e:
             results.append(f"⚖️ 調整權重：失敗 - {str(e)}")
+        progress_bar.progress(40)
+        status_text.text("⏰ 檢查過期會員中...")
         users = load_users()
         today = datetime.now()
         expired = []
@@ -1662,50 +1676,112 @@ def admin_auto_maintenance():
             results.append(f"⏰ 已將 {len(expired)} 個過期會員降級")
         else:
             results.append("⏰ 目前沒有過期會員")
+        progress_bar.progress(60)
+        status_text.text("📝 檢查系統檔案中...")
+        files_to_check = ['users.json', 'system_config.json', 'accuracy.json', 'race_results_clean.csv']
+        file_status = [f"{'✅' if os.path.exists(f) else '❌'} {f}" for f in files_to_check]
+        results.append(f"📝 檔案檢查：{' | '.join(file_status)}")
+        progress_bar.progress(80)
+        status_text.text("📥 自動備份中...")
+        try:
+            backup_data = {"users": load_users(), "accuracy": load_accuracy(),
+                           "finance": load_finance(), "payment_proofs": load_payment_proofs(),
+                           "backup_time": datetime.now().isoformat()}
+            backup_json = json.dumps(backup_data, ensure_ascii=False, indent=2)
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_filename = f"backup_{timestamp}.json"
+            with open(backup_filename, 'w', encoding='utf-8') as f:
+                f.write(backup_json)
+            st.download_button(label=f"📥 下載備份 ({timestamp})", data=backup_json,
+                              file_name=backup_filename, mime="application/json",
+                              key=f"auto_backup_{timestamp}")
+            results.append(f"📥 自動備份：✅ 備份完成")
+        except Exception as e:
+            results.append(f"📥 自動備份：❌ 失敗 - {str(e)}")
+        progress_bar.progress(100)
+        status_text.text("✅ 所有維護任務已完成！")
         st.success("✅ 自動維護完成！")
+        st.divider()
+        st.subheader("📋 執行結果")
         for r in results:
             st.write(r)
+
     st.divider()
     st.subheader("⚡ 單獨執行")
+
+    # 🔥 顯示上一次操作結果
+    if 'operation_result' in st.session_state:
+        msg_type, msg = st.session_state.operation_result
+        if msg_type == 'success':
+            st.success(msg)
+        elif msg_type == 'error':
+            st.error(msg)
+        elif msg_type == 'info':
+            st.info(msg)
+        elif msg_type == 'warning':
+            st.warning(msg)
+        del st.session_state.operation_result
+
     col1, col2, col3, col4 = st.columns(4)
+
     with col1:
         if st.button("🔄 比對賽果", use_container_width=True, key="btn_compare"):
-            updated, msg = update_accuracy_with_results()
-            st.success(f"✅ {msg}")
-            st.rerun()
-    with col2:
-        if st.button("⚖️ 調整權重", use_container_width=True, key="btn_adjust_weights"):
-            result = adjust_model_weights()
-            st.success(f"✅ XGB={result['xgb_weight']}, Cat={result['cat_weight']}")
-            st.rerun()
-    with col3:
-        if st.button("⏰ 終止過期會員", use_container_width=True, key="btn_expire"):
-            users = load_users()
-            today = datetime.now()
-            expired = []
-            for uid, u in users.items():
-                if u.get('group') == 'VIP' and u.get('expiry_date'):
-                    try:
-                        if pd.to_datetime(u['expiry_date']) < today:
-                            u['group'] = 'free'
-                            u['is_paid'] = False
-                            u['predictions_limit'] = CONFIG["free_limit"]
-                            u['plan'] = None
-                            expired.append(uid)
-                    except:
-                        pass
-            if expired:
-                save_users(users)
-                st.success(f"✅ 已降級 {len(expired)} 個")
-            else:
-                st.info("✅ 沒有過期會員")
-            st.rerun()
-    with col4:
-        if st.button("🎯 更新 AI 命中率", use_container_width=True, key="btn_update_ai"):
-            hit_count, msg = update_ai_accuracy()
-            st.success(f"✅ {msg}")
+            try:
+                updated, msg = update_accuracy_with_results()
+                if updated > 0:
+                    st.session_state.operation_result = ('success', f"✅ {msg}")
+                else:
+                    st.session_state.operation_result = ('info', f"ℹ️ {msg}")
+            except Exception as e:
+                st.session_state.operation_result = ('error', f"❌ 比對賽果失敗：{str(e)}")
             st.rerun()
 
+    with col2:
+        if st.button("⚖️ 調整權重", use_container_width=True, key="btn_adjust_weights"):
+            try:
+                result = adjust_model_weights()
+                st.session_state.operation_result = (
+                    'success',
+                    f"✅ XGB={result['xgb_weight']}, Cat={result['cat_weight']}（命中率 {result['hit_rate']:.2%}）"
+                )
+            except Exception as e:
+                st.session_state.operation_result = ('error', f"❌ 調整權重失敗：{str(e)}")
+            st.rerun()
+
+    with col3:
+        if st.button("⏰ 終止過期會員", use_container_width=True, key="btn_expire"):
+            try:
+                users = load_users()
+                today = datetime.now()
+                expired = []
+                for uid, u in users.items():
+                    if u.get('group') == 'VIP' and u.get('expiry_date'):
+                        try:
+                            if pd.to_datetime(u['expiry_date']) < today:
+                                u['group'] = 'free'
+                                u['is_paid'] = False
+                                u['predictions_limit'] = CONFIG["free_limit"]
+                                u['plan'] = None
+                                expired.append(uid)
+                        except:
+                            pass
+                if expired:
+                    save_users(users)
+                    st.session_state.operation_result = ('success', f"✅ 已將 {len(expired)} 個過期會員降級")
+                else:
+                    st.session_state.operation_result = ('info', "✅ 目前沒有過期會員")
+            except Exception as e:
+                st.session_state.operation_result = ('error', f"❌ 失敗：{str(e)}")
+            st.rerun()
+
+    with col4:
+        if st.button("🎯 更新 AI 命中率", use_container_width=True, key="btn_update_ai"):
+            try:
+                hit_count, msg = update_ai_accuracy()
+                st.session_state.operation_result = ('success', f"✅ {msg}")
+            except Exception as e:
+                st.session_state.operation_result = ('error', f"❌ 失敗：{str(e)}")
+            st.rerun()
 def admin_user_management():
     st.subheader("👥 用戶管理")
     user_file = "users.json"
