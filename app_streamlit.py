@@ -1781,7 +1781,7 @@ def admin_downloads():
     if os.path.exists("ai_predictions.json"):
         size = os.path.getsize("ai_predictions.json") / 1024
         st.caption(f"📁 ai_predictions.json（{size:.1f} KB）")
-        try:
+    try:
             with open("ai_predictions.json", "rb") as f:
                 data = f.read()
             st.download_button(
