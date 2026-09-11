@@ -1934,7 +1934,7 @@ def main():
         admin_page()
         return
 
-    c1, c2, c3 = st.columns([5, 1, 1])
+    c1, c2, c3, c4 = st.columns([5, 1, 1, 1])
     with c1:
         st.title("🏇 賽馬預測系統")
         st.markdown("AI 驅動・即時預測・彩池推薦")
@@ -1945,98 +1945,77 @@ def main():
                 st.session_state.show_admin = True
                 st.rerun()
     with c3:
-        if st.session_state.logged_in:
+        if st.session_state.get('logged_in', False):
+            username = st.session_state.username
+            users = load_users()
+            user_data = users.get(username, {})
+            virtual_balance = user_data.get('virtual_balance', 0)
+            group = user_data.get('group', 'free')
+            level = user_data.get('level', '🥉 銅牌會員')
+
+            with st.popover("👤 個人中心", use_container_width=True):
+                st.markdown(f"### 👤 {username}")
+                st.markdown(f"**級別**：{group.upper()}　|　**等級**：{level}")
+                st.metric("💰 虛擬幣結餘", f"${virtual_balance:,.0f}")
+
+                st.divider()
+
+                # 更改密碼
+                with st.expander("🔑 更改密碼", expanded=False):
+                    old_pw = st.text_input("舊密碼", type="password", key="pc_old_pw")
+                    new_pw = st.text_input("新密碼（最少 4 字）", type="password", key="pc_new_pw")
+                    confirm_pw = st.text_input("確認新密碼", type="password", key="pc_confirm_pw")
+                    if st.button("✅ 確認更改", key="pc_change_pw", use_container_width=True):
+                        users2 = load_users()
+                        if username not in users2:
+                            st.error("❌ 用戶不存在")
+                        elif users2[username].get('password') != old_pw:
+                            st.error("❌ 舊密碼不正確")
+                        elif len(new_pw) < 4:
+                            st.error("❌ 新密碼最少 4 個字")
+                        elif new_pw != confirm_pw:
+                            st.error("❌ 兩次密碼不一致")
+                        else:
+                            users2[username]['password'] = new_pw
+                            if save_users(users2):
+                                st.success("✅ 密碼已更改！")
+                            else:
+                                st.error("❌ 儲存失敗")
+
+                # 預測記錄
+                with st.expander("📜 預測記錄", expanded=False):
+                    history = user_data.get('history', [])
+                    if not history:
+                        st.info("📭 暫無預測記錄")
+                    else:
+                        total = len(history)
+                        hits = sum(1 for h in history if h.get('is_hit') is True)
+                        hit_rate = hits / total if total > 0 else 0
+                        hc1, hc2, hc3 = st.columns(3)
+                        hc1.metric("總預測", total)
+                        hc2.metric("命中", hits)
+                        hc3.metric("命中率", f"{hit_rate:.1%}")
+                        st.divider()
+                        df_hist = pd.DataFrame(history[-20:][::-1])
+                        cols = [c for c in ['date', 'race', 'horse', 'is_hit'] if c in df_hist.columns]
+                        if cols:
+                            df_show = df_hist[cols].copy()
+                            df_show.rename(columns={
+                                'date': '日期', 'race': '場次',
+                                'horse': '預測馬', 'is_hit': '結果'
+                            }, inplace=True)
+                            if '結果' in df_show.columns:
+                                df_show['結果'] = df_show['結果'].apply(
+                                    lambda x: '✅' if x is True else ('❌' if x is False else '⏳')
+                                )
+                            st.dataframe(df_show, use_container_width=True, hide_index=True)
+    with c4:
+        if st.session_state.get('logged_in', False):
             if st.button("🚪 登出", use_container_width=True, key="logout_main"):
                 for k in ['logged_in', 'username', 'role']:
                     if k in st.session_state:
                         del st.session_state[k]
-                st.rerun()    
-    # ============================================================
-    # 👤 個人中心（可伸縮）
-    # ============================================================
-    if st.session_state.get('logged_in', False):
-        username = st.session_state.username
-        users = load_users()
-        user_data = users.get(username, {})
-        virtual_balance = user_data.get('virtual_balance', 0)
-        group = user_data.get('group', 'free')
-        level = user_data.get('level', '🥉 銅牌會員')
-
-        with st.expander(f"👤 個人中心（{username}）", expanded=False):
-            # ===== 基本資料 =====
-            c1, c2, c3 = st.columns(3)
-            c1.metric("👤 用戶名", username)
-            c2.metric("🏷️ 級別", group.upper())
-            c3.metric("💰 虛擬幣", f"${virtual_balance:,.0f}")
-            st.caption(f"🏅 等級：{level}")
-
-            st.divider()
-
-            # ===== 1. 改密碼 =====
-            with st.expander("🔑 更改密碼", expanded=False):
-                old_pw = st.text_input("舊密碼", type="password", key="pc_old_pw")
-                new_pw = st.text_input("新密碼（最少 4 字）", type="password", key="pc_new_pw")
-                confirm_pw = st.text_input("確認新密碼", type="password", key="pc_confirm_pw")
-                if st.button("✅ 確認更改密碼", key="pc_change_pw_btn", use_container_width=True):
-                    users = load_users()
-                    if username not in users:
-                        st.error("❌ 用戶不存在")
-                    elif users[username].get('password') != old_pw:
-                        st.error("❌ 舊密碼不正確")
-                    elif len(new_pw) < 4:
-                        st.error("❌ 新密碼最少 4 個字")
-                    elif new_pw != confirm_pw:
-                        st.error("❌ 兩次新密碼不一致")
-                    else:
-                        users[username]['password'] = new_pw
-                        if save_users(users):
-                            st.success("✅ 密碼已成功更改！")
-                        else:
-                            st.error("❌ 儲存失敗")
-
-            # ===== 2. 預測記錄 =====
-            with st.expander("📜 我的預測記錄", expanded=False):
-                history = user_data.get('history', [])
-                if not history:
-                    st.info("📭 你仲未有任何預測記錄")
-                else:
-                    # 統計
-                    total = len(history)
-                    hits = sum(1 for h in history if h.get('is_hit') is True)
-                    hit_rate = hits / total if total > 0 else 0
-
-                    sc1, sc2, sc3 = st.columns(3)
-                    sc1.metric("📊 總預測", total)
-                    sc2.metric("🎯 命中", hits)
-                    sc3.metric("📈 命中率", f"{hit_rate:.1%}")
-
-                    st.divider()
-
-                    # 最近 20 條記錄
-                    st.markdown("**最近 20 條預測記錄：**")
-                    df_hist = pd.DataFrame(history[-20:][::-1])
-                    display_cols = []
-                    for c in ['date', 'race', 'horse', 'timestamp', 'is_hit']:
-                        if c in df_hist.columns:
-                            display_cols.append(c)
-                    if display_cols:
-                        df_show = df_hist[display_cols].copy()
-                        rename_map = {
-                            'date': '日期',
-                            'race': '場次',
-                            'horse': '預測馬',
-                            'timestamp': '時間',
-                            'is_hit': '結果'
-                        }
-                        df_show.rename(columns=rename_map, inplace=True)
-                        if '結果' in df_show.columns:
-                            df_show['結果'] = df_show['結果'].apply(
-                                lambda x: '✅ 命中' if x is True else ('❌ 失準' if x is False else '⏳ 待定')
-                            )
-                        st.dataframe(df_show, use_container_width=True, hide_index=True)
-                    else:
-                        st.dataframe(df_hist, use_container_width=True)
-
+                st.rerun()
     st.markdown("---")
     display_race_calendar()
     st.markdown("---")
