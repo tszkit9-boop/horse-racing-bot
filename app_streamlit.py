@@ -2205,10 +2205,32 @@ def admin_jockey_ranking():
     st.subheader("🏇 騎師勝率排行榜")
     try:
         df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig')
+        # 1. 清理欄位名（去 BOM、去空格、轉字串）
         df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
         df = df.loc[:, ~df.columns.duplicated()]
 
-        # 1. 關鍵：從 racecard_full.csv 建立對照表（因為 ALL_DATA_MERGED 冇中文名）
+        # 2. 自動搵出名次欄位（優先搵中文「名次」，再搵「Pla」）
+        pos_col = next((c for c in df.columns if '名次' in c), None)
+        if not pos_col:
+            pos_col = next((c for c in df.columns if 'pla' in c.lower()), None)
+        
+        # 3. 自動搵出騎師欄位（優先搵中文「騎師」，再搵「jockey」）
+        jockey_col = next((c for c in df.columns if '騎師' in c), None)
+        if not jockey_col:
+            jockey_col = next((c for c in df.columns if 'jockey' in c.lower()), None)
+
+        if not pos_col or not jockey_col:
+            st.error(f"❌ 搵唔到欄位！名次: {pos_col}, 騎師: {jockey_col}")
+            st.write("現有欄位：", df.columns.tolist()[:20])
+            return
+
+        # 4. 安全提取數據，防止重複欄位導致出錯
+        jockey_series = df[jockey_col]
+        if isinstance(jockey_series, pd.DataFrame): jockey_series = jockey_series.iloc[:, 0]
+        pos_series = df[pos_col]
+        if isinstance(pos_series, pd.DataFrame): pos_series = pos_series.iloc[:, 0]
+
+        # 5. 從 racecard_full.csv 建立中文對照表
         jockey_map = {}
         try:
             rc = pd.read_csv("racecard_full.csv", encoding='utf-8-sig')
@@ -2219,12 +2241,7 @@ def admin_jockey_ranking():
         except Exception:
             pass # 如果冇 racecard_full.csv，就跳過
 
-        # 2. 提取賽果數據
-        jockey_series = df['jockey']
-        if isinstance(jockey_series, pd.DataFrame): jockey_series = jockey_series.iloc[:, 0]
-        pos_series = df['Pla']
-        if isinstance(pos_series, pd.DataFrame): pos_series = pos_series.iloc[:, 0]
-
+        # 6. 建立乾淨嘅 DataFrame
         temp = pd.DataFrame()
         temp['jockey'] = jockey_series.astype(str).str.strip()
         temp['finish_position'] = pd.to_numeric(pos_series.astype(str).str.replace(r'\D', '', regex=True), errors='coerce')
@@ -2233,17 +2250,17 @@ def admin_jockey_ranking():
         temp = temp[~temp['jockey'].str.lower().isin(['nan', 'none', ''])]
 
         if temp.empty:
-            st.warning("⚠️ 數據為空！")
+            st.warning("⚠️ 過濾後數據為空！")
             return
 
-        # 3. 計算勝率
+        # 7. 計算勝率
         total = temp.groupby('jockey').size().reset_index(name='總出賽')
         wins = temp[temp['finish_position'] == 1].groupby('jockey').size().reset_index(name='勝出')
         stats = pd.merge(total, wins, on='jockey', how='left').fillna({'勝出': 0})
         stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
         stats = stats.sort_values('勝出', ascending=False)
 
-        # 4. 將英文名轉做中文名（如果 racecard_full.csv 對照表有嘅話）
+        # 8. 將英文名轉做中文名（如果對照表有嘅話）
         stats['騎師'] = stats['jockey'].map(jockey_map).fillna(stats['jockey'])
         st.dataframe(stats[['騎師', '總出賽', '勝出', '勝率']].head(20), use_container_width=True)
         st.success(f"✅ 成功計算！共 {len(stats)} 位騎師")
@@ -2256,10 +2273,31 @@ def admin_trainer_ranking():
     st.subheader("🏇 練馬師勝率排行榜")
     try:
         df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig')
+        # 1. 清理欄位名（去 BOM、去空格、轉字串）
         df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
         df = df.loc[:, ~df.columns.duplicated()]
 
-        # 1. 從 racecard_full.csv 建立對照表
+        # 2. 自動搵出名次欄位
+        pos_col = next((c for c in df.columns if '名次' in c), None)
+        if not pos_col:
+            pos_col = next((c for c in df.columns if 'pla' in c.lower()), None)
+        
+        # 3. 自動搵出練馬師欄位
+        trainer_col = next((c for c in df.columns if '練馬師' in c), None)
+        if not trainer_col:
+            trainer_col = next((c for c in df.columns if 'trainer' in c.lower()), None)
+
+        if not pos_col or not trainer_col:
+            st.error(f"❌ 搵唔到欄位！名次: {pos_col}, 練馬師: {trainer_col}")
+            return
+
+        # 4. 安全提取數據
+        trainer_series = df[trainer_col]
+        if isinstance(trainer_series, pd.DataFrame): trainer_series = trainer_series.iloc[:, 0]
+        pos_series = df[pos_col]
+        if isinstance(pos_series, pd.DataFrame): pos_series = pos_series.iloc[:, 0]
+
+        # 5. 從 racecard_full.csv 建立中文對照表
         trainer_map = {}
         try:
             rc = pd.read_csv("racecard_full.csv", encoding='utf-8-sig')
@@ -2270,12 +2308,7 @@ def admin_trainer_ranking():
         except Exception:
             pass
 
-        # 2. 提取賽果數據
-        trainer_series = df['trainer']
-        if isinstance(trainer_series, pd.DataFrame): trainer_series = trainer_series.iloc[:, 0]
-        pos_series = df['Pla']
-        if isinstance(pos_series, pd.DataFrame): pos_series = pos_series.iloc[:, 0]
-
+        # 6. 建立乾淨嘅 DataFrame
         temp = pd.DataFrame()
         temp['trainer'] = trainer_series.astype(str).str.strip()
         temp['finish_position'] = pd.to_numeric(pos_series.astype(str).str.replace(r'\D', '', regex=True), errors='coerce')
@@ -2284,17 +2317,17 @@ def admin_trainer_ranking():
         temp = temp[~temp['trainer'].str.lower().isin(['nan', 'none', ''])]
 
         if temp.empty:
-            st.warning("⚠️ 數據為空！")
+            st.warning("⚠️ 過濾後數據為空！")
             return
 
-        # 3. 計算勝率
+        # 7. 計算勝率
         total = temp.groupby('trainer').size().reset_index(name='總出賽')
         wins = temp[temp['finish_position'] == 1].groupby('trainer').size().reset_index(name='勝出')
         stats = pd.merge(total, wins, on='trainer', how='left').fillna({'勝出': 0})
         stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
         stats = stats.sort_values('勝出', ascending=False)
 
-        # 4. 將英文名轉做中文名
+        # 8. 將英文名轉做中文名
         stats['練馬師'] = stats['trainer'].map(trainer_map).fillna(stats['trainer'])
         st.dataframe(stats[['練馬師', '總出賽', '勝出', '勝率']].head(20), use_container_width=True)
         st.success(f"✅ 成功計算！共 {len(stats)} 位練馬師")
