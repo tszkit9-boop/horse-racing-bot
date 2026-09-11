@@ -2189,18 +2189,47 @@ def admin_horse_ranking():
     df_horse = pd.DataFrame(horse_list).sort_values('命中率', ascending=False).reset_index(drop=True)
     st.dataframe(df_horse.head(15), use_container_width=True)
 
+def admin_horse_ranking():
+    st.subheader("🏇 馬匹勝率排行榜")
+    try:
+        df = pd.read_csv("ALL_DATA_MERGED.csv")
+        df = standardize_columns_safe(df)
+        if 'horse_name' in df.columns and 'finish_position' in df.columns:
+            df = df.dropna(subset=['horse_name', 'finish_position'])
+            df['finish_position'] = pd.to_numeric(df['finish_position'], errors='coerce')
+            df = df.dropna(subset=['finish_position'])
+            
+            total_races = df.groupby('horse_name').size().reset_index(name='總出賽')
+            winners = df[df['finish_position'] == 1]
+            wins = winners.groupby('horse_name').size().reset_index(name='勝出')
+            
+            stats = pd.merge(total_races, wins, on='horse_name', how='left').fillna({'勝出': 0})
+            stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
+            stats = stats.sort_values('勝出', ascending=False).rename(columns={'horse_name': '馬匹'})
+            st.dataframe(stats.head(20), use_container_width=True)
+        else:
+            st.info("暫無足夠數據 (欄位缺失)")
+    except Exception as e:
+        st.error(f"讀取數據失敗: {e}")
+
 def admin_jockey_ranking():
     st.subheader("🏇 騎師勝率排行榜")
     try:
         df = pd.read_csv("ALL_DATA_MERGED.csv")
         df = standardize_columns_safe(df)
         if 'jockey' in df.columns and 'finish_position' in df.columns:
+            df = df.dropna(subset=['jockey', 'finish_position'])
+            df = df[df['jockey'].astype(str).str.strip() != '']
+            df['finish_position'] = pd.to_numeric(df['finish_position'], errors='coerce')
+            df = df.dropna(subset=['finish_position'])
+            
+            total_races = df.groupby('jockey').size().reset_index(name='總出賽')
             winners = df[df['finish_position'] == 1]
-            total_races = df.groupby('jockey').size()
-            wins = winners.groupby('jockey').size()
-            stats = pd.DataFrame({'總出賽': total_races, '勝出': wins}).fillna(0)
+            wins = winners.groupby('jockey').size().reset_index(name='勝出')
+            
+            stats = pd.merge(total_races, wins, on='jockey', how='left').fillna({'勝出': 0})
             stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
-            stats = stats.sort_values('勝出', ascending=False)
+            stats = stats.sort_values('勝出', ascending=False).rename(columns={'jockey': '騎師'})
             st.dataframe(stats.head(20), use_container_width=True)
         else:
             st.info("暫無足夠數據 (欄位缺失)")
@@ -2213,12 +2242,18 @@ def admin_trainer_ranking():
         df = pd.read_csv("ALL_DATA_MERGED.csv")
         df = standardize_columns_safe(df)
         if 'trainer' in df.columns and 'finish_position' in df.columns:
+            df = df.dropna(subset=['trainer', 'finish_position'])
+            df = df[df['trainer'].astype(str).str.strip() != '']
+            df['finish_position'] = pd.to_numeric(df['finish_position'], errors='coerce')
+            df = df.dropna(subset=['finish_position'])
+            
+            total_races = df.groupby('trainer').size().reset_index(name='總出賽')
             winners = df[df['finish_position'] == 1]
-            total_races = df.groupby('trainer').size()
-            wins = winners.groupby('trainer').size()
-            stats = pd.DataFrame({'總出賽': total_races, '勝出': wins}).fillna(0)
+            wins = winners.groupby('trainer').size().reset_index(name='勝出')
+            
+            stats = pd.merge(total_races, wins, on='trainer', how='left').fillna({'勝出': 0})
             stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
-            stats = stats.sort_values('勝出', ascending=False)
+            stats = stats.sort_values('勝出', ascending=False).rename(columns={'trainer': '練馬師'})
             st.dataframe(stats.head(20), use_container_width=True)
         else:
             st.info("暫無足夠數據 (欄位缺失)")
@@ -2228,10 +2263,6 @@ def admin_trainer_ranking():
 def admin_course_analysis():
     st.subheader("📊 場地/路程勝率分析")
     st.info("此功能需要更詳細的場地與路程數據，暫未開放。")
-
-def admin_monthly_report():
-    st.subheader("📅 每月命中率報告")
-    st.info("此功能需要預測記錄對比，暫未開放。")
 
 def admin_finance():
     st.subheader("💰 財務管理")
