@@ -1745,13 +1745,11 @@ def admin_auto_maintenance():
     with col1:
         if st.button("🔄 比對賽果", use_container_width=True, key="btn_compare"):
             try:
-                updated, msg = update_accuracy_with_results()
-                if updated > 0:
-                    st.session_state.operation_result = ('success', f"✅ {msg}")
-                else:
-                    st.session_state.operation_result = ('info', f"ℹ️ {msg}")
+                # 🔥 直接用 ai_predictions.json 比對
+                hit_count, msg = update_ai_accuracy()
+                st.session_state.operation_result = ('success', f"✅ {msg}")
             except Exception as e:
-                st.session_state.operation_result = ('error', f"❌ 比對賽果失敗：{str(e)}")
+                st.session_state.operation_result = ('error', f"❌ 比對失敗：{str(e)}")
             st.rerun()
 
     with col2:
@@ -1760,7 +1758,7 @@ def admin_auto_maintenance():
                 result = adjust_model_weights()
                 st.session_state.operation_result = (
                     'success',
-                    f"✅ XGB={result['xgb_weight']}, Cat={result['cat_weight']}（命中率 {result['hit_rate']:.2%}）"
+                    f"✅ XGB={result['xgb_weight']}, Cat={result['cat_weight']}"
                 )
             except Exception as e:
                 st.session_state.operation_result = ('error', f"❌ 調整權重失敗：{str(e)}")
@@ -1792,6 +1790,14 @@ def admin_auto_maintenance():
                 st.session_state.operation_result = ('error', f"❌ 失敗：{str(e)}")
             st.rerun()
 
+    with col4:
+        if st.button("🎯 更新 AI 命中率", use_container_width=True, key="btn_update_ai"):
+            try:
+                hit_count, msg = update_ai_accuracy()
+                st.session_state.operation_result = ('success', f"✅ {msg}")
+            except Exception as e:
+                st.session_state.operation_result = ('error', f"❌ 失敗：{str(e)}")
+            st.rerun()
     with col4:
         if st.button("🎯 更新 AI 命中率", use_container_width=True, key="btn_update_ai"):
             try:
