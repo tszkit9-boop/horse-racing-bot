@@ -679,22 +679,103 @@ def show_lottery_interface(username):
         st.warning("暫無獎品，請管理員新增")
         return
 
-    # 檢查用戶抽獎次數
     users = load_users()
     user = users.get(username, {})
     lottery_chances = user.get('lottery_chances', 0)
 
-    st.markdown(f"### 🎟️ 你仲有 **{lottery_chances}** 次抽獎機會")
+    # 顯示抽獎次數
+    st.markdown(f"""
+    <div style="background: linear-gradient(135deg, #667eea, #764ba2);
+                padding: 18px 22px; border-radius: 14px; color: white;
+                text-align: center; margin-bottom: 16px;">
+        <div style="font-size: 14px; opacity: 0.9;">🎟️ 你嘅抽獎機會</div>
+        <div style="font-size: 48px; font-weight: 800; line-height: 1.2;">{lottery_chances}</div>
+        <div style="font-size: 12px; opacity: 0.8;">次</div>
+    </div>
+    """, unsafe_allow_html=True)
 
     if lottery_chances <= 0:
         st.warning("⚠️ 你冇抽獎次數啦！請聯絡管理員增加。")
         return
 
-    if st.button("🎲 抽獎！", type="primary", use_container_width=True):
+    # 初始化 session state
+    if 'lottery_rolling' not in st.session_state:
+        st.session_state.lottery_rolling = False
+    if 'lottery_result' not in st.session_state:
+        st.session_state.lottery_result = None
+
+    # ===== 抽獎動畫區域 =====
+    animation_placeholder = st.empty()
+
+    if st.session_state.lottery_rolling:
+        # 顯示滾動動畫
+        icons = ["🎁", "🎰", "💎", "🏆", "🎊", "⭐", "🍀", "🎯"]
+        for i in range(12):
+            icon = icons[i % len(icons)]
+            animation_placeholder.markdown(f"""
+            <div style="background: linear-gradient(135deg, #ffecd2, #fcb69f);
+                        padding: 40px; border-radius: 16px; text-align: center;
+                        border: 3px dashed #ff6b6b;">
+                <div style="font-size: 80px; animation: spin 0.3s linear infinite;">{icon}</div>
+                <div style="font-size: 20px; font-weight: bold; color: #d63447; margin-top: 10px;">
+                    抽獎中...
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            time.sleep(0.15)
+
+    # 顯示中獎結果
+    if st.session_state.lottery_result is not None:
+        result = st.session_state.lottery_result
+        st.markdown(f"""
+        <div style="background: linear-gradient(135deg, #f9d423, #ff4e50);
+                    padding: 30px; border-radius: 16px; text-align: center;
+                    color: white; box-shadow: 0 8px 25px rgba(255,78,80,0.4);
+                    animation: pop 0.5s ease-out;">
+            <div style="font-size: 70px;">{result['icon']}</div>
+            <div style="font-size: 24px; font-weight: 800; margin-top: 10px;">
+                🎉 恭喜中獎！
+            </div>
+            <div style="font-size: 32px; font-weight: 900; margin-top: 12px;
+                        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">
+                {result['name']}
+            </div>
+            <div style="font-size: 18px; opacity: 0.95; margin-top: 10px;">
+                {result['desc']}
+            </div>
+        </div>
+        <style>
+            @keyframes pop {{
+                0% {{ transform: scale(0.5); opacity: 0; }}
+                70% {{ transform: scale(1.05); }}
+                100% {{ transform: scale(1); opacity: 1; }}
+            }}
+            @keyframes spin {{
+                0% {{ transform: rotate(0deg); }}
+                100% {{ transform: rotate(360deg); }}
+            }}
+        </style>
+        """, unsafe_allow_html=True)
+
+        st.balloons()
+        st.snow()
+
+        if st.button("🔄 再抽一次", use_container_width=True, key="roll_again"):
+            st.session_state.lottery_result = None
+            st.rerun()
+
+    # ===== 抽獎按鈕 =====
+    elif not st.session_state.lottery_rolling:
+        if st.button("🎲 開始抽獎！", type="primary", use_container_width=True, key="start_lottery"):
+            st.session_state.lottery_rolling = True
+            st.rerun()
+
+    # ===== 執行抽獎邏輯 =====
+    if st.session_state.lottery_rolling:
         # 扣一次抽獎次數
         users[username]['lottery_chances'] = lottery_chances - 1
 
-        # 抽獎邏輯
+        # 抽獎
         weights = [_safe_int(p.get('weight', 1), 1) for p in prizes]
         if sum(weights) <= 0:
             weights = [1] * len(prizes)
@@ -703,17 +784,24 @@ def show_lottery_interface(username):
         pval = _safe_int(chosen.get('value', 0), 0)
         pname = chosen.get('name', '獎品')
 
+        # 處理獎品
+        icon = "🎁"
+        desc = ""
+
         if ptype == 'virtual_coin':
             users[username]['virtual_balance'] = user.get('virtual_balance', 0) + pval
-            st.success(f"🎉 恭喜你抽到 **{pname}**：${pval} 虛擬幣！")
+            icon = "💰"
+            desc = f"+${pval} 虛擬幣"
         elif ptype == 'vip_days':
             users[username]['group'] = 'VIP'
             users[username]['predictions_limit'] = -1
-            st.success(f"🎉 恭喜你抽到 **{pname}**：VIP {pval} 天！")
+            icon = "👑"
+            desc = f"VIP {pval} 天"
         elif ptype == 'free_predictions':
             if users[username].get('predictions_limit', 0) != -1:
                 users[username]['predictions_limit'] = users[username].get('predictions_limit', 0) + pval
-            st.success(f"🎉 恭喜你抽到 **{pname}**：{pval} 次免費預測！")
+            icon = "🔮"
+            desc = f"{pval} 次免費預測"
         elif ptype == 'promo_code':
             code = generate_promo_code()
             promos = load_promos()
@@ -726,12 +814,39 @@ def show_lottery_interface(username):
                 "created_by": username
             }
             save_promos(promos)
-            st.success(f"🎉 恭喜你抽到優惠碼：**{code}**")
+            icon = "🎟️"
+            desc = f"優惠碼：{code}"
+            pname = f"優惠碼 {code}"
+        elif ptype == 'nothing':
+            icon = "😅"
+            desc = "冇中獎，下次再嚟！"
         else:
-            st.info(f"你抽到：{pname}")
+            icon = "🎁"
+            desc = chosen.get('description', '')
 
         save_users(users)
+        time.sleep(1.5)
+
+        st.session_state.lottery_result = {
+            'name': pname,
+            'desc': desc,
+            'icon': icon
+        }
+        st.session_state.lottery_rolling = False
         st.rerun()
+
+    # ===== 獎品一覽 =====
+    st.divider()
+    with st.expander("🎁 獎品一覽", expanded=False):
+        rows = []
+        for p in prizes:
+            rows.append({
+                "獎品": p.get('name', ''),
+                "類型": p.get('type', ''),
+                "數值": p.get('value', 0),
+                "中獎機率": f"{p.get('weight', 0)}"
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 def show_shop_interface(username):
     st.subheader("🛒 虛擬商城")
