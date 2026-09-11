@@ -2262,7 +2262,6 @@ def admin_trainer_ranking():
             st.info("暫無足夠數據 (欄位缺失)")
     except Exception as e:
         st.error(f"讀取數據失敗: {e}")
-
 def admin_monthly_report():
     st.subheader("📅 每月命中率報告")
     st.info("此功能需要預測記錄對比，暫未開放。")
