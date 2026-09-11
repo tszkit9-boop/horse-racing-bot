@@ -2208,16 +2208,21 @@ def admin_jockey_ranking():
         df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
         df = df.loc[:, ~df.columns.duplicated()]
 
-        jockey_cols = [c for c in df.columns if 'jockey' in c.lower()]
-        pos_cols = [c for c in df.columns if 'pla' in c.lower() or '名次' in c]
+        # 1. 關鍵：從 racecard_full.csv 建立對照表（因為 ALL_DATA_MERGED 冇中文名）
+        jockey_map = {}
+        try:
+            rc = pd.read_csv("racecard_full.csv", encoding='utf-8-sig')
+            rc.columns = rc.columns.str.strip()
+            if 'jockey_en' in rc.columns and 'jockey_cn' in rc.columns:
+                mapping_df = rc[['jockey_en', 'jockey_cn']].dropna().drop_duplicates()
+                jockey_map = dict(zip(mapping_df['jockey_en'], mapping_df['jockey_cn']))
+        except Exception:
+            pass # 如果冇 racecard_full.csv，就跳過
 
-        if not jockey_cols or not pos_cols:
-            st.error("❌ 搵唔到欄位！")
-            return
-
-        jockey_series = df[jockey_cols[0]]
+        # 2. 提取賽果數據
+        jockey_series = df['jockey']
         if isinstance(jockey_series, pd.DataFrame): jockey_series = jockey_series.iloc[:, 0]
-        pos_series = df[pos_cols[0]]
+        pos_series = df['Pla']
         if isinstance(pos_series, pd.DataFrame): pos_series = pos_series.iloc[:, 0]
 
         temp = pd.DataFrame()
@@ -2231,14 +2236,17 @@ def admin_jockey_ranking():
             st.warning("⚠️ 數據為空！")
             return
 
+        # 3. 計算勝率
         total = temp.groupby('jockey').size().reset_index(name='總出賽')
         wins = temp[temp['finish_position'] == 1].groupby('jockey').size().reset_index(name='勝出')
         stats = pd.merge(total, wins, on='jockey', how='left').fillna({'勝出': 0})
         stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
-        stats = stats.sort_values('勝出', ascending=False).rename(columns={'jockey': '騎師'})
+        stats = stats.sort_values('勝出', ascending=False)
 
+        # 4. 將英文名轉做中文名（如果 racecard_full.csv 對照表有嘅話）
+        stats['騎師'] = stats['jockey'].map(jockey_map).fillna(stats['jockey'])
+        st.dataframe(stats[['騎師', '總出賽', '勝出', '勝率']].head(20), use_container_width=True)
         st.success(f"✅ 成功計算！共 {len(stats)} 位騎師")
-        st.dataframe(stats.head(20), use_container_width=True)
 
     except Exception as e:
         st.error(f"讀取數據失敗: {e}")
@@ -2251,12 +2259,18 @@ def admin_trainer_ranking():
         df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
         df = df.loc[:, ~df.columns.duplicated()]
 
-        # 建立對照表：英文名 -> 中文名
+        # 1. 從 racecard_full.csv 建立對照表
         trainer_map = {}
-        if 'trainer' in df.columns and '練馬師' in df.columns:
-            mapping_df = df[['trainer', '練馬師']].dropna().drop_duplicates()
-            trainer_map = dict(zip(mapping_df['trainer'], mapping_df['練馬師']))
+        try:
+            rc = pd.read_csv("racecard_full.csv", encoding='utf-8-sig')
+            rc.columns = rc.columns.str.strip()
+            if 'trainer_en' in rc.columns and 'trainer_cn' in rc.columns:
+                mapping_df = rc[['trainer_en', 'trainer_cn']].dropna().drop_duplicates()
+                trainer_map = dict(zip(mapping_df['trainer_en'], mapping_df['trainer_cn']))
+        except Exception:
+            pass
 
+        # 2. 提取賽果數據
         trainer_series = df['trainer']
         if isinstance(trainer_series, pd.DataFrame): trainer_series = trainer_series.iloc[:, 0]
         pos_series = df['Pla']
@@ -2273,13 +2287,14 @@ def admin_trainer_ranking():
             st.warning("⚠️ 數據為空！")
             return
 
+        # 3. 計算勝率
         total = temp.groupby('trainer').size().reset_index(name='總出賽')
         wins = temp[temp['finish_position'] == 1].groupby('trainer').size().reset_index(name='勝出')
         stats = pd.merge(total, wins, on='trainer', how='left').fillna({'勝出': 0})
         stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
         stats = stats.sort_values('勝出', ascending=False)
 
-        # 將英文名轉做中文名（如果對照表有嘅話）
+        # 4. 將英文名轉做中文名
         stats['練馬師'] = stats['trainer'].map(trainer_map).fillna(stats['trainer'])
         st.dataframe(stats[['練馬師', '總出賽', '勝出', '勝率']].head(20), use_container_width=True)
         st.success(f"✅ 成功計算！共 {len(stats)} 位練馬師")
