@@ -1036,190 +1036,44 @@ def admin_manage_predictions():
         st.info("暫無用戶")
         return
 
-    # ============================================================
-    # 👤 第一步：揀一個用戶（放喺最頂）
-    # ============================================================
-    all_users = list(users.keys())
-    st.markdown(f"### 👤 第一步：揀一個用戶（總共 {len(all_users)} 個）")
-
-    col_search, col_select = st.columns([1, 2])
-    with col_search:
-        search = st.text_input("🔍 搜尋用戶", key="mp_search", placeholder="輸入關鍵字...")
-
-    if search:
-        filtered_users = [u for u in all_users if search.lower() in u.lower()]
-    else:
-        filtered_users = all_users
-
-    if not filtered_users:
-        st.warning("冇符合嘅用戶")
-        return
-
-    with col_select:
-        sel = st.selectbox(
-            f"揀用戶（共 {len(filtered_users)} 個）",
-            filtered_users,
-            key="mp_user"
-        )
-
+    # 揀用戶
+    sel = st.selectbox("👤 揀用戶", list(users.keys()), key="mp_user")
     if not sel:
         return
 
-    # 顯示所有用戶名（方便確認）
-    with st.expander(f"📋 睇晒所有用戶（共 {len(all_users)} 個）", expanded=False):
-        st.write(", ".join(all_users))
-
-    # ============================================================
-    # 📊 顯示選中用戶狀態
-    # ============================================================
     user = users[sel]
-    pred_limit = user.get('predictions_limit', CONFIG.get('free_limit', 2))
-    pred_used = user.get('free_usage', 0)
     lottery_chances = user.get('lottery_chances', 0)
-    lottery_used = user.get('lottery_used', 0)
-    lottery_remaining = max(0, lottery_chances - lottery_used)
     cur_bal = user.get('virtual_balance', 0)
 
-    st.success(f"✅ 你而家管理緊：**{sel}**")
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("🔮 預測剩餘", pred_limit - pred_used if pred_limit != -1 else "無限")
-    c2.metric("📊 預測已用", pred_used)
-    c3.metric("🎰 抽獎剩餘", lottery_remaining)
-    c4.metric("🎲 抽獎已用", lottery_used)
-    c5.metric("💰 虛擬幣", f"${cur_bal:,.0f}")
+    st.info(f"你而家揀緊：**{sel}**（抽獎 {lottery_chances} 次 / 虛擬幣 ${cur_bal:,.0f}）")
 
     st.divider()
 
-    # ============================================================
-    # 🎰 抽獎次數管理
-    # ============================================================
-    st.markdown(f"### 🎰 幫 **{sel}** 加 / 減抽獎次數")
-    st.info(f"目前抽獎機會：**{lottery_chances}** 次　|　已用：**{lottery_used}** 次　|　剩餘：**{lottery_remaining}** 次")
-
-    lc1, lc2, lc3 = st.columns(3)
-
-    with lc1:
-        st.markdown("**➕ 增加抽獎次數**")
-        add_lottery = st.number_input("增加幾多次", min_value=1, value=1, key="mp_add_lot")
-        if st.button(f"➕ 幫 {sel} 增加抽獎", use_container_width=True, key="mp_do_add_lot"):
+    # 加抽獎次數
+    st.markdown("### 🎰 抽獎次數")
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        add_lottery = st.number_input("加幾多次", min_value=1, value=1, key="add_lot")
+    with c2:
+        st.write("")
+        if st.button("➕ 加抽獎", use_container_width=True, key="do_add_lot"):
             users[sel]['lottery_chances'] = lottery_chances + add_lottery
             save_users(users)
-            st.success(f"✅ 已幫 **{sel}** 增加 {add_lottery} 次抽獎（新總數：{lottery_chances + add_lottery}）")
+            st.success(f"✅ 已幫 {sel} 加 {add_lottery} 次抽獎")
             st.rerun()
 
-    with lc2:
-        st.markdown("**➖ 減少抽獎次數**")
-        red_lottery = st.number_input("減少幾多次", min_value=1, value=1, key="mp_red_lot")
-        if st.button(f"➖ 幫 {sel} 減少抽獎", use_container_width=True, key="mp_do_red_lot"):
-            if lottery_chances - red_lottery < 0:
-                st.error(f"❌ 唔可以減到負數（目前只有 {lottery_chances} 次）")
-            else:
-                users[sel]['lottery_chances'] = lottery_chances - red_lottery
-                save_users(users)
-                st.success(f"✅ 已幫 **{sel}** 減少 {red_lottery} 次抽獎（新總數：{lottery_chances - red_lottery}）")
-                st.rerun()
-
-    with lc3:
-        st.markdown("**✅ 設定抽獎次數**")
-        set_lottery = st.number_input("設定為", min_value=0, value=lottery_chances, key="mp_set_lot")
-        if st.button(f"✅ 幫 {sel} 設定抽獎", use_container_width=True, key="mp_do_set_lot"):
-            users[sel]['lottery_chances'] = set_lottery
-            save_users(users)
-            st.success(f"✅ 已幫 **{sel}** 設定為 {set_lottery} 次抽獎")
-            st.rerun()
-
-    st.divider()
-
-    # ============================================================
-    # 💰 虛擬幣管理
-    # ============================================================
-    st.markdown(f"### 💰 幫 **{sel}** 加 / 減虛擬幣")
-    st.info(f"目前餘額：**${cur_bal:,.0f}**")
-
-    gc1, gc2, gc3 = st.columns(3)
-
-    with gc1:
-        st.markdown("**➕ 送虛擬幣**")
-        add_coin = st.number_input("送幾多", min_value=1, value=100, step=100, key="mp_add_coin")
-        if st.button(f"🎁 送 {sel} 虛擬幣", use_container_width=True, key="mp_do_add_coin"):
+    # 送虛擬幣
+    st.markdown("### 💰 虛擬幣")
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        add_coin = st.number_input("送幾多", min_value=1, value=100, step=100, key="add_coin")
+    with c2:
+        st.write("")
+        if st.button("🎁 送幣", use_container_width=True, key="do_add_coin"):
             users[sel]['virtual_balance'] = cur_bal + add_coin
             save_users(users)
-            st.success(f"✅ 已送 **${add_coin:,.0f}** 俾 **{sel}**（新餘額：${cur_bal + add_coin:,.0f}）")
+            st.success(f"✅ 已送 ${add_coin:,.0f} 俾 {sel}")
             st.rerun()
-
-    with gc2:
-        st.markdown("**➖ 扣虛擬幣**")
-        red_coin = st.number_input("扣幾多", min_value=1, value=100, step=100, key="mp_red_coin")
-        if st.button(f"➖ 扣 {sel} 虛擬幣", use_container_width=True, key="mp_do_red_coin"):
-            if cur_bal - red_coin < 0:
-                st.error(f"❌ 餘額不足（目前只有 ${cur_bal:,.0f}）")
-            else:
-                users[sel]['virtual_balance'] = cur_bal - red_coin
-                save_users(users)
-                st.success(f"✅ 已扣 **${red_coin:,.0f}**（新餘額：${cur_bal - red_coin:,.0f}）")
-                st.rerun()
-
-    with gc3:
-        st.markdown("**✅ 設定虛擬幣**")
-        set_coin = st.number_input("設定為", min_value=0, value=int(cur_bal), step=100, key="mp_set_coin")
-        if st.button(f"✅ 設定 {sel} 餘額", use_container_width=True, key="mp_do_set_coin"):
-            users[sel]['virtual_balance'] = set_coin
-            save_users(users)
-            st.success(f"✅ 已將 **{sel}** 嘅餘額設定為 **${set_coin:,.0f}**")
-            st.rerun()
-
-    st.divider()
-
-    # ============================================================
-    # 其他功能（可收縮）
-    # ============================================================
-    with st.expander("🔄 重置已用次數", expanded=False):
-        rc1, rc2 = st.columns(2)
-        with rc1:
-            if st.button(f"🔄 重置 {sel} 嘅預測已用次數", use_container_width=True, key="reset_pred_used"):
-                users[sel]['free_usage'] = 0
-                save_users(users)
-                st.success(f"✅ 已重置 **{sel}** 嘅預測已用次數")
-                st.rerun()
-        with rc2:
-            if st.button(f"🔄 重置 {sel} 嘅抽獎已用次數", use_container_width=True, key="reset_lot_used"):
-                users[sel]['lottery_used'] = 0
-                save_users(users)
-                st.success(f"✅ 已重置 **{sel}** 嘅抽獎已用次數")
-                st.rerun()
-
-    with st.expander("🔮 預測次數管理", expanded=False):
-        act = st.radio("操作", ["增加", "減少", "設定"], horizontal=True, key="mp_act")
-        if act == "增加":
-            a = st.number_input("增加預測次數", min_value=1, value=1, key="mp_add")
-            if st.button("✅ 增加", key="mp_do_add", use_container_width=True):
-                if pred_limit == -1:
-                    st.warning("⚠️ 此用戶已是無限次數")
-                else:
-                    users[sel]['predictions_limit'] = pred_limit + a
-                    save_users(users)
-                    st.success(f"✅ 已增加 {a} 次")
-                    st.rerun()
-        elif act == "減少":
-            a = st.number_input("減少預測次數", min_value=1, value=1, key="mp_red")
-            if st.button("✅ 減少", key="mp_do_red", use_container_width=True):
-                if pred_limit == -1:
-                    st.warning("⚠️ 無限次數無法減少")
-                elif pred_limit - a < 0:
-                    st.error("❌ 不能低於 0")
-                else:
-                    users[sel]['predictions_limit'] = pred_limit - a
-                    save_users(users)
-                    st.success(f"✅ 已減少 {a} 次")
-                    st.rerun()
-        else:
-            a = st.number_input("設定（-1 = 無限）", min_value=-1,
-                                value=pred_limit if pred_limit != -1 else 10, key="mp_set")
-            if st.button("✅ 設定", key="mp_do_set", use_container_width=True):
-                users[sel]['predictions_limit'] = a
-                save_users(users)
-                st.success(f"✅ 已設定為 {'無限' if a == -1 else a}")
-                st.rerun()
 def admin_analytics():
     st.subheader("📊 數據分析")
     users = load_users()
