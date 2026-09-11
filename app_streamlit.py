@@ -490,6 +490,40 @@ def _build_features(race_df, history_df):
         result[c] = pd.to_numeric(result[c], errors='coerce').fillna(0)
 
     return result
+    def _repair_racecard(df):
+    """自動修復混合格式嘅 racecard CSV"""
+    first_col = df.columns[0]
+
+    # 標準英文列名
+    std_cols = ['horse_id', 'horse_name', 'draw', 'weight', 'jockey',
+                'trainer', 'race_no', 'race_date', 'win_odds']
+
+    # 刪除重複 header 行
+    mask_header = df[first_col].astype(str).str.strip().str.lower() == 'race_date'
+    if mask_header.any():
+        df = df[~mask_header].copy()
+
+    first_vals = df[first_col].astype(str).str.strip()
+
+    # 區分中文格式（第一列係數字）同英文格式（第一列係日期）
+    cn_mask = first_vals.str.match(r'^\d+$')
+    en_mask = first_vals.str.match(r'^\d{4}-\d{2}-\d{2}$')
+
+    cn_df = df[cn_mask].copy()
+    en_df = df[en_mask].copy()
+
+    # 中文格式：列順序已經係標準
+    if not cn_df.empty:
+        cn_df.columns = std_cols
+
+    # 英文格式：需要重排
+    if not en_df.empty:
+        en_df.columns = ['race_date', 'race_no', 'horse_id', 'horse_name',
+                         'draw', 'weight', 'jockey', 'trainer', 'win_odds']
+        en_df = en_df[std_cols]
+
+    result = pd.concat([cn_df, en_df], ignore_index=True)
+    return result
 
 
 def run_prediction(date_str, race_no):
