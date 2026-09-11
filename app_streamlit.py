@@ -596,62 +596,56 @@ def admin_horse_ranking():
         pos_series, pos_name = _get_pos_series(df)
         st.caption(f"📊 使用名次欄位：**{pos_name}**（有效數據：{pos_series.notna().sum()}）")
 
-        # 用英文馬名做基礎
-        temp = df[['horse_name']].copy()
-        temp.columns = ['馬匹_en']
+        # 用 horse_id 做 key
+        temp = df[['horse_id']].copy()
+        temp.columns = ['horse_id']
         temp['名次'] = pos_series.values
+        temp['英文名'] = df['horse_name'].astype(str).str.strip()
 
-        temp['馬匹_en'] = temp['馬匹_en'].astype(str).str.strip()
+        temp['horse_id'] = temp['horse_id'].astype(str).str.strip()
         temp = temp.dropna(subset=['名次'])
-        temp = temp[~temp['馬匹_en'].str.lower().isin(['nan', 'none', ''])]
+        temp = temp[~temp['horse_id'].str.lower().isin(['nan', 'none', ''])]
 
         if temp.empty:
             st.warning("⚠️ 過濾後數據為空！")
             return
 
-        # 讀取中英對照表
-        name_map = {}
+        # 讀 horse_name_mapping.csv（horse_id → 馬名）
+        id_to_cn = {}
         if os.path.exists("horse_name_mapping.csv"):
             try:
                 map_df = pd.read_csv("horse_name_mapping.csv", encoding='utf-8-sig')
                 map_df.columns = [str(c).replace('\ufeff', '').strip() for c in map_df.columns]
+                st.write(f"**對照表欄位**：{map_df.columns.tolist()}")
 
-                # 自動偵測欄位名
-                en_col = None
-                cn_col = None
-                for c in map_df.columns:
-                    cl = str(c).lower()
-                    if 'english' in cl or cl == 'horse_name_en' or '英文' in cl:
-                        en_col = c
-                    if 'chinese' in cl or cl == 'horse_name_cn' or '中文' in cl:
-                        cn_col = c
-
-                if en_col and cn_col:
-                    map_df = map_df[[en_col, cn_col]].dropna().drop_duplicates()
-                    name_map = dict(zip(
-                        map_df[en_col].astype(str).str.strip(),
-                        map_df[cn_col].astype(str).str.strip()
-                    ))
-                    st.success(f"✅ 已載入 {len(name_map)} 條中英對照")
+                if 'horse_id' in map_df.columns and '馬名' in map_df.columns:
+                    map_df = map_df[['horse_id', '馬名']].dropna()
+                    map_df['horse_id'] = map_df['horse_id'].astype(str).str.strip()
+                    id_to_cn = dict(zip(map_df['horse_id'], map_df['馬名']))
+                    st.success(f"✅ 已載入 {len(id_to_cn)} 條 horse_id → 中文名對照")
                 else:
-                    st.warning(f"⚠️ 對照表欄位唔啱！現有欄位：{map_df.columns.tolist()}")
+                    st.warning(f"⚠️ 對照表冇 horse_id 或 馬名 欄位")
             except Exception as e:
                 st.warning(f"⚠️ 讀取對照表失敗：{e}")
         else:
-            st.info("ℹ️ 冇 horse_name_mapping.csv，顯示英文名")
+            st.info("ℹ️ 冇 horse_name_mapping.csv")
 
-        # 統計（用英文名分組）
-        total = temp['馬匹_en'].value_counts()
-        wins = temp[temp['名次'] == 1]['馬匹_en'].value_counts()
-        stats = pd.DataFrame({'馬匹_en': total.index, '總出賽': total.values})
-        stats['勝出'] = stats['馬匹_en'].map(wins).fillna(0).astype(int)
+        # 統計（用 horse_id 分組）
+        total = temp['horse_id'].value_counts()
+        wins = temp[temp['名次'] == 1]['horse_id'].value_counts()
+
+        stats = pd.DataFrame({'horse_id': total.index, '總出賽': total.values})
+        stats['勝出'] = stats['horse_id'].map(wins).fillna(0).astype(int)
         stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
 
-        # 轉中文
-        if name_map:
-            stats['馬匹'] = stats['馬匹_en'].map(name_map).fillna(stats['馬匹_en'])
+        # 加上英文名同中文名
+        id_to_en = dict(zip(temp['horse_id'], temp['英文名']))
+        stats['英文名'] = stats['horse_id'].map(id_to_en)
+
+        if id_to_cn:
+            stats['馬匹'] = stats['horse_id'].map(id_to_cn).fillna(stats['英文名'])
         else:
-            stats['馬匹'] = stats['馬匹_en']
+            stats['馬匹'] = stats['英文名']
 
         stats = stats[['馬匹', '總出賽', '勝出', '勝率']]
         stats = stats.sort_values('勝出', ascending=False).reset_index(drop=True)
@@ -662,7 +656,6 @@ def admin_horse_ranking():
         st.error(f"讀取失敗：{e}")
         import traceback
         st.code(traceback.format_exc())
-
 def admin_jockey_ranking():
     st.subheader("🏇 騎師勝率排行榜")
     try:
