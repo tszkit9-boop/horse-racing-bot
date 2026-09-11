@@ -2171,7 +2171,7 @@ def admin_horse_ranking():
     records = acc.get('records', [])
     valid_records = [r for r in records if r.get('is_hit') is not None]
     if not valid_records:
-        st.info("暫時未有足夠數據")
+        st.info("暫時未有")
         return
     horse_stats = {}
     for rec in valid_records:
@@ -2189,10 +2189,49 @@ def admin_horse_ranking():
     df_horse = pd.DataFrame(horse_list).sort_values('命中率', ascending=False).reset_index(drop=True)
     st.dataframe(df_horse.head(15), use_container_width=True)
 
-def admin_jockey_ranking(): st.subheader("👨‍🏫 騎師勝率排行榜"); st.info("暫時未有足夠數據")
-def admin_trainer_ranking(): st.subheader("👨‍🏫 練馬師勝率排行榜"); st.info("暫時未有足夠數據")
-def admin_course_analysis(): st.subheader("📊 場地/路程勝率分析"); st.info("暫時未有足夠數據")
-def admin_monthly_report(): st.subheader("📅 每月命中率報告"); st.info("暫時未有足夠數據")
+def admin_jockey_ranking():
+    st.subheader("🏇 騎師勝率排行榜")
+    try:
+        df = pd.read_csv("ALL_DATA_MERGED.csv")
+        df = standardize_columns_safe(df)
+        if 'jockey' in df.columns and 'finish_position' in df.columns:
+            winners = df[df['finish_position'] == 1]
+            total_races = df.groupby('jockey').size()
+            wins = winners.groupby('jockey').size()
+            stats = pd.DataFrame({'總出賽': total_races, '勝出': wins}).fillna(0)
+            stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
+            stats = stats.sort_values('勝出', ascending=False)
+            st.dataframe(stats.head(20), use_container_width=True)
+        else:
+            st.info("暫無足夠數據 (欄位缺失)")
+    except Exception as e:
+        st.error(f"讀取數據失敗: {e}")
+
+def admin_trainer_ranking():
+    st.subheader("🏇 練馬師勝率排行榜")
+    try:
+        df = pd.read_csv("ALL_DATA_MERGED.csv")
+        df = standardize_columns_safe(df)
+        if 'trainer' in df.columns and 'finish_position' in df.columns:
+            winners = df[df['finish_position'] == 1]
+            total_races = df.groupby('trainer').size()
+            wins = winners.groupby('trainer').size()
+            stats = pd.DataFrame({'總出賽': total_races, '勝出': wins}).fillna(0)
+            stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
+            stats = stats.sort_values('勝出', ascending=False)
+            st.dataframe(stats.head(20), use_container_width=True)
+        else:
+            st.info("暫無足夠數據 (欄位缺失)")
+    except Exception as e:
+        st.error(f"讀取數據失敗: {e}")
+
+def admin_course_analysis():
+    st.subheader("📊 場地/路程勝率分析")
+    st.info("此功能需要更詳細的場地與路程數據，暫未開放。")
+
+def admin_monthly_report():
+    st.subheader("📅 每月命中率報告")
+    st.info("此功能需要預測記錄對比，暫未開放。")
 
 def admin_finance():
     st.subheader("💰 財務管理")
