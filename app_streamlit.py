@@ -21,7 +21,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import random
 from zoneinfo import ZoneInfo
-from PIL import 
+from PIL import Image
 Imagedef admin_course_analysis():
     st.subheader("📊 場地/路程勝率分析")
     st.info("此功能需要更詳細的場地與路程數據，暫未開放。")
