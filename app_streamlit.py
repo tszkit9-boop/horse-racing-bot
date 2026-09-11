@@ -3080,7 +3080,7 @@ def main():
                     if key in st.session_state: del st.session_state[key]
                 st.rerun()
     st.markdown("---")
-    display_race_calendar()
+
     st.markdown("---")
     if st.session_state.logged_in:
         show_user_dashboard(st.session_state.username)
