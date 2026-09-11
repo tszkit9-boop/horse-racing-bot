@@ -449,65 +449,61 @@ def run_prediction(date_str, race_no):
 def _rank_from_csv(col_keywords):
     try:
         df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig', low_memory=False)
-    except Exception as e:
-        st.error(f"❌ 讀取 ALL_DATA_MERGED.csv 失敗：{e}")
-        return None
+        df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
+        df = df.loc[:, ~df.columns.duplicated()]
 
-    df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
-    df = df.loc[:, ~df.columns.duplicated()]
+        pos_col = None
+        for c in df.columns:
+            if str(c).lower() in ['pla', '名次', 'finish_position', 'finishing_position', 'pos', 'rank']:
+                pos_col = c
+                break
 
-    pos_col = None
-    for c in df.columns:
-        if str(c).lower() in ['pla', '名次', 'finish_position', 'finishing_position', 'pos', 'rank']:
-            pos_col = c
-            break
+        target_col = None
+        for c in df.columns:
+            if any(k in str(c).lower() for k in col_keywords):
+                target_col = c
+                break
 
-    target_col = None
-    for c in df.columns:
-        if any(k in str(c).lower() for k in col_keywords):
-            target_col = c
-            break
+        if not pos_col or not target_col:
+            st.error(f"❌ 搵唔到欄位！名次: {pos_col}, 目標: {target_col}")
+            st.write("可用欄位：", df.columns.tolist()[:30])
+            return None
 
-    if not pos_col or not target_col:
-        st.error(f"❌ 搵唔到欄位！名次: {pos_col}, 目標: {target_col}")
-        st.write("可用欄位：", df.columns.tolist()[:30])
-        return None
+        ts = df[target_col]
+        if isinstance(ts, pd.DataFrame):
+            ts = ts.iloc[:, 0]
+        ps = df[pos_col]
+        if isinstance(ps, pd.DataFrame):
+            ps = ps.iloc[:, 0]
 
-    ts = df[target_col]
-    if isinstance(ts, pd.DataFrame):
-        ts = ts.iloc[:, 0]
-    ps = df[pos_col]
-    if isinstance(ps, pd.DataFrame):
-        ps = ps.iloc[:, 0]
+        pos_numeric = pd.to_numeric(ps, errors='coerce')
+        if pos_numeric.notna().sum() == 0:
+            pos_numeric = pd.to_numeric(
+                ps.astype(str).str.extract(r'(\d+)')[0],
+                errors='coerce'
+            )
 
-    pos_numeric = pd.to_numeric(ps, errors='coerce')
-    if pos_numeric.notna().sum() == 0:
-        pos_numeric = pd.to_numeric(
-            ps.astype(str).str.extract(r'(\d+)')[0],
-            errors='coerce'
-        )
+        temp = pd.DataFrame({
+            'name': ts.astype(str).str.strip(),
+            'finish_position': pos_numeric
+        })
+        temp = temp.dropna(subset=['finish_position'])
+        temp = temp[~temp['name'].str.lower().isin(['nan', 'none', ''])]
 
-    temp = pd.DataFrame({
-        'name': ts.astype(str).str.strip(),
-        'finish_position': pos_numeric
-    })
-    temp = temp.dropna(subset=['finish_position'])
-    temp = temp[~temp['name'].str.lower().isin(['nan', 'none', ''])]
+        if temp.empty:
+            st.warning("⚠️ 過濾後數據為空！")
+            with st.expander("🔍 診斷資訊（點擊展開）"):
+                st.write(f"總行數：{len(df)}")
+                st.write(f"使用欄位：名次=`{pos_col}`, 目標=`{target_col}`")
+                st.write(f"名次欄位樣本：{ps.head(10).tolist()}")
+                st.write(f"目標欄位樣本：{ts.head(10).tolist()}")
+            return None
 
-    if temp.empty:
-        st.warning("⚠️ 過濾後數據為空！")
-        with st.expander("🔍 診斷資訊（點擊展開）"):
-            st.write(f"總行數：{len(df)}")
-            st.write(f"使用欄位：名次=`{pos_col}`, 目標=`{target_col}`")
-            st.write(f"名次欄位樣本：{ps.head(10).tolist()}")
-            st.write(f"目標欄位樣本：{ts.head(10).tolist()}")
-        return None
-
-    total = temp.groupby('name').size().reset_index(name='總出賽')
-    wins = temp[temp['finish_position'] == 1].groupby('name').size().reset_index(name='勝出')
-    stats = pd.merge(total, wins, on='name', how='left').fillna({'勝出': 0})
-    stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
-    return stats.sort_values('勝出', ascending=False)
+        total = temp.groupby('name').size().reset_index(name='總出賽')
+        wins = temp[temp['finish_position'] == 1].groupby('name').size().reset_index(name='勝出')
+        stats = pd.merge(total, wins, on='name', how='left').fillna({'勝出': 0})
+        stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
+        return stats.sort_values('勝出', ascending=False)
     except Exception as e:
         st.error(f"讀取失敗: {e}")
         return None
