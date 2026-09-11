@@ -569,24 +569,10 @@ def admin_horse_ranking():
         df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig', low_memory=False)
         df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
 
-        # 確認 Pla 欄位
-           # 自動搵出 Pla 欄位（避免隱藏字元問題）
-        pos_col = None
-        for c in df.columns:
-            if str(c).lower().strip() == 'pla':
-                pos_col = c
-                break
-
-        if not pos_col:
-            st.error(f"❌ ！所有欄位：{df.columns.tolist()}")
-            return
-
-        st.write(f"**名次欄位**：`{pos_col}`")
-        st.write(f"**非空數量**：{df[pos_col].notna().sum()}")
-        st.write(f"**樣本**：{df[pos_col].head(10).tolist()}")
+        # 用 finish_position 做名次
         temp = pd.DataFrame()
         temp['horse'] = df['horse_name'].astype(str).str.strip()
-        temp['finish_position'] = pd.to_numeric(df[pos_col], errors='coerce')
+        temp['finish_position'] = pd.to_numeric(df['finish_position'], errors='coerce')
 
         temp = temp.dropna(subset=['finish_position'])
         temp = temp[~temp['horse'].str.lower().isin(['nan', 'none', ''])]
@@ -615,7 +601,7 @@ def admin_jockey_ranking():
 
         temp = pd.DataFrame()
         temp['jockey'] = df['jockey'].astype(str).str.strip()
-        temp['finish_position'] = pd.to_numeric(df['Pla'], errors='coerce')
+        temp['finish_position'] = pd.to_numeric(df['finish_position'], errors='coerce')
 
         temp = temp.dropna(subset=['finish_position'])
         temp = temp[~temp['jockey'].str.lower().isin(['nan', 'none', ''])]
@@ -652,7 +638,7 @@ def admin_trainer_ranking():
 
         temp = pd.DataFrame()
         temp['trainer'] = df['trainer'].astype(str).str.strip()
-        temp['finish_position'] = pd.to_numeric(df['Pla'], errors='coerce')
+        temp['finish_position'] = pd.to_numeric(df['finish_position'], errors='coerce')
 
         temp = temp.dropna(subset=['finish_position'])
         temp = temp[~temp['trainer'].str.lower().isin(['nan', 'none', ''])]
