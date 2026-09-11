@@ -671,8 +671,9 @@ def admin_shop_config():
                 st.rerun()
         except Exception as e:
             st.error(f"編輯器錯誤：{e}")
-    def show_paywall():
+def show_paywall():
     st.subheader("💳 選擇你嘅方案")
+    plan_options = {
     plan_options = {
         "day": f"☀️ 日費  ${CONFIG['price_day']}   (1天)",
         "month": f"📆 月費  ${CONFIG['price_month']}  (30天)",
