@@ -360,10 +360,11 @@ def generate_pool_recommendations(df):
 
 @st.cache_resource
 def load_ml_models():
-    """載入 XGBoost + CatBoost 模型"""
+    """載入 XGBoost + CatBoost + Ranking 模型"""
     import pickle
     xgb_model = None
     cat_model = None
+    rank_model = None
 
     try:
         with open('hk_racing_model.pkl', 'rb') as f:
@@ -379,7 +380,14 @@ def load_ml_models():
     except Exception as e:
         print(f"CatBoost 載入失敗：{e}")
 
-    return xgb_model, cat_model
+    try:
+        with open('hk_ranking_model.pkl', 'rb') as f:
+            obj = pickle.load(f)
+            rank_model = obj[0] if isinstance(obj, tuple) else obj
+    except Exception as e:
+        print(f"Ranking 載入失敗：{e}")
+
+    return xgb_model, cat_model, rank_model
 
 
 def _build_features(race_df, history_df):
