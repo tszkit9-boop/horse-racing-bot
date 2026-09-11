@@ -561,7 +561,7 @@ def admin_lottery_config():
     with col3:
         p_desc = st.text_input("描述", key="lot_desc")
 
-    if st.button("➕ 新增獎品", key="add_lot"):
+    if st.button("➕ 新增獎品", key="add_lot_prize_v2"):
         prizes.append({
             "name": p_name, "type": p_type, "value": p_value,
             "weight": p_weight, "description": p_desc
