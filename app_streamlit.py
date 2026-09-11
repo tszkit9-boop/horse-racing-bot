@@ -1036,12 +1036,42 @@ def admin_manage_predictions():
         st.info("暫無用戶")
         return
 
-    # ===== 揀一個指定用戶 =====
-    st.markdown("### 👤 選擇用戶")
-    sel = st.selectbox("揀一個用戶嚟管理", list(users.keys()), key="mp_user")
+    # ============================================================
+    # 👤 第一步：揀一個用戶（放喺最頂）
+    # ============================================================
+    all_users = list(users.keys())
+    st.markdown(f"### 👤 第一步：揀一個用戶（總共 {len(all_users)} 個）")
+
+    col_search, col_select = st.columns([1, 2])
+    with col_search:
+        search = st.text_input("🔍 搜尋用戶", key="mp_search", placeholder="輸入關鍵字...")
+
+    if search:
+        filtered_users = [u for u in all_users if search.lower() in u.lower()]
+    else:
+        filtered_users = all_users
+
+    if not filtered_users:
+        st.warning("冇符合嘅用戶")
+        return
+
+    with col_select:
+        sel = st.selectbox(
+            f"揀用戶（共 {len(filtered_users)} 個）",
+            filtered_users,
+            key="mp_user"
+        )
+
     if not sel:
         return
 
+    # 顯示所有用戶名（方便確認）
+    with st.expander(f"📋 睇晒所有用戶（共 {len(all_users)} 個）", expanded=False):
+        st.write(", ".join(all_users))
+
+    # ============================================================
+    # 📊 顯示選中用戶狀態
+    # ============================================================
     user = users[sel]
     pred_limit = user.get('predictions_limit', CONFIG.get('free_limit', 2))
     pred_used = user.get('free_usage', 0)
@@ -1050,8 +1080,7 @@ def admin_manage_predictions():
     lottery_remaining = max(0, lottery_chances - lottery_used)
     cur_bal = user.get('virtual_balance', 0)
 
-    # ===== 顯示目前狀態 =====
-    st.markdown(f"### 📊 **{sel}** 目前狀態")
+    st.success(f"✅ 你而家管理緊：**{sel}**")
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("🔮 預測剩餘", pred_limit - pred_used if pred_limit != -1 else "無限")
     c2.metric("📊 預測已用", pred_used)
@@ -1064,7 +1093,7 @@ def admin_manage_predictions():
     # ============================================================
     # 🎰 抽獎次數管理
     # ============================================================
-    st.markdown(f"### 🎰 **{sel}** 嘅抽獎次數管理")
+    st.markdown(f"### 🎰 幫 **{sel}** 加 / 減抽獎次數")
     st.info(f"目前抽獎機會：**{lottery_chances}** 次　|　已用：**{lottery_used}** 次　|　剩餘：**{lottery_remaining}** 次")
 
     lc1, lc2, lc3 = st.columns(3)
@@ -1104,7 +1133,7 @@ def admin_manage_predictions():
     # ============================================================
     # 💰 虛擬幣管理
     # ============================================================
-    st.markdown(f"### 💰 **{sel}** 嘅虛擬幣管理")
+    st.markdown(f"### 💰 幫 **{sel}** 加 / 減虛擬幣")
     st.info(f"目前餘額：**${cur_bal:,.0f}**")
 
     gc1, gc2, gc3 = st.columns(3)
