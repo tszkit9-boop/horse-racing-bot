@@ -3000,76 +3000,62 @@ def main():
         admin_page()
         return
     col1, col2, col3, col4 = st.columns([5, 1, 1, 1])
-    with col1:    
-def display_race_calendar():
-    """賽事倒數計時器"""
-    hk_tz = pytz.timezone("Asia/Hong_Kong")
-    now = datetime.now(hk_tz)
-    weekday = now.weekday()
-
-    target = None
-    race_name = None
-    venue = None
-
-    if weekday == 2:
-        race_time = now.replace(hour=19, minute=15, second=0, microsecond=0)
-        if now < race_time:
-            target, race_name, venue = race_time, "跑馬地夜馬", "HV"
-    elif weekday == 6:
-        race_time = now.replace(hour=12, minute=30, second=0, microsecond=0)
-        if now < race_time:
-            target, race_name, venue = race_time, "沙田日馬", "ST"
-
-    if target is None:
-        for i in range(1, 8):
-            future = now + timedelta(days=i)
-            wd = future.weekday()
+    with col1:
+        # ===== 賽事倒數計時器 =====
+        try:
+            hk_tz = pytz.timezone("Asia/Hong_Kong")
+            now_hk = datetime.now(hk_tz)
+            wd = now_hk.weekday()
+            target = None
+            race_name = ""
+            venue = ""
             if wd == 2:
-                target = future.replace(hour=19, minute=15, second=0, microsecond=0)
-                race_name, venue = "跑馬地夜馬", "HV"
-                break
+                rt = now_hk.replace(hour=19, minute=15, second=0, microsecond=0)
+                if now_hk < rt:
+                    target, race_name, venue = rt, "跑馬地夜馬", "HV"
             elif wd == 6:
-                target = future.replace(hour=12, minute=30, second=0, microsecond=0)
-                race_name, venue = "沙田日馬", "ST"
-                break
+                rt = now_hk.replace(hour=12, minute=30, second=0, microsecond=0)
+                if now_hk < rt:
+                    target, race_name, venue = rt, "沙田日馬", "ST"
+            if target is None:
+                for i in range(1, 8):
+                    fut = now_hk + timedelta(days=i)
+                    if fut.weekday() == 2:
+                        target = fut.replace(hour=19, minute=15, second=0, microsecond=0)
+                        race_name, venue = "跑馬地夜馬", "HV"
+                        break
+                    elif fut.weekday() == 6:
+                        target = fut.replace(hour=12, minute=30, second=0, microsecond=0)
+                        race_name, venue = "沙田日馬", "ST"
+                        break
+            if target:
+                diff = target - now_hk
+                ts = int(diff.total_seconds())
+                if ts > 0:
+                    d = ts // 86400
+                    h = (ts % 86400) // 3600
+                    m = (ts % 3600) // 60
+                    s = ts % 60
+                    bg = "linear-gradient(135deg, #ff6b6b, #ee5a24)" if target.date() == now_hk.date() else "linear-gradient(135deg, #667eea, #764ba2)"
+                    title = f"🔥 今日有賽事！{race_name}" if target.date() == now_hk.date() else f"⏰ 距離下場賽事：{race_name}"
+                    st.markdown(f"""
+                    <div style="background:{bg};padding:18px 22px;border-radius:14px;color:white;box-shadow:0 6px 20px rgba(102,126,234,0.35);margin-bottom:14px;">
+                        <div style="font-size:14px;opacity:0.9;margin-bottom:6px;">{title}</div>
+                        <div style="display:flex;gap:14px;align-items:baseline;flex-wrap:wrap;">
+                            <div style="text-align:center;"><div style="font-size:34px;font-weight:800;line-height:1;">{d}</div><div style="font-size:11px;opacity:0.8;">日</div></div>
+                            <div style="text-align:center;"><div style="font-size:34px;font-weight:800;line-height:1;">{h:02d}</div><div style="font-size:11px;opacity:0.8;">時</div></div>
+                            <div style="text-align:center;"><div style="font-size:34px;font-weight:800;line-height:1;">{m:02d}</div><div style="font-size:11px;opacity:0.8;">分</div></div>
+                            <div style="text-align:center;"><div style="font-size:34px;font-weight:800;line-height:1;">{s:02d}</div><div style="font-size:11px;opacity:0.8;">秒</div></div>
+                        </div>
+                        <div style="font-size:12px;opacity:0.85;margin-top:8px;">📍 {target.strftime('%Y年%m月%d日 %H:%M')} · {venue}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+        except Exception as e:
+            pass  # 如果倒數計時器出錯，唔影響主程式
 
-    if not target:
-        st.info("📅 暫無未來賽事資料")
-        return
-
-    diff = target - now
-    total_seconds = int(diff.total_seconds())
-
-    if total_seconds <= 0:
-        st.success(f"🏇 **{race_name}** 已經開始！加油！")
-        return
-
-    days = total_seconds // 86400
-    hours = (total_seconds % 86400) // 3600
-    minutes = (total_seconds % 3600) // 60
-    seconds = total_seconds % 60
-
-    is_today = (target.date() == now.date())
-
-    if is_today:
-        bg = "linear-gradient(135deg, #ff6b6b, #ee5a24)"
-        title = f"🔥 今日有賽事！{race_name}"
-    else:
-        bg = "linear-gradient(135deg, #667eea, #764ba2)"
-        title = f"⏰ 距離下場賽事：{race_name}"
-
-    st.markdown(f"""
-    <div style="background: {bg}; padding: 20px 24px; border-radius: 16px; color: white; box-shadow: 0 6px 20px rgba(102,126,234,0.35); margin-bottom: 16px;">
-        <div style="font-size: 15px; opacity: 0.9; margin-bottom: 8px;">{title}</div>
-        <div style="display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap;">
-            <div style="text-align: center;"><div style="font-size: 42px; font-weight: 800; line-height: 1;">{days}</div><div style="font-size: 12px; opacity: 0.8;">日</div></div>
-            <div style="text-align: center;"><div style="font-size: 42px; font-weight: 800; line-height: 1;">{hours:02d}</div><div style="font-size: 12px; opacity: 0.8;">時</div></div>
-            <div style="text-align: center;"><div style="font-size: 42px; font-weight: 800; line-height: 1;">{minutes:02d}</div><div style="font-size: 12px; opacity: 0.8;">分</div></div>
-            <div style="text-align: center;"><div style="font-size: 42px; font-weight: 800; line-height: 1;">{seconds:02d}</div><div style="font-size: 12px; opacity: 0.8;">秒</div></div>
-        </div>
-        <div style="font-size: 13px; opacity: 0.85; margin-top: 10px;">📍 {target.strftime('%Y年%m月%d日 %H:%M')} · {venue}</div>
-    </div>
-    """, unsafe_allow_html=True)
+        st.title("🏇 賽馬預測系統")
+        st.markdown("AI 驅動・即時預測・彩池推薦")
+        st.caption(f"{datetime.now().strftime('%Y年%m月%d日')}")
     with col3:
         if st.session_state.get('logged_in', False):
             with st.popover("👤 個人中心", use_container_width=True):
