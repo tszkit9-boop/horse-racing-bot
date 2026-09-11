@@ -739,7 +739,15 @@ def show_paywall():
                         promo_code_used = promo_input.strip()
                         st.success(f"✅ 優惠碼已套用！折扣後：${final_price}")
                 else:
-                    st.warning("⚠️ 優惠碼無效")
+                    st.warning("⚠️ 優惠碼無效")            
+            # 如果用到優惠碼，立即標記為已使用
+            if promo_code_used:
+                promos = load_promos()
+                if promo_code_used in promos:
+                    promos[promo_code_used]['used'] = True
+                    promos[promo_code_used]['used_by'] = username
+                    promos[promo_code_used]['used_at'] = datetime.now().isoformat()
+                    save_promos(promos)
 
             success, msg = submit_payment_request(username, plan_choice, final_price, discount_desc, promo_code_used)
             if success:
