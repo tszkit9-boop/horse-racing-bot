@@ -1348,14 +1348,20 @@ def main():
     with cr:
         race_no = st.selectbox("🏇 場次", list(range(1, 12)), index=0, key="pd_race")
     with cbtn:
-        if st.button("🚀 執行預測", type="primary", use_container_width=True, key="pd_btn"):
-            with st.spinner("預測中..."):
-                result, pool = run_prediction(date.strftime("%Y-%m-%d"), race_no)
-                if result is not None and not result.empty:
-                    st.success("✅ 預測完成！")
-                    if pool:
-                        st.info(pool)
-                    st.dataframe(result, use_container_width=True)
+        run_predict = st.button("🚀 執行預測", type="primary", use_container_width=True, key="pd_btn")
+
+    if run_predict:
+        with st.spinner("預測中..."):
+            result, pool = run_prediction(date.strftime("%Y-%m-%d"), race_no)
+            if result is not None and not result.empty:
+                st.session_state['last_prediction'] = result
+                st.session_state['last_pool'] = pool
+
+    if 'last_prediction' in st.session_state and st.session_state['last_prediction'] is not None:
+        st.success("✅ 預測完成！")
+        if st.session_state.get('last_pool'):
+            st.info(st.session_state['last_pool'])
+        st.dataframe(st.session_state['last_prediction'], use_container_width=True)
 
     # ============================================================
     # 🤖 AI 預測表現 & 賽果對比（全寬，喺預測下面）
