@@ -674,11 +674,11 @@ def admin_shop_config():
 def show_paywall():
     st.subheader("💳 選擇你嘅方案")
     plan_options = {
-    plan_options = {
         "day": f"☀️ 日費  ${CONFIG['price_day']}   (1天)",
         "month": f"📆 月費  ${CONFIG['price_month']}  (30天)",
         "quarter": f"📅 季費  ${CONFIG['price_quarter']} (90天)"
     }
+
     with st.form(key="payment_form"):
         plan_choice = st.radio(
             "請選擇付費方案：",
@@ -746,7 +746,6 @@ def show_paywall():
                 st.success(msg)
                 st.info(f"方案：{get_plan_name(plan_choice)}，金額：${final_price}")
                 st.info("📩 提交後請 Telegram 通知管理員")
-
 def show_lottery_interface(username):
     st.subheader("🎰 每日抽獎")
     if not username:
