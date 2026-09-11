@@ -3183,165 +3183,77 @@ def admin_system_config():
     st.subheader("⚙️ 系統設定")
     st.caption("呢度嘅設定會即時生效。改完之後記得撳「儲存設定」。")
 
-    # ===== 讀取現有設定 =====
     try:
         with open("system_config.json", "r", encoding="utf-8") as f:
             config = json.load(f)
     except Exception:
         config = {}
 
-    # ===== 1. 功能開關 =====
     st.markdown("### 🔌 功能開關")
     col1, col2, col3 = st.columns(3)
-
     with col1:
-        enable_registration = st.checkbox(
-            "✅ 開放註冊",
-            value=config.get("enable_registration", True),
-            key="cfg_reg"
-        )
+        enable_registration = st.checkbox("✅ 開放註冊", value=config.get("enable_registration", True), key="cfg_reg")
     with col2:
-        enable_payment = st.checkbox(
-            "✅ 啟用付款",
-            value=config.get("enable_payment", True),
-            key="cfg_pay"
-        )
+        enable_payment = st.checkbox("✅ 啟用付款", value=config.get("enable_payment", True), key="cfg_pay")
     with col3:
-        enable_admin = st.checkbox(
-            "✅ 啟用後台",
-            value=config.get("enable_admin", True),
-            key="cfg_admin"
-        )
+        enable_admin = st.checkbox("✅ 啟用後台", value=config.get("enable_admin", True), key="cfg_admin")
 
     col4, col5, col6 = st.columns(3)
     with col4:
-        enable_lottery = st.checkbox(
-            "🎰 啟用抽獎",
-            value=config.get("enable_lottery", True),
-            key="cfg_lottery"
-        )
+        enable_lottery = st.checkbox("🎰 啟用抽獎", value=config.get("enable_lottery", True), key="cfg_lottery")
     with col5:
-        enable_shop = st.checkbox(
-            "🛒 啟用商城",
-            value=config.get("enable_shop", True),
-            key="cfg_shop"
-        )
+        enable_shop = st.checkbox("🛒 啟用商城", value=config.get("enable_shop", True), key="cfg_shop")
     with col6:
-        enable_chat = st.checkbox(
-            "💬 啟用聊天室",
-            value=config.get("enable_chat", True),
-            key="cfg_chat"
-        )
+        enable_chat = st.checkbox("💬 啟用聊天室", value=config.get("enable_chat", True), key="cfg_chat")
 
     col7, col8, col9 = st.columns(3)
     with col7:
-        enable_ip_restriction = st.checkbox(
-            "🔒 IP 重複註冊限制",
-            value=config.get("enable_ip_restriction", True),
-            key="cfg_ip"
-        )
+        enable_ip_restriction = st.checkbox("🔒 IP 重複註冊限制", value=config.get("enable_ip_restriction", True), key="cfg_ip")
     with col8:
-        enable_multi_level_invite = st.checkbox(
-            "👥 多層級邀請獎勵",
-            value=config.get("enable_multi_level_invite", True),
-            key="cfg_multi"
-        )
+        enable_multi_level_invite = st.checkbox("👥 多層級邀請獎勵", value=config.get("enable_multi_level_invite", True), key="cfg_multi")
     with col9:
-        enable_auto_maintenance = st.checkbox(
-            "🔧 自動維護",
-            value=config.get("enable_auto_maintenance", True),
-            key="cfg_main"
-        )
+        enable_auto_maintenance = st.checkbox("🔧 自動維護", value=config.get("enable_auto_maintenance", True), key="cfg_main")
 
     st.divider()
 
-    # ===== 2. 價格設定 =====
     st.markdown("### 💰 付費方案價格")
     col1, col2, col3 = st.columns(3)
     with col1:
-        price_day = st.number_input(
-            "日費價格 (HKD)",
-            value=int(config.get("price_day", 18)),
-            min_value=0,
-            key="cfg_price_day"
-        )
+        price_day = st.number_input("日費價格 (HKD)", value=int(config.get("price_day", 18)), min_value=0, key="cfg_price_day")
     with col2:
-        price_month = st.number_input(
-            "月費價格 (HKD)",
-            value=int(config.get("price_month", 128)),
-            min_value=0,
-            key="cfg_price_month"
-        )
+        price_month = st.number_input("月費價格 (HKD)", value=int(config.get("price_month", 128)), min_value=0, key="cfg_price_month")
     with col3:
-        price_quarter = st.number_input(
-            "季費價格 (HKD)",
-            value=int(config.get("price_quarter", 328)),
-            min_value=0,
-            key="cfg_price_quarter"
-        )
+        price_quarter = st.number_input("季費價格 (HKD)", value=int(config.get("price_quarter", 328)), min_value=0, key="cfg_price_quarter")
 
     st.divider()
 
-    # ===== 3. 免費與獎勵設定 =====
     st.markdown("### 🎁 免費與獎勵設定")
     col1, col2 = st.columns(2)
     with col1:
-        free_limit = st.number_input(
-            "免費預測次數",
-            value=int(config.get("free_limit", 2)),
-            min_value=0,
-            key="cfg_free_limit"
-        )
+        free_limit = st.number_input("免費預測次數", value=int(config.get("free_limit", 2)), min_value=0, key="cfg_free_limit")
     with col2:
-        daily_virtual_coin = st.number_input(
-            "每日派發虛擬幣",
-            value=int(config.get("daily_virtual_coin", 1000)),
-            min_value=0,
-            key="cfg_daily_coin"
-        )
+        daily_virtual_coin = st.number_input("每日派發虛擬幣", value=int(config.get("daily_virtual_coin", 1000)), min_value=0, key="cfg_daily_coin")
 
     st.divider()
 
-    # ===== 4. 安全設定 =====
     st.markdown("### 🔐 安全設定")
     col1, col2 = st.columns(2)
     with col1:
-        admin_password = st.text_input(
-            "管理員密碼",
-            value=config.get("admin_password", ""),
-            type="password",
-            key="cfg_admin_pw"
-        )
+        admin_password = st.text_input("管理員密碼", value=config.get("admin_password", ""), type="password", key="cfg_admin_pw")
     with col2:
-        currency = st.text_input(
-            "貨幣單位",
-            value=config.get("currency", "HKD"),
-            key="cfg_currency"
-        )
+        currency = st.text_input("貨幣單位", value=config.get("currency", "HKD"), key="cfg_currency")
 
     st.divider()
 
-    # ===== 5. AI 模型設定 =====
     st.markdown("### 🧠 AI 模型設定")
     col1, col2 = st.columns(2)
     with col1:
-        xgb_weight = st.number_input(
-            "XGBoost 權重",
-            value=float(config.get("xgb_weight", 5)),
-            min_value=0.0,
-            key="cfg_xgb"
-        )
+        xgb_weight = st.number_input("XGBoost 權重", value=float(config.get("xgb_weight", 5)), min_value=0.0, key="cfg_xgb")
     with col2:
-        cat_weight = st.number_input(
-            "CatBoost 權重",
-            value=float(config.get("cat_weight", 20)),
-            min_value=0.0,
-            key="cfg_cat"
-        )
+        cat_weight = st.number_input("CatBoost 權重", value=float(config.get("cat_weight", 20)), min_value=0.0, key="cfg_cat")
 
     st.divider()
 
-    # ===== 6. 儲存設定 =====
     col_a, col_b = st.columns([1, 3])
     with col_a:
         if st.button("💾 儲存設定", use_container_width=True, type="primary", key="save_config_btn"):
@@ -3368,13 +3280,13 @@ def admin_system_config():
             try:
                 with open("system_config.json", "w", encoding="utf-8") as f:
                     json.dump(new_config, f, ensure_ascii=False, indent=2)
-                st.success("✅ 設定已儲存！(下次重新部署時會還原，建議喺 GitHub 直接改 system_config.json)")
+                st.success("✅ 設定已儲存！")
                 st.balloons()
             except Exception as e:
                 st.error(f"❌ 儲存失敗: {e}")
 
     with col_b:
-        st.info("💡 **溫馨提示**：Streamlit Cloud 每次重新部署都會讀取 GitHub 上嘅 `system_config.json`。如果你想設定永久生效，請直接去 GitHub 改 `system_config.json`。")
+        st.info("💡 溫馨提示：Streamlit Cloud 每次重新部署都會讀取 GitHub 上嘅 `system_config.json`。想設定永久生效，請直接去 GitHub 改 `system_config.json`。")
 
 def admin_page():
     if 'admin_authenticated' not in st.session_state:
