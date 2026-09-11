@@ -1529,7 +1529,107 @@ def admin_analytics():
 
 def admin_course_analysis():
     st.subheader("📊 場地/路程勝率分析")
-    st.info("此功能需要更詳細的數據，暫未開放。")
+    try:
+        df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig', low_memory=False)
+        df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
+        df = df.reset_index(drop=True)
+
+        # 名次
+        pos_series, pos_name = _get_pos_series(df)
+        st.caption(f"📊 使用名次欄位：**{pos_name}**（有效數據：{pos_series.notna().sum()}）")
+
+        # 搵場地欄位
+        track_col = None
+        for c in df.columns:
+            if 'RC/Track' in str(c) or 'track' in str(c).lower() or 'course' in str(c).lower() or '場地' in str(c):
+                track_col = c
+                break
+
+        # 搵路程欄位
+        dist_col = None
+        for c in df.columns:
+            if str(c).lower() in ['dist.', 'dist', 'distance'] or '路程' in str(c):
+                dist_col = c
+                break
+
+        st.write(f"**場地欄位**：`{track_col}`　**路程欄位**：`{dist_col}`")
+
+        # ===== 場地分析 =====
+        if track_col:
+            st.divider()
+            st.markdown("### 🏟️ 場地勝率分析")
+
+            temp = df[[track_col]].copy()
+            temp.columns = ['場地']
+            temp['名次'] = pos_series.values
+            temp['場地'] = temp['場地'].astype(str).str.strip()
+            temp = temp.dropna(subset=['名次'])
+            temp = temp[~temp['場地'].str.lower().isin(['nan', 'none', '', '-'])]
+
+            if not temp.empty:
+                total = temp['場地'].value_counts()
+                wins = temp[temp['名次'] == 1]['場地'].value_counts()
+                stats = pd.DataFrame({'場地': total.index, '總出賽': total.values})
+                stats['勝出'] = stats['場地'].map(wins).fillna(0).astype(int)
+                stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
+                stats = stats.sort_values('勝出', ascending=False).reset_index(drop=True)
+                stats.index = stats.index + 1
+                st.dataframe(stats, use_container_width=True)
+            else:
+                st.info("冇場地數據")
+
+        # ===== 路程分析 =====
+        if dist_col:
+            st.divider()
+            st.markdown("### 📏 路程勝率分析")
+
+            temp = df[[dist_col]].copy()
+            temp.columns = ['路程']
+            temp['名次'] = pos_series.values
+            temp['路程'] = pd.to_numeric(temp['路程'], errors='coerce')
+            temp = temp.dropna(subset=['名次', '路程'])
+            temp['路程'] = temp['路程'].astype(int).astype(str) + ' 米'
+
+            if not temp.empty:
+                total = temp['路程'].value_counts()
+                wins = temp[temp['名次'] == 1]['路程'].value_counts()
+                stats = pd.DataFrame({'路程': total.index, '總出賽': total.values})
+                stats['勝出'] = stats['路程'].map(wins).fillna(0).astype(int)
+                stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
+                stats = stats.sort_values('勝出', ascending=False).reset_index(drop=True)
+                stats.index = stats.index + 1
+                st.dataframe(stats, use_container_width=True)
+            else:
+                st.info("冇路程數據")
+
+        # ===== 場地 + 路程組合 =====
+        if track_col and dist_col:
+            st.divider()
+            st.markdown("### 🎯 場地 × 路程 組合分析")
+
+            temp = df[[track_col, dist_col]].copy()
+            temp.columns = ['場地', '路程']
+            temp['名次'] = pos_series.values
+            temp['場地'] = temp['場地'].astype(str).str.strip()
+            temp['路程'] = pd.to_numeric(temp['路程'], errors='coerce')
+            temp = temp.dropna(subset=['名次', '路程'])
+            temp = temp[~temp['場地'].str.lower().isin(['nan', 'none', '', '-'])]
+            temp['路程'] = temp['路程'].astype(int).astype(str) + '米'
+            temp['組合'] = temp['場地'] + ' | ' + temp['路程']
+
+            if not temp.empty:
+                total = temp['組合'].value_counts()
+                wins = temp[temp['名次'] == 1]['組合'].value_counts()
+                stats = pd.DataFrame({'場地 | 路程': total.index, '總出賽': total.values})
+                stats['勝出'] = stats['場地 | 路程'].map(wins).fillna(0).astype(int)
+                stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
+                stats = stats.sort_values('勝出', ascending=False).reset_index(drop=True)
+                stats.index = stats.index + 1
+                st.dataframe(stats.head(30), use_container_width=True)
+    except Exception as e:
+        st.error(f"讀取失敗：{e}")
+        import traceback
+        st.code(traceback.format_exc())
 
 def admin_monthly_report():
     st.subheader("📅 每月命中率報告")
