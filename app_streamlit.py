@@ -539,18 +539,41 @@ def admin_lottery_config():
     config = load_lottery_config()
     prizes = config.get("prizes", [])
     st.write(f"目前有 **{len(prizes)}** 個獎品")
+
+    # ===== 現有獎品表 =====
     if prizes:
-        try:
-            st.dataframe(pd.DataFrame(prizes), use_container_width=True)
-        except Exception:
-            pass
+        _type_cn = {
+            "virtual_coin": "🪙 虛擬幣",
+            "vip_days": "👑 VIP",
+            "free_predictions": "🔮 預測",
+            "promo_code": "🎟️ 優惠碼",
+            "custom": "🎁 自訂",
+            "nothing": "😅 無獎"
+        }
+        rows = []
+        for p in prizes:
+            rows.append({
+                "獎品": p.get('name', ''),
+                "類型": _type_cn.get(p.get('type', ''), p.get('type', '')),
+                "數值": p.get('value', 0),
+                "權重": p.get('weight', 0),
+                "描述": p.get('description', '')
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
     st.divider()
     st.subheader("➕ 新增獎品")
-    col1, col2, col3 = st.columns(3)
+
+    # ===== 表單 =====
+    col1, col2, col3 = st.columns([2, 1, 1])
     with col1:
         p_name = st.text_input("獎品名稱", key="lot_name")
-     col_type, _ = st.columns([1, 2])
+    with col2:
+        p_value = st.number_input("數值", min_value=0, value=100, key="lot_value")
+    with col3:
+        p_weight = st.number_input("權重", min_value=1, value=10, key="lot_weight")
+
+    col_type, col_desc = st.columns([1, 2])
     with col_type:
         p_type = st.selectbox(
             "獎品類型",
@@ -565,16 +588,16 @@ def admin_lottery_config():
             }.get(x, x),
             key="lot_type"
         )
-    with col2:
-        p_value = st.number_input("數值", min_value=0, value=100, key="lot_value")
-        p_weight = st.number_input("中獎機率（權重）", min_value=1, value=10, key="lot_weight")
-    with col3:
+    with col_desc:
         p_desc = st.text_input("描述", key="lot_desc")
 
-    if st.button("➕ 新增獎品", key="add_lot_prize_v2"):
+    if st.button("➕ 新增獎品", key="add_lot_v2", use_container_width=True):
         prizes.append({
-            "name": p_name, "type": p_type, "value": p_value,
-            "weight": p_weight, "description": p_desc
+            "name": p_name,
+            "type": p_type,
+            "value": p_value,
+            "weight": p_weight,
+            "description": p_desc
         })
         config["prizes"] = prizes
         if save_lottery_config(config):
@@ -583,6 +606,7 @@ def admin_lottery_config():
         else:
             st.error("❌ 儲存失敗")
 
+    # ===== 編輯獎品 =====
     if prizes:
         st.divider()
         st.subheader("✏️ 編輯獎品")
@@ -590,11 +614,14 @@ def admin_lottery_config():
             with st.expander(f"{p.get('name', '獎品')}（權重 {p.get('weight', 0)}）"):
                 _w = _safe_int(p.get('weight', 10), 10)
                 _v = _safe_int(p.get('value', 0), 0)
-                nw = st.number_input("中獎機率", min_value=1, value=max(1, _w), key=f"ew_{i}")
-                nv = st.number_input("數值", min_value=0, value=max(0, _v), key=f"ev_{i}")
+                ec1, ec2 = st.columns(2)
+                with ec1:
+                    nw = st.number_input("中獎機率", min_value=1, value=max(1, _w), key=f"ew_{i}")
+                with ec2:
+                    nv = st.number_input("數值", min_value=0, value=max(0, _v), key=f"ev_{i}")
                 ca, cb = st.columns(2)
                 with ca:
-                    if st.button("💾 儲存", key=f"sp_{i}"):
+                    if st.button("💾 儲存", key=f"sp_{i}", use_container_width=True):
                         prizes[i]['weight'] = nw
                         prizes[i]['value'] = nv
                         config["prizes"] = prizes
@@ -602,12 +629,12 @@ def admin_lottery_config():
                         st.success("✅ 已儲存")
                         st.rerun()
                 with cb:
-                    if st.button("🗑️ 刪除", key=f"dp_{i}"):
+                    if st.button("🗑️ 刪除", key=f"dp_{i}", use_container_width=True):
                         prizes.pop(i)
                         config["prizes"] = prizes
                         save_lottery_config(config)
                         st.success("✅ 已刪除")
-                        st.rerun()    
+                        st.rerun()
     # ============================================================
     # 💳 付款功能
     # ============================================================
