@@ -1950,7 +1950,92 @@ def main():
                 for k in ['logged_in', 'username', 'role']:
                     if k in st.session_state:
                         del st.session_state[k]
-                st.rerun()
+                st.rerun()    
+    # ============================================================
+    # 👤 個人中心（可伸縮）
+    # ============================================================
+    if st.session_state.get('logged_in', False):
+        username = st.session_state.username
+        users = load_users()
+        user_data = users.get(username, {})
+        virtual_balance = user_data.get('virtual_balance', 0)
+        group = user_data.get('group', 'free')
+        level = user_data.get('level', '🥉 銅牌會員')
+
+        with st.expander(f"👤 個人中心（{username}）", expanded=False):
+            # ===== 基本資料 =====
+            c1, c2, c3 = st.columns(3)
+            c1.metric("👤 用戶名", username)
+            c2.metric("🏷️ 級別", group.upper())
+            c3.metric("💰 虛擬幣", f"${virtual_balance:,.0f}")
+            st.caption(f"🏅 等級：{level}")
+
+            st.divider()
+
+            # ===== 1. 改密碼 =====
+            with st.expander("🔑 更改密碼", expanded=False):
+                old_pw = st.text_input("舊密碼", type="password", key="pc_old_pw")
+                new_pw = st.text_input("新密碼（最少 4 字）", type="password", key="pc_new_pw")
+                confirm_pw = st.text_input("確認新密碼", type="password", key="pc_confirm_pw")
+                if st.button("✅ 確認更改密碼", key="pc_change_pw_btn", use_container_width=True):
+                    users = load_users()
+                    if username not in users:
+                        st.error("❌ 用戶不存在")
+                    elif users[username].get('password') != old_pw:
+                        st.error("❌ 舊密碼不正確")
+                    elif len(new_pw) < 4:
+                        st.error("❌ 新密碼最少 4 個字")
+                    elif new_pw != confirm_pw:
+                        st.error("❌ 兩次新密碼不一致")
+                    else:
+                        users[username]['password'] = new_pw
+                        if save_users(users):
+                            st.success("✅ 密碼已成功更改！")
+                        else:
+                            st.error("❌ 儲存失敗")
+
+            # ===== 2. 預測記錄 =====
+            with st.expander("📜 我的預測記錄", expanded=False):
+                history = user_data.get('history', [])
+                if not history:
+                    st.info("📭 你仲未有任何預測記錄")
+                else:
+                    # 統計
+                    total = len(history)
+                    hits = sum(1 for h in history if h.get('is_hit') is True)
+                    hit_rate = hits / total if total > 0 else 0
+
+                    sc1, sc2, sc3 = st.columns(3)
+                    sc1.metric("📊 總預測", total)
+                    sc2.metric("🎯 命中", hits)
+                    sc3.metric("📈 命中率", f"{hit_rate:.1%}")
+
+                    st.divider()
+
+                    # 最近 20 條記錄
+                    st.markdown("**最近 20 條預測記錄：**")
+                    df_hist = pd.DataFrame(history[-20:][::-1])
+                    display_cols = []
+                    for c in ['date', 'race', 'horse', 'timestamp', 'is_hit']:
+                        if c in df_hist.columns:
+                            display_cols.append(c)
+                    if display_cols:
+                        df_show = df_hist[display_cols].copy()
+                        rename_map = {
+                            'date': '日期',
+                            'race': '場次',
+                            'horse': '預測馬',
+                            'timestamp': '時間',
+                            'is_hit': '結果'
+                        }
+                        df_show.rename(columns=rename_map, inplace=True)
+                        if '結果' in df_show.columns:
+                            df_show['結果'] = df_show['結果'].apply(
+                                lambda x: '✅ 命中' if x is True else ('❌ 失準' if x is False else '⏳ 待定')
+                            )
+                        st.dataframe(df_show, use_container_width=True, hide_index=True)
+                    else:
+                        st.dataframe(df_hist, use_container_width=True)
 
     st.markdown("---")
     display_race_calendar()
