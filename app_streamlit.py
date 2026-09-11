@@ -646,8 +646,6 @@ def run_prediction(date_str, race_no):
             models_used.append("CatBoost(36特徵)")
         except Exception as e:
             st.warning(f"⚠️ CatBoost 失敗：{e}")
-        except Exception as e:
-            st.warning(f"⚠️ CatBoost 失敗：{e}")
 
     # ===== Ranking =====
     if rank_model is not None:
