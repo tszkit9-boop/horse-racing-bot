@@ -679,7 +679,6 @@ def show_paywall():
         "month": f"📆 月費  ${CONFIG['price_month']}  (30天)",
         "quarter": f"📅 季費  ${CONFIG['price_quarter']} (90天)"
     }
-
     with st.form(key="payment_form"):
         plan_choice = st.radio(
             "請選擇付費方案：",
