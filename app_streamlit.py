@@ -565,41 +565,48 @@ def _rank_from_csv(col_keywords):
 
 def admin_horse_ranking():
     st.subheader("🏇 馬匹勝率排行榜")
-    stats = _rank_from_csv(['horse_name', '馬名', 'horse'])
-    if stats is not None:
-        stats = stats.rename(columns={'name': '馬匹'})
-        st.success(f"✅ 成功計算！共 {len(stats)} 匹馬")
-        st.dataframe(stats.head(30), use_container_width=True)
+
+    if not os.path.exists("ALL_DATA_MERGED.csv"):
+        st.error("❌ 搵唔到 ALL_DATA_MERGED.csv")
+        return
+
+    try:
+        df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig', low_memory=False)
+    except Exception as e:
+        st.error(f"❌ 讀取失敗：{e}")
+        return
+
+    df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
+
+    st.write(f"### 📊 總行數：{len(df)}")
+    st.write(f"### 📋 欄位（共 {len(df.columns)} 個）：")
+    st.write(df.columns.tolist())
+
+    st.divider()
+    st.markdown("### 🔍 每個欄位嘅非空數量")
+
+    info = []
+    for c in df.columns:
+        non_empty = df[c].dropna().astype(str).str.strip()
+        non_empty = non_empty[~non_empty.isin(['', 'nan', 'None', '-', 'NaN'])]
+        info.append({
+            '欄位': c,
+            '非空數量': len(non_empty),
+            '樣本值': str(non_empty.head(3).tolist())[:60]
+        })
+
+    info_df = pd.DataFrame(info).sort_values('非空數量', ascending=False)
+    st.dataframe(info_df, use_container_width=True, hide_index=True)
 
 
 def admin_jockey_ranking():
     st.subheader("🏇 騎師勝率排行榜")
-    stats = _rank_from_csv(['jockey', '騎師', 'jockey_name'])
-    if stats is not None:
-        jmap = {}
-        if os.path.exists("jockey_mapping.json"):
-            try:
-                jmap = load_json("jockey_mapping.json")
-            except Exception:
-                pass
-        stats['騎師'] = stats['name'].map(jmap).fillna(stats['name'])
-        st.success(f"✅ 成功計算！共 {len(stats)} 位騎師")
-        st.dataframe(stats[['騎師', '總出賽', '勝出', '勝率']].head(30), use_container_width=True)
+    st.info("請先撳「馬匹排行榜」睇診斷結果，再決定點做。")
 
 
 def admin_trainer_ranking():
     st.subheader("🏇 練馬師勝率排行榜")
-    stats = _rank_from_csv(['trainer', '練馬師', 'trainer_name'])
-    if stats is not None:
-        tmap = {}
-        if os.path.exists("trainer_mapping.json"):
-            try:
-                tmap = load_json("trainer_mapping.json")
-            except Exception:
-                pass
-        stats['練馬師'] = stats['name'].map(tmap).fillna(stats['name'])
-        st.success(f"✅ 成功計算！共 {len(stats)} 位練馬師")
-        st.dataframe(stats[['練馬師', '總出賽', '勝出', '勝率']].head(30), use_container_width=True)
+    st.info("請先撳「馬匹排行榜」睇診斷結果，再決定點做。")
 def admin_lottery_config():
     st.subheader("🎰 抽獎設定")
     config = load_lottery_config()
