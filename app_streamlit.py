@@ -2175,40 +2175,21 @@ def admin_analytics():
 
 def admin_horse_ranking():
     st.subheader("🏇 馬匹勝率排行榜")
-    acc = load_accuracy()
-    records = acc.get('records', [])
-    valid_records = [r for r in records if r.get('is_hit') is not None]
-    if not valid_records:
-        st.info("暫時未有")
-        return
-    horse_stats = {}
-    for rec in valid_records:
-        horse = rec.get('horse', '未知馬匹')
-        if horse not in horse_stats:
-            horse_stats[horse] = {'total': 0, 'hit': 0}
-        horse_stats[horse]['total'] += 1
-        if rec.get('is_hit') == True:
-            horse_stats[horse]['hit'] += 1
-    horse_list = [{'馬匹': h, '總預測': s['total'], '命中': s['hit'], '命中率': s['hit']/s['total']}
-                  for h, s in horse_stats.items() if s['total'] >= 2]
-    if not horse_list:
-        st.info("暫時未有足夠數據")
-        return
-    df_horse = pd.DataFrame(horse_list).sort_values('命中率', ascending=False).reset_index(drop=True)
-    st.dataframe(df_horse.head(15), use_container_width=True)
-
-def admin_horse_ranking():
-    st.subheader("🏇 馬匹勝率排行榜")
     try:
         df = pd.read_csv("ALL_DATA_MERGED.csv")
         df = standardize_columns_safe(df)
+        df = df.loc[:, ~df.columns.duplicated()] # 關鍵：移除重複欄位
+        
         if 'horse_name' in df.columns and 'finish_position' in df.columns:
-            df = df.dropna(subset=['horse_name', 'finish_position'])
-            df['finish_position'] = pd.to_numeric(df['finish_position'], errors='coerce')
-            df = df.dropna(subset=['finish_position'])
+            horse_col = df['horse_name'].iloc[:, 0] if isinstance(df['horse_name'], pd.DataFrame) else df['horse_name']
+            pos_col = df['finish_position'].iloc[:, 0] if isinstance(df['finish_position'], pd.DataFrame) else df['finish_position']
             
-            total_races = df.groupby('horse_name').size().reset_index(name='總出賽')
-            winners = df[df['finish_position'] == 1]
+            temp_df = pd.DataFrame({'horse_name': horse_col, 'finish_position': pos_col}).dropna()
+            temp_df['finish_position'] = pd.to_numeric(temp_df['finish_position'], errors='coerce')
+            temp_df = temp_df.dropna(subset=['finish_position'])
+            
+            total_races = temp_df.groupby('horse_name').size().reset_index(name='總出賽')
+            winners = temp_df[temp_df['finish_position'] == 1]
             wins = winners.groupby('horse_name').size().reset_index(name='勝出')
             
             stats = pd.merge(total_races, wins, on='horse_name', how='left').fillna({'勝出': 0})
@@ -2225,14 +2206,19 @@ def admin_jockey_ranking():
     try:
         df = pd.read_csv("ALL_DATA_MERGED.csv")
         df = standardize_columns_safe(df)
+        df = df.loc[:, ~df.columns.duplicated()]
+        
         if 'jockey' in df.columns and 'finish_position' in df.columns:
-            df = df.dropna(subset=['jockey', 'finish_position'])
-            df = df[df['jockey'].astype(str).str.strip() != '']
-            df['finish_position'] = pd.to_numeric(df['finish_position'], errors='coerce')
-            df = df.dropna(subset=['finish_position'])
+            jockey_col = df['jockey'].iloc[:, 0] if isinstance(df['jockey'], pd.DataFrame) else df['jockey']
+            pos_col = df['finish_position'].iloc[:, 0] if isinstance(df['finish_position'], pd.DataFrame) else df['finish_position']
             
-            total_races = df.groupby('jockey').size().reset_index(name='總出賽')
-            winners = df[df['finish_position'] == 1]
+            temp_df = pd.DataFrame({'jockey': jockey_col, 'finish_position': pos_col}).dropna()
+            temp_df = temp_df[temp_df['jockey'].astype(str).str.strip() != '']
+            temp_df['finish_position'] = pd.to_numeric(temp_df['finish_position'], errors='coerce')
+            temp_df = temp_df.dropna(subset=['finish_position'])
+            
+            total_races = temp_df.groupby('jockey').size().reset_index(name='總出賽')
+            winners = temp_df[temp_df['finish_position'] == 1]
             wins = winners.groupby('jockey').size().reset_index(name='勝出')
             
             stats = pd.merge(total_races, wins, on='jockey', how='left').fillna({'勝出': 0})
@@ -2249,14 +2235,19 @@ def admin_trainer_ranking():
     try:
         df = pd.read_csv("ALL_DATA_MERGED.csv")
         df = standardize_columns_safe(df)
+        df = df.loc[:, ~df.columns.duplicated()]
+        
         if 'trainer' in df.columns and 'finish_position' in df.columns:
-            df = df.dropna(subset=['trainer', 'finish_position'])
-            df = df[df['trainer'].astype(str).str.strip() != '']
-            df['finish_position'] = pd.to_numeric(df['finish_position'], errors='coerce')
-            df = df.dropna(subset=['finish_position'])
+            trainer_col = df['trainer'].iloc[:, 0] if isinstance(df['trainer'], pd.DataFrame) else df['trainer']
+            pos_col = df['finish_position'].iloc[:, 0] if isinstance(df['finish_position'], pd.DataFrame) else df['finish_position']
             
-            total_races = df.groupby('trainer').size().reset_index(name='總出賽')
-            winners = df[df['finish_position'] == 1]
+            temp_df = pd.DataFrame({'trainer': trainer_col, 'finish_position': pos_col}).dropna()
+            temp_df = temp_df[temp_df['trainer'].astype(str).str.strip() != '']
+            temp_df['finish_position'] = pd.to_numeric(temp_df['finish_position'], errors='coerce')
+            temp_df = temp_df.dropna(subset=['finish_position'])
+            
+            total_races = temp_df.groupby('trainer').size().reset_index(name='總出賽')
+            winners = temp_df[temp_df['finish_position'] == 1]
             wins = winners.groupby('trainer').size().reset_index(name='勝出')
             
             stats = pd.merge(total_races, wins, on='trainer', how='left').fillna({'勝出': 0})
