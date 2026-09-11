@@ -1793,10 +1793,9 @@ def admin_downloads():
                 key="dl_ai_pred"
             )
     except Exception as e:
-            st.error(f"❌ 讀取失敗：{e}")
-       else:
+        st.error(f"❌ 讀取失敗：{e}")
+    else:
         st.info("ℹ️ 未有 ai_predictions.json")
-
 
 def admin_manage_predictions():
     st.subheader("📊 管理用戶次數")
