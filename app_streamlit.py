@@ -2202,32 +2202,64 @@ def admin_horse_ranking():
 import numpy as np
 
 def admin_jockey_ranking():
-    st.subheader("🏇 騎師勝率排行榜 (診斷模式)")
+    st.subheader("🏇 騎師勝率排行榜")
     try:
         df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig')
         df.columns = df.columns.str.strip()
+        jockey_cols = [c for c in df.columns if 'jockey' in str(c).lower() or '騎師' in str(c)]
+        pos_cols = [c for c in df.columns if str(c).lower() in ['pla', '名次', 'finishposition', 'finish_position']]
+        if not jockey_cols or not pos_cols:
+            st.error(f"❌ 搵唔到欄位！現有欄位：{df.columns.tolist()[:20]}")
+            return
+        temp = df[[jockey_cols[0], pos_cols[0]]].copy()
+        temp.columns = ['jockey', 'finish_position']
+        temp['finish_position'] = temp['finish_position'].astype(str).str.extract(r'(\d+)').astype(float)
+        temp['jockey'] = temp['jockey'].astype(str).str.strip()
+        temp = temp.dropna(subset=['finish_position'])
+        temp = temp[~temp['jockey'].str.lower().isin(['nan', 'none', ''])]
+        if temp.empty:
+            st.warning("⚠️ 過濾後數據為空！")
+            return
+        total = temp['jockey'].value_counts().reset_index()
+        total.columns = ['騎師', '總出賽']
+        wins = temp[temp['finish_position'] == 1]['jockey'].value_counts().reset_index()
+        wins.columns = ['騎師', '勝出']
+        stats = pd.merge(total, wins, on='騎師', how='left').fillna({'勝出': 0})
+        stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
+        stats = stats.sort_values('勝出', ascending=False)
+        st.success(f"✅ 成功計算！共 {len(stats)} 位騎師")
+        st.dataframe(stats.head(20), use_container_width=True)
+    except Exception as e:
+        st.error(f"讀取數據失敗: {e}")
 
-        st.write("### 🔍 檢查騎師欄位")
-        if 'jockey' in df.columns:
-            st.write(f"✅ 成功搵到 'jockey' 欄位。")
-            st.write(f"📊 總行數：{len(df)}")
-            st.write(f"✅ 非空值數量：{df['jockey'].notna().sum()}")
-            st.write(f"❌ 空值數量：{df['jockey'].isna().sum()}")
-            st.write("頭 10 行數據：")
-            st.dataframe(df[['jockey']].head(10))
-        else:
-            st.error("❌ 搵唔到 'jockey' 欄位！")
-            st.write("現有欄位：", df.columns.tolist()[:20])
-
-        st.write("---")
-        st.write("### 🔍 檢查名次欄位")
-        if 'Pla' in df.columns:
-            st.write(f"✅ 成功搵到 'Pla' 欄位。")
-            st.write("頭 10 行數據：")
-            st.dataframe(df[['Pla']].head(10))
-        else:
-            st.error("❌ 搵唔到 'Pla' 欄位！")
-
+def admin_trainer_ranking():
+    st.subheader("🏇 練馬師勝率排行榜")
+    try:
+        df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig')
+        df.columns = df.columns.str.strip()
+        trainer_cols = [c for c in df.columns if 'trainer' in str(c).lower() or '練馬師' in str(c)]
+        pos_cols = [c for c in df.columns if str(c).lower() in ['pla', '名次', 'finishposition', 'finish_position']]
+        if not trainer_cols or not pos_cols:
+            st.error(f"❌ 搵唔到欄位！現有欄位：{df.columns.tolist()[:20]}")
+            return
+        temp = df[[trainer_cols[0], pos_cols[0]]].copy()
+        temp.columns = ['trainer', 'finish_position']
+        temp['finish_position'] = temp['finish_position'].astype(str).str.extract(r'(\d+)').astype(float)
+        temp['trainer'] = temp['trainer'].astype(str).str.strip()
+        temp = temp.dropna(subset=['finish_position'])
+        temp = temp[~temp['trainer'].str.lower().isin(['nan', 'none', ''])]
+        if temp.empty:
+            st.warning("⚠️ 過濾後數據為空！")
+            return
+        total = temp['trainer'].value_counts().reset_index()
+        total.columns = ['練馬師', '總出賽']
+        wins = temp[temp['finish_position'] == 1]['trainer'].value_counts().reset_index()
+        wins.columns = ['練馬師', '勝出']
+        stats = pd.merge(total, wins, on='練馬師', how='left').fillna({'勝出': 0})
+        stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
+        stats = stats.sort_values('勝出', ascending=False)
+        st.success(f"✅ 成功計算！共 {len(stats)} 位練馬師")
+        st.dataframe(stats.head(20), use_container_width=True)
     except Exception as e:
         st.error(f"讀取數據失敗: {e}")
 def admin_monthly_report():
