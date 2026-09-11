@@ -559,41 +559,149 @@ def _rank_from_csv(col_keywords):
 
 def admin_horse_ranking():
     st.subheader("🏇 馬匹勝率排行榜")
-    stats = _rank_from_csv(['horse_name', '馬名', 'horse'])
-    if stats is not None:
-        stats = stats.rename(columns={'name': '馬匹'})
-        st.success(f"✅ 共 {len(stats)} 匹馬")
+    try:
+        df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig', low_memory=False)
+        df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
+        df = df.loc[:, ~df.columns.duplicated()]
+
+        pos_col = next((c for c in df.columns if str(c).lower() in ['pla', '名次', 'finishposition', 'finish_position']), None)
+        horse_col = next((c for c in df.columns if 'horse_name' in str(c).lower() or '馬名' in str(c)), None)
+
+        if not pos_col or not horse_col:
+            st.error(f"❌ 搵唔到欄位！名次: {pos_col}, 馬匹: {horse_col}")
+            return
+
+        hs = df[horse_col]
+        if isinstance(hs, pd.DataFrame):
+            hs = hs.iloc[:, 0]
+        ps = df[pos_col]
+        if isinstance(ps, pd.DataFrame):
+            ps = ps.iloc[:, 0]
+
+        temp = pd.DataFrame()
+        temp['horse'] = hs.astype(str).str.strip()
+        temp['finish_position'] = pd.to_numeric(ps.astype(str).str.extract(r'(\d+)')[0], errors='coerce')
+
+        temp = temp.dropna(subset=['finish_position'])
+        temp = temp[~temp['horse'].str.lower().isin(['nan', 'none', ''])]
+
+        if temp.empty:
+            st.warning("⚠️ 過濾後數據為空！")
+            return
+
+        total = temp.groupby('horse').size().reset_index(name='總出賽')
+        wins = temp[temp['finish_position'] == 1].groupby('horse').size().reset_index(name='勝出')
+        stats = pd.merge(total, wins, on='horse', how='left').fillna({'勝出': 0})
+        stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
+        stats = stats.sort_values('勝出', ascending=False).rename(columns={'horse': '馬匹'})
+        st.success(f"✅ 成功計算！共 {len(stats)} 匹馬")
         st.dataframe(stats.head(30), use_container_width=True)
+    except Exception as e:
+        st.error(f"讀取數據失敗: {e}")
 
 
 def admin_jockey_ranking():
     st.subheader("🏇 騎師勝率排行榜")
-    stats = _rank_from_csv(['jockey', '騎師'])
-    if stats is not None:
-        jmap = {}
-        if os.path.exists("jockey_mapping.json"):
-            try:
-                jmap = load_json("jockey_mapping.json")
-            except Exception:
-                pass
-        stats['騎師'] = stats['name'].map(jmap).fillna(stats['name'])
-        st.success(f"✅ 共 {len(stats)} 位騎師")
+    try:
+        df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig', low_memory=False)
+        df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
+        df = df.loc[:, ~df.columns.duplicated()]
+
+        pos_col = next((c for c in df.columns if str(c).lower() in ['pla', '名次', 'finishposition', 'finish_position']), None)
+        jockey_col = next((c for c in df.columns if 'jockey' in str(c).lower()), None)
+
+        if not pos_col or not jockey_col:
+            st.error(f"❌ 搵唔到欄位！名次: {pos_col}, 騎師: {jockey_col}")
+            return
+
+        js = df[jockey_col]
+        if isinstance(js, pd.DataFrame):
+            js = js.iloc[:, 0]
+        ps = df[pos_col]
+        if isinstance(ps, pd.DataFrame):
+            ps = ps.iloc[:, 0]
+
+        temp = pd.DataFrame()
+        temp['jockey'] = js.astype(str).str.strip()
+        temp['finish_position'] = pd.to_numeric(ps.astype(str).str.extract(r'(\d+)')[0], errors='coerce')
+
+        temp = temp.dropna(subset=['finish_position'])
+        temp = temp[~temp['jockey'].str.lower().isin(['nan', 'none', ''])]
+
+        if temp.empty:
+            st.warning("⚠️ 過濾後數據為空！")
+            return
+
+        total = temp.groupby('jockey').size().reset_index(name='總出賽')
+        wins = temp[temp['finish_position'] == 1].groupby('jockey').size().reset_index(name='勝出')
+        stats = pd.merge(total, wins, on='jockey', how='left').fillna({'勝出': 0})
+        stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
+        stats = stats.sort_values('勝出', ascending=False)
+
+        jockey_map = {}
+        try:
+            with open("jockey_mapping.json", "r", encoding="utf-8") as f:
+                jockey_map = json.load(f)
+        except Exception:
+            pass
+
+        stats['騎師'] = stats['jockey'].map(jockey_map).fillna(stats['jockey'])
+        st.success(f"✅ 成功計算！共 {len(stats)} 位騎師")
         st.dataframe(stats[['騎師', '總出賽', '勝出', '勝率']].head(30), use_container_width=True)
+    except Exception as e:
+        st.error(f"讀取數據失敗: {e}")
 
 
 def admin_trainer_ranking():
     st.subheader("🏇 練馬師勝率排行榜")
-    stats = _rank_from_csv(['trainer', '練馬師'])
-    if stats is not None:
-        tmap = {}
-        if os.path.exists("trainer_mapping.json"):
-            try:
-                tmap = load_json("trainer_mapping.json")
-            except Exception:
-                pass
-        stats['練馬師'] = stats['name'].map(tmap).fillna(stats['name'])
-        st.success(f"✅ 共 {len(stats)} 位練馬師")
+    try:
+        df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig', low_memory=False)
+        df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
+        df = df.loc[:, ~df.columns.duplicated()]
+
+        pos_col = next((c for c in df.columns if str(c).lower() in ['pla', '名次', 'finishposition', 'finish_position']), None)
+        trainer_col = next((c for c in df.columns if 'trainer' in str(c).lower()), None)
+
+        if not pos_col or not trainer_col:
+            st.error(f"❌ 搵唔到欄位！名次: {pos_col}, 練馬師: {trainer_col}")
+            return
+
+        ts = df[trainer_col]
+        if isinstance(ts, pd.DataFrame):
+            ts = ts.iloc[:, 0]
+        ps = df[pos_col]
+        if isinstance(ps, pd.DataFrame):
+            ps = ps.iloc[:, 0]
+
+        temp = pd.DataFrame()
+        temp['trainer'] = ts.astype(str).str.strip()
+        temp['finish_position'] = pd.to_numeric(ps.astype(str).str.extract(r'(\d+)')[0], errors='coerce')
+
+        temp = temp.dropna(subset=['finish_position'])
+        temp = temp[~temp['trainer'].str.lower().isin(['nan', 'none', ''])]
+
+        if temp.empty:
+            st.warning("⚠️ 過濾後數據為空！")
+            return
+
+        total = temp.groupby('trainer').size().reset_index(name='總出賽')
+        wins = temp[temp['finish_position'] == 1].groupby('trainer').size().reset_index(name='勝出')
+        stats = pd.merge(total, wins, on='trainer', how='left').fillna({'勝出': 0})
+        stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
+        stats = stats.sort_values('勝出', ascending=False)
+
+        trainer_map = {}
+        try:
+            with open("trainer_mapping.json", "r", encoding="utf-8") as f:
+                trainer_map = json.load(f)
+        except Exception:
+            pass
+
+        stats['練馬師'] = stats['trainer'].map(trainer_map).fillna(stats['trainer'])
+        st.success(f"✅ 成功計算！共 {len(stats)} 位練馬師")
         st.dataframe(stats[['練馬師', '總出賽', '勝出', '勝率']].head(30), use_container_width=True)
+    except Exception as e:
+        st.error(f"讀取數據失敗: {e}")
 def admin_lottery_config():
     st.subheader("🎰 抽獎設定")
     config = load_lottery_config()
