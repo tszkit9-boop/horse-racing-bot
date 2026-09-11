@@ -2207,27 +2207,28 @@ def admin_jockey_ranking():
         df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig')
         df.columns = df.columns.str.strip()
         
-        # 絕招 1：將空字串轉為 NaN，然後自動刪除完全空白嘅欄位
-        df = df.replace(r'^\s*$', np.nan, regex=True)
-        df = df.dropna(axis=1, how='all')
-        
-        # 絕招 2：自動搵出正確嘅欄位（取第一個有數據嘅）
+        # 1. 自動搵出所有可能嘅騎師欄位
         jockey_cols = [c for c in df.columns if 'jockey' in c.lower() or '騎師' in c]
-        best_jockey_col = jockey_cols[0] if jockey_cols else None
-        
-        pos_cols = [c for c in df.columns if c.lower() in ['pla', '名次', 'finishposition', 'finish_position']]
-        best_pos_col = pos_cols[0] if pos_cols else None
-        
-        if not best_jockey_col or not best_pos_col:
-            st.error(f"❌ 搵唔到欄位！騎師欄: {jockey_cols}, 名次欄: {pos_cols}")
-            st.write("現有欄位：", df.columns.tolist()[:20])
+        if not jockey_cols:
+            st.error("❌ 完全搵唔到任何騎師欄位！")
             return
-
-        # 提取數據
+            
+        # 2. 關鍵絕招：揀選「非空值最多」嗰個欄位（即有數據嗰個）
+        best_jockey_col = max(jockey_cols, key=lambda c: df[c].notna().sum())
+        st.write(f"🔍 系統自動選用嘅騎師欄位：`{best_jockey_col}`")
+        
+        # 3. 自動搵出名次欄位
+        pos_cols = [c for c in df.columns if c.lower() in ['pla', '名次', 'finishposition', 'finish_position']]
+        if not pos_cols:
+            st.error("❌ 搵唔到名次欄位！")
+            return
+        best_pos_col = pos_cols[0]
+        
+        # 4. 提取數據
         temp = df[[best_jockey_col, best_pos_col]].copy()
         temp.columns = ['jockey', 'finish_position']
         
-        # 清理數據
+        # 5. 清理數據
         temp['finish_position'] = temp['finish_position'].astype(str).str.extract(r'(\d+)').astype(float)
         temp['jockey'] = temp['jockey'].astype(str).str.strip()
         
@@ -2235,11 +2236,10 @@ def admin_jockey_ranking():
         temp = temp[~temp['jockey'].str.lower().isin(['nan', 'none', ''])]
         
         if temp.empty:
-            st.warning("⚠️ 過濾後數據為空！顯示原始數據（頭 10 行）：")
-            st.dataframe(df[[best_jockey_col, best_pos_col]].head(10))
+            st.warning("⚠️ 過濾後數據為空！")
             return
             
-        # 計算勝率
+        # 6. 計算勝率
         total = temp['jockey'].value_counts().reset_index()
         total.columns = ['騎師', '總出賽']
         wins = temp[temp['finish_position'] == 1]['jockey'].value_counts().reset_index()
@@ -2261,22 +2261,28 @@ def admin_trainer_ranking():
         df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig')
         df.columns = df.columns.str.strip()
         
-        df = df.replace(r'^\s*$', np.nan, regex=True)
-        df = df.dropna(axis=1, how='all')
-        
+        # 1. 自動搵出所有可能嘅練馬師欄位
         trainer_cols = [c for c in df.columns if 'trainer' in c.lower() or '練馬師' in c]
-        best_trainer_col = trainer_cols[0] if trainer_cols else None
-        
-        pos_cols = [c for c in df.columns if c.lower() in ['pla', '名次', 'finishposition', 'finish_position']]
-        best_pos_col = pos_cols[0] if pos_cols else None
-        
-        if not best_trainer_col or not best_pos_col:
-            st.error(f"❌ 搵唔到欄位！練馬師欄: {trainer_cols}, 名次欄: {pos_cols}")
+        if not trainer_cols:
+            st.error("❌ 完全搵唔到任何練馬師欄位！")
             return
-
+            
+        # 2. 關鍵絕招：揀選「非空值最多」嗰個欄位
+        best_trainer_col = max(trainer_cols, key=lambda c: df[c].notna().sum())
+        st.write(f"🔍 系統自動選用嘅練馬師欄位：`{best_trainer_col}`")
+        
+        # 3. 自動搵出名次欄位
+        pos_cols = [c for c in df.columns if c.lower() in ['pla', '名次', 'finishposition', 'finish_position']]
+        if not pos_cols:
+            st.error("❌ 搵唔到名次欄位！")
+            return
+        best_pos_col = pos_cols[0]
+        
+        # 4. 提取數據
         temp = df[[best_trainer_col, best_pos_col]].copy()
         temp.columns = ['trainer', 'finish_position']
         
+        # 5. 清理數據
         temp['finish_position'] = temp['finish_position'].astype(str).str.extract(r'(\d+)').astype(float)
         temp['trainer'] = temp['trainer'].astype(str).str.strip()
         
@@ -2284,10 +2290,10 @@ def admin_trainer_ranking():
         temp = temp[~temp['trainer'].str.lower().isin(['nan', 'none', ''])]
         
         if temp.empty:
-            st.warning("⚠️ 過濾後數據為空！顯示原始數據（頭 10 行）：")
-            st.dataframe(df[[best_trainer_col, best_pos_col]].head(10))
+            st.warning("⚠️ 過濾後數據為空！")
             return
             
+        # 6. 計算勝率
         total = temp['trainer'].value_counts().reset_index()
         total.columns = ['練馬師', '總出賽']
         wins = temp[temp['finish_position'] == 1]['trainer'].value_counts().reset_index()
