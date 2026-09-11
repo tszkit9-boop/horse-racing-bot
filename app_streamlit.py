@@ -485,12 +485,11 @@ def _build_features(race_df, history_df):
 
 
 def run_prediction(date_str, race_no):
-    """用真正 ML 模型預測"""
+    """用真正 ML 模型預測（自動適配 9 或 36 特徵）"""
     if not os.path.exists("racecard_uploaded.csv"):
         st.error("❌ 找不到 racecard_uploaded.csv")
         return None, None
 
-    # 讀取排位表
     try:
         race_df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
     except Exception as e:
@@ -540,7 +539,7 @@ def run_prediction(date_str, race_no):
 
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
-    # 讀取歷史數據
+    # 歷史數據
     history_df = pd.DataFrame()
     if os.path.exists("ALL_DATA_MERGED.csv"):
         try:
@@ -556,56 +555,117 @@ def run_prediction(date_str, race_no):
         features_df = _build_features(filtered, history_df)
 
     # 載入模型
-    xgb_model, cat_model = load_ml_models()
+    xgb_model, cat_model, rank_model = load_ml_models()
 
-    # 模型預測
-    feature_cols = ['draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
-                    'jockey_win_rate_50', 'trainer_win_rate_50',
-                    'distance_win_rate', 'distance_avg_rank', 'win_odds',
-                    'weight_change', 'jockey_trainer_win_rate',
-                    'course_win_rate', 'course_avg_rank',
-                    'days_since_last_run', 'odds_rank_in_race',
-                    'rtg_change', 'jockey_horse_win_rate',
-                    'races_last14days', 'going_win_rate',
-                    'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
-                    'early_pace', 'finish_speed', 'last_trial_rank',
-                    'last_trial_time', 'jockey_win_rate_5', 'jockey_win_rate_10',
-                    'draw_win_rate', 'days_since_injury', 'injury_30d',
-                    'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity']
+    # 特徵欄位
+    features_36 = ['draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
+                   'jockey_win_rate_50', 'trainer_win_rate_50',
+                   'distance_win_rate', 'distance_avg_rank', 'win_odds',
+                   'weight_change', 'jockey_trainer_win_rate',
+                   'course_win_rate', 'course_avg_rank',
+                   'days_since_last_run', 'odds_rank_in_race',
+                   'rtg_change', 'jockey_horse_win_rate',
+                   'races_last14days', 'going_win_rate',
+                   'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
+                   'early_pace', 'finish_speed', 'last_trial_rank',
+                   'last_trial_time', 'jockey_win_rate_5', 'jockey_win_rate_10',
+                   'draw_win_rate', 'days_since_injury', 'injury_30d',
+                   'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity']
 
-    X = features_df[feature_cols].fillna(0).values
+    # 自動偵測模型需要嘅特徵數量
+    pred_xgb = None
+    pred_cat = None
+    pred_rank = None
+    models_used = []
 
-    pred_proba = None
-    model_used = []
-
+    # ===== XGBoost =====
     if xgb_model is not None:
         try:
-            pred_xgb = xgb_model.predict_proba(X)[:, 1]
-            pred_proba = pred_xgb
-            model_used.append("XGBoost")
-        except Exception as e:
-            st.warning(f"⚠️ XGBoost 預測失敗：{e}")
+            n_xgb = getattr(xgb_model, 'n_features_in_', None)
+            if n_xgb is None:
+                n_xgb = 9  # 預設雲端版本
 
+            if n_xgb == 9:
+                # 雲端 9 特徵版本
+                features_9 = ['draw', 'weight', 'distance', 'Rtg.', 'win_odds',
+                              'jockey_win_rate_50', 'trainer_win_rate_50',
+                              'avg_rank_last3', 'odds_rank_in_race']
+                X_xgb = features_df[features_9].fillna(0).values
+            else:
+                X_xgb = features_df[features_36].fillna(0).values
+
+            pred_xgb = xgb_model.predict_proba(X_xgb)[:, 1]
+            models_used.append(f"XGBoost({n_xgb}特徵)")
+        except Exception as e:
+            st.warning(f"⚠️ XGBoost 失敗：{e}")
+
+    # ===== CatBoost =====
     if cat_model is not None:
         try:
-            pred_cat = cat_model.predict_proba(X)[:, 1]
-            if pred_proba is not None:
-                pred_proba = (pred_proba + pred_cat) / 2  # 平均
-            else:
-                pred_proba = pred_cat
-            model_used.append("CatBoost")
-        except Exception as e:
-            st.warning(f"⚠️ CatBoost 預測失敗：{e}")
+            n_cat = cat_model.n_features_in_ if hasattr(cat_model, 'n_features_in_') else 36
 
-    # 如果模型都失敗，用賠率回退
-    if pred_proba is None:
+            if n_cat == 9:
+                features_9 = ['draw', 'weight', 'distance', 'Rtg.', 'win_odds',
+                              'jockey_win_rate_50', 'trainer_win_rate_50',
+                              'avg_rank_last3', 'odds_rank_in_race']
+                X_cat = features_df[features_9].fillna(0).values
+            else:
+                X_cat = features_df[features_36].fillna(0).values
+
+            pred_cat = cat_model.predict_proba(X_cat)[:, 1]
+            models_used.append(f"CatBoost({n_cat}特徵)")
+        except Exception as e:
+            st.warning(f"⚠️ CatBoost 失敗：{e}")
+
+    # ===== Ranking =====
+    if rank_model is not None:
+        try:
+            n_rank = getattr(rank_model, 'n_features_in_', None)
+            if n_rank is None:
+                n_rank = 36
+
+            if n_rank == 9:
+                features_9 = ['draw', 'weight', 'distance', 'Rtg.', 'win_odds',
+                              'jockey_win_rate_50', 'trainer_win_rate_50',
+                              'avg_rank_last3', 'odds_rank_in_race']
+                X_rank = features_df[features_9].fillna(0).values
+            else:
+                X_rank = features_df[features_36].fillna(0).values
+
+            pred_rank = rank_model.predict(X_rank)
+            # 正規化做機率
+            pred_rank = np.array(pred_rank, dtype=float)
+            if pred_rank.max() > pred_rank.min():
+                pred_rank = (pred_rank - pred_rank.min()) / (pred_rank.max() - pred_rank.min())
+            models_used.append(f"Ranking({n_rank}特徵)")
+        except Exception as e:
+            st.warning(f"⚠️ Ranking 失敗：{e}")
+
+    # ===== 融合 =====
+    all_preds = [p for p in [pred_xgb, pred_cat, pred_rank] if p is not None]
+
+    if all_preds:
+        # 加權平均（CatBoost 權重高啲）
+        weights = []
+        if pred_xgb is not None:
+            weights.append(0.3)
+        if pred_cat is not None:
+            weights.append(0.5)
+        if pred_rank is not None:
+            weights.append(0.2)
+
+        weights = np.array(weights) / sum(weights)
+
+        pred_proba = np.zeros(len(filtered))
+        for i, p in enumerate(all_preds):
+            pred_proba += weights[i] * p
+
+        st.success(f"✅ 使用模型：{', '.join(models_used)}")
+    else:
         st.warning("⚠️ 冇可用模型，改用賠率估算")
         win_odds = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0).replace(0, 4.0)
         inv = 1 / win_odds
         pred_proba = (inv / inv.sum()).values
-        model_used.append("賠率估算")
-    else:
-        st.success(f"✅ 使用模型：{', '.join(model_used)}")
 
     # 正規化
     pred_proba = pred_proba / pred_proba.sum()
@@ -622,17 +682,16 @@ def run_prediction(date_str, race_no):
     )
     result_df = result_df.sort_values('預測勝率', ascending=False).reset_index(drop=True)
 
-    # 儲存預測記錄
+    # 儲存
     ai_file = "ai_predictions.json"
     ai_data = load_json(ai_file) if os.path.exists(ai_file) else {}
     key = f"{date_str}_{race_no}"
     ai_data[key] = {
-        "date": date_str,
-        "race": race_no,
+        "date": date_str, "race": race_no,
         "top_horse": result_df.iloc[0]['horse_name'],
         "top_prob": float(result_df.iloc[0]['預測勝率']),
         "all_horses": result_df['horse_name'].tolist(),
-        "model_used": model_used,
+        "model_used": models_used,
         "predicted_at": datetime.now().isoformat()
     }
     with open(ai_file, 'w', encoding='utf-8') as f:
