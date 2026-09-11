@@ -2846,7 +2846,69 @@ def main():
     with cr:
         race_no = st.selectbox("🏇 場次", list(range(1, 12)), index=0, key="pd_race")
     with cbtn:
-        run_predict = st.button("🚀 執行預測", type="primary", use_container_width=True, key="pd_btn")
+        run_predict = st.button("🚀 執行預測", type="primary", use_container_width=True, key="pd_btn")    
+    # ============================================================
+    # 🔧 管理員專用：一鍵預測所有場次
+    # ============================================================
+    if st.session_state.get('role') == 'super_admin':
+        with st.expander("🔧 管理員工具：一鍵預測所有場次", expanded=False):
+            st.caption("⚠️ 只限管理員使用，會自動預測指定日期嘅所有場次。")
+
+            col_a, col_b = st.columns([2, 1])
+            with col_a:
+                batch_date = st.date_input(
+                    "📅 選擇日期",
+                    value=pd.to_datetime("2026-09-06"),
+                    key="batch_date_input"
+                )
+            with col_b:
+                st.write("")
+                st.write("")
+                if st.button("🚀 一鍵預測", type="primary", use_container_width=True, key="batch_predict_btn"):
+                    date_str = batch_date.strftime("%Y-%m-%d")
+
+                    # 讀取該日期有幾多場
+                    if not os.path.exists("racecard_uploaded.csv"):
+                        st.error("❌ 找不到 racecard_uploaded.csv")
+                    else:
+                        try:
+                            rc_df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
+                            rc_df = _repair_racecard(rc_df)
+                            rc_df['race_date'] = pd.to_datetime(rc_df['race_date'], errors='coerce')
+                            rc_df = rc_df.dropna(subset=['race_date'])
+                            rc_df['race_date_str'] = rc_df['race_date'].dt.strftime('%Y-%m-%d')
+                            rc_df['race_no'] = pd.to_numeric(rc_df['race_no'], errors='coerce').fillna(0).astype(int)
+
+                            day_races = sorted(rc_df[rc_df['race_date_str'] == date_str]['race_no'].unique())
+
+                            if not day_races:
+                                st.warning(f"⚠️ {date_str} 冇任何場次數據")
+                            else:
+                                st.info(f"📋 準備預測 {date_str} 嘅 {len(day_races)} 場：{day_races}")
+
+                                progress = st.progress(0)
+                                status = st.empty()
+                                success_count = 0
+                                fail_count = 0
+
+                                for i, rn in enumerate(day_races):
+                                    status.text(f"⏳ 預測第 {rn} 場中...（{i+1}/{len(day_races)}）")
+                                    try:
+                                        result, pool = run_prediction(date_str, rn)
+                                        if result is not None and not result.empty:
+                                            success_count += 1
+                                        else:
+                                            fail_count += 1
+                                    except Exception as e:
+                                        fail_count += 1
+                                        st.warning(f"⚠️ 第 {rn} 場失敗：{e}")
+                                    progress.progress((i + 1) / len(day_races))
+
+                                status.text("✅ 全部完成！")
+                                st.success(f"✅ 成功預測 {success_count} 場，失敗 {fail_count} 場")
+                                st.info(f"📊 去「📈 預測監控」睇結果")
+                        except Exception as e:
+                            st.error(f"❌ 讀取排位表失敗：{e}")
 
     if run_predict:
         with st.spinner("預測中..."):
