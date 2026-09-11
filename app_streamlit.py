@@ -1391,7 +1391,25 @@ def run_prediction(date_str, race_no):
         if st.session_state.get('username'):
             log_user_activity(st.session_state.username, 'predict', f"{date_str} 第{race_no}場")
     except Exception as e:
-        st.error(f"❌ 儲存預測失敗：{e}")
+        st.error(f"❌ 儲存預測失敗：{e}")    
+        # 🔥 同時寫入 accuracy.json（用於賽果比對）
+    if st.session_state.get('username'):
+        acc = load_accuracy()
+        if 'records' not in acc:
+            acc['records'] = []
+        # 為頭 4 名馬匹各寫一條記錄
+        for idx, row in result_df.head(4).iterrows():
+            acc['records'].append({
+                'username': st.session_state.username,
+                'date': date_str,
+                'race': int(race_no),
+                'horse': str(row['horse_name']),
+                'predicted_at': datetime.now().isoformat(),
+                'actual_result': None,
+                'is_hit': None
+            })
+        save_accuracy(acc)
+        st.info(f"📝 已記錄頭 4 名預測到 accuracy.json")
 
     # ========== 彩池推薦 ==========
     full_pool_text = generate_pool_recommendations(result_df)
