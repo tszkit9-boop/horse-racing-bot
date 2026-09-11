@@ -578,21 +578,15 @@ def admin_horse_ranking():
                 break
 
         if not pos_col:
-            st.error(f"❌ 搵唔到 Pla 欄位！所有欄位：{df.columns.tolist()}")
+            st.error(f"❌ ！所有欄位：{df.columns.tolist()}")
             return
 
         st.write(f"**名次欄位**：`{pos_col}`")
         st.write(f"**非空數量**：{df[pos_col].notna().sum()}")
         st.write(f"**樣本**：{df[pos_col].head(10).tolist()}")
-            st.error(f"❌ 搵唔到 Pla 欄位！所有欄位：{df.columns.tolist()[:20]}")
-            return
-
-        st.write(f"**Pla 非空數量**：{df['Pla'].notna().sum()}")
-        st.write(f"**Pla 樣本**：{df['Pla'].head(10).tolist()}")
-
         temp = pd.DataFrame()
         temp['horse'] = df['horse_name'].astype(str).str.strip()
-        temp['finish_position'] = pd.to_numeric(df['Pla'], errors='coerce')
+        temp['finish_position'] = pd.to_numeric(df[pos_col], errors='coerce')
 
         temp = temp.dropna(subset=['finish_position'])
         temp = temp[~temp['horse'].str.lower().isin(['nan', 'none', ''])]
