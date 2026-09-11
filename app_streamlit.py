@@ -447,10 +447,10 @@ def run_prediction(date_str, race_no):
     return result_df, generate_pool_recommendations(result_df)
 
 def _rank_from_csv(col_keywords):
-    """通用排行榜：自動偵測欄位、多種方式解析名次"""
-    # ===== 1. 讀取 CSV（多種編碼嘗試）=====
+    """無敵版：自動適應任何 CSV 格式"""
+    # ===== 1. 多編碼嘗試讀取 =====
     df = None
-    for enc in ['utf-8-sig', 'utf-8', 'big5', 'gbk']:
+    for enc in ['utf-8-sig', 'utf-8', 'big5', 'gbk', 'cp950']:
         try:
             df = pd.read_csv("ALL_DATA_MERGED.csv", encoding=enc, low_memory=False)
             break
@@ -465,24 +465,23 @@ def _rank_from_csv(col_keywords):
     df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
     df = df.loc[:, ~df.columns.duplicated()]
 
-    # ===== 3. 搵名次欄位 =====
+    # ===== 3. 模糊搵名次欄位 =====
     pos_col = None
-    pos_candidates = ['pla', '名次', 'finish_position', 'finishing_position',
-                      'pos', 'position', 'rank', 'place', 'finish']
     for c in df.columns:
-        if str(c).lower() in pos_candidates:
+        cl = str(c).lower().strip()
+        if cl in ['pla', 'plc', '名次', 'finish_position', 'finishing_position',
+                  'pos', 'position', 'rank', 'place', 'finish', 'final_position']:
             pos_col = c
             break
 
-    # 如果搵唔到，試下包含 "pla" 或 "名次"
     if not pos_col:
         for c in df.columns:
             cl = str(c).lower()
-            if 'pla' in cl or '名次' in cl:
+            if 'pla' in cl or '名次' in cl or 'finish' in cl or 'position' in cl:
                 pos_col = c
                 break
 
-    # ===== 4. 搵目標欄位 =====
+    # ===== 4. 模糊搵目標欄位 =====
     target_col = None
     for c in df.columns:
         cl = str(c).lower()
@@ -490,11 +489,13 @@ def _rank_from_csv(col_keywords):
             target_col = c
             break
 
-    # ===== 5. 檢查欄位 =====
+    # ===== 5. 診斷資訊 =====
     if not pos_col or not target_col:
-        st.error(f"❌ 搵唔到欄位！名次: {pos_col}，目標: {target_col}")
-        with st.expander("🔍 所有可用欄位"):
+        st.error(f"❌ 搵唔到欄位！名次: `{pos_col}`，目標: `{target_col}`")
+        with st.expander("🔍 所有可用欄位（點擊展開）", expanded=True):
             st.write(df.columns.tolist())
+            st.write("**頭 3 行數據：**")
+            st.dataframe(df.head(3))
         return None
 
     # ===== 6. 提取數據 =====
@@ -505,10 +506,10 @@ def _rank_from_csv(col_keywords):
     if isinstance(ps, pd.DataFrame):
         ps = ps.iloc[:, 0]
 
-    # ===== 7. 多種方式轉名次做數字 =====
+    # ===== 7. 多種方式轉名次 =====
     pos_str = ps.astype(str).str.strip()
 
-    # 方式 1：直接轉
+    # 方式 1：直接轉數字
     pos_num = pd.to_numeric(pos_str, errors='coerce')
 
     # 方式 2：提取數字
@@ -518,16 +519,25 @@ def _rank_from_csv(col_keywords):
             errors='coerce'
         )
 
-    # 方式 3：處理 "1st", "2nd" 等
+    # 方式 3：處理 "1st", "2nd", "3rd", "4th"
     if pos_num.notna().sum() == 0:
         def _parse_pos(x):
             x = str(x).strip().lower()
-            x = x.replace('st', '').replace('nd', '').replace('rd', '').replace('th', '')
+            for suf in ['st', 'nd', 'rd', 'th']:
+                x = x.replace(suf, '')
+            x = x.strip()
             try:
                 return float(x)
             except Exception:
                 return None
         pos_num = pos_str.apply(_parse_pos)
+
+    # 方式 4：如果係 "1/12" 格式
+    if pos_num.notna().sum() == 0:
+        pos_num = pd.to_numeric(
+            pos_str.str.split('/').str[0],
+            errors='coerce'
+        )
 
     # ===== 8. 建立臨時 DataFrame =====
     temp = pd.DataFrame({
@@ -535,17 +545,18 @@ def _rank_from_csv(col_keywords):
         'finish_position': pos_num
     })
     temp = temp.dropna(subset=['finish_position'])
-    temp = temp[~temp['name'].str.lower().isin(['nan', 'none', '', '-'])]
+    temp = temp[~temp['name'].str.lower().isin(['nan', 'none', '', '-', '未知'])]
 
-    # ===== 9. 如果仲係空，顯示診斷 =====
+    # ===== 9. 診斷 =====
     if temp.empty:
         st.warning("⚠️ 過濾後數據為空！")
-        with st.expander("🔍 診斷資訊（點擊展開）", expanded=True):
+        with st.expander("🔍 完整診斷（點擊展開）", expanded=True):
             st.write(f"**總行數**：{len(df)}")
             st.write(f"**使用欄位**：名次=`{pos_col}`，目標=`{target_col}`")
-            st.write(f"**名次樣本（前 10）**：{ps.head(10).tolist()}")
-            st.write(f"**目標樣本（前 10）**：{ts.head(10).tolist()}")
-            st.write(f"**轉換後有效數值**：{pos_num.notna().sum()} / {len(pos_num)}")
+            st.write(f"**名次樣本（前 15）**：{ps.head(15).tolist()}")
+            st.write(f"**目標樣本（前 15）**：{ts.head(15).tolist()}")
+            st.write(f"**名次轉換後有效數值**：{pos_num.notna().sum()} / {len(pos_num)}")
+            st.write(f"**名次唯一值**：{ps.dropna().unique()[:20].tolist()}")
         return None
 
     # ===== 10. 統計 =====
@@ -559,149 +570,41 @@ def _rank_from_csv(col_keywords):
 
 def admin_horse_ranking():
     st.subheader("🏇 馬匹勝率排行榜")
-    try:
-        df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig', low_memory=False)
-        df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
-        df = df.loc[:, ~df.columns.duplicated()]
-
-        pos_col = next((c for c in df.columns if str(c).lower() in ['pla', '名次', 'finishposition', 'finish_position']), None)
-        horse_col = next((c for c in df.columns if 'horse_name' in str(c).lower() or '馬名' in str(c)), None)
-
-        if not pos_col or not horse_col:
-            st.error(f"❌ 搵唔到欄位！名次: {pos_col}, 馬匹: {horse_col}")
-            return
-
-        hs = df[horse_col]
-        if isinstance(hs, pd.DataFrame):
-            hs = hs.iloc[:, 0]
-        ps = df[pos_col]
-        if isinstance(ps, pd.DataFrame):
-            ps = ps.iloc[:, 0]
-
-        temp = pd.DataFrame()
-        temp['horse'] = hs.astype(str).str.strip()
-        temp['finish_position'] = pd.to_numeric(ps.astype(str).str.extract(r'(\d+)')[0], errors='coerce')
-
-        temp = temp.dropna(subset=['finish_position'])
-        temp = temp[~temp['horse'].str.lower().isin(['nan', 'none', ''])]
-
-        if temp.empty:
-            st.warning("⚠️ 過濾後數據為空！")
-            return
-
-        total = temp.groupby('horse').size().reset_index(name='總出賽')
-        wins = temp[temp['finish_position'] == 1].groupby('horse').size().reset_index(name='勝出')
-        stats = pd.merge(total, wins, on='horse', how='left').fillna({'勝出': 0})
-        stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
-        stats = stats.sort_values('勝出', ascending=False).rename(columns={'horse': '馬匹'})
+    stats = _rank_from_csv(['horse_name', '馬名', 'horse'])
+    if stats is not None:
+        stats = stats.rename(columns={'name': '馬匹'})
         st.success(f"✅ 成功計算！共 {len(stats)} 匹馬")
         st.dataframe(stats.head(30), use_container_width=True)
-    except Exception as e:
-        st.error(f"讀取數據失敗: {e}")
 
 
 def admin_jockey_ranking():
     st.subheader("🏇 騎師勝率排行榜")
-    try:
-        df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig', low_memory=False)
-        df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
-        df = df.loc[:, ~df.columns.duplicated()]
-
-        pos_col = next((c for c in df.columns if str(c).lower() in ['pla', '名次', 'finishposition', 'finish_position']), None)
-        jockey_col = next((c for c in df.columns if 'jockey' in str(c).lower()), None)
-
-        if not pos_col or not jockey_col:
-            st.error(f"❌ 搵唔到欄位！名次: {pos_col}, 騎師: {jockey_col}")
-            return
-
-        js = df[jockey_col]
-        if isinstance(js, pd.DataFrame):
-            js = js.iloc[:, 0]
-        ps = df[pos_col]
-        if isinstance(ps, pd.DataFrame):
-            ps = ps.iloc[:, 0]
-
-        temp = pd.DataFrame()
-        temp['jockey'] = js.astype(str).str.strip()
-        temp['finish_position'] = pd.to_numeric(ps.astype(str).str.extract(r'(\d+)')[0], errors='coerce')
-
-        temp = temp.dropna(subset=['finish_position'])
-        temp = temp[~temp['jockey'].str.lower().isin(['nan', 'none', ''])]
-
-        if temp.empty:
-            st.warning("⚠️ 過濾後數據為空！")
-            return
-
-        total = temp.groupby('jockey').size().reset_index(name='總出賽')
-        wins = temp[temp['finish_position'] == 1].groupby('jockey').size().reset_index(name='勝出')
-        stats = pd.merge(total, wins, on='jockey', how='left').fillna({'勝出': 0})
-        stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
-        stats = stats.sort_values('勝出', ascending=False)
-
-        jockey_map = {}
-        try:
-            with open("jockey_mapping.json", "r", encoding="utf-8") as f:
-                jockey_map = json.load(f)
-        except Exception:
-            pass
-
-        stats['騎師'] = stats['jockey'].map(jockey_map).fillna(stats['jockey'])
+    stats = _rank_from_csv(['jockey', '騎師'])
+    if stats is not None:
+        jmap = {}
+        if os.path.exists("jockey_mapping.json"):
+            try:
+                jmap = load_json("jockey_mapping.json")
+            except Exception:
+                pass
+        stats['騎師'] = stats['name'].map(jmap).fillna(stats['name'])
         st.success(f"✅ 成功計算！共 {len(stats)} 位騎師")
         st.dataframe(stats[['騎師', '總出賽', '勝出', '勝率']].head(30), use_container_width=True)
-    except Exception as e:
-        st.error(f"讀取數據失敗: {e}")
 
 
 def admin_trainer_ranking():
     st.subheader("🏇 練馬師勝率排行榜")
-    try:
-        df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig', low_memory=False)
-        df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
-        df = df.loc[:, ~df.columns.duplicated()]
-
-        pos_col = next((c for c in df.columns if str(c).lower() in ['pla', '名次', 'finishposition', 'finish_position']), None)
-        trainer_col = next((c for c in df.columns if 'trainer' in str(c).lower()), None)
-
-        if not pos_col or not trainer_col:
-            st.error(f"❌ 搵唔到欄位！名次: {pos_col}, 練馬師: {trainer_col}")
-            return
-
-        ts = df[trainer_col]
-        if isinstance(ts, pd.DataFrame):
-            ts = ts.iloc[:, 0]
-        ps = df[pos_col]
-        if isinstance(ps, pd.DataFrame):
-            ps = ps.iloc[:, 0]
-
-        temp = pd.DataFrame()
-        temp['trainer'] = ts.astype(str).str.strip()
-        temp['finish_position'] = pd.to_numeric(ps.astype(str).str.extract(r'(\d+)')[0], errors='coerce')
-
-        temp = temp.dropna(subset=['finish_position'])
-        temp = temp[~temp['trainer'].str.lower().isin(['nan', 'none', ''])]
-
-        if temp.empty:
-            st.warning("⚠️ 過濾後數據為空！")
-            return
-
-        total = temp.groupby('trainer').size().reset_index(name='總出賽')
-        wins = temp[temp['finish_position'] == 1].groupby('trainer').size().reset_index(name='勝出')
-        stats = pd.merge(total, wins, on='trainer', how='left').fillna({'勝出': 0})
-        stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
-        stats = stats.sort_values('勝出', ascending=False)
-
-        trainer_map = {}
-        try:
-            with open("trainer_mapping.json", "r", encoding="utf-8") as f:
-                trainer_map = json.load(f)
-        except Exception:
-            pass
-
-        stats['練馬師'] = stats['trainer'].map(trainer_map).fillna(stats['trainer'])
+    stats = _rank_from_csv(['trainer', '練馬師'])
+    if stats is not None:
+        tmap = {}
+        if os.path.exists("trainer_mapping.json"):
+            try:
+                tmap = load_json("trainer_mapping.json")
+            except Exception:
+                pass
+        stats['練馬師'] = stats['name'].map(tmap).fillna(stats['name'])
         st.success(f"✅ 成功計算！共 {len(stats)} 位練馬師")
         st.dataframe(stats[['練馬師', '總出賽', '勝出', '勝率']].head(30), use_container_width=True)
-    except Exception as e:
-        st.error(f"讀取數據失敗: {e}")
 def admin_lottery_config():
     st.subheader("🎰 抽獎設定")
     config = load_lottery_config()
