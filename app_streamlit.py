@@ -785,13 +785,249 @@ def admin_dashboard():
 
 def admin_user_management():
     st.subheader("👥 用戶管理")
-    users = load_users()
-    if not users:
-        st.info("暫無用戶")
+    user_file = "users.json"
+
+    if not os.path.exists(user_file):
+        st.error("❌ users.json 不存在")
         return
-    df = pd.DataFrame.from_dict(users, orient='index')
-    cols = [c for c in ['username', 'group', 'level', 'exp', 'total_usage', 'is_paid', 'virtual_balance'] if c in df.columns]
-    st.dataframe(df[cols], use_container_width=True)
+
+    try:
+        with open(user_file, 'r', encoding='utf-8') as f:
+            users = json.load(f)
+    except Exception as e:
+        st.error(f"❌ 讀取失敗：{e}")
+        return
+
+    st.info(f"✅ 成功載入 {len(users)} 個用戶")
+
+    # ===== 1. 用戶列表 =====
+    if users:
+        df = pd.DataFrame.from_dict(users, orient='index')
+        for c, d in [('level', '🥉 銅牌會員'), ('exp', 0), ('badges', []),
+                     ('virtual_balance', 0), ('group', 'free')]:
+            if c not in df.columns:
+                df[c] = d
+        df['badges_count'] = df['badges'].apply(lambda x: len(x) if isinstance(x, list) else 0)
+        cols = ['username', 'group', 'level', 'exp', 'badges_count', 'total_usage', 'is_paid', 'virtual_balance']
+        display_cols = [c for c in cols if c in df.columns]
+        st.dataframe(df[display_cols], use_container_width=True)
+    else:
+        st.info("暫無用戶")
+
+    st.divider()
+
+    # ===== 2. 新增用戶 =====
+    with st.expander("➕ 新增用戶", expanded=False):
+        col1, col2 = st.columns(2)
+        with col1:
+            nu = st.text_input("新用戶名", key="nu_name")
+            np_ = st.text_input("密碼", type="password", key="nu_pw")
+        with col2:
+            ng = st.selectbox("群組", ["free", "paid", "VIP", "super_admin"], key="nu_group")
+            npaid = st.checkbox("付費狀態", value=False, key="nu_paid")
+        if st.button("建立用戶", key="create_user_btn"):
+            if not nu or not np_:
+                st.warning("請填寫用戶名同密碼")
+            elif nu in users:
+                st.error("❌ 用戶名已被使用")
+            else:
+                users[nu] = {
+                    "password": np_, "phone": "", "is_paid": npaid,
+                    "paid_date": None, "expiry_date": None,
+                    "free_usage": 0, "total_usage": 0,
+                    "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    "note": "手動新增", "group": ng, "plan": None,
+                    "predictions_limit": -1 if ng in ['super_admin', 'VIP'] else CONFIG.get("free_limit", 2),
+                    "history": [], "terms_agreed": datetime.now().isoformat(),
+                    "invite_code": nu.upper() + str(random.randint(100, 999)),
+                    "invited_by": None, "invite_rewards": 0, "invite_count": 0,
+                    "level": "🥉 銅牌會員", "exp": 0, "badges": [],
+                    "virtual_balance": CONFIG.get("daily_virtual_coin", 1000),
+                    "last_claim_date": '', "bets": [], "last_lottery_date": ""
+                }
+                if save_users(users):
+                    st.success(f"✅ 用戶 {nu} 已建立！")
+                    st.rerun()
+                else:
+                    st.error("❌ 儲存失敗")
+
+    st.divider()
+
+    # ===== 3. 編輯用戶 =====
+    st.subheader("✏️ 編輯用戶")
+    sel = st.selectbox("選擇要編輯嘅用戶", list(users.keys()), key="edit_user_sel")
+    if sel:
+        u = users[sel]
+        col1, col2 = st.columns(2)
+        with col1:
+            grp_options = ['free', 'paid', 'VIP', 'super_admin']
+            cur_grp = u.get('group', 'free')
+            ngrp = st.selectbox(
+                "群組", grp_options,
+                index=grp_options.index(cur_grp) if cur_grp in grp_options else 0,
+                key="edit_grp"
+            )
+            npaid = st.checkbox("付費狀態", value=u.get('is_paid', False), key="edit_paid")
+            npw = st.text_input("新密碼（留空 = 不改）", type="password", key="edit_pw")
+            phone = st.text_input("手機號碼", value=u.get('phone', ''), key="edit_phone")
+        with col2:
+            level_options = ["🥉 銅牌會員", "🥈 銀牌會員", "🥇 金牌會員",
+                             "💎 鑽石會員", "👑 傳說會員", "👑 超級管理員"]
+            cur_lv = u.get('level', '🥉 銅牌會員')
+            if cur_lv not in level_options:
+                level_options.append(cur_lv)
+            nlv = st.selectbox(
+                "等級", level_options,
+                index=level_options.index(cur_lv) if cur_lv in level_options else 0,
+                key="edit_lv"
+            )
+            nexp = st.number_input("經驗值", min_value=0, value=int(u.get('exp', 0)), step=10, key="edit_exp")
+            all_badges = ["🏆 首勝", "🔥 三連勝", "⚡ 五連勝", "💯 百場預測",
+                          "🎯 命中大師", "👥 社交達人", "💰 付費會員", "🏇 馬匹專家"]
+            cur_badges = u.get('badges', [])
+            nbadges = st.multiselect(
+                "勳章", all_badges,
+                default=[b for b in cur_badges if b in all_badges],
+                key="edit_badges"
+            )
+
+        note = st.text_area("備註", value=u.get('note', ''), key="edit_note")
+
+        if st.button("💾 儲存變更", type="primary", key="save_user_changes"):
+            users[sel]['group'] = ngrp
+            users[sel]['is_paid'] = npaid
+            users[sel]['note'] = note
+            users[sel]['level'] = nlv
+            users[sel]['exp'] = nexp
+            users[sel]['badges'] = nbadges
+            users[sel]['phone'] = phone
+            if npw:
+                users[sel]['password'] = npw
+            if ngrp in ['super_admin', 'VIP']:
+                users[sel]['predictions_limit'] = -1
+            else:
+                users[sel]['predictions_limit'] = CONFIG.get("free_limit", 2)
+            if save_users(users):
+                st.success("✅ 已更新用戶資料！")
+                st.rerun()
+            else:
+                st.error("❌ 儲存失敗")
+
+    st.divider()
+
+    # ===== 4. 管理員贈送虛擬幣 =====
+    st.subheader("🎁 贈送虛擬幣")
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col1:
+        target = st.selectbox("選擇用戶", list(users.keys()), key="gift_user_sel")
+        if target:
+            cur_bal = users[target].get('virtual_balance', 0)
+            st.caption(f"目前餘額：**${cur_bal:,.0f}**")
+    with col2:
+        amount = st.number_input("金額", min_value=1, value=100, step=100, key="gift_amount")
+    with col3:
+        st.write("")
+        if st.button("🎁 贈送", type="primary", use_container_width=True, key="gift_send"):
+            if target:
+                users[target]['virtual_balance'] = users[target].get('virtual_balance', 0) + amount
+                if save_users(users):
+                    st.success(f"✅ 已贈送 ${amount} 給 {target}，新餘額：${users[target]['virtual_balance']:,.0f}")
+                    st.rerun()
+                else:
+                    st.error("❌ 儲存失敗")
+
+    st.divider()
+
+    # ===== 5. 快速扣款 =====
+    with st.expander("➖ 扣款"):
+        col1, col2 = st.columns(2)
+        with col1:
+            target2 = st.selectbox("選擇用戶", list(users.keys()), key="deduct_user_sel")
+        with col2:
+            amt2 = st.number_input("扣款金額", min_value=1, value=100, step=100, key="deduct_amt")
+        if st.button("➖ 確認扣款", key="deduct_btn"):
+            if target2:
+                cur = users[target2].get('virtual_balance', 0)
+                if cur < amt2:
+                    st.error(f"❌ 餘額不足（${cur:,.0f}）")
+                else:
+                    users[target2]['virtual_balance'] = cur - amt2
+                    if save_users(users):
+                        st.success(f"✅ 已扣除 ${amt2}，新餘額：${users[target2]['virtual_balance']:,.0f}")
+                        st.rerun()
+
+    st.divider()
+
+    # ===== 6. 查看用戶視角 =====
+    with st.expander("👁️ 查看用戶視角"):
+        target3 = st.selectbox("選擇用戶", list(users.keys()), key="view_user_sel")
+        if target3:
+            u = users[target3]
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("👤 用戶", target3)
+            c2.metric("🏷️ 級別", u.get('group', 'free').upper())
+            c3.metric("📊 總預測次數", len(u.get('history', [])))
+            limit = u.get('predictions_limit', CONFIG.get('free_limit', 2))
+            if limit == -1:
+                c4.metric("📊 剩餘場次", "♾️ 無限")
+            else:
+                used = u.get('free_usage', 0)
+                c4.metric("📊 剩餘場次", max(0, limit - used))
+
+            history = u.get('history', [])
+            if history:
+                st.markdown("**最近 20 次預測記錄：**")
+                st.dataframe(pd.DataFrame(history[-20:][::-1]), use_container_width=True)
+            else:
+                st.info("呢個用戶暫時冇任何預測記錄")
+
+    st.divider()
+
+    # ===== 7. 刪除用戶 =====
+    with st.expander("🗑️ 刪除用戶"):
+        del_user = st.selectbox("選擇要刪除嘅用戶", list(users.keys()), key="del_user_sel")
+        if del_user:
+            if del_user == "admin":
+                st.warning("⚠️ 唔可以刪除 admin 帳號")
+            else:
+                confirm = st.checkbox(f"確認刪除 {del_user}？", key="confirm_del")
+                if confirm and st.button("🗑️ 確認刪除", key="del_user_btn"):
+                    users.pop(del_user)
+                    if save_users(users):
+                        st.success(f"✅ 用戶 {del_user} 已刪除")
+                        st.rerun()
+
+    st.divider()
+
+    # ===== 8. 下載 users.json =====
+    st.subheader("📥 下載用戶資料")
+    col_a, col_b = st.columns(2)
+    with col_a:
+        try:
+            with open(user_file, 'r', encoding='utf-8') as f:
+                data = f.read()
+            st.download_button(
+                label="📥 下載 users.json",
+                data=data,
+                file_name=f"users_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json",
+                use_container_width=True,
+                key="dl_users_json"
+            )
+        except Exception as e:
+            st.error(f"讀取失敗：{e}")
+    with col_b:
+        if users:
+            df_export = pd.DataFrame.from_dict(users, orient='index')
+            csv_data = df_export.to_csv(index=False).encode('utf-8-sig')
+            st.download_button(
+                label="📥 下載 users.csv",
+                data=csv_data,
+                file_name=f"users_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                use_container_width=True,
+                key="dl_users_csv"
+            )
 
 def admin_manage_predictions():
     st.subheader("📊 管理用戶預測次數")
