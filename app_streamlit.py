@@ -1156,8 +1156,10 @@ def run_prediction(date_str, race_no):
     from datetime import datetime
     from catboost import CatBoostClassifier
 
-    # 優先讀取有統計特徵嘅檔案，冇就用原本嘅
-    if os.path.exists("racecard_with_stats.csv"):
+    # 優先讀取有特徵嘅檔案
+    if os.path.exists("racecard_full.csv"):
+        data_file = "racecard_full.csv"
+    elif os.path.exists("racecard_with_stats.csv"):
         data_file = "racecard_with_stats.csv"
     elif os.path.exists("racecard_uploaded.csv"):
         data_file = "racecard_uploaded.csv"
@@ -1176,11 +1178,12 @@ def run_prediction(date_str, race_no):
         '馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
         '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
         '負磅': 'weight', '馬號': 'horse_no', '賠率': 'win_odds',
-        '獨贏賠率': 'win_odds', 'Odds': 'win_odds'
+        '獨贏賠率': 'win_odds'
     }
     for old, new in rename_map.items():
         if old in df.columns and old != new:
-            df.rename(columns={old: new}, inplace=True)
+            if new not in df.columns:
+                df.rename(columns={old: new}, inplace=True)
 
     if 'race_date' not in df.columns:
         st.error("❌ 缺少 '比賽日期' 欄位")
@@ -1196,6 +1199,10 @@ def run_prediction(date_str, race_no):
         date_str = available_dates[-1]
 
     df_date = df[df['race_date_str'] == date_str]
+    if 'race_no' not in df_date.columns:
+        st.error("❌ 缺少場次欄位")
+        return None, None
+
     if race_no not in df_date['race_no'].unique():
         available_races = sorted(df_date['race_no'].unique())
         if available_races:
@@ -1208,8 +1215,7 @@ def run_prediction(date_str, race_no):
     filtered = df_date[df_date['race_no'] == race_no].copy()
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
-    # ========== 真正用模型 ==========
-    # 模型需要嘅 36 個特徵（中文名）
+    # ========== 建立 36 個特徵（順序必須同模型一致） ==========
     MODEL_FEATURES = [
         'draw', 'weight', 'distance', 'Rtg.', '近3場平均名次',
         '騎師近50場勝率', '練馬師近50場勝率', '同路程歷史勝率', '同路程歷史平均名次',
@@ -1222,29 +1228,65 @@ def run_prediction(date_str, race_no):
         '傷患總次數', '傷患嚴重程度'
     ]
 
-    # 建立特徵矩陣（缺嘅補 0）
-    X = pd.DataFrame()
-    for feat in MODEL_FEATURES:
-        # 嘗試直接搵
-        if feat in filtered.columns:
-            X[feat] = pd.to_numeric(filtered[feat], errors='coerce').fillna(0)
-        # 嘗試用映射
-        elif feat == 'draw' and 'draw' in filtered.columns:
-            X[feat] = pd.to_numeric(filtered['draw'], errors='coerce').fillna(0)
-        elif feat == 'weight' and 'weight' in filtered.columns:
-            X[feat] = pd.to_numeric(filtered['weight'], errors='coerce').fillna(0)
-        elif feat == 'win_odds' and 'win_odds' in filtered.columns:
-            X[feat] = pd.to_numeric(filtered['win_odds'], errors='coerce').fillna(4.0)
-        elif feat == '近3場平均名次' and 'avg_rank_last3' in filtered.columns:
-            X[feat] = pd.to_numeric(filtered['avg_rank_last3'], errors='coerce').fillna(99)
-        elif feat == '出賽相隔日數' and 'days_since_last_run' in filtered.columns:
-            X[feat] = pd.to_numeric(filtered['days_since_last_run'], errors='coerce').fillna(999)
-        elif feat == '近14日出賽次數' and 'races_last14days' in filtered.columns:
-            X[feat] = pd.to_numeric(filtered['races_last14days'], errors='coerce').fillna(0)
-        else:
-            X[feat] = 0
+    # 特徵映射：模型特徵名 → 你嘅欄位名
+    FEATURE_MAPPING = {
+        'draw': 'draw',
+        'weight': 'weight',
+        'distance': 'distance',
+        'Rtg.': 'rtg',
+        '近3場平均名次': 'avg_rank_last3',
+        '騎師近50場勝率': 'jockey_win_rate_50',
+        '練馬師近50場勝率': 'trainer_win_rate_50',
+        '同路程歷史勝率': 'distance_win_rate',
+        '同路程歷史平均名次': 'distance_avg_rank',
+        'win_odds': 'win_odds',
+        '體重變化': 'weight_change',
+        '騎練組合勝率': 'jockey_trainer_win_rate',
+        '詳細賽道歷史勝率': 'course_win_rate',
+        '詳細賽道歷史平均名次': 'course_avg_rank',
+        '出賽相隔日數': 'days_since_last_run',
+        '賠率場次排名': 'odds_rank_in_race',
+        '評分變化': 'rtg_change',
+        '騎馬合作勝率': 'jockey_horse_win_rate',
+        '近14日出賽次數': 'races_last14days',
+        '場地狀況勝率': 'going_win_rate',
+        '試閘歷史勝率': 'trial_win_rate',
+        '父系歷史勝率': 'sire_win_rate',
+        '父系同程勝率': 'sire_course_win_rate',
+        '前速指標': 'early_pace',
+        '後勁指標': 'finish_speed',
+        '最近試閘名次': 'last_trial_rank',
+        '最近試閘時間': 'last_trial_time',
+        '騎師近5場勝率': 'jockey_win_rate_5',
+        '騎師近10場勝率': 'jockey_win_rate_10',
+        '檔位勝率': 'draw_win_rate',
+        '最近傷患日數': 'days_since_injury',
+        '過去30日內有傷患': 'injury_30d',
+        '過去60日內有傷患': 'injury_60d',
+        '過去90日內有傷患': 'injury_90d',
+        '傷患總次數': 'total_injuries',
+        '傷患嚴重程度': 'injury_severity',
+    }
 
-    # 嘗試載入模型
+    # 建立特徵矩陣（嚴格按照 MODEL_FEATURES 順序）
+    X_data = {}
+    for model_feat in MODEL_FEATURES:
+        col_name = FEATURE_MAPPING.get(model_feat)
+        if col_name and col_name in filtered.columns:
+            X_data[model_feat] = pd.to_numeric(filtered[col_name], errors='coerce').fillna(0).values
+        else:
+            X_data[model_feat] = np.zeros(len(filtered))
+
+    # 🔥 用 list 按順序建立 array
+    X_array = np.array([X_data[feat] for feat in MODEL_FEATURES]).T
+    X_array = X_array.astype(float)
+
+    # 檢查 shape
+    if X_array.shape[1] != 36:
+        st.error(f"❌ 特徵數量錯誤：{X_array.shape[1]}，需要 36")
+        return None, None
+
+    # ========== 嘗試載入模型 ==========
     model_used = False
     try:
         with open('hk_racing_model.pkl', 'rb') as f:
@@ -1254,13 +1296,10 @@ def run_prediction(date_str, race_no):
         cat_model = CatBoostClassifier()
         cat_model.load_model('hk_catboost_model.cbm')
 
-        # 🔥 轉為 NumPy array，避免特徵名稱檢查
-        X_array = X.values.astype(float)
-
-        # XGBoost 預測
+        # 🔥 XGBoost 預測（用 NumPy array，避免特徵名稱檢查）
         xgb_pred = xgb_model.predict_proba(X_array)[:, 1]
 
-        # CatBoost 預測
+        # 🔥 CatBoost 預測（用 NumPy array）
         cat_pred = cat_model.predict_proba(X_array)[:, 1]
 
         # 加權融合
@@ -1287,8 +1326,26 @@ def run_prediction(date_str, race_no):
         win_odds = win_odds.replace(0, 4.0)
         inv_odds = 1 / win_odds
         final_pred = inv_odds / inv_odds.sum()
-    # 建立結果
-    result_df = filtered[['horse_name', 'draw', 'weight', 'jockey', 'trainer']].copy()
+
+    # ========== 建立結果 ==========
+    result_df = filtered[['horse_name']].copy()
+    if 'draw' in filtered.columns:
+        result_df['draw'] = filtered['draw'].values
+    else:
+        result_df['draw'] = 0
+    if 'weight' in filtered.columns:
+        result_df['weight'] = filtered['weight'].values
+    else:
+        result_df['weight'] = 0
+    if 'jockey' in filtered.columns:
+        result_df['jockey'] = filtered['jockey'].values
+    else:
+        result_df['jockey'] = ''
+    if 'trainer' in filtered.columns:
+        result_df['trainer'] = filtered['trainer'].values
+    else:
+        result_df['trainer'] = ''
+
     result_df['預測勝率'] = final_pred
     result_df['值博指數'] = result_df['預測勝率'] * 10
     result_df['信心指數'] = result_df['預測勝率'].apply(
@@ -1297,7 +1354,7 @@ def run_prediction(date_str, race_no):
     result_df = result_df.sort_values('預測勝率', ascending=False)
     result_df['horse_name'] = result_df['horse_name'].fillna('未知').astype(str)
 
-    # 儲存預測記錄
+    # ========== 儲存預測記錄 ==========
     ai_file = "ai_predictions.json"
     ai_data = {}
     if os.path.exists(ai_file):
@@ -1326,7 +1383,7 @@ def run_prediction(date_str, race_no):
     except Exception as e:
         st.error(f"❌ 儲存預測失敗：{e}")
 
-    # 彩池推薦
+    # ========== 彩池推薦 ==========
     full_pool_text = generate_pool_recommendations(result_df)
     config = load_system_config()
     enable_vip_content = config.get("enable_vip_content", True)
