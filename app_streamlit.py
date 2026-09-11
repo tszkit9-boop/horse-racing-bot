@@ -550,19 +550,21 @@ def admin_lottery_config():
     col1, col2, col3 = st.columns(3)
     with col1:
         p_name = st.text_input("獎品名稱", key="lot_name")
-    p_type = st.selectbox(
-        "獎品類型",
-        ["virtual_coin", "vip_days", "free_predictions", "promo_code", "custom", "nothing"],
-        format_func=lambda x: {
-            "virtual_coin": "🪙 虛擬幣",
-            "vip_days": "👑 VIP",
-            "free_predictions": "🔮 預測",
-            "promo_code": "🎟️ 優惠碼",
-            "custom": "🎁 自訂",
-            "nothing": "😅 無獎"
-        }.get(x, x),
-        key="lot_type"
-    )
+     col_type, _ = st.columns([1, 2])
+    with col_type:
+        p_type = st.selectbox(
+            "獎品類型",
+            ["virtual_coin", "vip_days", "free_predictions", "promo_code", "custom", "nothing"],
+            format_func=lambda x: {
+                "virtual_coin": "🪙 虛擬幣",
+                "vip_days": "👑 VIP",
+                "free_predictions": "🔮 預測",
+                "promo_code": "🎟️ 優惠碼",
+                "custom": "🎁 自訂",
+                "nothing": "😅 無獎"
+            }.get(x, x),
+            key="lot_type"
+        )
     with col2:
         p_value = st.number_input("數值", min_value=0, value=100, key="lot_value")
         p_weight = st.number_input("中獎機率（權重）", min_value=1, value=10, key="lot_weight")
