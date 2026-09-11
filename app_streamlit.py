@@ -518,23 +518,24 @@ def _repair_racecard(df):
     return result
 
 def run_prediction(date_str, race_no):
-    """用真正 ML 模型預測（自動適配 9 或 36 特徵）"""
+    """用真正 ML 模型預測"""
     if not os.path.exists("racecard_uploaded.csv"):
         st.error("❌ 找不到 racecard_uploaded.csv")
         return None, None
 
     try:
-        race_df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig', header=0)
+        race_df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
         race_df = _repair_racecard(race_df)
-        st.write(f"📋 修復後日期：{sorted(race_df['race_date'].unique())}")
     except Exception as e:
         st.error(f"❌ 讀取失敗：{e}")
         return None, None
 
-    rename_map = {'馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
-                  '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
-                  '負磅': 'weight', '馬號': 'horse_id', '賠率': 'win_odds',
-                  '路程': 'distance', '評分': 'rtg'}
+    rename_map = {
+        '馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
+        '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
+        '負磅': 'weight', '馬號': 'horse_id', '賠率': 'win_odds',
+        '路程': 'distance', '評分': 'rtg'
+    }
     existing = [c for c in rename_map if c in race_df.columns]
     if existing:
         race_df.rename(columns={c: rename_map[c] for c in existing}, inplace=True)
@@ -551,8 +552,12 @@ def run_prediction(date_str, race_no):
     if not available_dates:
         st.error("❌ 無可用日期")
         return None, None
-    # 顯示所有可用日期讓用戶揀
-      df_date = race_df[race_df['race_date_str'] == date_str]
+
+    if date_str not in available_dates:
+        st.warning(f"⚠️ {date_str} 冇數據，自動改用 {available_dates[-1]}")
+        date_str = available_dates[-1]
+
+    df_date = race_df[race_df['race_date_str'] == date_str]
     if 'race_no' not in df_date.columns:
         st.error("❌ 缺少 '場次'")
         return None, None
