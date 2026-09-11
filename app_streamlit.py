@@ -2251,16 +2251,15 @@ def admin_trainer_ranking():
         df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
         df = df.loc[:, ~df.columns.duplicated()]
 
-        trainer_cols = [c for c in df.columns if 'trainer' in c.lower()]
-        pos_cols = [c for c in df.columns if 'pla' in c.lower() or '名次' in c]
+        # 建立對照表：英文名 -> 中文名
+        trainer_map = {}
+        if 'trainer' in df.columns and '練馬師' in df.columns:
+            mapping_df = df[['trainer', '練馬師']].dropna().drop_duplicates()
+            trainer_map = dict(zip(mapping_df['trainer'], mapping_df['練馬師']))
 
-        if not trainer_cols or not pos_cols:
-            st.error("❌ 搵唔到欄位！")
-            return
-
-        trainer_series = df[trainer_cols[0]]
+        trainer_series = df['trainer']
         if isinstance(trainer_series, pd.DataFrame): trainer_series = trainer_series.iloc[:, 0]
-        pos_series = df[pos_cols[0]]
+        pos_series = df['Pla']
         if isinstance(pos_series, pd.DataFrame): pos_series = pos_series.iloc[:, 0]
 
         temp = pd.DataFrame()
@@ -2278,10 +2277,12 @@ def admin_trainer_ranking():
         wins = temp[temp['finish_position'] == 1].groupby('trainer').size().reset_index(name='勝出')
         stats = pd.merge(total, wins, on='trainer', how='left').fillna({'勝出': 0})
         stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
-        stats = stats.sort_values('勝出', ascending=False).rename(columns={'trainer': '練馬師'})
+        stats = stats.sort_values('勝出', ascending=False)
 
+        # 將英文名轉做中文名（如果對照表有嘅話）
+        stats['練馬師'] = stats['trainer'].map(trainer_map).fillna(stats['trainer'])
+        st.dataframe(stats[['練馬師', '總出賽', '勝出', '勝率']].head(20), use_container_width=True)
         st.success(f"✅ 成功計算！共 {len(stats)} 位練馬師")
-        st.dataframe(stats.head(20), use_container_width=True)
 
     except Exception as e:
         st.error(f"讀取數據失敗: {e}")
