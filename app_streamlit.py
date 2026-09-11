@@ -1,20 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-賽馬預測系統 - 完整版 (v18.4)
-包含抽獎、商城、管理員贈送、額外抽獎次數管理
+賽馬預測系統 - 完整版（付款功能統一，開放所有用戶）
 """
 
 import streamlit as st
-from datetime import datetime, timedelta
-import pytz
 import pandas as pd
 import numpy as np
 import pickle
 import os
-import json
-import re
-import string
 import json
 from datetime import datetime, timedelta
 import warnings
@@ -23,20 +17,22 @@ from catboost import CatBoostClassifier
 import plotly.express as px
 import plotly.graph_objects as go
 import random
-from zoneinfo import ZoneInfo
 from PIL import Image
 
-def admin_course_analysis():
-    st.subheader("📊 場地/路程勝率分析")
-    st.info("此功能需要更詳細的場地與路程數據，暫未開放。")
-
-def admin_monthly_report():
-    st.subheader("📅 每月命中率報告")
-    st.info("此功能需要預測記錄對比，暫未開放。")
-
-st.set_page_config(page_title="🏇 賽馬預測系統", page_icon="🐎", layout="wide",
+# ============================================================
+# 🔒 隱藏 Streamlit 平台 UI
+# ============================================================
+st.set_page_config(
+    page_title="🏇 賽馬預測系統",
+    page_icon="🐎",
+    layout="wide",
     initial_sidebar_state="expanded",
-    menu_items={'Get Help': None, 'Report a bug': None, 'About': None})
+    menu_items={
+        'Get Help': None,
+        'Report a bug': None,
+        'About': None,
+    }
+)
 
 st.markdown("""
 <style>
@@ -47,12 +43,24 @@ st.markdown("""
     header { display: none !important; }
     button[kind="share"] { display: none !important; }
     a[href*="streamlit.io"] { display: none !important; }
+    .st-emotion-cache-1r6slb0 { display: none !important; }
     [data-testid="stHeader"] { display: none !important; }
     [data-testid="stDecoration"] { display: none !important; }
     .stApp > header { display: none !important; }
-    section[data-testid="stSidebar"] { display: block !important; visibility: visible !important; opacity: 1 !important; width: 300px !important; }
-    section[data-testid="stSidebar"] * { display: block !important; visibility: visible !important; opacity: 1 !important; }
-    .stApp > header + div { padding-top: 0 !important; }
+    section[data-testid="stSidebar"] {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        width: 300px !important;
+    }
+    section[data-testid="stSidebar"] * {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+    }
+    .stApp > header + div {
+        padding-top: 0 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -60,14 +68,37 @@ st.markdown("""
 # 🔐 系統設定
 # ============================================================
 CONFIG_FILE = 'system_config.json'
+
 DEFAULT_CONFIG = {
-    "enable_registration": True, "enable_payment": True, "enable_admin": True,
-    "currency": "HKD", "free_limit": 2, "admin_password": "z54060437K",
-    "price_day": 18, "price_month": 128, "price_quarter": 328,
-    "verification_expiry": 5, "enable_vip_content": True,
-    "enable_invite_reward": True, "invite_reward_inviter": 1, "invite_reward_invitee": 1,
-    "xgb_weight": 25, "cat_weight": 1,
-    "daily_virtual_coin": 1000, "virtual_coin_enabled": True,
+    "enable_registration": True,
+    "enable_payment": True,
+    "enable_admin": True,
+    "currency": "HKD",
+    "free_limit": 2,
+    "admin_password": "z54060437K",
+    "price_day": 18,
+    "price_month": 128,
+    "price_quarter": 328,
+    "verification_expiry": 5,
+    "enable_vip_content": True,
+    "enable_daily_free_tip": True,
+    "enable_invite_reward": True,
+    "invite_reward_inviter": 1,
+    "invite_reward_invitee": 1,
+    "xgb_weight": 25,
+    "cat_weight": 1,
+    "last_weight_update": "",
+    "last_hit_rate": 0.0,
+    "module_user_management": True,
+    "module_analytics": True,
+    "module_finance": True,
+    "module_monitoring": True,
+    "module_content": True,
+    "module_automation": True,
+    "module_security": True,
+    "module_promo": True,
+    "daily_virtual_coin": 1000,
+    "virtual_coin_enabled": True,
 }
 
 def load_system_config():
@@ -76,9 +107,11 @@ def load_system_config():
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                 config = json.load(f)
             for key, value in DEFAULT_CONFIG.items():
-                if key not in config: config[key] = value
+                if key not in config:
+                    config[key] = value
             return config
-        except: return DEFAULT_CONFIG.copy()
+        except:
+            return DEFAULT_CONFIG.copy()
     else:
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
             json.dump(DEFAULT_CONFIG, f, ensure_ascii=False, indent=2)
@@ -89,17 +122,23 @@ def save_system_config(config):
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
         return True
-    except: return False
+    except:
+        return False
 
 CONFIG = load_system_config()
 
+# ============================================================
+# 基本 JSON 讀寫
+# ============================================================
 def load_json(file_path, default=None):
-    if default is None: default = {}
+    if default is None:
+        default = {}
     if os.path.exists(file_path):
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except: return default
+        except:
+            return default
     return default
 
 def save_json(file_path, data):
@@ -107,8 +146,12 @@ def save_json(file_path, data):
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         return True
-    except: return False
+    except:
+        return False
 
+# ============================================================
+# 檔案路徑常數
+# ============================================================
 USER_DATA_FILE = 'users.json'
 FINANCE_FILE = 'finance.json'
 PROMO_FILE = 'promo_codes.json'
@@ -116,654 +159,66 @@ LOG_FILE = 'admin_log.json'
 ACCURACY_FILE = 'accuracy.json'
 CONTENT_FILE = 'content.json'
 AUTOMATION_FILE = 'automation.json'
-PAYMENT_PROOFS_FILE = 'payment_proofs.json'
-ACTIVITY_LOG_FILE = 'user_activity_log.json'
-LOTTERY_CONFIG_FILE = 'lottery_config.json'
-LOTTERY_RECORDS_FILE = 'lottery_records.json'
-SHOP_CONFIG_FILE = 'shop_config.json'
-SHOP_PURCHASES_FILE = 'shop_purchases.json'
-
-if not os.path.exists('payment_proofs'): os.makedirs('payment_proofs')
-if 'payment_requests' not in st.session_state: st.session_state.payment_requests = {"requests": []}
 
 # ============================================================
-# 用戶活動日誌
+# 初始化 session_state 付款記錄
 # ============================================================
-def log_user_activity(username, action, details=""):
-    log = load_json(ACTIVITY_LOG_FILE)
-    if 'logs' not in log: log['logs'] = []
-    log['logs'].append({'timestamp': datetime.now().isoformat(), 'username': username, 'action': action, 'details': details})
-    if len(log['logs']) > 10000: log['logs'] = log['logs'][-10000:]
-    save_json(ACTIVITY_LOG_FILE, log)
-
-def get_user_activity_logs(username=None, days=30, action=None):
-    log = load_json(ACTIVITY_LOG_FILE)
-    logs = log.get('logs', [])
-    cutoff = datetime.now() - timedelta(days=days)
-    filtered = []
-    for entry in logs:
-        try:
-            dt = datetime.fromisoformat(entry['timestamp'])
-            if dt < cutoff: continue
-            if username and entry.get('username') != username: continue
-            if action and entry.get('action') != action: continue
-            filtered.append(entry)
-        except: continue
-    return filtered
+if 'payment_requests' not in st.session_state:
+    st.session_state.payment_requests = {"requests": []}
 
 # ============================================================
-# 🎰 每日抽獎系統
-# ============================================================
-DEFAULT_LOTTERY_CONFIG = {
-    "enabled": True, "draws_per_day": 1, "allow_admin_gift": True,
-    "prizes": [
-        {"id": 1, "name": "💰 100 虛擬幣", "type": "virtual_coin", "value": 100, "weight": 30, "stock": -1, "icon": "💰"},
-        {"id": 2, "name": "💰 500 虛擬幣", "type": "virtual_coin", "value": 500, "weight": 15, "stock": -1, "icon": "💰"},
-        {"id": 3, "name": "💰 1000 虛擬幣", "type": "virtual_coin", "value": 1000, "weight": 5, "stock": -1, "icon": "💎"},
-        {"id": 4, "name": "👑 VIP 1 天", "type": "vip_days", "value": 1, "weight": 10, "stock": -1, "icon": "👑"},
-        {"id": 5, "name": "🎯 免費預測 3 次", "type": "free_predictions", "value": 3, "weight": 20, "stock": -1, "icon": "🎯"},
-        {"id": 6, "name": "🎟️ 20% 折扣優惠碼", "type": "promo_code", "value": "auto", "weight": 10, "stock": -1, "icon": "🎟️",
-         "discount_type": "percentage", "discount_value": 20, "valid_days": 7},
-        {"id": 7, "name": "😢 謝謝參與", "type": "nothing", "value": 0, "weight": 10, "stock": -1, "icon": "😢"}
-    ]
-}
-
-def load_lottery_config():
-    if os.path.exists(LOTTERY_CONFIG_FILE):
-        try:
-            with open(LOTTERY_CONFIG_FILE, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-            for key, value in DEFAULT_LOTTERY_CONFIG.items():
-                if key not in config: config[key] = value
-            return config
-        except: return DEFAULT_LOTTERY_CONFIG.copy()
-    else:
-        with open(LOTTERY_CONFIG_FILE, 'w', encoding='utf-8') as f:
-            json.dump(DEFAULT_LOTTERY_CONFIG, f, ensure_ascii=False, indent=2)
-        return DEFAULT_LOTTERY_CONFIG.copy()
-
-def save_lottery_config(config):
-    try:
-        with open(LOTTERY_CONFIG_FILE, 'w', encoding='utf-8') as f:
-            json.dump(config, f, ensure_ascii=False, indent=2)
-        return True
-    except: return False
-
-def load_lottery_records():
-    if os.path.exists(LOTTERY_RECORDS_FILE):
-        try:
-            with open(LOTTERY_RECORDS_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except: return {"records": []}
-    return {"records": []}
-
-def save_lottery_records(data):
-    try:
-        with open(LOTTERY_RECORDS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        return True
-    except: return False
-
-def get_user_draws_today(username):
-    records = load_lottery_records()
-    today = datetime.now().strftime('%Y-%m-%d')
-    return sum(1 for r in records.get('records', []) if r.get('username') == username and r.get('draw_date') == today)
-
-def user_can_draw_today(username):
-    config = load_lottery_config()
-    if not config.get('enabled', True): return False, "抽獎活動已關閉"
-    max_draws = config.get('draws_per_day', 1)
-    users = load_users()
-    extra = users.get(username, {}).get('extra_lottery_draws', 0)
-    max_draws += extra
-    drawn = get_user_draws_today(username)
-    if drawn >= max_draws: return False, f"今日已抽 {drawn}/{max_draws} 次"
-    return True, f"今日可抽 {max_draws - drawn} 次"
-
-def generate_promo_code_for_prize():
-    promos = load_promos()
-    code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
-    while code in promos:
-        code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
-    return code
-
-def apply_prize_to_user(username, prize):
-    users = load_users()
-    if username not in users: return False, "用戶不存在"
-    prize_type = prize.get('type', 'nothing')
-    prize_value = prize.get('value', 0)
-    message = ""
-    if prize_type == 'virtual_coin':
-        users[username]['virtual_balance'] = users[username].get('virtual_balance', 0) + prize_value
-        message = f"獲得 {prize_value} 虛擬幣！"
-    elif prize_type == 'vip_days':
-        current_expiry = users[username].get('expiry_date')
-        if current_expiry:
-            try:
-                base_date = pd.to_datetime(current_expiry)
-                if base_date < datetime.now(): base_date = datetime.now()
-            except: base_date = datetime.now()
-        else: base_date = datetime.now()
-        new_expiry = base_date + timedelta(days=prize_value)
-        users[username]['expiry_date'] = new_expiry.strftime('%Y-%m-%d %H:%M:%S')
-        users[username]['group'] = 'VIP'
-        users[username]['is_paid'] = True
-        users[username]['predictions_limit'] = -1
-        message = f"獲得 VIP {prize_value} 天！"
-    elif prize_type == 'free_predictions':
-        if users[username].get('predictions_limit', 0) != -1:
-            users[username]['predictions_limit'] = users[username].get('predictions_limit', 0) + prize_value
-        message = f"獲得 {prize_value} 次免費預測！"
-    elif prize_type == 'promo_code':
-        discount_type = prize.get('discount_type', 'percentage')
-        discount_value = prize.get('discount_value', 20)
-        valid_days = prize.get('valid_days', 7)
-        code = generate_promo_code_for_prize()
-        promos = load_promos()
-        expiry = (datetime.now() + timedelta(days=valid_days)).isoformat()
-        promos[code] = {"used": False, "expiry": expiry, "created_at": datetime.now().isoformat(), "discount_type": discount_type, "discount_value": discount_value, "used_by": None, "source": f"抽獎獲得（{username}）"}
-        save_promos(promos)
-        if discount_type == 'percentage': discount_text = f"{discount_value}% 折扣"
-        elif discount_type == 'fixed': discount_text = f"減 ${discount_value}"
-        else: discount_text = "全免"
-        message = f"🎟️ 獲得優惠碼：`{code}`（{discount_text}，{valid_days} 天內有效）"
-    elif prize_type == 'custom': message = f"獲得：{prize_value}"
-    elif prize_type == 'nothing': message = "謝謝參與！"
-    save_users(users)
-    return True, message
-
-def draw_lottery(username):
-    config = load_lottery_config()
-    if not config.get('enabled', True): return False, "抽獎活動已關閉", None
-    can_draw, msg = user_can_draw_today(username)
-    if not can_draw: return False, msg, None
-    prizes = config.get('prizes', [])
-    available = [p for p in prizes if p.get('stock', -1) == -1 or p.get('stock', 0) > 0]
-    if not available: return False, "所有獎品已派完", None
-    weights = [p.get('weight', 1) for p in available]
-    total = sum(weights)
-    if total == 0: return False, "抽獎設定錯誤", None
-    rand = random.uniform(0, total)
-    cumulative = 0
-    chosen = available[-1]
-    for i, p in enumerate(available):
-        cumulative += weights[i]
-        if rand <= cumulative: chosen = p; break
-    if chosen.get('stock', -1) > 0:
-        for p in config['prizes']:
-            if p.get('id') == chosen.get('id'):
-                p['stock'] = p.get('stock', 1) - 1
-                break
-        save_lottery_config(config)
-    success, message = apply_prize_to_user(username, chosen)
-    records = load_lottery_records()
-    records['records'].append({"username": username, "draw_date": datetime.now().strftime('%Y-%m-%d'), "draw_time": datetime.now().isoformat(), "prize_id": chosen.get('id'), "prize_name": chosen.get('name'), "prize_type": chosen.get('type'), "prize_value": chosen.get('value'), "source": "抽獎"})
-    if len(records['records']) > 5000: records['records'] = records['records'][-5000:]
-    save_lottery_records(records)
-    log_user_activity(username, 'lottery', f"抽中 {chosen.get('name')}")
-    return True, message, chosen
-
-def admin_gift_prize(admin_username, target_user, prize):
-    config = load_lottery_config()
-    if not config.get('allow_admin_gift', True): return False, "管理員贈送功能已關閉"
-    success, message = apply_prize_to_user(target_user, prize)
-    if not success: return False, message
-    records = load_lottery_records()
-    records['records'].append({"username": target_user, "draw_date": datetime.now().strftime('%Y-%m-%d'), "draw_time": datetime.now().isoformat(), "prize_id": prize.get('id'), "prize_name": prize.get('name'), "prize_type": prize.get('type'), "prize_value": prize.get('value'), "source": f"管理員 {admin_username} 贈送"})
-    save_lottery_records(records)
-    log_admin_action(admin_username, f"贈送 {prize.get('name')} 給 {target_user}")
-    return True, f"✅ 已贈送 {prize.get('name')} 給 {target_user}"
-
-def show_lottery_interface(username):
-    from zoneinfo import ZoneInfo
-    import time
-    
-    HK_TZ = ZoneInfo("Asia/Hong_Kong")
-    
-    if not username:
-        st.info("請先登入")
-        return
-    config = load_lottery_config()
-    if not config.get('enabled', True):
-        st.warning("🎰 抽獎活動暫時關閉")
-        return
-    
-    # 初始化 session_state
-    if 'lottery_drawing' not in st.session_state:
-        st.session_state.lottery_drawing = False
-    if 'lottery_result' not in st.session_state:
-        st.session_state.lottery_result = None
-    
-    st.subheader("🎰 每日抽獎")
-    
-    can_draw, msg = user_can_draw_today(username)
-    max_draws = config.get('draws_per_day', 1)
-    users = load_users()
-    extra = users.get(username, {}).get('extra_lottery_draws', 0)
-    max_draws += extra
-    drawn = get_user_draws_today(username)
-    
-    # ===== 統計資訊 =====
-    col_info1, col_info2, col_info3 = st.columns(3)
-    col_info1.metric("🎯 今日已抽", f"{drawn}/{max_draws}")
-    col_info2.metric("📊 狀態", "✅ 可抽獎" if can_draw else "⏰ 已抽完")
-    col_info3.metric("🎁 獎品數量", len(config.get('prizes', [])))
-    
-    st.divider()
-    
-    # ===== 中獎展示頁面 =====
-    if st.session_state.lottery_result is not None:
-        prize = st.session_state.lottery_result
-        
-        # 慶祝動畫
-        st.balloons()
-        
-        # 中獎卡片
-        st.markdown(f"""
-        <div style="
-            background: linear-gradient(135deg, #ffd700, #ff8c00);
-            border-radius: 24px;
-            padding: 40px 30px;
-            text-align: center;
-            color: white;
-            box-shadow: 0 10px 40px rgba(255, 140, 0, 0.4);
-            margin: 20px 0;
-            animation: pulse 1.5s ease-in-out;
-        ">
-            <div style="font-size: 80px; margin-bottom: 10px;">🎉</div>
-            <div style="font-size: 32px; font-weight: bold; margin-bottom: 20px;">恭喜中獎！</div>
-            <div style="font-size: 80px; margin: 20px 0;">{prize.get('icon', '🎁')}</div>
-            <div style="font-size: 28px; font-weight: bold; background: rgba(255,255,255,0.2); padding: 15px 30px; border-radius: 15px; display: inline-block;">
-                {prize.get('name', '')}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # 額外彩帶效果
-        st.markdown("""
-        <style>
-        @keyframes pulse {
-            0% { transform: scale(0.8); opacity: 0; }
-            50% { transform: scale(1.05); }
-            100% { transform: scale(1); opacity: 1; }
-        }
-        </style>
-        """, unsafe_allow_html=True)
-        
-        # 顯示獎品詳情
-        st.markdown("### 📋 獎品詳情")
-        col_p1, col_p2, col_p3 = st.columns(3)
-        col_p1.metric("🎁 獎品", prize.get('name', ''))
-        col_p2.metric("🏷️ 類型", {
-            'virtual_coin': '💰 虛擬幣',
-            'vip_days': '👑 VIP',
-            'free_predictions': '🎯 免費預測',
-            'promo_code': '🎟️ 優惠碼',
-            'custom': '🎁 自訂',
-            'nothing': '😢 無獎品'
-        }.get(prize.get('type', ''), '未知'))
-        col_p3.metric("⏰ 抽獎時間", datetime.now(HK_TZ).strftime('%H:%M:%S'))
-        
-        # 如果係優惠碼，特別顯示
-        if prize.get('type') == 'promo_code':
-            st.info("💡 你嘅優惠碼已經自動加到「🎟️ 優惠碼」系統，付款時可以使用！")
-        
-        if st.button("🎰 再抽一次" if can_draw else "✅ 完成", 
-                     type="primary", use_container_width=True, key="close_result"):
-            st.session_state.lottery_result = None
-            st.rerun()
-        
-        return
-    
-    # ===== 抽獎動畫中 =====
-    if st.session_state.lottery_drawing:
-        with st.spinner("🎰 抽獎中..."):
-            time.sleep(0.5)
-            success, message, prize = draw_lottery(username)
-            st.session_state.lottery_drawing = False
-            if success and prize:
-                st.session_state.lottery_result = prize
-            else:
-                st.error(message)
-            st.rerun()
-        return
-    
-    # ===== 抽獎頁面 =====
-    if can_draw:
-        # 抽獎機卡片
-        st.markdown("""
-        <div style="
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 24px;
-            padding: 40px 20px;
-            text-align: center;
-            color: white;
-            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
-            margin: 20px 0;
-        ">
-            <div style="font-size: 100px; animation: bounce 1s infinite;">🎰</div>
-            <div style="font-size: 28px; font-weight: bold; margin-top: 15px;">每日大抽獎</div>
-            <div style="font-size: 14px; opacity: 0.9; margin-top: 8px;">撳下面嘅掣試吓你嘅運氣！</div>
-        </div>
-        <style>
-        @keyframes bounce {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-10px); }
-        }
-        </style>
-        """, unsafe_allow_html=True)
-        
-        col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
-        with col_btn2:
-            if st.button("🎰 立即抽獎", type="primary", use_container_width=True, key="btn_draw_lottery"):
-                st.session_state.lottery_drawing = True
-                st.rerun()
-    else:
-        # 已抽完
-        st.warning(f"⏰ {msg}，聽日再嚟啦！")
-        
-        # 倒數計時器
-        now = datetime.now(HK_TZ)
-        tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-        time_left = tomorrow - now
-        total_seconds = int(time_left.total_seconds())
-        hours = total_seconds // 3600
-        minutes = (total_seconds % 3600) // 60
-        seconds = total_seconds % 60
-        
-        st.markdown(f"""
-        <div style="
-            background: linear-gradient(135deg, #1a237e, #0d47a1);
-            border-radius: 20px;
-            padding: 30px;
-            text-align: center;
-            color: white;
-            margin: 20px 0;
-            box-shadow: 0 8px 25px rgba(26, 35, 126, 0.3);
-        ">
-            <div style="font-size: 16px; opacity: 0.85;">⏰ 距離下次抽獎仲有（香港時間）</div>
-            <div style="font-size: 48px; font-weight: bold; margin-top: 15px; letter-spacing: 3px; font-family: monospace;">
-                {hours:02d}:{minutes:02d}:{seconds:02d}
-            </div>
-            <div style="font-size: 13px; opacity: 0.7; margin-top: 10px;">每晚 00:00（香港時間）自動重置抽獎機會</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        if st.button("🔄 重新整理", use_container_width=True, key="refresh_countdown"):
-            st.rerun()
-    
-    st.divider()
-    
-    # ===== 獎品一覽 =====
-    st.subheader("🎁 獎品一覽")
-    prizes = config.get('prizes', [])
-    if prizes:
-        cols = st.columns(4)
-        for idx, p in enumerate(prizes):
-            with cols[idx % 4]:
-                stock = p.get('stock', -1)
-                stock_text = "♾️ 無限" if stock == -1 else f"剩 {stock} 份"
-                
-                # 根據類型決定顏色
-                prize_type = p.get('type', '')
-                if prize_type == 'virtual_coin':
-                    bg_color = 'linear-gradient(135deg, #fef3c7, #fde68a)'
-                    border_color = '#f59e0b'
-                elif prize_type == 'vip_days':
-                    bg_color = 'linear-gradient(135deg, #fef3c7, #fde047)'
-                    border_color = '#eab308'
-                elif prize_type == 'free_predictions':
-                    bg_color = 'linear-gradient(135deg, #dbeafe, #bfdbfe)'
-                    border_color = '#3b82f6'
-                elif prize_type == 'promo_code':
-                    bg_color = 'linear-gradient(135deg, #fce7f3, #fbcfe8)'
-                    border_color = '#ec4899'
-                else:
-                    bg_color = 'linear-gradient(135deg, #f1f5f9, #e2e8f0)'
-                    border_color = '#94a3b8'
-                
-                st.markdown(f"""
-                <div style="
-                    padding: 16px;
-                    background: {bg_color};
-                    border-radius: 14px;
-                    border: 2px solid {border_color};
-                    text-align: center;
-                    margin-bottom: 12px;
-                    min-height: 140px;
-                ">
-                    <div style="font-size: 36px;">{p.get('icon', '🎁')}</div>
-                    <div style="font-size: 14px; font-weight: bold; margin-top: 8px; color: #1e293b;">
-                        {p.get('name', '')}
-                    </div>
-                    <div style="font-size: 11px; color: #64748b; margin-top: 5px;">
-                        {stock_text}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-    
-    st.divider()
-    
-    # ===== 抽獎記錄 =====
-    st.subheader("📋 我嘅抽獎記錄")
-    records = load_lottery_records()
-    user_records = [r for r in records.get('records', []) if r.get('username') == username]
-    if user_records:
-        df_records = pd.DataFrame(user_records[-20:][::-1])
-        display_cols = ['draw_date', 'prize_name', 'source']
-        available_cols = [c for c in display_cols if c in df_records.columns]
-        st.dataframe(df_records[available_cols], use_container_width=True, hide_index=True)
-    else:
-        st.info("📭 尚未抽過獎")
-
-# ============================================================
-# 🛍️ 虛擬商城系統
-# ============================================================
-DEFAULT_SHOP_CONFIG = {
-    "enabled": True,
-    "items": [
-        {"id": 1, "name": "🎯 額外預測 1 次", "type": "predictions", "value": 1, "price": 500, "stock": -1, "icon": "🎯", "desc": "增加 1 次預測機會"},
-        {"id": 2, "name": "👑 VIP 1 天體驗", "type": "vip_days", "value": 1, "price": 5000, "stock": -1, "icon": "👑", "desc": "VIP 會員 1 天"},
-        {"id": 3, "name": "👑 VIP 3 天體驗", "type": "vip_days", "value": 3, "price": 12000, "stock": -1, "icon": "👑", "desc": "VIP 會員 3 天"},
-        {"id": 4, "name": "🎰 額外抽獎 1 次", "type": "lottery_draws", "value": 1, "price": 1000, "stock": -1, "icon": "🎰", "desc": "增加 1 次抽獎機會"},
-        {"id": 5, "name": "💎 「鑽石會員」稱號", "type": "title", "value": "💎 鑽石會員", "price": 10000, "stock": -1, "icon": "💎", "desc": "個人中心顯示特殊稱號"},
-        {"id": 6, "name": "🎁 神秘禮盒", "type": "mystery_box", "value": 0, "price": 3000, "stock": -1, "icon": "🎁", "desc": "隨機獲得獎品"}
-    ]
-}
-
-def load_shop_config():
-    if os.path.exists(SHOP_CONFIG_FILE):
-        try:
-            with open(SHOP_CONFIG_FILE, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-            for key, value in DEFAULT_SHOP_CONFIG.items():
-                if key not in config: config[key] = value
-            return config
-        except: return DEFAULT_SHOP_CONFIG.copy()
-    else:
-        with open(SHOP_CONFIG_FILE, 'w', encoding='utf-8') as f:
-            json.dump(DEFAULT_SHOP_CONFIG, f, ensure_ascii=False, indent=2)
-        return DEFAULT_SHOP_CONFIG.copy()
-
-def save_shop_config(config):
-    try:
-        with open(SHOP_CONFIG_FILE, 'w', encoding='utf-8') as f:
-            json.dump(config, f, ensure_ascii=False, indent=2)
-        return True
-    except: return False
-
-def load_shop_purchases():
-    if os.path.exists(SHOP_PURCHASES_FILE):
-        try:
-            with open(SHOP_PURCHASES_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except: return {"purchases": []}
-    return {"purchases": []}
-
-def save_shop_purchases(data):
-    try:
-        with open(SHOP_PURCHASES_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        return True
-    except: return False
-
-def get_user_real_balance_shop(username):
-    users = load_users()
-    if username not in users: return 0
-    base_balance = users[username].get('virtual_balance', 0)
-    purchases = load_shop_purchases()
-    user_purchases = [p for p in purchases.get('purchases', []) if p.get('username') == username]
-    total_spent = sum(p.get('price', 0) for p in user_purchases)
-    return base_balance - total_spent
-
-def purchase_item(username, item):
-    item_price = item.get('price', 0)
-    current_balance = get_user_real_balance_shop(username)
-    if current_balance < item_price:
-        return False, f"❌ 餘額不足（餘額：${current_balance:,.0f}，需要：${item_price:,.0f}）"
-    purchases = load_shop_purchases()
-    purchases['purchases'].append({"username": username, "item_id": item.get('id'), "item_name": item.get('name'), "item_type": item.get('type'), "item_value": item.get('value'), "price": item_price, "purchased_at": datetime.now().isoformat()})
-    if not save_shop_purchases(purchases): return False, "❌ 購買記錄儲存失敗"
-    users = load_users()
-    if username not in users: return False, "❌ 用戶不存在"
-    item_type = item.get('type')
-    item_value = item.get('value')
-    if item_type == 'predictions':
-        if users[username].get('predictions_limit', 0) != -1:
-            users[username]['predictions_limit'] = users[username].get('predictions_limit', 0) + item_value
-        msg = f"✅ 獲得 {item_value} 次預測機會！"
-    elif item_type == 'vip_days':
-        current_expiry = users[username].get('expiry_date')
-        if current_expiry:
-            try:
-                base_date = pd.to_datetime(current_expiry)
-                if base_date < datetime.now(): base_date = datetime.now()
-            except: base_date = datetime.now()
-        else: base_date = datetime.now()
-        new_expiry = base_date + timedelta(days=item_value)
-        users[username]['expiry_date'] = new_expiry.strftime('%Y-%m-%d %H:%M:%S')
-        users[username]['group'] = 'VIP'
-        users[username]['is_paid'] = True
-        users[username]['predictions_limit'] = -1
-        msg = f"✅ VIP 延長至 {new_expiry.strftime('%Y-%m-%d')}！"
-    elif item_type == 'lottery_draws':
-        extra = users[username].get('extra_lottery_draws', 0)
-        users[username]['extra_lottery_draws'] = extra + item_value
-        msg = f"✅ 獲得 {item_value} 次額外抽獎！"
-    elif item_type == 'title':
-        if 'titles' not in users[username]: users[username]['titles'] = []
-        if item_value not in users[username]['titles']: users[username]['titles'].append(item_value)
-        users[username]['current_title'] = item_value
-        msg = f"✅ 已購買稱號：{item_value}"
-    elif item_type == 'mystery_box':
-        rewards = [("💰 100 虛擬幣", 100, 'virtual_coin'), ("💰 500 虛擬幣", 500, 'virtual_coin'), ("🎯 免費預測 3 次", 3, 'predictions'), ("👑 VIP 1 天", 1, 'vip_days')]
-        reward_name, reward_value, reward_type = random.choice(rewards)
-        if reward_type == 'virtual_coin':
-            users[username]['virtual_balance'] = users[username].get('virtual_balance', 0) + reward_value
-            purchases['purchases'].append({"username": username, "item_id": -1, "item_name": f"神秘禮盒：{reward_name}", "item_type": "reward", "item_value": reward_value, "price": -reward_value, "purchased_at": datetime.now().isoformat()})
-            save_shop_purchases(purchases)
-        elif reward_type == 'predictions':
-            if users[username].get('predictions_limit', 0) != -1:
-                users[username]['predictions_limit'] = users[username].get('predictions_limit', 0) + reward_value
-        elif reward_type == 'vip_days':
-            current_expiry = users[username].get('expiry_date')
-            if current_expiry:
-                try:
-                    base_date = pd.to_datetime(current_expiry)
-                    if base_date < datetime.now(): base_date = datetime.now()
-                except: base_date = datetime.now()
-            else: base_date = datetime.now()
-            new_expiry = base_date + timedelta(days=reward_value)
-            users[username]['expiry_date'] = new_expiry.strftime('%Y-%m-%d %H:%M:%S')
-            users[username]['group'] = 'VIP'
-            users[username]['is_paid'] = True
-            users[username]['predictions_limit'] = -1
-        msg = f"🎁 神秘禮盒開出：{reward_name}！"
-    else: msg = f"✅ 已購買"
-    save_users(users)
-    log_user_activity(username, 'purchase', f"購買 {item.get('name')} - ${item_price}")
-    return True, msg
-
-def show_shop_interface(username):
-    if not username: st.info("請先登入"); return
-    config = load_shop_config()
-    if not config.get('enabled', True): st.warning("🛍️ 商城暫時關閉"); return
-    st.subheader("🛍️ 虛擬商城")
-    balance = get_user_real_balance_shop(username)
-    col1, col2, col3 = st.columns(3)
-    col1.metric("💎 你的餘額", f"${balance:,.0f}")
-    col2.metric("📦 已購買", len([p for p in load_shop_purchases().get('purchases', []) if p.get('username') == username]))
-    col3.metric("🎁 可購買物品", len(config.get('items', [])))
-    st.divider()
-    items = config.get('items', [])
-    if not items: st.info("商城暫無物品"); return
-    st.subheader("🎁 商品列表")
-    cols = st.columns(3)
-    for idx, item in enumerate(items):
-        with cols[idx % 3]:
-            st.markdown(f"""<div style="padding: 15px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0; text-align: center; margin-bottom: 10px;"><div style="font-size: 40px;">{item.get('icon', '🎁')}</div><div style="font-size: 16px; font-weight: bold; margin-top: 8px;">{item.get('name', '')}</div><div style="font-size: 12px; color: #64748b; margin-top: 5px;">{item.get('desc', '')}</div><div style="font-size: 20px; font-weight: bold; color: #f59e0b; margin-top: 10px;">${item.get('price', 0):,.0f} 幣</div></div>""", unsafe_allow_html=True)
-            if st.button(f"🛒 購買", key=f"buy_{item.get('id')}", use_container_width=True):
-                success, msg = purchase_item(username, item)
-                if success:
-                    st.success(msg)
-                    st.balloons()
-                    st.rerun()
-                else: st.error(msg)
-    st.divider()
-    st.subheader("📋 我的購買記錄")
-    purchases = load_shop_purchases()
-    user_purchases = [p for p in purchases.get('purchases', []) if p.get('username') == username]
-    if user_purchases:
-        df_purchases = pd.DataFrame(user_purchases[-20:][::-1])
-        display_cols = ['purchased_at', 'item_name', 'price']
-        available_cols = [c for c in display_cols if c in df_purchases.columns]
-        df_display = df_purchases[available_cols].copy()
-        df_display.columns = ['時間', '物品', '價格'][:len(df_display.columns)]
-        st.dataframe(df_display, use_container_width=True, hide_index=True)
-    else: st.info("📭 尚未購買任何物品")
-
-# ============================================================
-# 用戶等級/勳章系統
+# 用戶等級/勳章系統（輔助函數）
 # ============================================================
 def get_level_info(exp):
-    levels = [(0, "🥉 銅牌會員"), (100, "🥈 銀牌會員"), (500, "🥇 金牌會員"), (1500, "💎 鑽石會員"), (5000, "👑 傳說會員")]
+    levels = [
+        (0, "🥉 銅牌會員"),
+        (100, "🥈 銀牌會員"),
+        (500, "🥇 金牌會員"),
+        (1500, "💎 鑽石會員"),
+        (5000, "👑 傳說會員")
+    ]
     current_level = levels[0][1]
     next_level_exp = None
     for threshold, level_name in levels:
-        if exp >= threshold: current_level = level_name
-        else: next_level_exp = threshold; break
+        if exp >= threshold:
+            current_level = level_name
+        else:
+            next_level_exp = threshold
+            break
     return current_level, next_level_exp
 
 def check_badges(username, hit_rate=None):
     users = load_users()
-    if username not in users: return
+    if username not in users:
+        return
     user = users[username]
     history = user.get('history', [])
     badges = user.get('badges', [])
     total_predictions = len(history)
     hits = sum(1 for h in history if h.get('is_hit') is True)
     hit_rate = hits / total_predictions if total_predictions > 0 else 0
-    consecutive_hits = 0; max_consecutive = 0
+    consecutive_hits = 0
+    max_consecutive = 0
     for h in history:
         if h.get('is_hit') is True:
             consecutive_hits += 1
             max_consecutive = max(max_consecutive, consecutive_hits)
-        else: consecutive_hits = 0
+        else:
+            consecutive_hits = 0
     badge_conditions = {
-        "🏆 首勝": (total_predictions >= 1 and hits >= 1, ""),
-        "🔥 三連勝": (max_consecutive >= 3, ""),
-        "⚡ 五連勝": (max_consecutive >= 5, ""),
-        "💯 百場預測": (total_predictions >= 100, ""),
-        "🎯 命中大師": (total_predictions >= 20 and hit_rate >= 0.5, ""),
-        "👥 社交達人": (user.get('invite_count', 0) >= 5, ""),
-        "💰 付費會員": (user.get('is_paid', False) or user.get('group') == 'VIP', ""),
-        "🏇 馬匹專家": (len(set(h.get('horse') for h in history)) >= 5, ""),
-        "🎰 抽獎達人": (len([r for r in load_lottery_records().get('records', []) if r.get('username') == username]) >= 10, ""),
-        "🛍️ 購物達人": (len([p for p in load_shop_purchases().get('purchases', []) if p.get('username') == username]) >= 5, ""),
+        "🏆 首勝": (total_predictions >= 1 and hits >= 1, "第一次預測命中"),
+        "🔥 三連勝": (max_consecutive >= 3, "連續 3 次預測命中"),
+        "⚡ 五連勝": (max_consecutive >= 5, "連續 5 次預測命中"),
+        "💯 百場預測": (total_predictions >= 100, "累積預測 100 次"),
+        "🎯 命中大師": (total_predictions >= 20 and hit_rate >= 0.5, "命中率超過 50%"),
+        "👥 社交達人": (user.get('invite_count', 0) >= 5, "成功邀請 5 位朋友"),
+        "💰 付費會員": (user.get('is_paid', False) or user.get('group') == 'VIP', "首次付款升級 VIP"),
+        "🏇 馬匹專家": (len(set(h.get('horse') for h in history)) >= 5, "預測過 5 匹不同馬匹"),
     }
     new_badges = []
     for badge_name, (condition, description) in badge_conditions.items():
-        if condition and badge_name not in badges: new_badges.append(badge_name)
+        if condition and badge_name not in badges:
+            new_badges.append(badge_name)
     if new_badges:
         badges.extend(new_badges)
         user['badges'] = badges
@@ -772,26 +227,112 @@ def check_badges(username, hit_rate=None):
 
 def update_user_exp(username, is_hit=False):
     users = load_users()
-    if username not in users: return
+    if username not in users:
+        return
     user = users[username]
-    exp = user.get('exp', 0) + 10
-    if is_hit: exp += 20
+    exp = user.get('exp', 0)
+    exp += 10
+    if is_hit:
+        exp += 20
     user['exp'] = exp
+    new_level, next_exp = get_level_info(exp)
+    if new_level != user.get('level', ''):
+        old_level = user.get('level', '')
+        user['level'] = new_level
+        if old_level != new_level:
+            log_admin_action("system", f"{username} 升級：{old_level} → {new_level}")
     save_users(users)
     check_badges(username)
 
+# ============================================================
+# ⭐ 虛擬幣系統
+# ============================================================
 def claim_daily_virtual_coin(username):
-    if not CONFIG.get("virtual_coin_enabled", True): return 0, "虛擬幣功能已關閉"
+    if not CONFIG.get("virtual_coin_enabled", True):
+        return 0, "虛擬幣功能已關閉"
     users = load_users()
-    if username not in users: return 0, "用戶不存在"
+    if username not in users:
+        return 0, "用戶不存在"
     user = users[username]
     today = datetime.now().strftime('%Y-%m-%d')
-    if user.get('last_claim_date', '') == today: return 0, "今日已領取"
+    last_claim = user.get('last_claim_date', '')
+    if last_claim == today:
+        return 0, "今日已領取"
     daily_amount = CONFIG.get("daily_virtual_coin", 1000)
     user['virtual_balance'] = user.get('virtual_balance', 0) + daily_amount
     user['last_claim_date'] = today
     save_users(users)
     return daily_amount, f"已領取 ${daily_amount} 虛擬幣"
+
+def get_virtual_balance(username):
+    users = load_users()
+    if username not in users:
+        return 0
+    return users[username].get('virtual_balance', 0)
+
+def place_bet(username, race_date, race_no, horse_name, bet_amount, bet_type="win"):
+    users = load_users()
+    if username not in users:
+        return False, "用戶不存在"
+    user = users[username]
+    balance = user.get('virtual_balance', 0)
+    if bet_amount <= 0:
+        return False, "投注金額必須大於 0"
+    if bet_amount > balance:
+        return False, f"餘額不足（餘額：${balance}）"
+    user['virtual_balance'] = balance - bet_amount
+    if 'bets' not in user:
+        user['bets'] = []
+    bet = {
+        "date": race_date,
+        "race": race_no,
+        "horse": horse_name,
+        "amount": bet_amount,
+        "bet_type": bet_type,
+        "placed_at": datetime.now().isoformat(),
+        "result": None,
+        "payout": 0,
+        "odds": None,
+        "settled": False
+    }
+    user['bets'].append(bet)
+    save_users(users)
+    return True, f"已投注 ${bet_amount} 喺 {horse_name}"
+
+def settle_bets(username, race_date, race_no, results_df):
+    users = load_users()
+    if username not in users:
+        return
+    user = users[username]
+    bets = user.get('bets', [])
+    updated = False
+    for bet in bets:
+        if bet.get('settled', False):
+            continue
+        if bet.get('date') != race_date or bet.get('race') != race_no:
+            continue
+        horse = bet.get('horse')
+        matched = results_df[
+            (results_df['race_date'].dt.strftime('%Y-%m-%d') == race_date) &
+            (results_df['race_no'] == race_no) &
+            (results_df['horse_name'] == horse)
+        ]
+        if not matched.empty:
+            pos = matched.iloc[0]['finish_position']
+            is_win = (pos == 1)
+            bet['result'] = 'win' if is_win else 'lose'
+            bet['settled'] = True
+            if is_win:
+                odds = matched.iloc[0].get('win_odds', 4.0)
+                if pd.isna(odds) or odds <= 0:
+                    odds = 4.0
+                bet['odds'] = float(odds)
+                payout = bet['amount'] * odds
+                bet['payout'] = payout
+                user['virtual_balance'] = user.get('virtual_balance', 0) + payout
+                updated = True
+    if updated:
+        save_users(users)
 
 # ============================================================
 # 用戶系統
@@ -799,15 +340,50 @@ def claim_daily_virtual_coin(username):
 def load_users():
     users = load_json(USER_DATA_FILE)
     if not users or "admin" not in users:
-        users = {"admin": {"username": "admin", "password": CONFIG["admin_password"], "is_paid": False, "paid_date": None, "expiry_date": None, "free_usage": 0, "total_usage": 0, "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'), "note": "系統超級管理員", "group": "super_admin", "phone": "", "plan": None, "predictions_limit": -1, "history": [], "terms_agreed": datetime.now().isoformat(), "invite_code": "ADMIN001", "invited_by": None, "invite_rewards": 0, "invite_count": 0, "level": "👑 超級管理員", "exp": 0, "badges": [], "virtual_balance": 10000, "last_claim_date": "", "extra_lottery_draws": 0, "titles": [], "current_title": None}}
+        users = {
+            "admin": {
+                "username": "admin",
+                "password": CONFIG["admin_password"],
+                "is_paid": False,
+                "paid_date": None,
+                "expiry_date": None,
+                "free_usage": 0,
+                "total_usage": 0,
+                "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                "note": "系統超級管理員",
+                "group": "super_admin",
+                "phone": "",
+                "plan": None,
+                "predictions_limit": -1,
+                "history": [],
+                "terms_agreed": datetime.now().isoformat(),
+                "invite_code": "ADMIN001",
+                "invited_by": None,
+                "invite_rewards": 0,
+                "invite_count": 0,
+                "level": "👑 超級管理員",
+                "exp": 0,
+                "badges": [],
+                "virtual_balance": 10000,
+                "last_claim_date": "",
+                "bets": []
+            }
+        }
         save_users(users)
     else:
         if "admin" in users:
             users["admin"]["group"] = "super_admin"
             users["admin"]["predictions_limit"] = -1
-            if "level" not in users["admin"]: users["admin"]["level"] = "👑 超級管理員"; users["admin"]["exp"] = 0; users["admin"]["badges"] = []
-            if "virtual_balance" not in users["admin"]: users["admin"]["virtual_balance"] = 10000
-            if "last_claim_date" not in users["admin"]: users["admin"]["last_claim_date"] = ""
+            if "level" not in users["admin"]:
+                users["admin"]["level"] = "👑 超級管理員"
+                users["admin"]["exp"] = 0
+                users["admin"]["badges"] = []
+            if "virtual_balance" not in users["admin"]:
+                users["admin"]["virtual_balance"] = 10000
+            if "last_claim_date" not in users["admin"]:
+                users["admin"]["last_claim_date"] = ""
+            if "bets" not in users["admin"]:
+                users["admin"]["bets"] = []
         for uid, u in users.items():
             if 'plan' not in u: u['plan'] = None
             if 'paid_date' not in u: u['paid_date'] = None
@@ -818,54 +394,97 @@ def load_users():
             if 'free_usage' not in u: u['free_usage'] = 0
             if 'total_usage' not in u: u['total_usage'] = 0
             if 'terms_agreed' not in u: u['terms_agreed'] = None
-            if 'invite_code' not in u: u['invite_code'] = uid.upper() + str(random.randint(100, 999))
+            if 'invite_code' not in u:
+                u['invite_code'] = uid.upper() + str(random.randint(100, 999))
             if 'invited_by' not in u: u['invited_by'] = None
             if 'invite_rewards' not in u: u['invite_rewards'] = 0
             if 'invite_count' not in u: u['invite_count'] = 0
             if 'predictions_limit' not in u:
-                u['predictions_limit'] = -1 if u.get('group') in ['super_admin', 'VIP', 'paid'] else CONFIG["free_limit"]
-            if 'level' not in u: u['level'] = '🥉 銅牌會員'
-            if 'exp' not in u: u['exp'] = 0
-            if 'badges' not in u: u['badges'] = []
-            if 'virtual_balance' not in u: u['virtual_balance'] = 1000
-            if 'last_claim_date' not in u: u['last_claim_date'] = ''
-            if 'extra_lottery_draws' not in u: u['extra_lottery_draws'] = 0
-            if 'titles' not in u: u['titles'] = []
-            if 'current_title' not in u: u['current_title'] = None
+                if u.get('group') in ['super_admin', 'VIP', 'paid']:
+                    u['predictions_limit'] = -1
+                else:
+                    u['predictions_limit'] = CONFIG["free_limit"]
+            if 'level' not in u:
+                u['level'] = '🥉 銅牌會員'
+            if 'exp' not in u:
+                u['exp'] = 0
+            if 'badges' not in u:
+                u['badges'] = []
+            if 'virtual_balance' not in u:
+                u['virtual_balance'] = 1000
+            if 'last_claim_date' not in u:
+                u['last_claim_date'] = ''
+            if 'bets' not in u:
+                u['bets'] = []
         save_users(users)
     return users
 
 def save_users(users):
-    try:
-        with open(USER_DATA_FILE, 'w', encoding='utf-8') as f:
-            json.dump(users, f, ensure_ascii=False, indent=2)
-        return True
-    except: return False
+    return save_json(USER_DATA_FILE, users)
 
 def authenticate(username, password):
     users = load_users()
-    if username in users and users[username].get('password') == password: return users[username]
+    if username in users and users[username].get('password') == password:
+        return users[username]
     return None
+
+def get_user(username):
+    users = load_users()
+    return users.get(username)
+
+def get_remaining_predictions(username):
+    user = get_user(username)
+    if not user:
+        return 0
+    if user.get('group') in ['VIP', 'paid', 'super_admin']:
+        return 9999
+    limit = user.get('predictions_limit', CONFIG['free_limit'])
+    used = user.get('free_usage', 0)
+    return max(0, limit - used)
+
+def update_user(username, updates):
+    users = load_users()
+    if username in users:
+        users[username].update(updates)
+        return save_users(users)
+    return False
 
 def log_admin_action(admin, action):
     logs = load_logs()
     if 'logs' not in logs: logs['logs'] = []
-    logs['logs'].append({'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'admin': admin, 'action': action})
+    logs['logs'].append({
+        'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'admin': admin,
+        'action': action
+    })
     save_logs(logs)
 
-def load_finance(): return load_json(FINANCE_FILE)
-def save_finance(finance): return save_json(FINANCE_FILE, finance)
-def load_promos(): return load_json(PROMO_FILE)
-def save_promos(promos): return save_json(PROMO_FILE, promos)
-def load_logs(): return load_json(LOG_FILE)
-def save_logs(logs): return save_json(LOG_FILE, logs)
-def load_accuracy(): return load_json(ACCURACY_FILE)
-def save_accuracy(acc): return save_json(ACCURACY_FILE, acc)
-def load_payment_proofs(): return load_json(PAYMENT_PROOFS_FILE)
-def save_payment_proofs(data): return save_json(PAYMENT_PROOFS_FILE, data)
+def load_finance():
+    return load_json(FINANCE_FILE)
+
+def save_finance(finance):
+    return save_json(FINANCE_FILE, finance)
+
+def load_promos():
+    return load_json(PROMO_FILE)
+
+def save_promos(promos):
+    return save_json(PROMO_FILE, promos)
+
+def load_logs():
+    return load_json(LOG_FILE)
+
+def save_logs(logs):
+    return save_json(LOG_FILE, logs)
+
+def load_accuracy():
+    return load_json(ACCURACY_FILE)
+
+def save_accuracy(acc):
+    return save_json(ACCURACY_FILE, acc)
 
 def generate_promo_code():
-    return ''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=8)).upper()
+    return ''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=8))
 
 def generate_verification_code():
     return ''.join(random.choices('0123456789', k=6))
@@ -877,7 +496,8 @@ def get_plan_days(plan):
     return 0
 
 def get_plan_name(plan):
-    return {'day': '日費', 'month': '月費', 'quarter': '季費'}.get(plan, '未知')
+    names = {'day': '日費', 'month': '月費', 'quarter': '季費'}
+    return names.get(plan, '未知')
 
 def get_plan_price(plan):
     if plan == 'day': return CONFIG['price_day']
@@ -886,37 +506,57 @@ def get_plan_price(plan):
     return 0
 
 # ============================================================
-# 付款功能
+# 付款申請功能
 # ============================================================
 def submit_payment_request(username, plan, final_price, discount_desc, promo_code_used):
     proof = load_payment_proofs()
-    if 'proof_records' not in proof: proof['proof_records'] = []
+    if 'proof_records' not in proof:
+        proof['proof_records'] = []
     new_id = len(proof['proof_records']) + 1
-    new_request = {"id": new_id, "username": username, "plan": plan, "plan_name": get_plan_name(plan), "final_price": final_price, "discount_desc": discount_desc, "promo_code": promo_code_used, "submitted_at": datetime.now().isoformat(), "status": "pending"}
+    new_request = {
+        "id": new_id,
+        "username": username,
+        "plan": plan,
+        "plan_name": get_plan_name(plan),
+        "final_price": final_price,
+        "discount_desc": discount_desc,
+        "promo_code": promo_code_used,
+        "submitted_at": datetime.now().isoformat(),
+        "status": "pending"
+    }
     proof['proof_records'].append(new_request)
     save_payment_proofs(proof)
-    if promo_code_used:
-        promos = load_promos()
-        if promo_code_used in promos:
-            promos[promo_code_used]['used'] = True
-            promos[promo_code_used]['used_by'] = username
-            promos[promo_code_used]['used_at'] = datetime.now().isoformat()
-            save_promos(promos)
-    log_user_activity(username, 'payment_submit', f"{get_plan_name(plan)} 金額${final_price}")
+    if 'payment_requests' not in st.session_state:
+        st.session_state.payment_requests = {"requests": []}
+    st.session_state.payment_requests['requests'].append(new_request)
     return True, "申請已提交"
 
 def get_all_pending_requests():
     proof = load_payment_proofs()
-    return [{"username": req.get('username', ''), "request": req} for req in proof.get('proof_records', []) if req.get('status') == 'pending']
+    all_requests = []
+    for req in proof.get('proof_records', []):
+        if req.get('status') == 'pending':
+            all_requests.append({
+                "username": req.get('username', ''),
+                "request": req
+            })
+    if 'payment_requests' not in st.session_state:
+        st.session_state.payment_requests = {"requests": []}
+    st.session_state.payment_requests['requests'] = proof.get('proof_records', [])
+    return all_requests
 
 def approve_payment_request(username, request_id, admin_username):
     proof = load_payment_proofs()
+    found = False
     for req in proof.get('proof_records', []):
         if req.get('id') == request_id and req.get('status') == 'pending':
+            found = True
             users = load_users()
             if username in users:
                 plan = req.get('plan', 'month')
-                days = get_plan_days(plan) or 30
+                days = get_plan_days(plan)
+                if days == 0:
+                    days = 30
                 expiry = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
                 users[username]['is_paid'] = True
                 users[username]['group'] = 'VIP'
@@ -929,10 +569,20 @@ def approve_payment_request(username, request_id, admin_username):
                 req['approved_by'] = admin_username
                 req['approved_at'] = datetime.now().isoformat()
                 save_payment_proofs(proof)
-                log_admin_action(admin_username, f"批准付款 {username}（{plan}）")
-                return True, f"已批准，到期日 {expiry}"
-            return False, "用戶不存在"
-    return False, "找不到該申請"
+                if 'payment_requests' in st.session_state:
+                    for sr in st.session_state.payment_requests['requests']:
+                        if sr.get('id') == request_id:
+                            sr['status'] = 'approved'
+                            sr['approved_by'] = admin_username
+                            sr['approved_at'] = datetime.now().isoformat()
+                            break
+                log_admin_action(admin_username, f"批准付款並升級 {username} 為 VIP（{plan}）")
+                return True, f"已批准 {username} 的付款，到期日 {expiry}"
+            else:
+                return False, "用戶不存在"
+    if not found:
+        return False, "找不到該申請"
+    return False, "處理失敗"
 
 def reject_payment_request(username, request_id, admin_username):
     proof = load_payment_proofs()
@@ -942,79 +592,170 @@ def reject_payment_request(username, request_id, admin_username):
             req['rejected_by'] = admin_username
             req['rejected_at'] = datetime.now().isoformat()
             save_payment_proofs(proof)
-            log_admin_action(admin_username, f"拒絕 {username} 的付款")
-            return True, "已拒絕"
+            if 'payment_requests' in st.session_state:
+                for sr in st.session_state.payment_requests['requests']:
+                    if sr.get('id') == request_id:
+                        sr['status'] = 'rejected'
+                        sr['rejected_by'] = admin_username
+                        sr['rejected_at'] = datetime.now().isoformat()
+                        break
+            log_admin_action(admin_username, f"拒絕 {username} 的付款申請")
+            return True, "已拒絕該申請"
     return False, "找不到該申請"
 
+# ============================================================
+# 付款牆
+# ============================================================
 def show_paywall():
     st.subheader("💳 選擇你嘅方案")
-    plan_options = {"day": f"☀️ 日費  ${CONFIG['price_day']}   (1天)", "month": f"📆 月費  ${CONFIG['price_month']}  (30天)", "quarter": f"📅 季費  ${CONFIG['price_quarter']} (90天)"}
+    plan_options = {
+        "day": f"☀️ 日費  ${CONFIG['price_day']}   (1天)",
+        "month": f"📆 月費  ${CONFIG['price_month']}  (30天)",
+        "quarter": f"📅 季費  ${CONFIG['price_quarter']} (90天)"
+    }
     if st.session_state.get('payment_just_submitted', False):
-        st.success("✅ 付款申請已成功提交！")
-        st.info("📩 提交後請 Telegram 通知管理員")
+        st.success("✅ 付款申請已成功提交！管理員將盡快審核。")
+        st.info("📩 提交後請 Telegram 通知管理員（可加快審核）")
         st.markdown("💬 Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**")
-        if 'payment_detail' in st.session_state: st.write(st.session_state['payment_detail'])
+        if 'payment_detail' in st.session_state:
+            st.write(st.session_state['payment_detail'])
         if st.button("返回主頁"):
             for key in ['payment_just_submitted', 'payment_detail']:
-                if key in st.session_state: del st.session_state[key]
+                if key in st.session_state:
+                    del st.session_state[key]
             st.rerun()
         st.stop()
-    if 'applied_promo' not in st.session_state: st.session_state.applied_promo = None
-    if 'applied_discount' not in st.session_state: st.session_state.applied_discount = 0
-    if 'applied_final_price' not in st.session_state: st.session_state.applied_final_price = None
     with st.form(key="payment_form"):
-        plan_choice = st.radio("請選擇付費方案：", options=list(plan_options.keys()), format_func=lambda x: plan_options[x], horizontal=True, key="plan_radio")
-        original_price = get_plan_price(plan_choice) if plan_choice else 0
-        if plan_choice: st.info(f"💰 原價：${original_price}")
-        promo_input = st.text_input("優惠碼（如有）", key="promo_input")
-        col_promo1, col_promo2 = st.columns([1, 3])
-        with col_promo1: apply_promo_btn = st.form_submit_button("🎁 套用優惠碼")
-        with col_promo2:
-            if st.session_state.applied_promo: st.success(f"✅ 已套用：{st.session_state.applied_promo}")
-        if apply_promo_btn and promo_input:
-            promos = load_promos()
-            code = promo_input.strip().upper()
-            promo_data = promos.get(code)
-            if not promo_data: st.error(f"❌ 優惠碼「{code}」不存在")
-            elif promo_data.get('used', False): st.error(f"❌ 優惠碼「{code}」已被使用")
-            else:
-                expiry = promo_data.get('expiry')
-                if expiry:
-                    try:
-                        if datetime.fromisoformat(expiry) < datetime.now():
-                            st.error(f"❌ 優惠碼已過期"); st.stop()
-                    except: pass
-                discount_type = promo_data.get('discount_type', 'percentage')
-                discount_value = promo_data.get('discount_value', 0)
-                final_price = original_price
-                if discount_type == 'percentage': final_price = original_price * (1 - discount_value / 100)
-                elif discount_type == 'fixed': final_price = max(0, original_price - discount_value)
-                elif discount_type == 'free': final_price = 0
-                final_price = round(final_price, 2)
-                st.session_state.applied_promo = code
-                st.session_state.applied_discount = original_price - final_price
-                st.session_state.applied_final_price = final_price
-                st.success(f"✅ 優惠碼「{code}」已套用！")
-                st.rerun()
-        elif apply_promo_btn: st.warning("請輸入優惠碼")
-        if st.session_state.applied_promo and st.session_state.applied_final_price is not None:
-            st.markdown(f"""<div style="background: #f0fdf4; padding: 15px; border-radius: 10px; border: 2px solid #22c55e; margin: 10px 0;"><div style="font-size: 14px; color: #15803d;">💰 折扣後價格</div><div style="font-size: 24px; font-weight: bold; color: #15803d;">${st.session_state.applied_final_price:.2f}</div><div style="font-size: 12px; color: #64748b; margin-top: 5px;">已節省 ${st.session_state.applied_discount:.2f}</div></div>""", unsafe_allow_html=True)
+        plan_choice = st.radio(
+            "請選擇付費方案：",
+            options=list(plan_options.keys()),
+            format_func=lambda x: plan_options[x],
+            horizontal=True,
+            key="plan_radio_in_form"
+        )
+        if plan_choice:
+            original_price = get_plan_price(plan_choice)
+            st.info(f"💰 價格：${original_price}")
+        else:
+            st.info("請選擇一個方案")
+        promo_input = st.text_input("優惠碼（如有）", key="promo_input_form")
         st.divider()
-        st.markdown("**📤 FPS 轉數快 `12345678`（SHTSN SYSTEM）**")
-        submitted = st.form_submit_button("📩 提交付款申請", type="primary")
+        st.markdown("""
+        **📤 付款方式：FPS 轉數快 `12345678`（SHTSN SYSTEM）**  
+        💬 過數後請將截圖發送 Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**
+        """)
+        submitted = st.form_submit_button("📩 提交付款申請，等待管理員審核")
         if submitted:
-            if not plan_choice: st.error("❌ 請選擇方案"); return
-            if not st.session_state.get('logged_in'): st.error("❌ 請先登入"); return
+            if not plan_choice:
+                st.error("❌ 請選擇方案")
+                return
+            if not st.session_state.get('logged_in'):
+                st.error("❌ 請先登入")
+                return
             username = st.session_state.username
-            final_price = st.session_state.applied_final_price if st.session_state.applied_final_price is not None else original_price
-            success, msg = submit_payment_request(username, plan_choice, final_price, "", st.session_state.applied_promo)
+            original_price = get_plan_price(plan_choice)
+            final_price = original_price
+            discount_desc = ""
+            promo_code_used = None
+            if promo_input:
+                try:
+                    promos = load_promos()
+                    promo_data = promos.get(promo_input.strip())
+                    if promo_data and not promo_data.get('used', False):
+                        expiry = promo_data.get('expiry')
+                        if expiry:
+                            expiry_date = datetime.fromisoformat(expiry)
+                            if expiry_date >= datetime.now():
+                                discount_type = promo_data.get('discount_type', 'percentage')
+                                discount_value = promo_data.get('discount_value', 0)
+                                if discount_type == 'percentage':
+                                    final_price = original_price * (1 - discount_value / 100)
+                                    discount_desc = f"{discount_value}% 折扣"
+                                elif discount_type == 'fixed':
+                                    final_price = max(0, original_price - discount_value)
+                                    discount_desc = f"減 ${discount_value}"
+                                elif discount_type == 'free':
+                                    final_price = 0
+                                    discount_desc = "全免！"
+                                final_price = round(final_price, 2)
+                                promo_code_used = promo_input.strip()
+                                st.success(f"✅ 優惠碼已套用！折扣後價格：${final_price}")
+                except Exception as e:
+                    st.warning(f"優惠碼處理出錯：{e}")
+            success, msg = submit_payment_request(username, plan_choice, final_price, discount_desc, promo_code_used)
             if success:
-                st.session_state.applied_promo = None
-                st.session_state.applied_discount = 0
-                st.session_state.applied_final_price = None
+                st.success(msg)
                 st.session_state['payment_just_submitted'] = True
                 st.session_state['payment_detail'] = f"方案：{get_plan_name(plan_choice)}，金額：${final_price}"
                 st.rerun()
+            else:
+                st.error(msg)
+
+# ============================================================
+# 後台付款審核
+# ============================================================
+def admin_payment_review():
+    st.subheader("📤 付款審核")
+    pending = get_all_pending_requests()
+    if not pending:
+        st.info("✅ 目前沒有待審核嘅付款申請")
+        return
+    st.write(f"共 **{len(pending)}** 條待審核記錄")
+    for item in pending:
+        username = item['username']
+        req = item['request']
+        with st.container():
+            cols = st.columns([2, 2, 1.5, 1.5, 2])
+            with cols[0]:
+                st.write(f"👤 **{username}**")
+                st.caption(f"ID: {req.get('id', '')}")
+            with cols[1]:
+                plan_name = req.get('plan_name', '未知方案')
+                price = req.get('final_price', 0)
+                st.write(f"📌 {plan_name}")
+                st.write(f"💰 ${price:.2f}")
+                if req.get('discount_desc'):
+                    st.caption(f"折扣: {req.get('discount_desc', '')}")
+            with cols[2]:
+                submitted_at = req.get('submitted_at', '')
+                if submitted_at:
+                    try:
+                        dt = datetime.fromisoformat(submitted_at)
+                        st.caption(f"📅 {dt.strftime('%Y-%m-%d %H:%M')}")
+                    except:
+                        st.caption(submitted_at)
+            with cols[3]:
+                st.warning("⏳ 待審核")
+            with cols[4]:
+                if st.button("✅ 批准", key=f"approve_{req.get('id')}"):
+                    success, msg = approve_payment_request(username, req['id'], st.session_state.username)
+                    if success:
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+                if st.button("❌ 拒絕", key=f"reject_{req.get('id')}"):
+                    success, msg = reject_payment_request(username, req['id'], st.session_state.username)
+                    if success:
+                        st.warning(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+            st.divider()
+
+# ============================================================
+# 補齊付款證明相關函數
+# ============================================================
+PAYMENT_PROOFS_FILE = 'payment_proofs.json'
+PAYMENT_PROOFS_DIR = 'payment_proofs'
+if not os.path.exists(PAYMENT_PROOFS_DIR):
+    os.makedirs(PAYMENT_PROOFS_DIR)
+
+def load_payment_proofs():
+    return load_json(PAYMENT_PROOFS_FILE)
+
+def save_payment_proofs(data):
+    return save_json(PAYMENT_PROOFS_FILE, data)
 
 # ============================================================
 # AI 自我學習
@@ -1022,20 +763,30 @@ def show_paywall():
 def update_accuracy_with_results():
     acc = load_accuracy()
     records = acc.get('records', [])
-    if not records: return 0, "沒有預測記錄"
+    if not records:
+        return 0, "沒有預測記錄"
     try:
+        # 直接讀取新賽果檔案
         results_df = pd.read_csv('race_results_clean.csv', encoding='utf-8-sig')
         required = ['race_date', 'race_no', 'horse_name', 'finish_position']
         for col in required:
-            if col not in results_df.columns: return 0, f"缺少欄位：{col}"
+            if col not in results_df.columns:
+                return 0, f"賽果檔案缺少必要欄位：{col}"
         results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
         results_df = results_df.dropna(subset=['race_date'])
+        
         updated = 0
         for rec in records:
-            if rec.get('actual_result') is not None: continue
-            date_str = rec.get('date'); race_no = rec.get('race'); horse = rec.get('horse')
-            if not date_str or not race_no or not horse: continue
-            mask = (results_df['race_date'].dt.strftime('%Y-%m-%d') == date_str) & (results_df['race_no'] == race_no) & (results_df['horse_name'] == horse)
+            if rec.get('actual_result') is not None:
+                continue
+            date_str = rec.get('date')
+            race_no = rec.get('race')
+            horse = rec.get('horse')
+            if not date_str or not race_no or not horse:
+                continue
+            mask = (results_df['race_date'].dt.strftime('%Y-%m-%d') == date_str) & \
+                   (results_df['race_no'] == race_no) & \
+                   (results_df['horse_name'] == horse)
             matched = results_df.loc[mask]
             if not matched.empty:
                 pos = matched.iloc[0]['finish_position']
@@ -1049,13 +800,52 @@ def update_accuracy_with_results():
                         if username in users:
                             for h in users[username].get('history', []):
                                 if h.get('date') == rec.get('date') and h.get('race') == rec.get('race'):
-                                    h['is_hit'] = True; break
+                                    h['is_hit'] = True
+                                    break
                             save_users(users)
                         update_user_exp(username, is_hit=True)
                     check_badges(username)
-        if updated > 0: save_accuracy(acc)
-        return updated, f"成功比對 {updated} 條"
-    except Exception as e: return 0, f"比對失敗：{str(e)}"
+                    settle_user_bets(username, date_str, rec.get('race'), results_df)
+        if updated > 0:
+            save_accuracy(acc)
+        return updated, f"成功比對 {updated} 條記錄"
+    except Exception as e:
+        return 0, f"比對失敗：{str(e)}"
+
+def settle_user_bets(username, race_date, race_no, results_df):
+    users = load_users()
+    if username not in users:
+        return
+    user = users[username]
+    bets = user.get('bets', [])
+    updated = False
+    for bet in bets:
+        if bet.get('settled', False):
+            continue
+        if bet.get('date') != race_date or bet.get('race') != race_no:
+            continue
+        horse = bet.get('horse')
+        matched = results_df[
+            (results_df['race_date'].dt.strftime('%Y-%m-%d') == race_date) &
+            (results_df['race_no'] == race_no) &
+            (results_df['horse_name'] == horse)
+        ]
+        if not matched.empty:
+            pos = matched.iloc[0]['finish_position']
+            is_win = (pos == 1)
+            bet['result'] = 'win' if is_win else 'lose'
+            bet['settled'] = True
+            if is_win:
+                odds = matched.iloc[0].get('win_odds', 4.0)
+                if pd.isna(odds) or odds <= 0:
+                    odds = 4.0
+                bet['odds'] = float(odds)
+                payout = bet['amount'] * odds
+                bet['payout'] = payout
+                user['virtual_balance'] = user.get('virtual_balance', 0) + payout
+                updated = True
+    if updated:
+        save_users(users)
 
 def adjust_model_weights():
     acc = load_accuracy()
@@ -1066,96 +856,346 @@ def adjust_model_weights():
     config = load_system_config()
     current_xgb = config.get('xgb_weight', 25)
     current_cat = config.get('cat_weight', 1)
-    if hit_rate >= 0.6: new_xgb, new_cat = min(40, current_xgb + 3), max(1, current_cat - 1)
-    elif hit_rate >= 0.5: new_xgb, new_cat = min(35, current_xgb + 1), max(1, current_cat)
-    elif hit_rate >= 0.4: new_xgb, new_cat = max(15, current_xgb - 2), min(10, current_cat + 2)
-    elif hit_rate >= 0.3: new_xgb, new_cat = max(10, current_xgb - 5), min(15, current_cat + 5)
-    else: new_xgb, new_cat = max(5, current_xgb - 8), min(20, current_cat + 8)
-    config['xgb_weight'] = max(1, min(50, new_xgb))
-    config['cat_weight'] = max(1, min(30, new_cat))
+    if hit_rate >= 0.6:
+        new_xgb = min(40, current_xgb + 3)
+        new_cat = max(1, current_cat - 1)
+    elif hit_rate >= 0.5:
+        new_xgb = min(35, current_xgb + 1)
+        new_cat = max(1, current_cat)
+    elif hit_rate >= 0.4:
+        new_xgb = max(15, current_xgb - 2)
+        new_cat = min(10, current_cat + 2)
+    elif hit_rate >= 0.3:
+        new_xgb = max(10, current_xgb - 5)
+        new_cat = min(15, current_cat + 5)
+    else:
+        new_xgb = max(5, current_xgb - 8)
+        new_cat = min(20, current_cat + 8)
+    new_xgb = max(1, min(50, new_xgb))
+    new_cat = max(1, min(30, new_cat))
+    config['xgb_weight'] = new_xgb
+    config['cat_weight'] = new_cat
     config['last_weight_update'] = datetime.now().isoformat()
     config['last_hit_rate'] = hit_rate
     save_system_config(config)
-    return {'xgb_weight': config['xgb_weight'], 'cat_weight': config['cat_weight'], 'hit_rate': hit_rate, 'total': total, 'hit': hit}
+    return {
+        'xgb_weight': new_xgb,
+        'cat_weight': new_cat,
+        'hit_rate': hit_rate,
+        'total': total,
+        'hit': hit
+    }
 
-def update_ai_accuracy():
-    ai_file = "ai_predictions.json"
-    results_file = "race_results_clean.csv"
-    if not os.path.exists(ai_file): return 0, "未有 AI 預測記錄"
-    if not os.path.exists(results_file): return 0, "未有賽果數據"
-    with open(ai_file, 'r', encoding='utf-8') as f: ai_data = json.load(f)
-    results_df = pd.read_csv(results_file, encoding='utf-8-sig')
-    if not all(col in results_df.columns for col in ['race_date', 'race_no', 'horse_name', 'finish_position']): return 0, "賽果檔案欄位不正確"
-    results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
-    results_df['race_date_str'] = results_df['race_date'].dt.strftime('%Y-%m-%d')
-    hit_count = 0; total_count = 0
-    for key, pred in ai_data.items():
-        date_str = pred.get('date'); race_no = pred.get('race'); top_horse = pred.get('top_horse')
-        if not date_str or not race_no or not top_horse: continue
-        matched = results_df[(results_df['race_date_str'] == date_str) & (results_df['race_no'] == race_no) & (results_df['horse_name'] == top_horse)]
-        total_count += 1
-        if not matched.empty:
-            finish_pos = matched.iloc[0].get('finish_position')
-            if pd.notna(finish_pos) and finish_pos == 1: hit_count += 1; pred['is_hit'] = True
-            else: pred['is_hit'] = False
-        else: pred['is_hit'] = None
-    with open(ai_file, 'w', encoding='utf-8') as f: json.dump(ai_data, f, ensure_ascii=False, indent=2)
-    hit_rate = hit_count / total_count if total_count > 0 else 0
-    return hit_count, f"命中 {hit_count}/{total_count} ({hit_rate:.1%})"
+# ============================================================
+# 模型載入
+# ============================================================
+@st.cache_resource
+def load_models():
+    try:
+        with open('hk_racing_model.pkl', 'rb') as f:
+            xgb_obj = pickle.load(f)
+            xgb_model = xgb_obj[0] if isinstance(xgb_obj, tuple) else xgb_obj
+        cat_model = CatBoostClassifier()
+        cat_model.load_model('hk_catboost_model.cbm')
+        with open('hk_ranking_model.pkl', 'rb') as f:
+            rank_obj = pickle.load(f)
+            rank_model = rank_obj[0] if isinstance(rank_obj, tuple) else rank_obj
+        return xgb_model, cat_model, rank_model
+    except:
+        st.error("❌ 模型載入失敗")
+        return None, None, None
 
 # ============================================================
 # 特徵工程
 # ============================================================
+FEATURES_EN = [
+    'draw', 'act_wt', 'distance', 'rtg', 'avg_rank_last3',
+    'jockey_win_rate_50', 'trainer_win_rate_50',
+    'distance_win_rate', 'distance_avg_rank',
+    'win_odds', 'weight_change', 'jockey_trainer_win_rate',
+    'course_win_rate', 'course_avg_rank',
+    'days_since_last_run', 'odds_rank_in_race',
+    'rtg_change', 'jockey_horse_win_rate',
+    'races_last14days', 'going_win_rate',
+    'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
+    'early_pace', 'finish_speed',
+    'last_trial_rank', 'last_trial_time',
+    'jockey_win_rate_5', 'jockey_win_rate_10', 'draw_win_rate',
+    'days_since_injury', 'injury_30d', 'injury_60d', 'injury_90d',
+    'total_injuries', 'injury_severity'
+]
+
+EXPECTED_FEATURES = [
+    'draw', 'weight', 'distance', 'Rtg.', '近3場平均名次',
+    '騎師近50場勝率', '練馬師近50場勝率', '同路程歷史勝率',
+    '同路程歷史平均名次', 'win_odds', '體重變化', '騎練組合勝率',
+    '詳細賽道歷史勝率', '詳細賽道歷史平均名次', '出賽相隔日數',
+    '賠率場次排名', '評分變化', '騎馬合作勝率', '近14日出賽次數',
+    '場地狀況勝率', '試閘歷史勝率', '父系歷史勝率', '父系同程勝率',
+    '前速指標', '後勁指標', '最近試閘名次', '最近試閘時間',
+    '騎師近5場勝率', '騎師近10場勝率', '檔位勝率', '最近傷患日數',
+    '過去30日內有傷患', '過去60日內有傷患', '過去90日內有傷患',
+    '傷患總次數', '傷患嚴重程度'
+]
+
+NAME_MAPPING = {
+    'act_wt': 'weight', 'rtg': 'Rtg.',
+    'avg_rank_last3': '近3場平均名次',
+    'jockey_win_rate_50': '騎師近50場勝率',
+    'trainer_win_rate_50': '練馬師近50場勝率',
+    'distance_win_rate': '同路程歷史勝率',
+    'distance_avg_rank': '同路程歷史平均名次',
+    'weight_change': '體重變化',
+    'jockey_trainer_win_rate': '騎練組合勝率',
+    'course_win_rate': '詳細賽道歷史勝率',
+    'course_avg_rank': '詳細賽道歷史平均名次',
+    'days_since_last_run': '出賽相隔日數',
+    'odds_rank_in_race': '賠率場次排名',
+    'rtg_change': '評分變化',
+    'jockey_horse_win_rate': '騎馬合作勝率',
+    'races_last14days': '近14日出賽次數',
+    'going_win_rate': '場地狀況勝率',
+    'trial_win_rate': '試閘歷史勝率',
+    'sire_win_rate': '父系歷史勝率',
+    'sire_course_win_rate': '父系同程勝率',
+    'early_pace': '前速指標',
+    'finish_speed': '後勁指標',
+    'last_trial_rank': '最近試閘名次',
+    'last_trial_time': '最近試閘時間',
+    'jockey_win_rate_5': '騎師近5場勝率',
+    'jockey_win_rate_10': '騎師近10場勝率',
+    'draw_win_rate': '檔位勝率',
+    'days_since_injury': '最近傷患日數',
+    'injury_30d': '過去30日內有傷患',
+    'injury_60d': '過去60日內有傷患',
+    'injury_90d': '過去90日內有傷患',
+    'total_injuries': '傷患總次數',
+    'injury_severity': '傷患嚴重程度'
+}
+
 def standardize_columns_safe(df):
-    rename_map = {'騎師': 'jockey', '練馬師': 'trainer', '路程': 'distance', '場地': 'going', '檔位': 'draw', '評分': 'rtg', '馬匹編號': 'horse_id', '馬匹ID': 'horse_id', '馬號': 'horse_no', '馬匹id': 'horse_id', 'horse': 'horse_id', '場次': 'race_no', '馬場': 'race_course', '實際負磅': 'act_wt', '名次': 'finish_position', '最終名次': 'finish_position', '馬名': 'horse_name', '賠率': 'win_odds', '獨贏賠率': 'win_odds'}
+    rename_map = {
+        '騎師': 'jockey', '練馬師': 'trainer', '路程': 'distance',
+        '場地': 'going', '檔位': 'draw', '評分': 'rtg',
+        '馬匹編號': 'horse_id', '馬匹ID': 'horse_id', '馬號': 'horse_id',
+        '馬匹id': 'horse_id', 'horse': 'horse_id',
+        '場次': 'race_no', '馬場': 'race_course',
+        '實際負磅': 'act_wt',
+        '名次': 'finish_position', '最終名次': 'finish_position',
+        '馬名': 'horse_name',
+        '賠率': 'win_odds', '獨贏賠率': 'win_odds',
+    }
     df.rename(columns=rename_map, inplace=True, errors='ignore')
-    if '比賽日期' in df.columns and 'race_date' not in df.columns: df.rename(columns={'比賽日期': 'race_date'}, inplace=True)
+    if '比賽日期' in df.columns and 'race_date' not in df.columns:
+        df.rename(columns={'比賽日期': 'race_date'}, inplace=True)
+    elif '比賽日期' in df.columns and 'race_date' in df.columns:
+        df.drop(columns=['比賽日期'], inplace=True, errors='ignore')
     return df
 
-def generate_pool_recommendations(df):
-    if df.empty: return "⚠️ 無數據"
+def ensure_series(df):
+    for col in df.columns:
+        if isinstance(df[col], pd.DataFrame):
+            df[col] = df[col].iloc[:, 0]
+    return df
+
+def get_finish_column(df):
+    candidates = ['finish_position', '名次', 'Position', 'pos', 'Rank', 'rank', '最終名次']
+    for col in candidates:
+        if col in df.columns:
+            return col
+    return None
+
+def safe_parse_dates(df):
+    date_col = None
+    for col in ['race_date', '比賽日期']:
+        if col in df.columns:
+            date_col = col
+            break
+    if date_col is None:
+        return None, None
+    dates = df[date_col].copy()
+    dates = dates.astype(str).str.strip()
+    parsed = pd.to_datetime(dates, errors='coerce')
+    if parsed.notna().sum() == 0:
+        return None, None
+    df['race_date'] = parsed
+    return df, date_col
+
+def get_latest_features(race_df, history_df):
+    history_df['race_date'] = pd.to_datetime(history_df['race_date'], errors='coerce')
+    latest = history_df.sort_values('race_date').groupby('horse_id').last().reset_index()
+    merged = race_df.merge(latest, on='horse_id', how='left', suffixes=('', '_hist'))
+    for col in FEATURES_EN:
+        if col in merged.columns and col not in race_df.columns:
+            hist_col = col + '_hist'
+            if hist_col in merged.columns:
+                merged[col] = merged[hist_col]
+            else:
+                merged[col] = 0
+        elif col not in merged.columns:
+            merged[col] = 0
+        merged[col] = merged[col].fillna(0)
+    for col in ['draw', 'act_wt', 'distance', 'rtg', 'win_odds']:
+        if col in race_df.columns:
+            merged[col] = race_df[col].values
+    return merged
+
+def compute_stats(race_df, history_df, race_date):
+    history_df = ensure_series(history_df)
+    if history_df.columns.duplicated().any():
+        history_df = history_df.loc[:, ~history_df.columns.duplicated(keep='first')]
+    for col in ['jockey', 'trainer', 'horse_id']:
+        if col not in race_df.columns:
+            race_df[col] = 0
+    hist = history_df[history_df['race_date'] < race_date].copy()
+    if hist.empty:
+        for col in ['jockey_win_rate_50', 'trainer_win_rate_50', 'avg_rank_last3',
+                    'distance_win_rate', 'jockey_horse_win_rate', 'going_win_rate',
+                    'draw_win_rate', 'jockey_win_rate_5', 'jockey_win_rate_10']:
+            race_df[col] = 0.0
+        return race_df
+    if 'finish_position' not in hist.columns:
+        raise KeyError("歷史數據缺少 finish_position")
+    hist['finish_position'] = pd.to_numeric(hist['finish_position'], errors='coerce')
+    try:
+        jockey_stats = hist.groupby('jockey').apply(lambda g: (g['finish_position']==1).sum()/max(len(g),1)).reset_index(name='jockey_win_rate_50')
+        race_df = race_df.merge(jockey_stats, on='jockey', how='left')
+        race_df['jockey_win_rate_50'] = race_df['jockey_win_rate_50'].fillna(0)
+    except:
+        race_df['jockey_win_rate_50'] = 0.0
+    try:
+        trainer_stats = hist.groupby('trainer').apply(lambda g: (g['finish_position']==1).sum()/max(len(g),1)).reset_index(name='trainer_win_rate_50')
+        race_df = race_df.merge(trainer_stats, on='trainer', how='left')
+        race_df['trainer_win_rate_50'] = race_df['trainer_win_rate_50'].fillna(0)
+    except:
+        race_df['trainer_win_rate_50'] = 0.0
+    try:
+        last3 = hist.groupby('horse_id').apply(lambda g: g.sort_values('race_date').tail(3)['finish_position'].mean()).reset_index(name='avg_rank_last3')
+        race_df = race_df.merge(last3, on='horse_id', how='left')
+        race_df['avg_rank_last3'] = race_df['avg_rank_last3'].fillna(99)
+    except:
+        race_df['avg_rank_last3'] = 99.0
+    try:
+        def dist_win(g, dist):
+            sub = g[g['distance']==dist]
+            return 0.0 if len(sub)==0 else (sub['finish_position']==1).sum()/len(sub)
+        race_df['distance_win_rate'] = race_df.apply(lambda r: dist_win(hist[hist['horse_id']==r['horse_id']], r['distance']), axis=1)
+    except:
+        race_df['distance_win_rate'] = 0.0
+    try:
+        def jh_win(g, j, h):
+            sub = g[(g['jockey']==j) & (g['horse_id']==h)]
+            return 0.0 if len(sub)==0 else (sub['finish_position']==1).sum()/len(sub)
+        race_df['jockey_horse_win_rate'] = race_df.apply(lambda r: jh_win(hist, r['jockey'], r['horse_id']), axis=1)
+    except:
+        race_df['jockey_horse_win_rate'] = 0.0
+    try:
+        def going_win(g, go):
+            sub = g[g['going']==go]
+            return 0.0 if len(sub)==0 else (sub['finish_position']==1).sum()/len(sub)
+        race_df['going_win_rate'] = race_df.apply(lambda r: going_win(hist[hist['horse_id']==r['horse_id']], r['going']), axis=1)
+    except:
+        race_df['going_win_rate'] = 0.0
+    try:
+        def draw_win(g, dr):
+            sub = g[g['draw']==dr]
+            return 0.0 if len(sub)==0 else (sub['finish_position']==1).sum()/len(sub)
+        race_df['draw_win_rate'] = race_df.apply(lambda r: draw_win(hist[hist['horse_id']==r['horse_id']], r['draw']), axis=1)
+    except:
+        race_df['draw_win_rate'] = 0.0
+    try:
+        last_run = hist.groupby('horse_id')['race_date'].max().reset_index(name='last_date')
+        race_df = race_df.merge(last_run, on='horse_id', how='left')
+        race_df['days_since_last_run'] = (race_date - race_df['last_date']).dt.days.fillna(999)
+    except:
+        race_df['days_since_last_run'] = 999
+    try:
+        last_rtg = hist.groupby('horse_id').last()['rtg'].reset_index(name='last_rtg')
+        race_df = race_df.merge(last_rtg, on='horse_id', how='left')
+        race_df['rtg_change'] = (race_df['rtg'] - race_df['last_rtg']).fillna(0)
+    except:
+        race_df['rtg_change'] = 0
+    try:
+        race_df['races_last14days'] = race_df.apply(lambda r: len(hist[(hist['horse_id']==r['horse_id']) & (hist['race_date']>=race_date-pd.Timedelta(days=14))]), axis=1)
+    except:
+        race_df['races_last14days'] = 0
+    for col in ['course_win_rate', 'course_avg_rank', 'weight_change', 'jockey_trainer_win_rate',
+                'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
+                'early_pace', 'finish_speed', 'last_trial_rank', 'last_trial_time',
+                'jockey_win_rate_5', 'jockey_win_rate_10',
+                'days_since_injury', 'injury_30d', 'injury_60d', 'injury_90d',
+                'total_injuries', 'injury_severity']:
+        if col not in race_df.columns:
+            race_df[col] = 0
+        else:
+            race_df[col] = race_df[col].fillna(0)
+    return race_df
+
+@st.cache_data
+def load_horse_name_map():
+    try:
+        df_map = pd.read_csv('horse_name_mapping.csv', encoding='utf-8-sig')
+        if 'horse_id' in df_map.columns and '馬名' in df_map.columns:
+            return dict(zip(df_map['horse_id'], df_map['馬名']))
+    except:
+        pass
+    return {}
+
+def generate_pool_recommendations(df, top_n=6):
+    """生成六種彩池推薦（獨贏、位置、連贏、位置Q、三重彩、單T、四重彩）"""
+    if df.empty:
+        return "⚠️ 無數據"
     horse_names = df['horse_name'].tolist()
     probs = df['預測勝率'].tolist()
     def combo_score(indices):
         score = 1.0
-        for i in indices: score *= probs[i]
+        for i in indices:
+            score *= probs[i]
         return score / len(indices)
-    rec = ""
-    if len(horse_names) >= 1:
-        rec += "【獨贏】\n"
-        rec += f"  {horse_names[0]}（{probs[0]:.1%}）\n"
+    rec = "【獨贏】\n"
+    for i, row in df.head(3).iterrows():
+        rec += f"  {row['horse_name']}（{row['預測勝率']:.1%}）\n"
     rec += "\n【位置】\n"
-    for i in range(min(4, len(horse_names))): rec += f"  {horse_names[i]}（{probs[i]:.1%}）\n"
+    for i, row in df.head(4).iterrows():
+        rec += f"  {row['horse_name']}（{row['預測勝率']:.1%}）\n"
     rec += "\n【連贏】\n"
     pairs = []
-    for i in range(min(len(horse_names), 4)):
-        for j in range(i+1, min(len(horse_names), 5)): pairs.append((combo_score([i, j]), i, j))
+    for i in range(min(len(horse_names), 5)):
+        for j in range(i+1, min(len(horse_names), 6)):
+            pairs.append((combo_score([i, j]), i, j))
     pairs.sort(reverse=True)
-    for _, i, j in pairs[:3]: rec += f"  {horse_names[i]} + {horse_names[j]}\n"
+    for _, i, j in pairs[:5]:
+        rec += f"  {horse_names[i]} + {horse_names[j]}\n"
     rec += "\n【位置Q】\n"
     q_pairs = []
-    for i in range(min(len(horse_names), 5)):
-        for j in range(i+1, min(len(horse_names), 7)):
-            if j < len(horse_names): q_pairs.append((combo_score([i, j]), i, j))
+    for i in range(min(len(horse_names), 6)):
+        for j in range(i+1, min(len(horse_names), 8)):
+            if j < len(horse_names):
+                q_pairs.append((combo_score([i, j]), i, j))
     q_pairs.sort(reverse=True)
-    for _, i, j in q_pairs[:6]: rec += f"  {horse_names[i]} + {horse_names[j]}\n"
+    for _, i, j in q_pairs[:6]:
+        rec += f"  {horse_names[i]} + {horse_names[j]}\n"
     rec += "\n【三重彩 / 單T】\n"
     tierce = []
     for i in range(min(len(horse_names), 4)):
         for j in range(min(len(horse_names), 5)):
             for k in range(min(len(horse_names), 6)):
-                if i != j and i != k and j != k: tierce.append((combo_score([i, j, k]), i, j, k))
+                if i != j and i != k and j != k:
+                    tierce.append((combo_score([i, j, k]), i, j, k))
     tierce.sort(reverse=True)
-    for _, i, j, k in tierce[:3]: rec += f"  {horse_names[i]} > {horse_names[j]} > {horse_names[k]}\n"
+    for _, i, j, k in tierce[:5]:
+        rec += f"  {horse_names[i]} > {horse_names[j]} > {horse_names[k]}\n"
     rec += "\n【四重彩】\n"
     quartet = []
     for i in range(min(len(horse_names), 4)):
         for j in range(min(len(horse_names), 5)):
             for k in range(min(len(horse_names), 6)):
                 for l in range(min(len(horse_names), 7)):
-                    if len(set([i, j, k, l])) == 4: quartet.append((combo_score([i, j, k, l]), i, j, k, l))
+                    if len(set([i, j, k, l])) == 4:
+                        quartet.append((combo_score([i, j, k, l]), i, j, k, l))
     quartet.sort(reverse=True)
-    for _, i, j, k, l in quartet[:3]: rec += f"  {horse_names[i]} > {horse_names[j]} > {horse_names[k]} > {horse_names[l]}\n"
+    for _, i, j, k, l in quartet[:3]:
+        rec += f"  {horse_names[i]} > {horse_names[j]} > {horse_names[k]} > {horse_names[l]}\n"
     return rec
 
 def run_prediction(date_str, race_no):
@@ -1167,19 +1207,12 @@ def run_prediction(date_str, race_no):
     from datetime import datetime
     from catboost import CatBoostClassifier
 
-    # 優先讀取有特徵嘅檔案
-    if os.path.exists("racecard_full.csv"):
-        data_file = "racecard_full.csv"
-    elif os.path.exists("racecard_with_stats.csv"):
-        data_file = "racecard_with_stats.csv"
-    elif os.path.exists("racecard_uploaded.csv"):
-        data_file = "racecard_uploaded.csv"
-    else:
-        st.error("❌ 找不到排位表檔案")
+    if not os.path.exists("racecard_uploaded.csv"):
+        st.error("❌ 找不到 racecard_uploaded.csv")
         return None, None
 
     try:
-        df = pd.read_csv(data_file, encoding='utf-8-sig')
+        df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
     except Exception as e:
         st.error(f"❌ 讀取失敗：{e}")
         return None, None
@@ -1187,16 +1220,14 @@ def run_prediction(date_str, race_no):
     rename_map = {
         '馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
         '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
-        '負磅': 'weight', '馬號': 'horse_no', '賠率': 'win_odds',
-        '獨贏賠率': 'win_odds'
+        '負磅': 'weight', '馬號': 'horse_id', '賠率': 'win_odds'
     }
-    for old, new in rename_map.items():
-        if old in df.columns and old != new:
-            if new not in df.columns:
-                df.rename(columns={old: new}, inplace=True)
+    existing = [col for col in rename_map if col in df.columns]
+    if existing:
+        df.rename(columns={col: rename_map[col] for col in existing}, inplace=True)
 
     if 'race_date' not in df.columns:
-        st.error("❌ 缺少 '比賽日期' 欄位")
+        st.error("❌ 缺少 '比賽日期'")
         return None, None
 
     df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce')
@@ -1205,177 +1236,36 @@ def run_prediction(date_str, race_no):
 
     available_dates = sorted(df['race_date_str'].unique())
     if date_str not in available_dates:
-        st.warning(f"⚠️ 日期 {date_str} 無數據，改用 {available_dates[-1]}")
+        st.warning(f"⚠️ 改用 {available_dates[-1]}")
         date_str = available_dates[-1]
 
     df_date = df[df['race_date_str'] == date_str]
-    if 'race_no' not in df_date.columns:
-        st.error("❌ 缺少場次欄位")
-        return None, None
-
     if race_no not in df_date['race_no'].unique():
         available_races = sorted(df_date['race_no'].unique())
         if available_races:
-            st.info(f"🔄 場次 {race_no} 無數據，改用第 {available_races[0]} 場")
+            st.info(f"🔄 改用第 {available_races[0]} 場")
             race_no = available_races[0]
         else:
             st.error("❌ 無場次")
             return None, None
 
-    filtered = df_date[df_date['race_no'] == race_no].copy()
+    filtered = df_date[df_date['race_no'] == race_no]
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
-    # ========== 完整 36 個特徵 ==========
-    MODEL_FEATURES_36 = [
-        'draw', 'weight', 'distance', 'Rtg.', '近3場平均名次',
-        '騎師近50場勝率', '練馬師近50場勝率', '同路程歷史勝率', '同路程歷史平均名次',
-        'win_odds', '體重變化', '騎練組合勝率', '詳細賽道歷史勝率', '詳細賽道歷史平均名次',
-        '出賽相隔日數', '賠率場次排名', '評分變化', '騎馬合作勝率', '近14日出賽次數',
-        '場地狀況勝率', '試閘歷史勝率', '父系歷史勝率', '父系同程勝率',
-        '前速指標', '後勁指標', '最近試閘名次', '最近試閘時間',
-        '騎師近5場勝率', '騎師近10場勝率', '檔位勝率', '最近傷患日數',
-        '過去30日內有傷患', '過去60日內有傷患', '過去90日內有傷患',
-        '傷患總次數', '傷患嚴重程度'
-    ]
+    # 賠率估算（保留所有馬匹）
+    win_odds = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0)
+    win_odds = win_odds.replace(0, 4.0)
+    inv_odds = 1 / win_odds
+    final_pred = inv_odds / inv_odds.sum()
 
-    # 9 個特徵版本（雲端模型可能用呢個）
-    MODEL_FEATURES_9 = [
-        'draw', 'weight', 'distance', 'Rtg.', 'win_odds',
-        '近3場平均名次', '騎師近50場勝率', '練馬師近50場勝率', '出賽相隔日數'
-    ]
-
-    FEATURE_MAPPING = {
-        'draw': 'draw',
-        'weight': 'weight',
-        'distance': 'distance',
-        'Rtg.': 'rtg',
-        '近3場平均名次': 'avg_rank_last3',
-        '騎師近50場勝率': 'jockey_win_rate_50',
-        '練馬師近50場勝率': 'trainer_win_rate_50',
-        '同路程歷史勝率': 'distance_win_rate',
-        '同路程歷史平均名次': 'distance_avg_rank',
-        'win_odds': 'win_odds',
-        '體重變化': 'weight_change',
-        '騎練組合勝率': 'jockey_trainer_win_rate',
-        '詳細賽道歷史勝率': 'course_win_rate',
-        '詳細賽道歷史平均名次': 'course_avg_rank',
-        '出賽相隔日數': 'days_since_last_run',
-        '賠率場次排名': 'odds_rank_in_race',
-        '評分變化': 'rtg_change',
-        '騎馬合作勝率': 'jockey_horse_win_rate',
-        '近14日出賽次數': 'races_last14days',
-        '場地狀況勝率': 'going_win_rate',
-        '試閘歷史勝率': 'trial_win_rate',
-        '父系歷史勝率': 'sire_win_rate',
-        '父系同程勝率': 'sire_course_win_rate',
-        '前速指標': 'early_pace',
-        '後勁指標': 'finish_speed',
-        '最近試閘名次': 'last_trial_rank',
-        '最近試閘時間': 'last_trial_time',
-        '騎師近5場勝率': 'jockey_win_rate_5',
-        '騎師近10場勝率': 'jockey_win_rate_10',
-        '檔位勝率': 'draw_win_rate',
-        '最近傷患日數': 'days_since_injury',
-        '過去30日內有傷患': 'injury_30d',
-        '過去60日內有傷患': 'injury_60d',
-        '過去90日內有傷患': 'injury_90d',
-        '傷患總次數': 'total_injuries',
-        '傷患嚴重程度': 'injury_severity',
-    }
-
-    def build_features(feature_list):
-        X_data = {}
-        for model_feat in feature_list:
-            col_name = FEATURE_MAPPING.get(model_feat)
-            if col_name and col_name in filtered.columns:
-                X_data[model_feat] = pd.to_numeric(filtered[col_name], errors='coerce').fillna(0).values
-            else:
-                X_data[model_feat] = np.zeros(len(filtered))
-        return np.array([X_data[feat] for feat in feature_list]).T.astype(float)
-
-    # ========== 嘗試載入模型 ==========
-    model_used = False
-    try:
-        with open('hk_racing_model.pkl', 'rb') as f:
-            xgb_obj = pickle.load(f)
-            xgb_model = xgb_obj[0] if isinstance(xgb_obj, tuple) else xgb_obj
-
-        cat_model = CatBoostClassifier()
-        cat_model.load_model('hk_catboost_model.cbm')
-
-        # 🔥 偵測 XGBoost 需要幾多個特徵
-        n_features = 36  # 預設
-        if hasattr(xgb_model, 'n_features_in_'):
-            n_features = xgb_model.n_features_in_
-        
-        st.info(f"🔍 模型需要 {n_features} 個特徵")
-
-        # 根據需要嘅特徵數量選擇特徵列表
-        if n_features == 9:
-            features_to_use = MODEL_FEATURES_9
-        elif n_features == 36:
-            features_to_use = MODEL_FEATURES_36
-        else:
-            # 動態：取前 n_features 個
-            features_to_use = MODEL_FEATURES_36[:n_features]
-
-        X_array = build_features(features_to_use)
-        st.info(f"📊 實際特徵 shape：{X_array.shape}")
-
-        # 確保特徵數量正確
-        if X_array.shape[1] != n_features:
-            st.error(f"❌ 特徵數量不匹配：{X_array.shape[1]} vs {n_features}")
-            raise ValueError("Feature mismatch")
-
-        # 預測
-        xgb_pred = xgb_model.predict_proba(X_array)[:, 1]
-
-        # CatBoost
-        try:
-            cat_pred = cat_model.predict_proba(X_array)[:, 1]
-        except:
-            cat_pred = xgb_pred  # 如果 CatBoost 失敗，就用 XGBoost
-
-        config = load_system_config()
-        xgb_w = config.get('xgb_weight', 25)
-        cat_w = config.get('cat_weight', 1)
-        final_pred = (xgb_pred * xgb_w + cat_pred * cat_w) / (xgb_w + cat_w)
-
-        model_used = True
-        st.success(f"🤖 使用 AI 模型預測（{n_features} 個特徵，XGBoost {xgb_w} : CatBoost {cat_w}）")
-
-    except Exception as e:
-        st.warning(f"⚠️ 模型載入失敗，改用賠率估算：{e}")
-        odds_col = None
-        for col in ['win_odds', '賠率', '獨贏賠率', 'odds']:
-            if col in filtered.columns:
-                odds_col = col
-                break
-        if odds_col is not None:
-            win_odds = pd.to_numeric(filtered[odds_col], errors='coerce').fillna(4.0)
-        else:
-            win_odds = pd.Series([4.0] * len(filtered), index=filtered.index)
-        win_odds = win_odds.replace(0, 4.0)
-        inv_odds = 1 / win_odds
-        final_pred = inv_odds / inv_odds.sum()
-
-    # ========== 建立結果 ==========
-    result_df = filtered[['horse_name']].copy()
-    for col in ['draw', 'weight', 'jockey', 'trainer']:
-        if col in filtered.columns:
-            result_df[col] = filtered[col].values
-        else:
-            result_df[col] = 0 if col in ['draw', 'weight'] else ''
-
+    result_df = filtered[['horse_name', 'draw', 'weight', 'jockey', 'trainer']].copy()
     result_df['預測勝率'] = final_pred
     result_df['值博指數'] = result_df['預測勝率'] * 10
     result_df['信心指數'] = result_df['預測勝率'].apply(
         lambda x: '⭐⭐⭐ 高' if x > 0.2 else '⭐⭐ 中' if x > 0.1 else '⭐ 低'
     )
     result_df = result_df.sort_values('預測勝率', ascending=False)
-    result_df['horse_name'] = result_df['horse_name'].fillna('未知').astype(str)
 
-    # ========== 儲存預測記錄 ==========
     ai_file = "ai_predictions.json"
     ai_data = {}
     if os.path.exists(ai_file):
@@ -1388,133 +1278,350 @@ def run_prediction(date_str, race_no):
     key = f"{date_str}_{race_no}"
     ai_data[key] = {
         "date": date_str,
-        "race": int(race_no),
-        "top_horse": str(result_df.iloc[0]['horse_name']),
+        "race": race_no,
+        "top_horse": result_df.iloc[0]['horse_name'],
         "top_prob": float(result_df.iloc[0]['預測勝率']),
         "all_horses": result_df['horse_name'].tolist(),
-        "model_used": model_used,
         "predicted_at": datetime.now().isoformat()
     }
-    try:
-        with open(ai_file, 'w', encoding='utf-8') as f:
-            json.dump(ai_data, f, ensure_ascii=False, indent=2)
-        st.success(f"✅ AI 預測已儲存（共 {len(ai_data)} 筆記錄）")
-        if st.session_state.get('username'):
-            log_user_activity(st.session_state.username, 'predict', f"{date_str} 第{race_no}場")
-    except Exception as e:
-        st.error(f"❌ 儲存預測失敗：{e}")    
-        # 🔥 同時寫入 accuracy.json（用於賽果比對）
-    if st.session_state.get('username'):
-        acc = load_accuracy()
-        if 'records' not in acc:
-            acc['records'] = []
-        # 為頭 4 名馬匹各寫一條記錄
-        for idx, row in result_df.head(4).iterrows():
-            acc['records'].append({
-                'username': st.session_state.username,
-                'date': date_str,
-                'race': int(race_no),
-                'horse': str(row['horse_name']),
-                'predicted_at': datetime.now().isoformat(),
-                'actual_result': None,
-                'is_hit': None
-            })
-        save_accuracy(acc)
-        st.info(f"📝 已記錄頭 4 名預測到 accuracy.json")
+    with open(ai_file, 'w', encoding='utf-8') as f:
+        json.dump(ai_data, f, ensure_ascii=False, indent=2)
 
-    # ========== 彩池推薦 ==========
-    full_pool_text = generate_pool_recommendations(result_df)
-    config = load_system_config()
-    enable_vip_content = config.get("enable_vip_content", True)
-    username = st.session_state.get('username')
-    user_group = 'free'
-    if username:
-        users = load_users()
-        user_group = users.get(username, {}).get('group', 'free')
-    is_vip = user_group in ['VIP', 'super_admin']
-    if enable_vip_content and not is_vip:
-        lines = full_pool_text.split('\n')
-        filtered_lines = []
-        skip = False
-        for line in lines:
-            if '【三重彩' in line or '【四重彩' in line:
-                skip = True
-                continue
-            if skip and line.strip() == '':
-                skip = False
-                continue
-            if not skip:
-                filtered_lines.append(line)
-        pool_text = '\n'.join(filtered_lines)
-        pool_text += "\n\n🔒 三重彩 / 四重彩 為 VIP 專屬內容"
-    else:
-        pool_text = full_pool_text
+    st.success(f"✅ AI 預測已儲存（共 {len(ai_data)} 筆記錄）")
+
+    # 完整彩池推薦
+    pool_text = generate_pool_recommendations(result_df)
 
     return result_df, pool_text
 
+# ============================================================
+# 用戶功能
+# ============================================================
+def record_prediction(username, date_str, race_no, horse_name, predicted_prob=None):
+    users = load_users()
+    if username in users:
+        if 'history' not in users[username]:
+            users[username]['history'] = []
+        users[username]['history'].append({
+            'date': date_str,
+            'race': race_no,
+            'horse': horse_name,
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'predicted_prob': predicted_prob,
+            'is_hit': None
+        })
+        save_users(users)
+        acc = load_accuracy()
+        if 'records' not in acc:
+            acc['records'] = []
+        acc['records'].append({
+            'username': username,
+            'date': date_str,
+            'race': race_no,
+            'horse': horse_name,
+            'predicted_at': datetime.now().isoformat(),
+            'actual_result': None,
+            'is_hit': None
+        })
+        save_accuracy(acc)
+        update_user_exp(username, is_hit=False)
+
 def get_user_stats(username):
     users = load_users()
-    if username not in users: return {'total_predictions': 0}
-    return {'total_predictions': len(users[username].get('history', []))}
+    if username not in users:
+        return {'total_predictions': 0, 'free_used': 0, 'is_paid': False, 'group': 'free', 'plan': None}
+    user = users[username]
+    history = user.get('history', [])
+    total = len(history)
+    free_used = user.get('free_usage', 0)
+    return {
+        'total_predictions': total,
+        'free_used': free_used,
+        'is_paid': user.get('is_paid', False),
+        'group': user.get('group', 'free'),
+        'plan': user.get('plan', None)
+    }
+
+# ============================================================
+# 投注模擬器
+# ============================================================
+def show_betting_interface(username):
+    if not username:
+        st.info("請先登入")
+        return
+    users = load_users()
+    user = users.get(username, {})
+    balance = user.get('virtual_balance', 0)
+    st.subheader("💰 投注模擬器")
+    st.caption("用虛擬幣體驗投注樂趣，唔使真錢！")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("💎 虛擬幣結餘", f"${balance:,.0f}")
+    with col2:
+        today = datetime.now().strftime('%Y-%m-%d')
+        last_claim = user.get('last_claim_date', '')
+        if last_claim != today and CONFIG.get("virtual_coin_enabled", True):
+            if st.button("🎁 領取每日獎勵", use_container_width=True):
+                amount, msg = claim_daily_virtual_coin(username)
+                if amount > 0:
+                    st.success(f"✅ {msg}")
+                    st.rerun()
+                else:
+                    st.info(msg)
+        else:
+            st.success("✅ 今日已領取")
+    with col3:
+        st.caption(f"📅 每日派發：${CONFIG.get('daily_virtual_coin', 1000)}")
+    st.divider()
+    st.subheader("📝 投注")
+    col_date, col_race = st.columns(2)
+    with col_date:
+        date = st.date_input("📅 選擇日期", value=pd.to_datetime("2026-09-06"), key="predict_date_mid")
+    with col_race:
+        bet_race = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=8, key="bet_race")
+    if st.button("🔍 睇預測 & 投注", key="show_bet_options"):
+        date_str = bet_date.strftime('%Y-%m-%d')
+        with st.spinner("載入預測..."):
+            result, pool = run_prediction(date_str, bet_race)
+            if result is not None and not result.empty:
+                st.success(f"✅ {date_str} 第 {bet_race} 場")
+                display_df = result[['horse_name', 'draw', '預測勝率', '值博指數', '信心指數']].copy()
+                display_df.rename(columns={
+                    'horse_name': '馬名',
+                    'draw': '檔位'
+                }, inplace=True)
+                display_df['預測勝率'] = display_df['預測勝率'].apply(lambda x: f"{x:.2%}")
+                display_df['值博指數'] = display_df['值博指數'].apply(lambda x: f"{x:.4f}")
+                st.dataframe(display_df, use_container_width=True)
+                st.subheader("💸 落注")
+                with st.form(key="place_bet_form"):
+                    horse_options = result['horse_name'].tolist()
+                    selected_horse = st.selectbox("揀馬", horse_options, key="bet_horse")
+                    bet_amount = st.number_input("投注金額", min_value=1, max_value=int(balance), value=min(100, int(balance)), step=10, key="bet_amount")
+                    col_btn1, col_btn2 = st.columns(2)
+                    with col_btn1:
+                        submit_bet = st.form_submit_button("✅ 確認投注", type="primary")
+                    with col_btn2:
+                        st.caption(f"餘額：${balance:,.0f}")
+                    if submit_bet:
+                        if bet_amount > balance:
+                            st.error(f"❌ 餘額不足（餘額：${balance:,.0f}）")
+                        else:
+                            success, msg = place_bet(username, date_str, bet_race, selected_horse, bet_amount)
+                            if success:
+                                st.success(f"✅ {msg}")
+                                st.rerun()
+                            else:
+                                st.error(f"❌ {msg}")
+            else:
+                st.warning("無法載入預測數據")
+    st.divider()
+    st.subheader("📋 我的投注記錄")
+    bets = user.get('bets', [])
+    if bets:
+        df_bets = pd.DataFrame(bets[-20:][::-1])
+        display_cols = ['date', 'race', 'horse', 'amount', 'result', 'payout']
+        available_cols = [col for col in display_cols if col in df_bets.columns]
+        st.dataframe(df_bets[available_cols], use_container_width=True)
+        total_bets = len(bets)
+        settled = [b for b in bets if b.get('settled', False)]
+        wins = [b for b in settled if b.get('result') == 'win']
+        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+        col_s1.metric("📊 總投注", total_bets)
+        col_s2.metric("✅ 已結算", len(settled))
+        col_s3.metric("🏆 命中", len(wins))
+        col_s4.metric("📈 命中率", f"{len(wins)/len(settled)*100:.1f}%" if settled else "0%")
+    else:
+        st.info("📭 尚未有任何投注記錄")
+
+# ============================================================
+# 排行榜
+# ============================================================
+def show_leaderboard():
+    st.subheader("🏆 投注排行榜")
+    st.caption("排名基於虛擬投注表現")
+    users = load_users()
+    leaderboard_data = []
+    for username, user in users.items():
+        if username == "admin" and not user.get('bets'):
+            continue
+        bets = user.get('bets', [])
+        if not bets:
+            continue
+        settled = [b for b in bets if b.get('settled', False)]
+        wins = [b for b in settled if b.get('result') == 'win']
+        total_bets = len(bets)
+        total_settled = len(settled)
+        total_wins = len(wins)
+        hit_rate = total_wins / total_settled if total_settled > 0 else 0
+        total_staked = sum(b.get('amount', 0) for b in bets)
+        total_payout = sum(b.get('payout', 0) for b in bets)
+        profit = total_payout - total_staked
+        leaderboard_data.append({
+            "用戶": username,
+            "總投注": total_bets,
+            "命中": total_wins,
+            "命中率": hit_rate,
+            "盈利": profit,
+            "結餘": user.get('virtual_balance', 0)
+        })
+    if not leaderboard_data:
+        st.info("📭 暫時未有投注記錄")
+        return
+    df = pd.DataFrame(leaderboard_data)
+    df = df.sort_values('盈利', ascending=False).reset_index(drop=True)
+    st.subheader("💰 總盈利榜")
+    df_display = df[['用戶', '盈利', '命中率', '總投注', '命中', '結餘']].copy()
+    df_display['盈利'] = df_display['盈利'].apply(lambda x: f"${x:,.0f}")
+    df_display['命中率'] = df_display['命中率'].apply(lambda x: f"{x:.1%}")
+    st.dataframe(df_display, use_container_width=True)
+    if len(df) >= 2:
+        fig = px.bar(
+            df.head(10),
+            x='用戶',
+            y='盈利',
+            title='Top 10 用戶盈利',
+            color='盈利',
+            color_continuous_scale='RdYlGn',
+            text=df.head(10)['盈利'].apply(lambda x: f"${x:,.0f}")
+        )
+        fig.update_traces(textposition='outside')
+        fig.update_layout(height=350)
+        st.plotly_chart(fig, use_container_width=True)
+    st.subheader("🎯 命中率榜")
+    df_hit = df.sort_values('命中率', ascending=False).reset_index(drop=True)
+    df_hit_display = df_hit[['用戶', '命中率', '總投注', '命中', '盈利']].copy()
+    df_hit_display['命中率'] = df_hit_display['命中率'].apply(lambda x: f"{x:.1%}")
+    df_hit_display['盈利'] = df_hit_display['盈利'].apply(lambda x: f"${x:,.0f}")
+    st.dataframe(df_hit_display.head(10), use_container_width=True)
 
 def show_user_dashboard(username):
-    if not username: return
+    if not username:
+        return
     stats = get_user_stats(username)
     users = load_users()
     user_data = users.get(username, {})
     group = user_data.get('group', 'free')
     is_paid = user_data.get('is_paid', False)
+    plan = user_data.get('plan', None)
+    expiry = user_data.get('expiry_date', None)
+    invite_code = user_data.get('invite_code', '')
+    invite_count = user_data.get('invite_count', 0)
+    invite_rewards = user_data.get('invite_rewards', 0)
     level = user_data.get('level', '🥉 銅牌會員')
     exp = user_data.get('exp', 0)
     badges = user_data.get('badges', [])
     next_level_exp = get_level_info(exp)[1]
     virtual_balance = user_data.get('virtual_balance', 0)
-    current_title = user_data.get('current_title', None)
-    if group == 'super_admin': level_display = "👑 超級管理員"
-    elif group == 'VIP': level_display = "👑 VIP"
-    elif is_paid: level_display = "💎 付費用戶"
-    else: level_display = "🆓 免費用戶"
+    if group == 'super_admin':
+        level_display = "👑 超級管理員"
+    elif group == 'VIP':
+        level_display = "👑 VIP"
+    elif is_paid:
+        level_display = "💎 付費用戶"
+    else:
+        level_display = "🆓 免費用戶"
     st.markdown("---")
     col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("👤 用戶", username)
     col2.metric("🏷️ 級別", level_display)
     col3.metric("📊 總預測次數", stats['total_predictions'])
     limit = user_data.get('predictions_limit', CONFIG['free_limit'])
-    if limit == -1: col4.metric("📊 剩餘場次", "♾️ 無限")
-    else: col4.metric("📊 剩餘場次", max(0, limit - user_data.get('free_usage', 0)))
+    if limit == -1:
+        col4.metric("📊 剩餘場次", "♾️ 無限")
+    else:
+        used = user_data.get('free_usage', 0)
+        remain = max(0, limit - used)
+        col4.metric("📊 剩餘場次", remain)
     col5.metric("💰 虛擬幣", f"${virtual_balance:,.0f}")
-    if current_title: st.markdown(f"### {current_title}")
     st.markdown("---")
     st.subheader("🏅 用戶等級 & 勳章")
     col_level1, col_level2, col_level3 = st.columns(3)
-    with col_level1: st.metric("🏅 當前等級", level)
+    with col_level1:
+        st.metric("🏅 當前等級", level)
     with col_level2:
         if next_level_exp:
             progress = min(100, int((exp / next_level_exp) * 100))
             st.metric("📊 經驗值", f"{exp} / {next_level_exp}")
             st.progress(progress / 100)
-        else: st.metric("📊 經驗值", f"{exp}")
-    with col_level3: st.metric("🎖️ 勳章數量", len(badges))
+            st.caption(f"進度：{progress}%")
+        else:
+            st.metric("📊 經驗值", f"{exp}（已滿級）")
+    with col_level3:
+        st.metric("🎖️ 勳章數量", len(badges))
     if badges:
         st.write("🏅 已獲得勳章：")
         badge_cols = st.columns(4)
         for idx, badge in enumerate(badges):
-            with badge_cols[idx % 4]: st.markdown(f"**{badge}**")
+            with badge_cols[idx % 4]:
+                st.markdown(f"**{badge}**")
+    else:
+        st.info("📭 尚未獲得任何勳章，繼續預測解鎖更多成就！")
     st.markdown("---")
+    if plan:
+        st.caption(f"📌 當前方案：{get_plan_name(plan)}")
     if CONFIG.get("enable_invite_reward", True):
+        st.markdown("---")
         st.subheader("🎁 邀請獎勵")
         col_inv1, col_inv2, col_inv3 = st.columns(3)
-        with col_inv1: st.caption(f"邀請碼：**{user_data.get('invite_code', '')}**")
-        with col_inv2: st.caption(f"已邀請：**{user_data.get('invite_count', 0)}** 位")
-        with col_inv3: st.caption(f"獲得獎勵：**{user_data.get('invite_rewards', 0)}** 次")
+        with col_inv1:
+            st.caption(f"你的邀請碼：**{invite_code}**")
+        with col_inv2:
+            st.caption(f"已成功邀請 **{invite_count}** 位朋友")
+        with col_inv3:
+            st.caption(f"已獲得獎勵次數：**{invite_rewards}** 次（已自動加到你的預測額度）")
+    st.markdown("---")
+    st.subheader("📊 預測統計")
+    today = datetime.now().strftime('%Y-%m-%d')
+    history = user_data.get('history', [])
+    today_count = sum(1 for h in history if h.get('date') == today)
+    col_p1, col_p2, col_p3, col_p4 = st.columns(4)
+    with col_p1:
+        st.metric("📈 總預測", stats['total_predictions'])
+    with col_p2:
+        st.metric("📅 今日已用", today_count)
+    with col_p3:
+        if limit == -1:
+            st.metric("🔮 剩餘次數", "♾️ 無限")
+        else:
+            remain = max(0, limit - user_data.get('free_usage', 0))
+            st.metric("🔮 剩餘次數", remain)
+    with col_p4:
+        if st.button("🚀 去預測", use_container_width=True, key="quick_predict"):
+            st.session_state.page = "預測"
+            st.rerun()
+    if today_count > 0:
+        st.caption(f"📝 今日已進行 {today_count} 次預測")
+    else:
+        st.caption("📝 今日尚未進行預測")
 
+def show_prediction_history(username):
+    if not username:
+        st.info("請先登入以查看歷史記錄")
+        return
+    users = load_users()
+    if username not in users:
+        st.info("未有歷史記錄")
+        return
+    history = users[username].get('history', [])
+    if not history:
+        st.info("你仲未有任何預測記錄")
+        return
+    df = pd.DataFrame(history[-20:][::-1])
+    st.dataframe(df, use_container_width=True)
+
+# ============================================================
+# 登入/註冊
+# ============================================================
 def login_page():
     st.title("🔐 登入 / 註冊")
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("🔑 登入", use_container_width=True): st.session_state.page_mode = "login"
+        if st.button("🔑 登入", use_container_width=True):
+            st.session_state.page_mode = "login"
     with col2:
-        if st.button("📝 註冊", use_container_width=True): st.session_state.page_mode = "register"
+        if st.button("📝 註冊", use_container_width=True):
+            st.session_state.page_mode = "register"
     mode = st.session_state.get("page_mode", "login")
     if mode == "login":
         with st.form("login_form"):
@@ -1527,9 +1634,9 @@ def login_page():
                     st.session_state.username = username
                     st.session_state.role = user.get('group', 'free')
                     st.session_state.usage_count = user.get('free_usage', 0)
-                    log_user_activity(username, 'login', '用戶登入')
                     st.rerun()
-                else: st.error("❌ 用戶名稱或密碼錯誤")
+                else:
+                    st.error("❌ 用戶名稱或密碼錯誤")
     else:
         st.subheader("📝 註冊新帳號")
         with st.form("register_form"):
@@ -1537,45 +1644,129 @@ def login_page():
             phone = st.text_input("手機號碼（可選）", key="reg_phone")
             new_pass = st.text_input("密碼", type="password", key="reg_pass")
             new_pass2 = st.text_input("確認密碼", type="password", key="reg_pass2")
-            if CONFIG.get("enable_invite_reward", True): invite_code_input = st.text_input("邀請碼（如有）", key="reg_invite_code")
-            else: invite_code_input = None
+            if CONFIG.get("enable_invite_reward", True):
+                invite_code_input = st.text_input("邀請碼（如有）", key="reg_invite_code", placeholder="輸入朋友的邀請碼")
+            else:
+                invite_code_input = None
             col1, col2 = st.columns([3, 1])
-            with col1: verify_code_input = st.text_input("驗證碼", key="reg_verify", max_chars=6)
+            with col1:
+                verify_code_input = st.text_input("驗證碼", key="reg_verify", placeholder="輸入 6 位數字", max_chars=6)
             with col2:
                 if st.form_submit_button("📨 獲取驗證碼", type="secondary"):
                     code = generate_verification_code()
                     st.session_state['reg_verify_code'] = code
                     st.session_state['reg_verify_expiry'] = datetime.now() + timedelta(minutes=CONFIG.get('verification_expiry', 5))
-                    st.info(f"📧 驗證碼：**{code}**")
-            agree_terms = st.checkbox("✅ 我同意服務條款", key="agree_terms")
+                    st.info(f"📧 你嘅驗證碼係：**{code}**（有效期 5 分鐘）")
+            st.divider()
+            with st.expander("📜 服務條款（請仔細閱讀）"):
+                st.markdown("""
+                **SHTSN 賽馬預測系統 服務條款**
+                **1. 服務說明**
+                本系統提供賽馬預測數據及分析，僅供參考及娛樂用途，並非投注建議。用戶應自行判斷，所有投注決定及後果由用戶自行承擔。
+                **2. 用戶責任**
+                - 用戶必須年滿 18 歲。
+                - 用戶需確保所提供嘅資料真實、準確、完整。
+                - 用戶不得將本系統用於任何非法或不當用途。
+                **3. 免責聲明**
+                - 預測結果僅為演算法分析，不構成任何形式嘅投資建議或保證。
+                - 本系統不保證預測準確度，亦不對用戶因使用本系統而產生嘅任何損失負責。
+                - 用戶明白賽馬活動存在風險，應量力而為。
+                **4. 付款與退款**
+                - 用戶付款後即表示同意購買所選方案。
+                - 付款後不設退款，除非系統因技術問題未能提供服務。
+                - 管理員保留最終審核及拒絕退款嘅權利。
+                **5. 帳戶安全**
+                - 用戶需自行保管帳號及密碼，任何經由帳戶進行嘅活動均視為用戶本人所為。
+                - 如發現帳戶被盜用，應立即通知管理員。
+                **6. 終止服務**
+                - 管理員保留隨時終止或暫停用戶帳戶嘅權利，如用戶違反條款或進行不當行為。
+                - 終止後，用戶將無法使用系統服務，已付費用將不獲退還。
+                **7. 條款修訂**
+                本系統有權隨時修訂服務條款，修訂後會於系統內公告。用戶繼續使用即表示同意最新條款。
+                **8. 聯絡我們**
+                如有任何疑問，可透過 Telegram 聯絡管理員：@bryhjdjbrbxibvrjskofndhiebdpaq
+                **最後更新日期：2026 年 8 月 25 日**
+                """)
+            agree_terms = st.checkbox("✅ 我已閱讀並同意上述服務條款", key="agree_terms")
             submitted = st.form_submit_button("註冊")
             if submitted:
-                if len(new_user) < 3: st.error("❌ 用戶名稱至少 3 個字")
-                elif new_pass != new_pass2: st.error("❌ 密碼不一致")
-                elif len(new_pass) < 4: st.error("❌ 密碼至少 4 個字")
-                elif 'reg_verify_code' not in st.session_state or verify_code_input != st.session_state['reg_verify_code'] or datetime.now() > st.session_state.get('reg_verify_expiry', datetime.now()): st.error("❌ 驗證碼無效")
-                elif not agree_terms: st.error("❌ 請先同意條款")
+                if len(new_user) < 3:
+                    st.error("❌ 用戶名稱至少 3 個字")
+                elif new_pass != new_pass2:
+                    st.error("❌ 密碼不一致")
+                elif len(new_pass) < 4:
+                    st.error("❌ 密碼至少 4 個字")
+                elif 'reg_verify_code' not in st.session_state or \
+                     verify_code_input != st.session_state['reg_verify_code'] or \
+                     datetime.now() > st.session_state.get('reg_verify_expiry', datetime.now()):
+                    st.error("❌ 驗證碼無效或已過期，請重新獲取")
+                elif not agree_terms:
+                    st.error("❌ 請先閱讀並同意服務條款，方可註冊")
                 else:
                     users = load_users()
-                    if new_user in users: st.error("❌ 用戶名稱已被使用")
+                    if new_user in users:
+                        st.error("❌ 用戶名稱已被使用")
                     else:
                         invited_by = None
                         if CONFIG.get("enable_invite_reward", True) and invite_code_input:
                             for uid, u in users.items():
-                                if u.get('invite_code') == invite_code_input: invited_by = uid; break
-                        new_user_data = {'password': new_pass, 'phone': phone, 'is_paid': False, 'paid_date': None, 'expiry_date': None, 'free_usage': 0, 'total_usage': 0, 'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'note': '', 'group': 'free', 'plan': None, 'predictions_limit': CONFIG["free_limit"], 'history': [], 'terms_agreed': datetime.now().isoformat(), 'invite_code': new_user.upper() + str(random.randint(100, 999)), 'invited_by': invited_by, 'invite_rewards': 0, 'invite_count': 0, 'level': '🥉 銅牌會員', 'exp': 0, 'badges': [], 'virtual_balance': CONFIG.get('daily_virtual_coin', 1000), 'last_claim_date': '', 'extra_lottery_draws': 0, 'titles': [], 'current_title': None}
+                                if u.get('invite_code') == invite_code_input:
+                                    invited_by = uid
+                                    break
+                            if not invited_by:
+                                st.warning("⚠️ 邀請碼無效，請確認後再試。")
+                        new_user_data = {
+                            'password': new_pass,
+                            'phone': phone,
+                            'is_paid': False,
+                            'paid_date': None,
+                            'expiry_date': None,
+                            'free_usage': 0,
+                            'total_usage': 0,
+                            'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                            'note': '',
+                            'group': 'free',
+                            'plan': None,
+                            'predictions_limit': CONFIG["free_limit"],
+                            'history': [],
+                            'terms_agreed': datetime.now().isoformat(),
+                            'invite_code': new_user.upper() + str(random.randint(100, 999)),
+                            'invited_by': invited_by,
+                            'invite_rewards': 0,
+                            'invite_count': 0,
+                            'level': '🥉 銅牌會員',
+                            'exp': 0,
+                            'badges': [],
+                            'virtual_balance': CONFIG.get('daily_virtual_coin', 1000),
+                            'last_claim_date': '',
+                            'bets': []
+                        }
                         users[new_user] = new_user_data
                         save_users(users)
-                        if invited_by:
+                        if CONFIG.get("enable_invite_reward", True) and invited_by:
                             inviter = users.get(invited_by)
                             if inviter:
-                                if inviter['predictions_limit'] != -1: inviter['predictions_limit'] += CONFIG.get("invite_reward_inviter", 1)
+                                reward_inviter = CONFIG.get("invite_reward_inviter", 1)
+                                reward_invitee = CONFIG.get("invite_reward_invitee", 1)
+                                if inviter['predictions_limit'] != -1:
+                                    inviter['predictions_limit'] += reward_inviter
                                 inviter['invite_count'] = inviter.get('invite_count', 0) + 1
+                                inviter['invite_rewards'] = inviter.get('invite_rewards', 0) + reward_inviter
+                                if new_user_data['predictions_limit'] != -1:
+                                    new_user_data['predictions_limit'] += reward_invitee
+                                new_user_data['invite_rewards'] = reward_invitee
                                 save_users(users)
-                        st.success("✅ 註冊成功！")
+                                st.success(f"✅ 註冊成功！你同邀請人各獲得 {reward_invitee} 次免費預測獎勵！")
+                            else:
+                                st.success("✅ 註冊成功！")
+                        else:
+                            st.success("✅ 註冊成功！")
                         st.session_state.page_mode = "login"
                         st.rerun()
 
+# ============================================================
+# 賽事日曆 + 倒數計時
+# ============================================================
 def get_future_races():
     try:
         df = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
@@ -1586,127 +1777,60 @@ def get_future_races():
             today = datetime.now().date()
             future = df[df['race_date'].dt.date >= today]
             if not future.empty:
-                dates = sorted(future['race_date'].dt.date.unique())
+                dates = future['race_date'].dt.date.unique()
+                dates = sorted(dates)
                 race_courses = []
                 for d in dates:
                     course = future[future['race_date'].dt.date == d]['race_course'].iloc[0] if 'race_course' in future.columns else '賽馬'
                     race_courses.append(course)
                 return dates, race_courses
-    except: pass
+    except Exception as e:
+        print(f"讀取排位表失敗：{e}")
     return [], []
 
-# ==========================================================
-# ⏰ 賽事倒數計時器
-# ==========================================================
-def get_next_race_day():
-    """
-    自動計算下一個賽事日：
-    - 星期三：跑馬地夜馬（19:15 開始）
-    - 星期日：沙田日馬（12:30 開始）
-    如果今日就係賽事日，回傳今日
-    """
-    hk_tz = pytz.timezone("Asia/Hong_Kong")
-    now = datetime.now(hk_tz)
-    weekday = now.weekday()  # 0=Mon, 2=Wed, 6=Sun
-
-    # 今日係賽事日？
-    if weekday == 2:  # 星期三
-        race_time = now.replace(hour=19, minute=15, second=0, microsecond=0)
-        if now < race_time:
-            return race_time, "跑馬地夜馬", "HV"
-        else:
-            # 今日夜馬已開跑，搵下一個賽事日
-            pass
-    elif weekday == 6:  # 星期日
-        race_time = now.replace(hour=12, minute=30, second=0, microsecond=0)
-        if now < race_time:
-            return race_time, "沙田日馬", "ST"
-
-    # 搵下一個賽事日
-    for i in range(1, 8):
-        future = now + timedelta(days=i)
-        wd = future.weekday()
-        if wd == 2:  # 下個星期三
-            return future.replace(hour=19, minute=15, second=0, microsecond=0), "跑馬地夜馬", "HV"
-        elif wd == 6:  # 下個星期日
-            return future.replace(hour=12, minute=30, second=0, microsecond=0), "沙田日馬", "ST"
-
-    return None, None, None
-
-
-@st.fragment(run_every=1)
-def render_countdown():
-    """每秒自動更新嘅倒數計時器"""
-    hk_tz = pytz.timezone("Asia/Hong_Kong")
-    now = datetime.now(hk_tz)
-    target, race_name, venue = get_next_race_day()
-
-    if not target:
-        st.info("📅 暫無未來賽事資料")
+def display_race_calendar():
+    dates, courses = get_future_races()
+    if not dates:
+        st.info("📭 暫時未有未來賽事資料")
         return
-
-    diff = target - now
-    total_seconds = int(diff.total_seconds())
-
-    if total_seconds <= 0:
-        st.success(f"🏇 **{race_name}** 已經開始！加油！")
-        return
-
-    days = total_seconds // 86400
-    hours = (total_seconds % 86400) // 3600
-    minutes = (total_seconds % 3600) // 60
-    seconds = total_seconds % 60
-
-    # 判斷係咪今日
-    is_today = (target.date() == now.date())
-
-    if is_today:
-        bg = "linear-gradient(135deg, #ff6b6b, #ee5a24)"
-        title = f"🔥 今日有賽事！{race_name}"
+    next_date = dates[0]
+    next_course = courses[0] if courses else "賽馬"
+    today = datetime.now().date()
+    delta = (next_date - today).days
+    if delta > 0:
+        time_str = f"⏳ 仲有 **{delta} 天**"
+    elif delta == 0:
+        hours = (datetime.combine(next_date, datetime.min.time()) - datetime.now()).seconds // 3600
+        time_str = f"⏳ 今日開跑！仲有約 **{hours} 小時**"
     else:
-        bg = "linear-gradient(135deg, #667eea, #764ba2)"
-        title = f"⏰ 距離下場賽事：{race_name}"
-
+        time_str = "⏳ 已過期"
     st.markdown(f"""
-    <div style="
-        background: {bg};
-        padding: 20px 24px;
-        border-radius: 16px;
-        color: white;
-        box-shadow: 0 6px 20px rgba(102,126,234,0.35);
-        margin-bottom: 16px;
-    ">
-        <div style="font-size: 15px; opacity: 0.9; margin-bottom: 8px;">
-            {title}
-        </div>
-        <div style="display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap;">
-            <div style="text-align: center;">
-                <div style="font-size: 42px; font-weight: 800; line-height: 1;">{days}</div>
-                <div style="font-size: 12px; opacity: 0.8;">日</div>
+    <div style="background: linear-gradient(135deg, #1a237e, #0d47a1); border-radius: 12px; padding: 15px 20px; color: white; margin-bottom: 15px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+            <div>
+                <span style="font-size: 20px;">🏇 下一場賽事</span><br>
+                <span style="font-size: 16px; opacity: 0.9;">{next_course}　📅 {next_date.strftime('%Y年%m月%d日')}</span>
             </div>
-            <div style="text-align: center;">
-                <div style="font-size: 42px; font-weight: 800; line-height: 1;">{hours:02d}</div>
-                <div style="font-size: 12px; opacity: 0.8;">時</div>
+            <div style="font-size: 22px; font-weight: bold; background: rgba(255,255,255,0.15); padding: 8px 20px; border-radius: 30px;">
+                {time_str}
             </div>
-            <div style="text-align: center;">
-                <div style="font-size: 42px; font-weight: 800; line-height: 1;">{minutes:02d}</div>
-                <div style="font-size: 12px; opacity: 0.8;">分</div>
-            </div>
-            <div style="text-align: center;">
-                <div style="font-size: 42px; font-weight: 800; line-height: 1;">{seconds:02d}</div>
-                <div style="font-size: 12px; opacity: 0.8;">秒</div>
-            </div>
-        </div>
-        <div style="font-size: 13px; opacity: 0.85; margin-top: 10px;">
-            📍 {target.strftime('%Y年%m月%d日 %H:%M')} · {venue}
         </div>
     </div>
     """, unsafe_allow_html=True)
+    if len(dates) > 1:
+        st.caption("📅 未來賽事一覽")
+        for i in range(1, min(len(dates), 4)):
+            d = dates[i]
+            c = courses[i] if i < len(courses) else "賽馬"
+            delta_i = (d - today).days
+            st.write(f"• {d.strftime('%Y-%m-%d')}　{c}　（還有 {delta_i} 天）")
+
 # ============================================================
-# 後台功能
+# 系統儀表板
 # ============================================================
 def admin_dashboard():
     st.subheader("📊 系統儀表板")
+    st.caption(f"最後更新：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     users = load_users()
     acc = load_accuracy()
     finance = load_finance()
@@ -1716,23 +1840,24 @@ def admin_dashboard():
     today = datetime.now().date()
     today_new_users = sum(1 for u in users.values() if u.get('created_at', '').startswith(str(today)))
     total_income = finance.get('total_income', 0)
+    total_predictions = len(records)
     pending_payments = len([p for p in payment_proofs.get('proof_records', []) if p.get('status') == 'pending'])
     col1, col2, col3, col4, col5, col6 = st.columns(6)
     col1.metric("👤 總用戶", total_users)
     col2.metric("📈 今日新增", today_new_users)
     col3.metric("💰 總收入", f"${total_income:.2f}")
-    col4.metric("📊 總預測", len(records))
+    col4.metric("📊 總預測", total_predictions)
     total = len([r for r in records if r.get('is_hit') is not None])
     hit = sum(1 for r in records if r.get('is_hit') is True)
     hit_rate = hit/total if total>0 else 0
     col5.metric("🎯 命中率", f"{hit_rate:.2%}")
-    col6.metric("⏳ 待審核", pending_payments)
+    col6.metric("⏳ 待審核付款", pending_payments, delta="需處理" if pending_payments > 0 else None)
     st.divider()
     st.subheader("⚠️ 待辦事項")
     col_w1, col_w2, col_w3 = st.columns(3)
     with col_w1:
         if pending_payments > 0:
-            st.warning(f"⏳ 有 {pending_payments} 筆付款待審核")
+            st.warning(f"⏳ 有 {pending_payments} 筆付款申請待審核")
         else:
             st.success("✅ 沒有待審核付款")
     with col_w2:
@@ -1747,188 +1872,468 @@ def admin_dashboard():
                 except:
                     pass
         if vip_expiring:
-            st.warning(f"⚠️ 即將到期：{', '.join(vip_expiring)}")
+            st.warning(f"⚠️ 即將到期 VIP：{', '.join(vip_expiring)}")
         else:
             st.success("✅ 沒有即將到期 VIP")
     with col_w3:
-        files_missing = [f for f in ['users.json', 'system_config.json', 'accuracy.json'] if not os.path.exists(f)]
+        files_missing = []
+        for f in ['users.json', 'system_config.json', 'accuracy.json', 'HKCJ_FULL_YEAR_DATA.csv', 'ALL_DATA_MERGED.csv']:
+            if not os.path.exists(f):
+                files_missing.append(f)
         if files_missing:
-            st.error(f"❌ 缺少：{', '.join(files_missing)}")
+            st.error(f"❌ 缺少檔案：{', '.join(files_missing)}")
         else:
-            st.success("✅ 系統檔案正常")
-
-def admin_auto_maintenance():
-    st.subheader("🤖 自動維護")
-    st.info("一鍵執行所有維護任務")
-    tasks = ["🔄 比對賽果 + 更新統計", "⚖️ 調整模型權重", "⏰ 檢查並終止過期會員",
-             "📝 檢查系統檔案狀態", "📥 自動備份所有數據"]
-    for task in tasks:
-        st.write(f"• {task}")
+            st.success("✅ 所有系統檔案正常")
     st.divider()
-
-    if st.button("🚀 執行全部維護任務", type="primary", use_container_width=True, key="btn_full_maintenance"):
-        results = []
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        status_text.text("🔄 比對賽果中...")
-        updated, msg = update_accuracy_with_results()
-        results.append(f"🔄 比對賽果：{msg}")
-        progress_bar.progress(20)
-        status_text.text("⚖️ 調整權重中...")
-        try:
-            weight_result = adjust_model_weights()
-            results.append(f"⚖️ 調整權重：XGB={weight_result['xgb_weight']}, Cat={weight_result['cat_weight']}")
-        except Exception as e:
-            results.append(f"⚖️ 調整權重：失敗 - {str(e)}")
-        progress_bar.progress(40)
-        status_text.text("⏰ 檢查過期會員中...")
-        users = load_users()
-        today = datetime.now()
-        expired = []
-        for uid, u in users.items():
-            if u.get('group') == 'VIP' and u.get('expiry_date'):
-                try:
-                    if pd.to_datetime(u['expiry_date']) < today:
-                        u['group'] = 'free'
-                        u['is_paid'] = False
-                        u['predictions_limit'] = CONFIG["free_limit"]
-                        u['plan'] = None
-                        expired.append(uid)
-                except:
-                    pass
-        if expired:
-            save_users(users)
-            results.append(f"⏰ 已將 {len(expired)} 個過期會員降級")
-        else:
-            results.append("⏰ 目前沒有過期會員")
-        progress_bar.progress(60)
-        status_text.text("📝 檢查系統檔案中...")
-        files_to_check = ['users.json', 'system_config.json', 'accuracy.json', 'race_results_clean.csv']
-        file_status = [f"{'✅' if os.path.exists(f) else '❌'} {f}" for f in files_to_check]
-        results.append(f"📝 檔案檢查：{' | '.join(file_status)}")
-        progress_bar.progress(80)
-        status_text.text("📥 自動備份中...")
-        try:
-            backup_data = {"users": load_users(), "accuracy": load_accuracy(),
-                           "finance": load_finance(), "payment_proofs": load_payment_proofs(),
-                           "backup_time": datetime.now().isoformat()}
-            backup_json = json.dumps(backup_data, ensure_ascii=False, indent=2)
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            backup_filename = f"backup_{timestamp}.json"
-            with open(backup_filename, 'w', encoding='utf-8') as f:
-                f.write(backup_json)
-            st.download_button(label=f"📥 下載備份 ({timestamp})", data=backup_json,
-                              file_name=backup_filename, mime="application/json",
-                              key=f"auto_backup_{timestamp}")
-            results.append(f"📥 自動備份：✅ 備份完成")
-        except Exception as e:
-            results.append(f"📥 自動備份：❌ 失敗 - {str(e)}")
-        progress_bar.progress(100)
-        status_text.text("✅ 所有維護任務已完成！")
-        st.success("✅ 自動維護完成！")
-        st.divider()
-        st.subheader("📋 執行結果")
-        for r in results:
-            st.write(r)
-
+    col_ch1, col_ch2 = st.columns(2)
+    with col_ch1:
+        st.subheader("📈 用戶增長（最近7日）")
+        if users:
+            df_users = pd.DataFrame.from_dict(users, orient='index')
+            if 'created_at' in df_users.columns:
+                df_users['created_at'] = pd.to_datetime(df_users['created_at'], errors='coerce')
+                df_users = df_users.dropna(subset=['created_at'])
+                df_users['date'] = df_users['created_at'].dt.date
+                last_7 = datetime.now().date() - timedelta(days=7)
+                df_recent = df_users[df_users['date'] >= last_7]
+                if not df_recent.empty:
+                    daily = df_recent.groupby('date').size().reset_index(name='new_users')
+                    daily = daily.sort_values('date')
+                    fig = px.bar(daily, x='date', y='new_users', title='每日新增用戶')
+                    fig.update_layout(height=250)
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("最近7日沒有新用戶")
+    with col_ch2:
+        st.subheader("📊 命中率走勢（最近7日）")
+        if records:
+            df_records = pd.DataFrame(records)
+            if 'date' in df_records.columns and 'is_hit' in df_records.columns:
+                df_records['date'] = pd.to_datetime(df_records['date'])
+                df_records = df_records.dropna(subset=['date', 'is_hit'])
+                last_7 = datetime.now().date() - timedelta(days=7)
+                df_recent = df_records[df_records['date'].dt.date >= last_7]
+                if not df_recent.empty:
+                    daily = df_recent.groupby(df_recent['date'].dt.date).agg(
+                        total=('is_hit', 'count'),
+                        hit=('is_hit', lambda x: (x==True).sum())
+                    ).reset_index()
+                    daily['hit_rate'] = daily['hit'] / daily['total']
+                    fig = px.line(daily, x='date', y='hit_rate', title='每日命中率趨勢', markers=True)
+                    fig.update_layout(height=250, yaxis_tickformat='.0%')
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("最近7日沒有預測記錄")
     st.divider()
-    st.subheader("⚡ 單獨執行")
-
-    # 🔥 顯示上一次操作結果
-    if 'operation_result' in st.session_state:
-        msg_type, msg = st.session_state.operation_result
-        if msg_type == 'success':
-            st.success(msg)
-        elif msg_type == 'error':
-            st.error(msg)
-        elif msg_type == 'info':
-            st.info(msg)
-        elif msg_type == 'warning':
-            st.warning(msg)
-        del st.session_state.operation_result
-
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        if st.button("🔄 比對賽果", use_container_width=True, key="btn_compare_maintenance"):
-            try:
-                hit_count, msg = update_ai_accuracy()
-                st.session_state.operation_result = ('success', f"✅ {msg}")
-            except Exception as e:
-                st.session_state.operation_result = ('error', f"❌ 比對失敗：{str(e)}")
+    st.subheader("🚀 快速行動")
+    col_q1, col_q2, col_q3 = st.columns(3)
+    with col_q1:
+        if st.button("🔄 刷新數據", use_container_width=True):
             st.rerun()
-
-    with col2:
-        if st.button("⚖️ 調整權重", use_container_width=True, key="btn_adjust_weights_maintenance"):
+    with col_q2:
+        if st.button("🤖 執行維護", use_container_width=True):
+            admin_auto_maintenance()
+    with col_q3:
+        if st.button("📥 下載所有數據", use_container_width=True):
             try:
-                result = adjust_model_weights()
-                st.session_state.operation_result = (
-                    'success',
-                    f"✅ XGB={result['xgb_weight']}, Cat={result['cat_weight']}"
+                data = {
+                    "users": load_users(),
+                    "accuracy": load_accuracy(),
+                    "finance": load_finance(),
+                    "payment_proofs": load_payment_proofs()
+                }
+                json_str = json.dumps(data, ensure_ascii=False, indent=2)
+                st.download_button(
+                    label="✅ 下載 backup.json",
+                    data=json_str,
+                    file_name=f"backup_{datetime.now().strftime('%Y%m%d')}.json",
+                    mime="application/json",
+                    key="download_backup"
                 )
             except Exception as e:
-                st.session_state.operation_result = ('error', f"❌ 調整權重失敗：{str(e)}")
-            st.rerun()
+                st.error(f"下載失敗：{e}")
 
-    with col3:
-        if st.button("⏰ 終止過期會員", use_container_width=True, key="btn_expire_maintenance"):
-            try:
-                users = load_users()
-                today = datetime.now()
-                expired = []
-                for uid, u in users.items():
-                    if u.get('group') == 'VIP' and u.get('expiry_date'):
-                        try:
-                            if pd.to_datetime(u['expiry_date']) < today:
-                                u['group'] = 'free'
-                                u['is_paid'] = False
-                                u['predictions_limit'] = CONFIG["free_limit"]
-                                u['plan'] = None
-                                expired.append(uid)
-                        except:
-                            pass
-                if expired:
-                    save_users(users)
-                    st.session_state.operation_result = ('success', f"✅ 已將 {len(expired)} 個過期會員降級")
+# ============================================================
+# 數據分析類（馬匹、騎師、練馬師、場地/路程）
+# ============================================================
+def admin_horse_ranking():
+    st.subheader("🏇 馬匹勝率排行榜")
+    acc = load_accuracy()
+    records = acc.get('records', [])
+    valid_records = [r for r in records if r.get('is_hit') is not None]
+    if not valid_records:
+        st.info("暫時未有足夠數據（最少需要 1 場已比對嘅預測記錄）")
+        return
+    horse_stats = {}
+    for rec in valid_records:
+        horse = rec.get('horse', '未知馬匹')
+        if horse not in horse_stats:
+            horse_stats[horse] = {'total': 0, 'hit': 0}
+        horse_stats[horse]['total'] += 1
+        if rec.get('is_hit') == True:
+            horse_stats[horse]['hit'] += 1
+    horse_list = []
+    for horse, stats in horse_stats.items():
+        if stats['total'] >= 2:
+            hit_rate = stats['hit'] / stats['total']
+            horse_list.append({
+                '馬匹': horse,
+                '總預測': stats['total'],
+                '命中': stats['hit'],
+                '命中率': hit_rate
+            })
+    if not horse_list:
+        st.info("暫時未有足夠數據（需要每匹馬至少預測 2 次先上榜）")
+        return
+    df_horse = pd.DataFrame(horse_list)
+    df_horse = df_horse.sort_values('命中率', ascending=False).reset_index(drop=True)
+    st.subheader("🏆 勝率最高馬匹 Top 15")
+    st.dataframe(df_horse.head(15), use_container_width=True)
+    if len(df_horse) >= 3:
+        fig = px.bar(
+            df_horse.head(10),
+            x='馬匹',
+            y='命中率',
+            title='Top 10 馬匹命中率',
+            color='命中率',
+            color_continuous_scale='Blues',
+            text=df_horse.head(10)['命中率'].apply(lambda x: f'{x:.1%}')
+        )
+        fig.update_traces(textposition='outside')
+        fig.update_layout(yaxis_tickformat='.0%', height=400)
+        st.plotly_chart(fig, use_container_width=True)
+    st.caption(f"📊 共 {len(df_horse)} 匹馬符合上榜條件（最少預測 2 次）")
+
+def admin_jockey_ranking():
+    st.subheader("👨‍🏫 騎師勝率排行榜")
+    acc = load_accuracy()
+    records = acc.get('records', [])
+    valid_records = [r for r in records if r.get('is_hit') is not None]
+    if not valid_records:
+        st.info("暫時未有足夠數據（最少需要 1 場已比對嘅預測記錄）")
+        return
+    st.warning("⚠️ 騎師數據需要從排位表檔案 'HKCJ_FULL_YEAR_DATA.csv' 提取")
+    st.info("💡 建議：喺預測時記錄騎師名稱，先可以統計騎師勝率")
+    try:
+        df_racecard = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
+        df_racecard = standardize_columns_safe(df_racecard)
+        if 'jockey' in df_racecard.columns and 'horse_name' in df_racecard.columns:
+            horse_jockey_map = dict(zip(df_racecard['horse_name'], df_racecard['jockey']))
+            jockey_stats = {}
+            for rec in valid_records:
+                horse = rec.get('horse', '')
+                jockey = horse_jockey_map.get(horse, '未知騎師')
+                if jockey not in jockey_stats:
+                    jockey_stats[jockey] = {'total': 0, 'hit': 0}
+                jockey_stats[jockey]['total'] += 1
+                if rec.get('is_hit') == True:
+                    jockey_stats[jockey]['hit'] += 1
+            jockey_list = []
+            for jockey, stats in jockey_stats.items():
+                if stats['total'] >= 2 and jockey != '未知騎師':
+                    hit_rate = stats['hit'] / stats['total']
+                    jockey_list.append({
+                        '騎師': jockey,
+                        '總預測': stats['total'],
+                        '命中': stats['hit'],
+                        '命中率': hit_rate
+                    })
+            if jockey_list:
+                df_jockey = pd.DataFrame(jockey_list)
+                df_jockey = df_jockey.sort_values('命中率', ascending=False).reset_index(drop=True)
+                st.subheader("🏆 勝率最高騎師 Top 10")
+                st.dataframe(df_jockey.head(10), use_container_width=True)
+                if len(df_jockey) >= 3:
+                    fig = px.bar(
+                        df_jockey.head(8),
+                        x='騎師',
+                        y='命中率',
+                        title='Top 8 騎師命中率',
+                        color='命中率',
+                        color_continuous_scale='Greens',
+                        text=df_jockey.head(8)['命中率'].apply(lambda x: f'{x:.1%}')
+                    )
+                    fig.update_traces(textposition='outside')
+                    fig.update_layout(yaxis_tickformat='.0%', height=350)
+                    st.plotly_chart(fig, use_container_width=True)
+                st.caption(f"📊 共 {len(df_jockey)} 位騎師符合上榜條件（最少預測 2 次）")
+            else:
+                st.info("暫時未有足夠騎師數據（需要馬匹對應騎師資料）")
+        else:
+            st.info("排位表檔案缺少 'jockey' 或 'horse_name' 欄位")
+    except Exception as e:
+        st.info(f"無法讀取排位表：{e}")
+
+def admin_trainer_ranking():
+    st.subheader("👨‍🏫 練馬師勝率排行榜")
+    acc = load_accuracy()
+    records = acc.get('records', [])
+    valid_records = [r for r in records if r.get('is_hit') is not None]
+    if not valid_records:
+        st.info("暫時未有足夠數據（最少需要 1 場已比對嘅預測記錄）")
+        return
+    st.warning("⚠️ 練馬師數據需要從排位表檔案 'HKCJ_FULL_YEAR_DATA.csv' 提取")
+    st.info("💡 建議：喺預測時記錄練馬師名稱，先可以統計練馬師勝率")
+    try:
+        df_racecard = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
+        df_racecard = standardize_columns_safe(df_racecard)
+        if 'trainer' in df_racecard.columns and 'horse_name' in df_racecard.columns:
+            horse_trainer_map = dict(zip(df_racecard['horse_name'], df_racecard['trainer']))
+            trainer_stats = {}
+            for rec in valid_records:
+                horse = rec.get('horse', '')
+                trainer = horse_trainer_map.get(horse, '未知練馬師')
+                if trainer not in trainer_stats:
+                    trainer_stats[trainer] = {'total': 0, 'hit': 0}
+                trainer_stats[trainer]['total'] += 1
+                if rec.get('is_hit') == True:
+                    trainer_stats[trainer]['hit'] += 1
+            trainer_list = []
+            for trainer, stats in trainer_stats.items():
+                if stats['total'] >= 2 and trainer != '未知練馬師':
+                    hit_rate = stats['hit'] / stats['total']
+                    trainer_list.append({
+                        '練馬師': trainer,
+                        '總預測': stats['total'],
+                        '命中': stats['hit'],
+                        '命中率': hit_rate
+                    })
+            if trainer_list:
+                df_trainer = pd.DataFrame(trainer_list)
+                df_trainer = df_trainer.sort_values('命中率', ascending=False).reset_index(drop=True)
+                st.subheader("🏆 勝率最高練馬師 Top 10")
+                st.dataframe(df_trainer.head(10), use_container_width=True)
+                if len(df_trainer) >= 3:
+                    fig = px.bar(
+                        df_trainer.head(8),
+                        x='練馬師',
+                        y='命中率',
+                        title='Top 8 練馬師命中率',
+                        color='命中率',
+                        color_continuous_scale='Oranges',
+                        text=df_trainer.head(8)['命中率'].apply(lambda x: f'{x:.1%}')
+                    )
+                    fig.update_traces(textposition='outside')
+                    fig.update_layout(yaxis_tickformat='.0%', height=350)
+                    st.plotly_chart(fig, use_container_width=True)
+                st.caption(f"📊 共 {len(df_trainer)} 位練馬師符合上榜條件（最少預測 2 次）")
+            else:
+                st.info("暫時未有足夠練馬師數據（需要馬匹對應練馬師資料）")
+        else:
+            st.info("排位表檔案缺少 'trainer' 或 'horse_name' 欄位")
+    except Exception as e:
+        st.info(f"無法讀取排位表：{e}")
+
+def admin_course_analysis():
+    st.subheader("📊 場地/路程勝率分析")
+    acc = load_accuracy()
+    records = acc.get('records', [])
+    valid_records = [r for r in records if r.get('is_hit') is not None]
+    if not valid_records:
+        st.info("暫時未有足夠數據（最少需要 1 場已比對嘅預測記錄）")
+        return
+    st.warning("⚠️ 場地/路程數據需要從排位表檔案 'HKCJ_FULL_YEAR_DATA.csv' 提取")
+    try:
+        df_racecard = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
+        df_racecard = standardize_columns_safe(df_racecard)
+        if 'race_no' in df_racecard.columns and 'distance' in df_racecard.columns:
+            race_distance_map = dict(zip(df_racecard['race_no'], df_racecard['distance']))
+            race_going_map = {}
+            if 'going' in df_racecard.columns:
+                race_going_map = dict(zip(df_racecard['race_no'], df_racecard['going']))
+            distance_stats = {}
+            going_stats = {}
+            for rec in valid_records:
+                race_no = rec.get('race')
+                distance = race_distance_map.get(race_no, '未知')
+                if distance not in distance_stats:
+                    distance_stats[distance] = {'total': 0, 'hit': 0}
+                distance_stats[distance]['total'] += 1
+                if rec.get('is_hit') == True:
+                    distance_stats[distance]['hit'] += 1
+                going = race_going_map.get(race_no, '未知')
+                if going not in going_stats:
+                    going_stats[going] = {'total': 0, 'hit': 0}
+                going_stats[going]['total'] += 1
+                if rec.get('is_hit') == True:
+                    going_stats[going]['hit'] += 1
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("🏇 路程勝率分析")
+                distance_list = []
+                for dist, stats in distance_stats.items():
+                    if stats['total'] >= 2:
+                        hit_rate = stats['hit'] / stats['total']
+                        distance_list.append({
+                            '路程': dist,
+                            '總預測': stats['total'],
+                            '命中': stats['hit'],
+                            '命中率': hit_rate
+                        })
+                if distance_list:
+                    df_dist = pd.DataFrame(distance_list)
+                    df_dist = df_dist.sort_values('命中率', ascending=False).reset_index(drop=True)
+                    st.dataframe(df_dist, use_container_width=True)
+                    if len(df_dist) >= 2:
+                        fig = px.bar(
+                            df_dist.head(8),
+                            x='路程',
+                            y='命中率',
+                            title='各路程命中率',
+                            color='命中率',
+                            color_continuous_scale='Purples',
+                            text=df_dist.head(8)['命中率'].apply(lambda x: f'{x:.1%}')
+                        )
+                        fig.update_traces(textposition='outside')
+                        fig.update_layout(yaxis_tickformat='.0%', height=300)
+                        st.plotly_chart(fig, use_container_width=True)
                 else:
-                    st.session_state.operation_result = ('info', "✅ 目前沒有過期會員")
-            except Exception as e:
-                st.session_state.operation_result = ('error', f"❌ 失敗：{str(e)}")
-            st.rerun()
+                    st.info("未有足夠路程數據（最少預測 2 次）")
+            with col2:
+                st.subheader("🌤️ 場地勝率分析")
+                going_list = []
+                for going, stats in going_stats.items():
+                    if stats['total'] >= 2 and going != '未知':
+                        hit_rate = stats['hit'] / stats['total']
+                        going_list.append({
+                            '場地': going,
+                            '總預測': stats['total'],
+                            '命中': stats['hit'],
+                            '命中率': hit_rate
+                        })
+                if going_list:
+                    df_going = pd.DataFrame(going_list)
+                    df_going = df_going.sort_values('命中率', ascending=False).reset_index(drop=True)
+                    st.dataframe(df_going, use_container_width=True)
+                    if len(df_going) >= 2:
+                        fig = px.bar(
+                            df_going,
+                            x='場地',
+                            y='命中率',
+                            title='各場地命中率',
+                            color='命中率',
+                            color_continuous_scale='Blues',
+                            text=df_going['命中率'].apply(lambda x: f'{x:.1%}')
+                        )
+                        fig.update_traces(textposition='outside')
+                        fig.update_layout(yaxis_tickformat='.0%', height=300)
+                        st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("未有足夠場地數據（最少預測 2 次）")
+        else:
+            st.info("排位表檔案缺少 'race_no' 或 'distance' 欄位")
+    except Exception as e:
+        st.info(f"無法讀取排位表：{e}")
 
-    with col4:
-        if st.button("🎯 更新 AI 命中率", use_container_width=True, key="btn_update_ai_maintenance"):
-            try:
-                hit_count, msg = update_ai_accuracy()
-                st.session_state.operation_result = ('success', f"✅ {msg}")
-            except Exception as e:
-                st.session_state.operation_result = ('error', f"❌ 失敗：{str(e)}")
-            st.rerun()
+def admin_monthly_report():
+    st.subheader("📅 每月命中率報告")
+    acc = load_accuracy()
+    records = acc.get('records', [])
+    valid_records = [r for r in records if r.get('is_hit') is not None]
+    if not valid_records:
+        st.info("暫時未有足夠數據（最少需要 1 場已比對嘅預測記錄）")
+        return
+    df = pd.DataFrame(valid_records)
+    if 'date' not in df.columns:
+        st.info("記錄中缺少日期欄位")
+        return
+    df['date'] = pd.to_datetime(df['date'])
+    df['month'] = df['date'].dt.to_period('M')
+    df['month_str'] = df['month'].astype(str)
+    monthly = df.groupby('month_str').agg(
+        total=('is_hit', 'count'),
+        hit=('is_hit', lambda x: (x==True).sum())
+    ).reset_index()
+    monthly['hit_rate'] = monthly['hit'] / monthly['total']
+    monthly = monthly.sort_values('month_str')
+    st.subheader("📊 每月命中率總表")
+    st.dataframe(monthly, use_container_width=True)
+    fig = px.bar(
+        monthly,
+        x='month_str',
+        y='hit_rate',
+        title='每月命中率',
+        color='hit_rate',
+        color_continuous_scale='RdYlGn',
+        text=monthly['hit_rate'].apply(lambda x: f'{x:.1%}')
+    )
+    fig.update_traces(textposition='outside')
+    fig.update_layout(yaxis_tickformat='.0%', height=350)
+    st.plotly_chart(fig, use_container_width=True)
+    st.divider()
+    st.subheader("📥 下載報告")
+    csv_data = monthly.to_csv(index=False)
+    st.download_button(
+        label="📥 下載每月命中率報告 (CSV)",
+        data=csv_data,
+        file_name=f"monthly_report_{datetime.now().strftime('%Y%m')}.csv",
+        mime="text/csv",
+        key="download_monthly_report"
+    )
+    json_data = json.dumps(monthly.to_dict(orient='records'), ensure_ascii=False, indent=2)
+    st.download_button(
+        label="📥 下載每月命中率報告 (JSON)",
+        data=json_data,
+        file_name=f"monthly_report_{datetime.now().strftime('%Y%m')}.json",
+        mime="application/json",
+        key="download_monthly_report_json"
+    )
+    st.caption("💡 提示：CSV 同 JSON 檔案可用 Excel 打開，或轉換成 PDF")
+# ============================================================
+# 後台管理（所有模組）
+# ============================================================
 def admin_user_management():
     st.subheader("👥 用戶管理")
+    
+    # ============================================================
+    # 1. 直接讀取 users.json（唔靠 load_users()，避免潛在問題）
+    # ============================================================
     user_file = "users.json"
+    
     if not os.path.exists(user_file):
-        st.error("❌ users.json 不存在！")
+        st.error("❌ users.json 檔案不存在！請檢查檔案是否放在正確位置。")
         return
+    
     try:
         with open(user_file, 'r', encoding='utf-8') as f:
             users = json.load(f)
-    except Exception as e:
-        st.error(f"❌ 讀取失敗：{e}")
+    except json.JSONDecodeError as e:
+        st.error(f"❌ users.json 格式錯誤：{e}")
         return
+    except Exception as e:
+        st.error(f"❌ 讀取 users.json 失敗：{e}")
+        return
+    
+    # 顯示用戶數量
     st.info(f"✅ 成功載入 {len(users)} 個用戶")
+    
+    # ============================================================
+    # 2. 顯示用戶列表（如果 users 係 dict）
+    # ============================================================
     if users and isinstance(users, dict):
         df = pd.DataFrame.from_dict(users, orient='index')
-        if 'level' not in df.columns: df['level'] = '🥉 銅牌會員'
-        if 'exp' not in df.columns: df['exp'] = 0
-        if 'badges' not in df.columns: df['badges'] = ''
+        
+        # 確保必要欄位存在
+        if 'level' not in df.columns:
+            df['level'] = '🥉 銅牌會員'
+        if 'exp' not in df.columns:
+            df['exp'] = 0
+        if 'badges' not in df.columns:
+            df['badges'] = ''
         df['badges_count'] = df['badges'].apply(lambda x: len(x) if isinstance(x, list) else 0)
+        
+        # 選擇顯示嘅欄位
         display_cols = ['username', 'group', 'level', 'exp', 'badges_count', 'total_usage', 'is_paid', 'virtual_balance']
         available_cols = [col for col in display_cols if col in df.columns]
         st.dataframe(df[available_cols], use_container_width=True)
+    else:
+        st.info("暫無用戶")
+    
     st.divider()
-
-    # ========== 新增用戶 ==========
+    
+    # ============================================================
+    # 3. 新增用戶（保留你原本嘅功能）
+    # ============================================================
     with st.expander("➕ 新增用戶", expanded=False):
         col1, col2 = st.columns(2)
         with col1:
@@ -1941,42 +2346,63 @@ def admin_user_management():
             if not new_username or not new_password:
                 st.warning("請填寫用戶名同密碼")
             else:
+                # 重新讀取一次確保最新
                 try:
                     with open(user_file, 'r', encoding='utf-8') as f:
                         users = json.load(f)
                 except:
                     users = {}
+                    
                 if new_username in users:
                     st.error("❌ 用戶名已被使用")
                 else:
                     users[new_username] = {
-                        "password": new_password, "is_paid": new_is_paid,
-                        "paid_date": None, "expiry_date": None, "free_usage": 0,
-                        "total_usage": 0, "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                        "note": "手動新增", "group": new_group, "phone": "", "plan": None,
+                        "password": new_password,
+                        "is_paid": new_is_paid,
+                        "paid_date": None,
+                        "expiry_date": None,
+                        "free_usage": 0,
+                        "total_usage": 0,
+                        "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        "note": "手動新增",
+                        "group": new_group,
+                        "phone": "",
+                        "plan": None,
                         "predictions_limit": -1 if new_group in ['super_admin', 'VIP'] else CONFIG.get("free_limit", 2),
-                        "history": [], "terms_agreed": datetime.now().isoformat(),
+                        "history": [],
+                        "terms_agreed": datetime.now().isoformat(),
                         "invite_code": new_username.upper() + str(random.randint(100, 999)),
-                        "invited_by": None, "invite_rewards": 0, "invite_count": 0,
-                        "level": "🥉 銅牌會員", "exp": 0, "badges": [],
+                        "invited_by": None,
+                        "invite_rewards": 0,
+                        "invite_count": 0,
+                        "level": "🥉 銅牌會員",
+                        "exp": 0,
+                        "badges": [],
                         "virtual_balance": CONFIG.get("daily_virtual_coin", 1000),
                         "last_claim_date": '',
-                        "extra_lottery_draws": 0, "titles": [], "current_title": None
+                        "bets": []
                     }
-                    with open(user_file, 'w', encoding='utf-8') as f:
-                        json.dump(users, f, ensure_ascii=False, indent=2)
-                    st.success(f"✅ 用戶 {new_username} 已建立！")
-                    st.rerun()
-
+                    try:
+                        with open(user_file, 'w', encoding='utf-8') as f:
+                            json.dump(users, f, ensure_ascii=False, indent=2)
+                        st.success(f"✅ 用戶 {new_username} 已建立！")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ 儲存失敗：{e}")
+    
     st.divider()
-
-    # ========== 刪除用戶 ==========
+    
+    # ============================================================
+    # 4. 刪除用戶（保留你原本嘅功能）
+    # ============================================================
     st.subheader("🗑️ 刪除用戶")
+    # 重新讀取確保最新
     try:
         with open(user_file, 'r', encoding='utf-8') as f:
             users = json.load(f)
     except:
         users = {}
+        
     if users:
         del_user = st.selectbox("選擇要刪除嘅用戶", list(users.keys()), key="del_user_select")
         if del_user:
@@ -1986,91 +2412,121 @@ def admin_user_management():
                 confirm = st.checkbox(f"確認刪除 {del_user}？", key="confirm_del")
                 if confirm and st.button("🗑️ 確認刪除", key="del_user_btn"):
                     users.pop(del_user)
-                    with open(user_file, 'w', encoding='utf-8') as f:
-                        json.dump(users, f, ensure_ascii=False, indent=2)
-                    st.success(f"✅ 已刪除")
-                    st.rerun()
-
+                    try:
+                        with open(user_file, 'w', encoding='utf-8') as f:
+                            json.dump(users, f, ensure_ascii=False, indent=2)
+                        st.success(f"✅ 用戶 {del_user} 已刪除")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ 刪除失敗：{e}")
+    else:
+        st.info("暫無用戶可刪除")
+    
     st.divider()
-
-    # ========== 查看用戶視角 ==========
+    
+    # ============================================================
+    # 5. 查看用戶視角（保留你原本嘅功能）
+    # ============================================================
     st.subheader("👁️ 查看用戶視角")
+    # 重新讀取確保最新
     try:
         with open(user_file, 'r', encoding='utf-8') as f:
             users = json.load(f)
     except:
         users = {}
+        
     if users:
         selected_user = st.selectbox("選擇要查看的用戶", list(users.keys()), key="view_user_select")
         if selected_user:
             user_data = users[selected_user]
+            st.markdown("---")
             col1, col2, col3, col4 = st.columns(4)
             col1.metric("👤 用戶", selected_user)
             col2.metric("🏷️ 級別", user_data.get('group', 'free').upper())
             col3.metric("📊 總預測次數", len(user_data.get('history', [])))
             limit = user_data.get('predictions_limit', CONFIG.get('free_limit', 2))
-            col4.metric("📊 剩餘場次", "♾️ 無限" if limit == -1 else max(0, limit - user_data.get('free_usage', 0)))
+            if limit == -1:
+                col4.metric("📊 剩餘場次", "♾️ 無限")
+            else:
+                used = user_data.get('free_usage', 0)
+                remain = max(0, limit - used)
+                col4.metric("📊 剩餘場次", remain)
+            st.markdown("---")
+            st.subheader(f"📋 {selected_user} 嘅預測記錄")
             history = user_data.get('history', [])
             if history:
-                st.dataframe(pd.DataFrame(history[-20:][::-1]), use_container_width=True)
+                df_hist = pd.DataFrame(history[-20:][::-1])
+                st.dataframe(df_hist, use_container_width=True)
             else:
                 st.info("呢個用戶暫時冇任何預測記錄")
-
+            if history:
+                st.subheader(f"🎯 {selected_user} 嘅準確度統計")
+                acc = load_accuracy()
+                records = acc.get('records', [])
+                user_records = [r for r in records if r.get('username') == selected_user]
+                if user_records:
+                    df_rec = pd.DataFrame(user_records)
+                    total = len(df_rec)
+                    hit = df_rec[df_rec['is_hit'] == True].shape[0] if 'is_hit' in df_rec else 0
+                    hit_rate = hit/total if total>0 else 0
+                    roi = (hit * 400 - total * 100) / (total * 100) if total>0 else 0
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("總預測", total)
+                    col2.metric("命中", hit)
+                    col3.metric("命中率", f"{hit_rate:.2%}")
+                    st.metric("ROI (模擬)", f"{roi:.2%}")
+                    if 'date' in df_rec:
+                        df_rec['date'] = pd.to_datetime(df_rec['date'])
+                        daily = df_rec.groupby(df_rec['date'].dt.date).agg(
+                            total=('is_hit', 'count'),
+                            hit=('is_hit', lambda x: (x==True).sum())
+                        ).reset_index()
+                        daily['hit_rate'] = daily['hit'] / daily['total']
+                        fig = px.line(daily, x='date', y='hit_rate', title=f'{selected_user} 嘅命中率趨勢')
+                        st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("呢個用戶未有準確度數據（未對比賽果）")
+    else:
+        st.info("暫無用戶")
+    
     st.divider()
-
-    # ========== 編輯用戶 ==========
-    with st.expander("✏️ 編輯用戶", expanded=False):
+    
+    # ============================================================
+    # 6. 編輯用戶（保留你原本嘅功能）
+    # ============================================================
+    with st.expander("✏️ 編輯用戶"):
+        # 重新讀取確保最新
         try:
             with open(user_file, 'r', encoding='utf-8') as f:
                 users = json.load(f)
         except:
             users = {}
+            
         if users:
             username = st.selectbox("選擇要編輯的用戶", list(users.keys()), key="edit_user_select")
             if username:
                 user = users[username]
                 col_edit1, col_edit2 = st.columns(2)
                 with col_edit1:
-                    group_options = ['free', 'paid', 'VIP', 'super_admin']
-                    current_group = user.get('group', 'free')
-                    if current_group not in group_options:
-                        group_options.append(current_group)
-                    new_group = st.selectbox("群組", group_options,
-                                            index=group_options.index(current_group),
+                    new_group = st.selectbox("群組", ['free', 'paid', 'VIP', 'super_admin'], 
+                                            index=['free','paid','VIP','super_admin'].index(user.get('group','free')), 
                                             key="edit_group")
                     new_is_paid = st.checkbox("付費狀態", value=user.get('is_paid', False), key="edit_is_paid")
-                    current_expiry = user.get('expiry_date', None)
-                    if current_expiry:
-                        try:
-                            default_expiry = pd.to_datetime(current_expiry).date()
-                            if pd.isna(default_expiry):
-                                default_expiry = datetime.now().date()
-                        except:
-                            default_expiry = datetime.now().date()
-                    else:
-                        default_expiry = datetime.now().date()
-                    new_expiry = st.date_input("會員到期日", value=default_expiry, key="edit_expiry_admin")
-                    new_password = st.text_input("新密碼（留空 = 不變）", type="password", key="edit_password")
+                    new_password = st.text_input("新密碼（留空 = 不變）", type="password", key="edit_password", placeholder="輸入新密碼")
                 with col_edit2:
                     level_options = ["🥉 銅牌會員", "🥈 銀牌會員", "🥇 金牌會員", "💎 鑽石會員", "👑 傳說會員", "👑 超級管理員"]
                     current_level = user.get('level', '🥉 銅牌會員')
                     if current_level not in level_options:
                         level_options.append(current_level)
-                    new_level = st.selectbox("🏅 等級", level_options,
-                                            index=level_options.index(current_level) if current_level in level_options else 0,
+                    new_level = st.selectbox("🏅 等級", level_options, 
+                                            index=level_options.index(current_level) if current_level in level_options else 0, 
                                             key="edit_level")
                     new_exp = st.number_input("📊 經驗值", min_value=0, value=user.get('exp', 0), step=10, key="edit_exp")
-                    current_limit = user.get('predictions_limit', CONFIG.get('free_limit', 2))
-                    new_limit = st.number_input("預測次數上限（-1 = 無限）", min_value=-1, value=int(current_limit), step=1, key="edit_limit")
-                    # 🔥 額外抽獎次數
-                    current_extra_draws = user.get('extra_lottery_draws', 0)
-                    new_extra_draws = st.number_input("🎰 額外抽獎次數", min_value=0, value=int(current_extra_draws), step=1, key="edit_extra_draws")
-                    all_badges = ["🏆 首勝", "🔥 三連勝", "⚡ 五連勝", "💯 百場預測", "🎯 命中大師", "👥 社交達人", "💰 付費會員", "🏇 馬匹專家", "🎰 抽獎達人", "🛍️ 購物達人"]
+                    all_badges = ["🏆 首勝", "🔥 三連勝", "⚡ 五連勝", "💯 百場預測", "🎯 命中大師", "👥 社交達人", "💰 付費會員", "🏇 馬匹專家"]
                     current_badges = user.get('badges', [])
-                    new_badges = st.multiselect("🎖️ 勳章", all_badges,
-                                                default=[b for b in current_badges if b in all_badges],
+                    new_badges = st.multiselect("🎖️ 勳章", all_badges, 
+                                                default=[b for b in current_badges if b in all_badges], 
                                                 key="edit_badges")
-
                 st.markdown("---")
                 st.subheader("💰 虛擬幣調整")
                 col_coin1, col_coin2 = st.columns(2)
@@ -2086,135 +2542,69 @@ def admin_user_management():
                                 st.error("❌ 餘額不能為負數")
                             else:
                                 users[username]['virtual_balance'] = new_balance
-                                with open(user_file, 'w', encoding='utf-8') as f:
-                                    json.dump(users, f, ensure_ascii=False, indent=2)
-                                st.success(f"✅ 新餘額：${new_balance:,.0f}")
-                                st.rerun()
-
+                                try:
+                                    with open(user_file, 'w', encoding='utf-8') as f:
+                                        json.dump(users, f, ensure_ascii=False, indent=2)
+                                    st.success(f"✅ 已調整 {username} 的虛擬幣，新餘額：${new_balance:,.0f}")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"❌ 儲存失敗：{e}")
                 if st.button("🔄 重置虛擬幣為 $1000", key="reset_coin"):
                     users[username]['virtual_balance'] = 1000
-                    with open(user_file, 'w', encoding='utf-8') as f:
-                        json.dump(users, f, ensure_ascii=False, indent=2)
-                    st.success("✅ 已重置為 $1000")
-                    st.rerun()
-
+                    try:
+                        with open(user_file, 'w', encoding='utf-8') as f:
+                            json.dump(users, f, ensure_ascii=False, indent=2)
+                        st.success("✅ 已重置虛擬幣為 $1000")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ 儲存失敗：{e}")
                 note = st.text_area("備註", value=user.get('note', ''), key="edit_note")
-
-                if st.button("💾 儲存變更", key="save_user_changes", type="primary"):
+                if st.button("💾 儲存變更", key="save_user_changes"):
                     users[username]['group'] = new_group
                     users[username]['is_paid'] = new_is_paid
                     users[username]['note'] = note
                     users[username]['level'] = new_level
                     users[username]['exp'] = new_exp
                     users[username]['badges'] = new_badges
-                    users[username]['predictions_limit'] = new_limit
-                    users[username]['extra_lottery_draws'] = new_extra_draws
                     if new_password:
                         users[username]['password'] = new_password
+                    if new_group in ['super_admin', 'VIP']:
+                        users[username]['predictions_limit'] = -1
+                    else:
+                        users[username]['predictions_limit'] = CONFIG.get("free_limit", 2)
                     try:
-                        users[username]['expiry_date'] = new_expiry.strftime('%Y-%m-%d %H:%M:%S')
-                    except:
-                        users[username]['expiry_date'] = str(new_expiry)
-                    with open(user_file, 'w', encoding='utf-8') as f:
-                        json.dump(users, f, ensure_ascii=False, indent=2)
-                    st.success("✅ 已更新用戶資料！")
-                    st.rerun()
+                        with open(user_file, 'w', encoding='utf-8') as f:
+                            json.dump(users, f, ensure_ascii=False, indent=2)
+                        st.success("✅ 已更新用戶資料！")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ 儲存失敗：{e}")
         else:
             st.info("暫無用戶可編輯")
-
-    st.divider()
-
-    # ========== 🎰 管理抽獎次數（獨立區塊） ==========
-    st.subheader("🎰 管理抽獎次數")
-    try:
-        with open(user_file, 'r', encoding='utf-8') as f:
-            users = json.load(f)
-    except:
-        users = {}
-    if users:
-        col_d1, col_d2 = st.columns(2)
-        with col_d1:
-            draw_target_user = st.selectbox("選擇用戶", list(users.keys()), key="draw_target_user")
-        with col_d2:
-            current_extra = users.get(draw_target_user, {}).get('extra_lottery_draws', 0)
-            st.metric("目前額外抽獎次數", current_extra)
-
-        col_op1, col_op2, col_op3 = st.columns(3)
-        with col_op1:
-            add_draws = st.number_input("增加次數", min_value=1, value=1, step=1, key="add_draws")
-            if st.button("➕ 增加", use_container_width=True, key="btn_add_draws"):
-                if draw_target_user in users:
-                    users[draw_target_user]['extra_lottery_draws'] = current_extra + add_draws
-                    with open(user_file, 'w', encoding='utf-8') as f:
-                        json.dump(users, f, ensure_ascii=False, indent=2)
-                    log_admin_action(st.session_state.get('admin_username', 'admin'), f"為 {draw_target_user} 增加 {add_draws} 次抽獎")
-                    st.success(f"✅ 已為 {draw_target_user} 增加 {add_draws} 次抽獎（總計：{current_extra + add_draws}）")
-                    st.rerun()
-        with col_op2:
-            reduce_draws = st.number_input("減少次數", min_value=1, value=1, step=1, key="reduce_draws")
-            if st.button("➖ 減少", use_container_width=True, key="btn_reduce_draws"):
-                if draw_target_user in users:
-                    new_val = max(0, current_extra - reduce_draws)
-                    users[draw_target_user]['extra_lottery_draws'] = new_val
-                    with open(user_file, 'w', encoding='utf-8') as f:
-                        json.dump(users, f, ensure_ascii=False, indent=2)
-                    log_admin_action(st.session_state.get('admin_username', 'admin'), f"為 {draw_target_user} 減少 {reduce_draws} 次抽獎")
-                    st.success(f"✅ 已為 {draw_target_user} 減少 {reduce_draws} 次抽獎（總計：{new_val}）")
-                    st.rerun()
-        with col_op3:
-            set_draws = st.number_input("設定為指定次數", min_value=0, value=int(current_extra), step=1, key="set_draws")
-            if st.button("✅ 設定", use_container_width=True, key="btn_set_draws"):
-                if draw_target_user in users:
-                    users[draw_target_user]['extra_lottery_draws'] = set_draws
-                    with open(user_file, 'w', encoding='utf-8') as f:
-                        json.dump(users, f, ensure_ascii=False, indent=2)
-                    log_admin_action(st.session_state.get('admin_username', 'admin'), f"將 {draw_target_user} 抽獎次數設為 {set_draws}")
-                    st.success(f"✅ 已將 {draw_target_user} 抽獎次數設為 {set_draws}")
-                    st.rerun()
-    else:
-        st.info("暫無用戶")
-
-    st.divider()
-
-    # ========== 🎁 管理員贈送虛擬幣 ==========
-    st.subheader("🎁 管理員贈送虛擬幣")
-    try:
-        with open(user_file, 'r', encoding='utf-8') as f:
-            users = json.load(f)
-    except:
-        users = {}
-    if users:
-        with st.form(key="admin_gift_coin_form"):
-            col_gift1, col_gift2, col_gift3 = st.columns([2, 1, 1])
-            with col_gift1:
-                gift_target_user = st.selectbox("選擇用戶", list(users.keys()), key="gift_coin_user")
-            with col_gift2:
-                gift_coin_amount = st.number_input("金額", min_value=1, value=1000, step=100, key="gift_coin_amount")
-            with col_gift3:
-                submit_gift_coin = st.form_submit_button("🎁 贈送", type="primary")
-            if submit_gift_coin:
-                if gift_target_user in users:
-                    current_bal = users[gift_target_user].get('virtual_balance', 0)
-                    users[gift_target_user]['virtual_balance'] = current_bal + gift_coin_amount
-                    with open(user_file, 'w', encoding='utf-8') as f:
-                        json.dump(users, f, ensure_ascii=False, indent=2)
-                    log_admin_action(st.session_state.get('admin_username', 'admin'), f"贈送 ${gift_coin_amount} 虛擬幣給 {gift_target_user}")
-                    st.success(f"✅ 已贈送 ${gift_coin_amount:,.0f} 給 {gift_target_user}（新餘額：${current_bal + gift_coin_amount:,.0f}）")
-                    st.rerun()
-                else:
-                    st.error("❌ 用戶不存在")
-    else:
-        st.info("暫無用戶")
-
     st.divider()
     st.subheader("📥 數據匯出")
     try:
         with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
             data = f.read()
-        st.download_button("📥 下載 users.json", data=data,
-            file_name="users.json", mime="application/json", key="download_users_json")
+        st.download_button(
+            label="📥 下載 users.json",
+            data=data,
+            file_name="users.json",
+            mime="application/json",
+            key="download_users_json"
+        )
+        if os.path.exists("ai_predictions.json"):
+            with open("ai_predictions.json", "r", encoding='utf-8') as f:
+                ai_json_data = f.read()
+            st.download_button(
+                label="📥 下載 ai_predictions.json",
+                data=ai_json_data,
+                file_name="ai_predictions.json",
+                mime="application/json",
+                key="download_ai_predictions_admin"
+            )
     except Exception as e:
-        st.error(f"讀取失敗：{e}")
+        st.error(f"讀取檔案失敗：{e}")
 
 def admin_manage_predictions():
     st.subheader("📊 管理用戶預測次數")
@@ -2222,956 +2612,676 @@ def admin_manage_predictions():
     if not users:
         st.info("暫無用戶")
         return
-    selected_user = st.selectbox("選擇用戶", list(users.keys()), key="manage_predictions_user")
+    username_list = list(users.keys())
+    selected_user = st.selectbox("選擇用戶", username_list, key="manage_predictions_user")
     if selected_user:
         user_data = users[selected_user]
         current_limit = user_data.get('predictions_limit', CONFIG['free_limit'])
         current_usage = user_data.get('free_usage', 0)
         col1, col2, col3 = st.columns(3)
-        col1.metric("用戶", selected_user)
-        col2.metric("目前剩餘次數", current_limit - current_usage if current_limit != -1 else "無限")
-        col3.metric("已使用次數", current_usage)
+        with col1:
+            st.metric("用戶", selected_user)
+        with col2:
+            st.metric("目前剩餘次數", current_limit - current_usage if current_limit != -1 else "無限")
+        with col3:
+            st.metric("已使用次數", current_usage)
         st.divider()
-        action = st.radio("選擇操作", ["增加次數", "減少次數", "設定為指定次數"], horizontal=True, key="predictions_action")
+        action = st.radio(
+            "選擇操作",
+            ["增加次數", "減少次數", "設定為指定次數"],
+            horizontal=True,
+            key="predictions_action"
+        )
         if action == "增加次數":
             add_amount = st.number_input("增加次數", min_value=1, step=1, value=1, key="add_predictions")
             if st.button("✅ 增加", type="primary", key="confirm_add_predictions"):
                 if current_limit == -1:
-                    st.warning("⚠️ 已是無限次數")
+                    st.warning("⚠️ 此用戶已是無限次數，無需增加")
                 else:
                     users[selected_user]['predictions_limit'] = current_limit + add_amount
                     save_users(users)
-                    st.success(f"✅ 已增加 {add_amount} 次")
+                    log_admin_action(st.session_state.username, f"為 {selected_user} 增加 {add_amount} 次預測")
+                    st.success(f"✅ 已為 {selected_user} 增加 {add_amount} 次預測（新上限：{current_limit + add_amount}）")
                     st.rerun()
         elif action == "減少次數":
             reduce_amount = st.number_input("減少次數", min_value=1, step=1, value=1, key="reduce_predictions")
             if st.button("✅ 減少", type="primary", key="confirm_reduce_predictions"):
                 if current_limit == -1:
-                    st.warning("⚠️ 此用戶是無限次數")
+                    st.warning("⚠️ 此用戶是無限次數，無法減少")
                 elif current_limit - reduce_amount < 0:
-                    st.error("❌ 不能低於 0")
+                    st.error(f"❌ 減少後次數不能低於 0（目前為 {current_limit}）")
                 else:
                     users[selected_user]['predictions_limit'] = current_limit - reduce_amount
                     save_users(users)
-                    st.success(f"✅ 已減少 {reduce_amount} 次")
+                    log_admin_action(st.session_state.username, f"為 {selected_user} 減少 {reduce_amount} 次預測")
+                    st.success(f"✅ 已為 {selected_user} 減少 {reduce_amount} 次預測（新上限：{current_limit - reduce_amount}）")
                     st.rerun()
         elif action == "設定為指定次數":
-            set_amount = st.number_input("設定為指定次數（-1 = 無限）", min_value=-1, step=1,
-                                         value=current_limit if current_limit != -1 else 10, key="set_predictions")
+            set_amount = st.number_input(
+                "設定為指定次數（輸入 -1 = 無限）",
+                min_value=-1,
+                step=1,
+                value=current_limit if current_limit != -1 else 10,
+                key="set_predictions"
+            )
             if st.button("✅ 設定", type="primary", key="confirm_set_predictions"):
                 users[selected_user]['predictions_limit'] = set_amount
                 save_users(users)
-                st.success(f"✅ 已設定為 {'無限' if set_amount == -1 else set_amount}")
+                log_admin_action(st.session_state.username, f"將 {selected_user} 預測次數設定為 {set_amount}")
+                display_text = "無限" if set_amount == -1 else str(set_amount)
+                st.success(f"✅ 已將 {selected_user} 的預測次數設為 {display_text}")
                 st.rerun()
+        st.divider()
+        st.caption("💡 提示：修改會即時生效，用戶無需重新登入")
+
+def admin_auto_maintenance():
+    st.subheader("🤖 自動維護")
+    st.info("一鍵執行所有維護任務，系統會自動幫你完成以下操作：")
+    tasks = [
+        "🔄 比對賽果 + 更新統計",
+        "⚖️ 調整模型權重（根據命中率）",
+        "⏰ 檢查並終止過期會員",
+        "📊 同步用戶數據（session → 檔案）",
+        "📝 檢查系統檔案狀態",
+        "📥 自動備份所有數據"
+    ]
+    for task in tasks:
+        st.write(f"• {task}")
+    st.divider()
+    if st.button("🚀 執行全部維護任務", type="primary", use_container_width=True):
+        results = []
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        status_text.text("🔄 比對賽果中...")
+        updated, msg = update_accuracy_with_results()
+        results.append(f"🔄 比對賽果：{msg}")
+        progress_bar.progress(15)
+        status_text.text("⚖️ 調整權重中...")
+        try:
+            weight_result = adjust_model_weights()
+            results.append(f"⚖️ 調整權重：XGB={weight_result['xgb_weight']}, Cat={weight_result['cat_weight']}（命中率 {weight_result['hit_rate']:.2%}）")
+        except Exception as e:
+            results.append(f"⚖️ 調整權重：失敗 - {str(e)}")
+        progress_bar.progress(30)
+        status_text.text("⏰ 檢查過期會員中...")
+        users = load_users()
+        today = datetime.now()
+        expired = []
+        for uid, u in users.items():
+            if u.get('group') == 'VIP' and u.get('expiry_date'):
+                try:
+                    exp = pd.to_datetime(u['expiry_date'])
+                    if exp < today:
+                        u['group'] = 'free'
+                        u['is_paid'] = False
+                        u['predictions_limit'] = CONFIG["free_limit"]
+                        u['plan'] = None
+                        u['note'] = (u.get('note', '') + f' [於 {today.strftime("%Y-%m-%d")} 自動降級]').strip()
+                        expired.append(uid)
+                except:
+                    pass
+        if expired:
+            save_users(users)
+            results.append(f"⏰ 檢查過期會員：已將 {len(expired)} 個過期會員降級：{', '.join(expired)}")
+        else:
+            results.append("⏰ 檢查過期會員：目前沒有過期會員")
+        progress_bar.progress(45)
+        status_text.text("📊 同步用戶數據中...")
+        try:
+            if 'temp_new_users' in st.session_state:
+                file_users = load_json(USER_DATA_FILE)
+                synced = 0
+                for username, user_data in st.session_state.temp_new_users.items():
+                    if username not in file_users:
+                        file_users[username] = user_data
+                        synced += 1
+                if synced > 0:
+                    save_json(USER_DATA_FILE, file_users)
+                    results.append(f"📊 同步用戶數據：已同步 {synced} 個新用戶到檔案")
+                else:
+                    results.append("📊 同步用戶數據：無需同步")
+            else:
+                results.append("📊 同步用戶數據：無需同步")
+        except Exception as e:
+            results.append(f"📊 同步用戶數據：失敗 - {str(e)}")
+        progress_bar.progress(60)
+        status_text.text("📝 檢查系統檔案中...")
+        files_to_check = [
+            'users.json', 'system_config.json', 'finance.json',
+            'promo_codes.json', 'admin_log.json', 'accuracy.json',
+            'payment_proofs.json', 'HKCJ_FULL_YEAR_DATA.csv', 'ALL_DATA_MERGED.csv'
+        ]
+        file_status = []
+        for f in files_to_check:
+            exists = os.path.exists(f)
+            size = os.path.getsize(f) if exists else 0
+            status = "✅" if exists else "❌"
+            file_status.append(f"{status} {f} ({size} bytes)" if exists else f"{status} {f} (不存在)")
+        results.append(f"📝 檢查系統檔案：{' | '.join(file_status[:5])}")
+        progress_bar.progress(80)
+        status_text.text("📥 自動備份中...")
+        try:
+            backup_data = {
+                "users": load_users(),
+                "accuracy": load_accuracy(),
+                "finance": load_finance(),
+                "payment_proofs": load_payment_proofs(),
+                "backup_time": datetime.now().isoformat(),
+                "version": "v14.0-用戶體驗版"
+            }
+            backup_json = json.dumps(backup_data, ensure_ascii=False, indent=2)
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_filename = f"backup_{timestamp}.json"
+            try:
+                with open(backup_filename, 'w', encoding='utf-8') as f:
+                    f.write(backup_json)
+                results.append(f"📥 自動備份：已儲存到伺服器 ({backup_filename})")
+            except:
+                results.append("📥 自動備份：無法儲存到伺服器，但可下載")
+            st.download_button(
+                label=f"📥 下載備份 ({timestamp})",
+                data=backup_json,
+                file_name=backup_filename,
+                mime="application/json",
+                key=f"auto_backup_{timestamp}"
+            )
+            results.append(f"📥 自動備份：✅ 備份完成")
+        except Exception as e:
+            results.append(f"📥 自動備份：❌ 失敗 - {str(e)}")
+        progress_bar.progress(100)
+        status_text.text("✅ 所有維護任務已完成！")
+        st.success("✅ 自動維護完成！")
+        st.divider()
+        st.subheader("📋 執行結果")
+        for r in results:
+            st.write(r)
+        acc = load_accuracy()
+        records = acc.get('records', [])
+        total = len([r for r in records if r.get('is_hit') is not None])
+        hit = sum(1 for r in records if r.get('is_hit') is True)
+        hit_rate = hit/total if total>0 else 0
+        if total > 0:
+            st.divider()
+            col1, col2, col3 = st.columns(3)
+            col1.metric("📊 已比對預測", total)
+            col2.metric("🎯 命中次數", hit)
+            col3.metric("📈 整體命中率", f"{hit_rate:.2%}")
+    st.divider()
+    st.subheader("⚡ 單獨執行")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        if st.button("🔄 比對賽果", use_container_width=True):
+            updated, msg = update_accuracy_with_results()
+            st.success(f"✅ {msg}")
+            st.rerun()
+    with col2:
+        if st.button("⚖️ 調整權重", use_container_width=True):
+            result = adjust_model_weights()
+            st.success(f"✅ XGB={result['xgb_weight']}, Cat={result['cat_weight']}（命中率 {result['hit_rate']:.2%}）")
+            st.rerun()
+    with col3:
+        if st.button("⏰ 終止過期會員", use_container_width=True):
+            users = load_users()
+            today = datetime.now()
+            expired = []
+            for uid, u in users.items():
+                if u.get('group') == 'VIP' and u.get('expiry_date'):
+                    try:
+                        exp = pd.to_datetime(u['expiry_date'])
+                        if exp < today:
+                            u['group'] = 'free'
+                            u['is_paid'] = False
+                            u['predictions_limit'] = CONFIG["free_limit"]
+                            u['plan'] = None
+                            expired.append(uid)
+                    except:
+                        pass
+            if expired:
+                save_users(users)
+                st.success(f"✅ 已將 {len(expired)} 個過期會員降級：{', '.join(expired)}")
+            else:
+                st.info("✅ 目前沒有過期會員")
+            st.rerun()
+    with col4:
+        if st.button("🎯 更新 AI 命中率", use_container_width=True):
+            hit_count, msg = update_ai_accuracy()
+            st.success(f"✅ 比對完成：{msg}")
+            st.rerun()
+
+def update_ai_accuracy():
+    ai_file = "ai_predictions.json"
+    results_file = "race_results_clean.csv"
+    if not os.path.exists(ai_file):
+        return 0, "未有 AI 預測記錄"
+    if not os.path.exists(results_file):
+        return 0, "未有賽果數據"
+    with open(ai_file, 'r', encoding='utf-8') as f:
+        ai_data = json.load(f)
+    results_df = pd.read_csv(results_file, encoding='utf-8-sig')
+    if 'race_date' not in results_df.columns or 'race_no' not in results_df.columns or 'horse_name' not in results_df.columns or 'finish_position' not in results_df.columns:
+        return 0, "賽果檔案欄位不正確"
+    results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
+    results_df['race_date_str'] = results_df['race_date'].dt.strftime('%Y-%m-%d')
+    hit_count = 0
+    total_count = 0
+    for key, pred in ai_data.items():
+        date_str = pred.get('date')
+        race_no = pred.get('race')
+        top_horse = pred.get('top_horse')
+        if not date_str or not race_no or not top_horse:
+            continue
+        matched = results_df[
+            (results_df['race_date_str'] == date_str) &
+            (results_df['race_no'] == race_no) &
+            (results_df['horse_name'] == top_horse)
+        ]
+        total_count += 1
+        if not matched.empty:
+            finish_pos = matched.iloc[0].get('finish_position')
+            if pd.notna(finish_pos) and finish_pos == 1:
+                hit_count += 1
+                pred['is_hit'] = True
+            else:
+                pred['is_hit'] = False
+        else:
+            pred['is_hit'] = None
+    with open(ai_file, 'w', encoding='utf-8') as f:
+        json.dump(ai_data, f, ensure_ascii=False, indent=2)
+    hit_rate = hit_count / total_count if total_count > 0 else 0
+    return hit_count, f"命中 {hit_count}/{total_count} ({hit_rate:.1%})"
 
 def admin_analytics():
-    st.subheader("📊 數據分析")
+    st.subheader("📊 數據分析 & 用戶增長")
     users = load_users()
-    col1, col2, col3 = st.columns(3)
-    col1.metric("總用戶", len(users))
-    col2.metric("付費用戶", sum(1 for u in users.values() if u.get('is_paid', False)))
-    col3.metric("VIP", sum(1 for u in users.values() if u.get('group') == 'VIP'))
-
-def admin_horse_ranking():
-    st.subheader("🏇 馬匹勝率排行榜")
-    try:
-        df = pd.read_csv("ALL_DATA_MERGED.csv")
-        df.columns = df.columns.str.strip() # 去除欄位名多餘空格
-        df = df.loc[:, ~df.columns.duplicated()] # 去除重複欄位
-        
-        # 針對你 CSV 嘅真實欄位名：Pla = 名次, horse_name = 馬名
-        if 'Pla' in df.columns:
-            df['finish_position'] = df['Pla']
-            
-        if 'horse_name' in df.columns and 'finish_position' in df.columns:
-            df['finish_position'] = df['finish_position'].astype(str).str.extract(r'(\d+)').astype(float)
-            temp = df.dropna(subset=['horse_name', 'finish_position'])
-            
-            total = temp.groupby('horse_name').size().reset_index(name='總出賽')
-            wins = temp[temp['finish_position'] == 1].groupby('horse_name').size().reset_index(name='勝出')
-            stats = pd.merge(total, wins, on='horse_name', how='left').fillna({'勝出': 0})
-            stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
-            stats = stats.sort_values('勝出', ascending=False).rename(columns={'horse_name': '馬匹'})
-            st.dataframe(stats.head(20), use_container_width=True)
+    total_users = len(users)
+    paid_users = sum(1 for u in users.values() if u.get('is_paid', False))
+    vip_users = sum(1 for u in users.values() if u.get('group') == 'VIP')
+    super_admin_users = sum(1 for u in users.values() if u.get('group') == 'super_admin')
+    total_pred = sum(u.get('total_usage', 0) for u in users.values())
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("總用戶", total_users)
+    col2.metric("付費用戶", paid_users)
+    col3.metric("VIP", vip_users)
+    col4.metric("超級管理員", super_admin_users)
+    col5.metric("總預測次數", total_pred)
+    if users:
+        df_users = pd.DataFrame.from_dict(users, orient='index')
+        if 'created_at' in df_users.columns:
+            df_users['created_at'] = pd.to_datetime(df_users['created_at'], errors='coerce')
+            df_users = df_users.dropna(subset=['created_at'])
+            df_users['date'] = df_users['created_at'].dt.date
+            daily = df_users.groupby('date').size().reset_index(name='new_users')
+            daily = daily.sort_values('date')
+            daily['cumulative'] = daily['new_users'].cumsum()
+            fig = px.line(daily, x='date', y=['new_users', 'cumulative'],
+                          title='每日新增用戶 & 累積用戶',
+                          labels={'value':'用戶數', 'date':'日期'})
+            st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info("暫無足夠數據 (欄位缺失)")
-    except Exception as e:
-        st.error(f"讀取數據失敗: {e}")
+            st.info("未有 created_at 數據，無法顯示增長圖")
+    else:
+        st.info("暫無用戶")
 
-import numpy as np
-
-def admin_jockey_ranking():
-    st.subheader("🏇 騎師勝率排行榜")
-    try:
-        df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig')
-        df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
-        df = df.loc[:, ~df.columns.duplicated()]
-        
-        pos_col = next((c for c in df.columns if 'pla' in c.lower() or '名次' in c), None)
-        jockey_col = next((c for c in df.columns if 'jockey' in c.lower()), None)
-        
-        if not pos_col or not jockey_col:
-            st.error(f"❌ 搵唔到欄位！")
-            return
-        
-        # 修復關鍵：用 extract 提取數字，唔會再將 1.0 變成 10
-        jockey_series = df[jockey_col].iloc[:, 0] if isinstance(df[jockey_col], pd.DataFrame) else df[jockey_col]
-        pos_series = df[pos_col].iloc[:, 0] if isinstance(df[pos_col], pd.DataFrame) else df[pos_col]
-        
-        temp = pd.DataFrame()
-        temp['jockey'] = jockey_series.astype(str).str.strip()
-        temp['finish_position'] = pd.to_numeric(pos_series.astype(str).str.extract(r'(\d+)')[0], errors='coerce')
-        
-        temp = temp.dropna(subset=['finish_position'])
-        temp = temp[~temp['jockey'].str.lower().isin(['nan', 'none', ''])]
-        
-        if temp.empty:
-            st.warning("⚠️ 數據為空！")
-            return
-        
-        total = temp.groupby('jockey').size().reset_index(name='總出賽')
-        wins = temp[temp['finish_position'] == 1].groupby('jockey').size().reset_index(name='勝出')
-        stats = pd.merge(total, wins, on='jockey', how='left').fillna({'勝出': 0})
-        stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
-        stats = stats.sort_values('勝出', ascending=False)
-        
-        # 讀取本地 JSON 對照表
-        jockey_map = {}
-        try:
-            with open("jockey_mapping.json", "r", encoding="utf-8") as f:
-                jockey_map = json.load(f)
-        except FileNotFoundError:
-            pass
-            
-        stats['騎師'] = stats['jockey'].map(jockey_map).fillna(stats['jockey'])
-        st.dataframe(stats[['騎師', '總出賽', '勝出', '勝率']].head(20), use_container_width=True)
-        st.success(f"✅ 成功計算！共 {len(stats)} 位騎師")
-    except Exception as e:
-        st.error(f"讀取數據失敗: {e}")
-
-
-def admin_trainer_ranking():
-    st.subheader("🏇 練馬師勝率排行榜")
-    try:
-        df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig')
-        df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
-        df = df.loc[:, ~df.columns.duplicated()]
-        
-        pos_col = next((c for c in df.columns if 'pla' in c.lower() or '名次' in c), None)
-        trainer_col = next((c for c in df.columns if 'trainer' in c.lower()), None)
-        
-        if not pos_col or not trainer_col:
-            st.error(f"❌ 搵唔到欄位！")
-            return
-        
-        trainer_series = df[trainer_col].iloc[:, 0] if isinstance(df[trainer_col], pd.DataFrame) else df[trainer_col]
-        pos_series = df[pos_col].iloc[:, 0] if isinstance(df[pos_col], pd.DataFrame) else df[pos_col]
-        
-        temp = pd.DataFrame()
-        temp['trainer'] = trainer_series.astype(str).str.strip()
-        temp['finish_position'] = pd.to_numeric(pos_series.astype(str).str.extract(r'(\d+)')[0], errors='coerce')
-        
-        temp = temp.dropna(subset=['finish_position'])
-        temp = temp[~temp['trainer'].str.lower().isin(['nan', 'none', ''])]
-        
-        if temp.empty:
-            st.warning("⚠️ 數據為空！")
-            return
-        
-        total = temp.groupby('trainer').size().reset_index(name='總出賽')
-        wins = temp[temp['finish_position'] == 1].groupby('trainer').size().reset_index(name='勝出')
-        stats = pd.merge(total, wins, on='trainer', how='left').fillna({'勝出': 0})
-        stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
-        stats = stats.sort_values('勝出', ascending=False)
-        
-        trainer_map = {}
-        try:
-            with open("trainer_mapping.json", "r", encoding="utf-8") as f:
-                trainer_map = json.load(f)
-        except FileNotFoundError:
-            pass
-            
-        stats['練馬師'] = stats['trainer'].map(trainer_map).fillna(stats['trainer'])
-        st.dataframe(stats[['練馬師', '總出賽', '勝出', '勝率']].head(20), use_container_width=True)
-        st.success(f"✅ 成功計算！共 {len(stats)} 位練馬師")
-    except Exception as e:
-        st.error(f"讀取數據失敗: {e}")
-def admin_monthly_report():
-    st.subheader("📅 每月命中率報告")
-    st.info("此功能需要預測記錄對比，暫未開放。")
 def admin_finance():
     st.subheader("💰 財務管理")
     finance = load_finance()
+    total_income = finance.get('total_income', 0)
+    monthly = finance.get('monthly_income', 0)
+    yearly = finance.get('yearly_income', 0)
     col1, col2, col3 = st.columns(3)
-    col1.metric("總收入", f"${finance.get('total_income', 0):.2f}")
-    col2.metric("本月收入", f"${finance.get('monthly_income', 0):.2f}")
-    col3.metric("今年收入", f"${finance.get('yearly_income', 0):.2f}")
+    col1.metric("總收入 (HKD)", f"${total_income:.2f}")
+    col2.metric("本月收入 (HKD)", f"${monthly:.2f}")
+    col3.metric("今年收入 (HKD)", f"${yearly:.2f}")
+    with st.expander("➕ 新增收入記錄"):
+        amount = st.number_input("金額", min_value=0.0, step=10.0, key="finance_amount")
+        desc = st.text_input("描述", key="finance_desc")
+        if st.button("記錄", key="add_finance"):
+            finance['total_income'] = finance.get('total_income', 0) + amount
+            finance['monthly_income'] = finance.get('monthly_income', 0) + amount
+            finance['yearly_income'] = finance.get('yearly_income', 0) + amount
+            save_finance(finance)
+            log_admin_action(st.session_state.username, f"新增收入 {amount} - {desc}")
+            st.success("✅ 已記錄")
+            st.rerun()
 
 def admin_promo_codes():
     st.subheader("🎟️ 優惠碼管理")
     promos = load_promos()
-    col_stat1, col_stat2, col_stat3 = st.columns(3)
-    total = len(promos)
-    used = sum(1 for p in promos.values() if p.get('used', False))
-    col_stat1.metric("📊 總優惠碼", total)
-    col_stat2.metric("✅ 已使用", used)
-    col_stat3.metric("🎁 可使用", total - used)
-    st.divider()
     col1, col2 = st.columns(2)
     with col1:
-        st.write("### 📋 現有優惠碼")
+        st.write("現有優惠碼")
         if promos:
-            display_data = []
-            for code, data in promos.items():
-                expiry = data.get('expiry', '')
-                try:
-                    expiry_str = datetime.fromisoformat(expiry).strftime('%Y-%m-%d')
-                    is_expired = datetime.fromisoformat(expiry) < datetime.now()
-                except:
-                    expiry_str = expiry
-                    is_expired = False
-                discount_type = data.get('discount_type', 'percentage')
-                discount_value = data.get('discount_value', 0)
-                if discount_type == 'percentage': discount_text = f"{discount_value}%"
-                elif discount_type == 'fixed': discount_text = f"減${discount_value}"
-                elif discount_type == 'free': discount_text = "全免"
-                else: discount_text = str(discount_value)
-                status = "✅ 已使用" if data.get('used', False) else ("🔴 已過期" if is_expired else "🟢 可使用")
-                display_data.append({"優惠碼": code, "折扣": discount_text, "狀態": status, "使用用戶": data.get('used_by', '-') or '-', "來源": data.get('source', '-'), "到期日": expiry_str})
-            st.dataframe(pd.DataFrame(display_data), use_container_width=True, hide_index=True)
+            df = pd.DataFrame.from_dict(promos, orient='index')
+            if 'discount_type' not in df.columns:
+                df['discount_type'] = 'percentage'
+            if 'discount_value' not in df.columns:
+                df['discount_value'] = 0
+            st.dataframe(df, use_container_width=True)
         else:
             st.info("暫無優惠碼")
     with col2:
-        st.write("### ➕ 產生新優惠碼")
-        with st.form(key="gen_promo_form"):
-            duration = st.number_input("有效期 (天)", min_value=1, value=30, key="promo_duration")
-            discount_type = st.selectbox("折扣類型", ["percentage", "fixed", "free"], key="promo_discount_type",
-                                         format_func=lambda x: {"percentage": "百分比", "fixed": "固定金額", "free": "完全免費"}.get(x, x))
-            if discount_type == 'percentage':
-                discount_value = st.number_input("折扣百分比", min_value=1, max_value=100, value=20, key="promo_discount_value")
-            elif discount_type == 'fixed':
-                discount_value = st.number_input("減免金額", min_value=1, value=20, key="promo_discount_value")
+        st.write("產生新優惠碼")
+        duration = st.number_input("有效期 (天)", min_value=1, value=30, key="promo_duration")
+        discount_type = st.selectbox("折扣類型", ["percentage", "fixed", "free"], key="promo_discount_type",
+                                     format_func=lambda x: {"percentage": "百分比（%折扣）", "fixed": "固定金額（減$）", "free": "完全免費"}.get(x, x))
+        discount_value = st.number_input("折扣數值", min_value=0, value=20, key="promo_discount_value",
+                                         help="百分比：20 = 8折（減20%）；固定金額：減指定金額；免費：無效")
+        if st.button("產生優惠碼", key="gen_promo"):
+            code = generate_promo_code()
+            expiry = (datetime.now() + timedelta(days=duration)).isoformat()
+            promos[code] = {
+                "used": False,
+                "expiry": expiry,
+                "created_at": datetime.now().isoformat(),
+                "discount_type": discount_type,
+                "discount_value": discount_value
+            }
+            save_promos(promos)
+            st.success(f"✅ 優惠碼已產生：`{code}` 有效期 {duration} 天")
+            st.rerun()
+        st.write("---")
+        st.write("套用優惠碼")
+        code_input = st.text_input("優惠碼", key="apply_promo_code")
+        username_input = st.text_input("用戶名稱", key="apply_promo_user")
+        if st.button("套用", key="apply_promo"):
+            if code_input not in promos:
+                st.error("優惠碼不存在")
+            elif promos[code_input].get('used', False):
+                st.error("優惠碼已被使用")
             else:
-                discount_value = 0
-            if st.form_submit_button("🎁 產生優惠碼", type="primary"):
-                code = generate_promo_code().upper()
-                expiry = (datetime.now() + timedelta(days=duration)).isoformat()
-                promos[code] = {"used": False, "expiry": expiry, "created_at": datetime.now().isoformat(), "discount_type": discount_type, "discount_value": discount_value, "used_by": None, "source": "手動產生"}
-                save_promos(promos)
-                st.success(f"✅ 優惠碼：`{code}`")
-                st.rerun()
+                users = load_users()
+                if username_input not in users:
+                    st.error("用戶不存在")
+                else:
+                    users[username_input]['is_paid'] = True
+                    users[username_input]['group'] = 'paid'
+                    users[username_input]['predictions_limit'] = -1
+                    promos[code_input]['used'] = True
+                    promos[code_input]['used_by'] = username_input
+                    save_users(users)
+                    save_promos(promos)
+                    log_admin_action(st.session_state.username, f"套用優惠碼 {code_input} 給 {username_input}")
+                    st.success("✅ 已升級用戶")
+                    st.rerun()
 
 def admin_accuracy_monitor():
     st.subheader("📈 預測準確率監控")
     acc = load_accuracy()
     records = acc.get('records', [])
     if not records:
-        st.info("暫時未有預測記錄")
+        st.info("暫時未有預測記錄，未能進行監控。")
         return
-    total = len(records)
-    hit = sum(1 for r in records if r.get('is_hit') is True)
+    try:
+        results_df = pd.read_csv('race_results_clean.csv', encoding='utf-8-sig')
+        if 'race_date' not in results_df.columns or 'race_no' not in results_df.columns or 'horse_name' not in results_df.columns or 'finish_position' not in results_df.columns:
+            st.warning("race_results_clean.csv 缺少必要欄位")
+            results_df = pd.DataFrame()
+        else:
+            results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
+            results_df = results_df.dropna(subset=['race_date'])
+            for rec in records:
+                if rec.get('actual_result') is not None:
+                    continue
+                date_str = rec.get('date')
+                race_no = rec.get('race')
+                horse = rec.get('horse')
+                if not date_str or not race_no or not horse:
+                    continue
+                matched = results_df[(results_df['race_date'].dt.strftime('%Y-%m-%d') == date_str) &
+                                     (results_df['race_no'] == race_no) &
+                                     (results_df['horse_name'] == horse)]
+                if not matched.empty:
+                    pos = matched.iloc[0]['finish_position']
+                    rec['actual_result'] = int(pos) if pd.notna(pos) else None
+                    rec['is_hit'] = (rec['actual_result'] == 1) if rec['actual_result'] is not None else None
+            save_accuracy(acc)
+            st.success("✅ 已自動比對賽果")
+    except Exception as e:
+        st.error(f"自動比對失敗：{e}")
+    
+    # 其餘顯示統計圖表嘅 code 保持不變
+    df_records = pd.DataFrame(records)
+    if df_records.empty:
+        return
+    # ... (後面嘅統計顯示同之前一樣)
+    df_records = pd.DataFrame(records)
+    if df_records.empty:
+        return
+    total = len(df_records)
+    hit = df_records[df_records['is_hit'] == True].shape[0] if 'is_hit' in df_records else 0
     hit_rate = hit/total if total>0 else 0
+    roi = (hit * 400 - total * 100) / (total * 100) if total>0 else 0
     col1, col2, col3 = st.columns(3)
     col1.metric("總預測記錄", total)
     col2.metric("命中次數", hit)
     col3.metric("命中率", f"{hit_rate:.2%}")
+    st.metric("ROI (模擬)", f"{roi:.2%}")
+    if 'date' in df_records:
+        df_records['date'] = pd.to_datetime(df_records['date'])
+        daily = df_records.groupby(df_records['date'].dt.date).agg(
+            total=('is_hit', 'count'),
+            hit=('is_hit', lambda x: (x==True).sum())
+        ).reset_index()
+        daily['hit_rate'] = daily['hit'] / daily['total']
+        fig = px.line(daily, x='date', y='hit_rate', title='每日命中率趨勢')
+        st.plotly_chart(fig, use_container_width=True)
+    with st.expander("📋 查看所有記錄"):
+        st.dataframe(df_records, use_container_width=True)
+    st.divider()
+    st.subheader("🔧 管理員操作")
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        if st.button("🔄 比對賽果 + 更新統計", key="admin_update_analysis", use_container_width=True):
+            with st.spinner("正在比對賽果..."):
+                updated, msg = update_accuracy_with_results()
+                if updated > 0:
+                    st.success(f"✅ {msg}")
+                    st.rerun()
+                else:
+                    st.info(f"📭 {msg}")
+    with col_btn2:
+        if st.button("⚖️ 自動調整權重", key="admin_adjust_weights", use_container_width=True):
+            with st.spinner("正在計算最佳權重..."):
+                result = adjust_model_weights()
+                st.success(f"✅ 權重已調整：XGBoost = {result['xgb_weight']}, CatBoost = {result['cat_weight']}（命中率 {result['hit_rate']:.2%}，共 {result['total']} 場）")
+                st.rerun()
+    st.caption("🔒 此操作僅限管理員使用，會影響系統預測權重")
 
 def admin_subscription():
-    st.subheader("⏰ 訂閱管理")
-    
-    # ===== 1. 讀取用戶資料 =====
-    try:
-        with open("users.json", "r", encoding="utf-8") as f:
-            users = json.load(f)
-    except FileNotFoundError:
-        st.error("❌ 搵唔到 users.json")
-        return
-    except Exception as e:
-        st.error(f"❌ 讀取失敗: {e}")
-        return
-    
-    # ===== 2. 篩選出所有付費用戶（VIP / paid） =====
-    paid_users = []
-    for username, info in users.items():
-        role = info.get("role", "free")
-        if role in ["VIP", "paid", "super_admin"]:
-            expiry = info.get("vip_expiry", "")
-            # 計算剩餘天數
-            days_left = "永久"
-            if expiry:
-                try:
-                    exp_date = datetime.strptime(expiry, "%Y-%m-%d").date()
-                    delta = (exp_date - datetime.now().date()).days
-                    days_left = f"{delta} 天" if delta > 0 else "已過期"
-                except Exception:
-                    days_left = "格式錯誤"
-            
-            paid_users.append({
-                "用戶名": username,
-                "角色": role,
-                "到期日": expiry if expiry else "無",
-                "剩餘": days_left,
-                "註冊日": info.get("register_date", "無"),
-            })
-    
-    # ===== 3. 統計 =====
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("📊 付費用戶總數", len(paid_users))
-    with col2:
-        vip_count = sum(1 for u in paid_users if u["角色"] == "VIP")
-        st.metric("👑 VIP 數量", vip_count)
-    with col3:
-        expired_count = sum(1 for u in paid_users if u["剩餘"] == "已過期")
-        st.metric("⚠️ 已過期", expired_count)
-    
-    st.divider()
-    
-    # ===== 4. 顯示所有付費用戶 =====
+    st.subheader("⏰ 訂閱管理 & 到期提醒")
+    users = load_users()
+    paid_users = {u: data for u, data in users.items() if data.get('is_paid', False) or data.get('group') in ['VIP', 'super_admin']}
     if not paid_users:
-        st.info("暫無付費用戶。")
-        return
-    
-    st.markdown("### 📋 付費用戶清單")
-    df_paid = pd.DataFrame(paid_users)
-    st.dataframe(df_paid, use_container_width=True, hide_index=True)
-    
-    st.divider()
-    
-    # ===== 5. 管理操作 =====
-    st.markdown("### ⚙️ 管理操作")
-    
-    # 選擇要操作嘅用戶
-    all_usernames = [u["用戶名"] for u in paid_users]
-    selected_user = st.selectbox("選擇用戶", all_usernames, key="sub_mgmt_user")
-    
-    if selected_user:
-        user_info = users[selected_user]
-        current_expiry = user_info.get("vip_expiry", "")
-        
-        st.info(f"**{selected_user}** 當前到期日：`{current_expiry if current_expiry else '未設定'}`")
-        
-        col_a, col_b, col_c, col_d = st.columns(4)
-        
-        with col_a:
-            if st.button("➕ 加 7 日", use_container_width=True, key="add_7"):
-                new_expiry = _add_days_to_expiry(current_expiry, 7)
-                users[selected_user]["vip_expiry"] = new_expiry
-                users[selected_user]["role"] = "VIP"
-                with open("users.json", "w", encoding="utf-8") as f:
-                    json.dump(users, f, ensure_ascii=False, indent=2)
-                st.success(f"✅ 已加 7 日，新到期日：{new_expiry}")
-                st.rerun()
-        
-        with col_b:
-            if st.button("➕ 加 30 日", use_container_width=True, key="add_30"):
-                new_expiry = _add_days_to_expiry(current_expiry, 30)
-                users[selected_user]["vip_expiry"] = new_expiry
-                users[selected_user]["role"] = "VIP"
-                with open("users.json", "w", encoding="utf-8") as f:
-                    json.dump(users, f, ensure_ascii=False, indent=2)
-                st.success(f"✅ 已加 30 日，新到期日：{new_expiry}")
-                st.rerun()
-        
-        with col_c:
-            if st.button("➕ 加 90 日", use_container_width=True, key="add_90"):
-                new_expiry = _add_days_to_expiry(current_expiry, 90)
-                users[selected_user]["vip_expiry"] = new_expiry
-                users[selected_user]["role"] = "VIP"
-                with open("users.json", "w", encoding="utf-8") as f:
-                    json.dump(users, f, ensure_ascii=False, indent=2)
-                st.success(f"✅ 已加 90 日，新到期日：{new_expiry}")
-                st.rerun()
-        
-        with col_d:
-            if st.button("❌ 取消 VIP", use_container_width=True, key="cancel_vip"):
-                users[selected_user]["role"] = "free"
-                users[selected_user]["vip_expiry"] = ""
-                with open("users.json", "w", encoding="utf-8") as f:
-                    json.dump(users, f, ensure_ascii=False, indent=2)
-                st.warning(f"⚠️ 已取消 {selected_user} 嘅 VIP")
-                st.rerun()
-    
-    st.divider()
-    
-    # ===== 6. 自動過期檢查 =====
-    st.markdown("### 🔄 自動過期檢查")
-    st.caption("檢查所有已過期嘅 VIP，自動降返做免費用戶。")
-    
-    if st.button("🔍 立即檢查過期用戶", use_container_width=True, key="check_expired"):
-        expired_list = []
-        today = datetime.now().date()
-        for username, info in users.items():
-            if info.get("role") == "VIP" and info.get("vip_expiry"):
-                try:
-                    exp_date = datetime.strptime(info["vip_expiry"], "%Y-%m-%d").date()
-                    if exp_date < today:
-                        expired_list.append(username)
-                except Exception:
-                    pass
-        
-        if expired_list:
-            for u in expired_list:
-                users[u]["role"] = "free"
-                users[u]["vip_expiry"] = ""
-            with open("users.json", "w", encoding="utf-8") as f:
-                json.dump(users, f, ensure_ascii=False, indent=2)
-            st.success(f"✅ 已自動降級 {len(expired_list)} 位過期用戶：{', '.join(expired_list)}")
-            st.rerun()
-        else:
-            st.info("✅ 冇發現過期用戶。")
-
-
-def _add_days_to_expiry(current_expiry, days):
-    """輔助函數：喺現有到期日上加天數，如果已過期就由今日開始計"""
-    today = datetime.now().date()
-    if current_expiry:
-        try:
-            base = datetime.strptime(current_expiry, "%Y-%m-%d").date()
-            if base < today:
-                base = today
-        except Exception:
-            base = today
+        st.info("暫時沒有付費用戶")
     else:
-        base = today
-    new_date = base + timedelta(days=days)
-    return new_date.strftime("%Y-%m-%d")
+        df_paid = pd.DataFrame.from_dict(paid_users, orient='index')
+        required_cols = ['is_paid', 'group', 'plan', 'paid_date', 'expiry_date']
+        for col in required_cols:
+            if col not in df_paid.columns:
+                df_paid[col] = None
+        df_paid['expiry_date'] = pd.to_datetime(df_paid['expiry_date'], errors='coerce')
+        today = datetime.now()
+        df_paid['days_left'] = (df_paid['expiry_date'] - today).dt.days
+        df_paid['status'] = df_paid['days_left'].apply(lambda x: '🟢 有效' if x > 7 else ('🟡 快到期' if x > 0 else '🔴 已過期') if pd.notna(x) else '⚪ 未設定')
+        display_cols = ['is_paid', 'group', 'plan', 'paid_date', 'expiry_date', 'days_left', 'status']
+        st.dataframe(df_paid[display_cols], use_container_width=True)
+    auto = load_json(AUTOMATION_FILE)
+    remind_days = auto.get('remind_days', 3)
+    new_remind = st.number_input("提前幾天提醒", min_value=1, value=remind_days, key="remind_days_sub")
+    if st.button("儲存提醒設定", key="save_remind_sub"):
+        auto['remind_days'] = new_remind
+        save_json(AUTOMATION_FILE, auto)
+        st.success(f"✅ 已設為提前 {new_remind} 天提醒")
+        log_admin_action(st.session_state.username, f"設定提醒天數為 {new_remind}")
+    st.divider()
+    st.subheader("⏰ 自動終止過期會員")
+    if st.button("🔍 檢查並終止過期會員", key="check_expired"):
+        users = load_users()
+        today = datetime.now()
+        expired = []
+        for uid, u in users.items():
+            if u.get('group') == 'VIP' and u.get('expiry_date'):
+                try:
+                    exp = pd.to_datetime(u['expiry_date'])
+                    if exp < today:
+                        u['group'] = 'free'
+                        u['is_paid'] = False
+                        u['predictions_limit'] = CONFIG["free_limit"]
+                        u['plan'] = None
+                        u['note'] = (u.get('note', '') + f' [於 {today.strftime("%Y-%m-%d")} 自動降級]').strip()
+                        expired.append(uid)
+                except Exception as e:
+                    st.warning(f"⚠️ 檢查 {uid} 時出錯：{e}")
+        if expired:
+            save_users(users)
+            st.success(f"✅ 已將 {len(expired)} 個過期會員降級：{', '.join(expired)}")
+            log_admin_action(st.session_state.username, f"自動終止過期會員：{', '.join(expired)}")
+        else:
+            st.info("✅ 目前沒有過期會員")
+    st.subheader("✏️ 手動續期")
+    username = st.selectbox("選擇用戶", list(users.keys()), key="renew_user_select")
+    if username:
+        new_expiry = st.date_input("新的到期日", value=pd.to_datetime(datetime.now() + timedelta(days=30)), key="renew_date")
+        if st.button("確認續期", key="renew_confirm"):
+            users[username]['expiry_date'] = new_expiry.strftime('%Y-%m-%d %H:%M:%S')
+            save_users(users)
+            log_admin_action(st.session_state.username, f"續期用戶 {username} 至 {new_expiry}")
+            st.success(f"✅ {username} 已續期至 {new_expiry}")
+            st.rerun()
 
-def admin_payment_review():
-    st.subheader("📤 付款審核")
-    pending = get_all_pending_requests()
-    if not pending:
-        st.info("✅ 目前沒有待審核嘅付款申請")
-        return
-    for item in pending:
-        username = item['username']
-        req = item['request']
-        with st.container():
-            cols = st.columns([2, 2, 1.5, 1.5, 2])
-            with cols[0]: st.write(f"👤 **{username}**")
-            with cols[1]:
-                st.write(f"📌 {req.get('plan_name', '未知')}")
-                st.write(f"💰 ${req.get('final_price', 0):.2f}")
-                if req.get('promo_code'): st.caption(f"🎟️ {req.get('promo_code')}")
-            with cols[2]: st.caption(req.get('submitted_at', '')[:16])
-            with cols[3]: st.warning("⏳ 待審核")
-            with cols[4]:
-                if st.button("✅ 批准", key=f"approve_{req.get('id')}"):
-                    success, msg = approve_payment_request(username, req['id'], st.session_state.username)
-                    if success: st.success(msg); st.rerun()
-                    else: st.error(msg)
-                if st.button("❌ 拒絕", key=f"reject_{req.get('id')}"):
-                    success, msg = reject_payment_request(username, req['id'], st.session_state.username)
-                    if success: st.warning(msg); st.rerun()
-            st.divider()
-
-def admin_monitoring(): st.subheader("📡 系統監控"); st.info("系統正常")
+def admin_monitoring():
+    st.subheader("📡 系統監控")
+    files = ['ALL_DATA_MERGED.csv', 'HKCJ_FULL_YEAR_DATA.csv', 'horse_name_mapping.csv',
+             'hk_racing_model.pkl', 'hk_catboost_model.cbm', 'hk_ranking_model.pkl']
+    for f in files:
+        if os.path.exists(f):
+            size = os.path.getsize(f)/1024
+            st.success(f"✅ {f} 存在 ({size:.1f} KB)")
+        else:
+            st.error(f"❌ {f} 不存在")
+    logs = load_logs()
+    if logs.get('logs'):
+        df_log = pd.DataFrame(logs['logs'][-20:])
+        st.dataframe(df_log, use_container_width=True)
 
 def admin_content():
     st.subheader("📝 內容管理")
+    content = load_json(CONTENT_FILE)
+    with st.expander("📢 發佈新公告", expanded=False):
+        col1, col2 = st.columns(2)
+        with col1:
+            title = st.text_input("公告標題", placeholder="例如：今日沙田日馬", key="ann_title")
+            content_text = st.text_area("公告內容", height=80, placeholder="輸入公告詳細內容...", key="ann_content")
+        with col2:
+            ann_type = st.selectbox("公告類型", ["一般", "重要", "緊急"], key="ann_type")
+            target_group = st.selectbox("顯示對象", ["全部用戶", "免費用戶", "付費用戶", "VIP"], key="ann_target")
+            start_date = st.date_input("開始日期", value=datetime.now().date(), key="ann_start")
+            end_date = st.date_input("結束日期（留空 = 永久）", value=None, key="ann_end")
+        if st.button("📤 發佈公告", type="primary", key="publish_ann"):
+            if not title or not content_text:
+                st.warning("請填寫標題同內容")
+            else:
+                if 'announcements' not in content:
+                    content['announcements'] = []
+                new_ann = {
+                    "id": len(content['announcements']) + 1,
+                    "title": title,
+                    "content": content_text,
+                    "type": ann_type,
+                    "target": target_group,
+                    "start_date": start_date.strftime('%Y-%m-%d'),
+                    "end_date": end_date.strftime('%Y-%m-%d') if end_date else None,
+                    "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    "status": "active"
+                }
+                content['announcements'].append(new_ann)
+                save_json(CONTENT_FILE, content)
+                log_admin_action(st.session_state.username, f"發佈公告：{title}")
+                st.success("✅ 公告已發佈！")
+                st.rerun()
+    st.subheader("📋 現有公告")
+    announcements = content.get('announcements', [])
+    today = datetime.now().date()
+    for ann in announcements:
+        if ann.get('status') == 'active' and ann.get('end_date'):
+            end = datetime.strptime(ann['end_date'], '%Y-%m-%d').date()
+            if end < today:
+                ann['status'] = 'expired'
+    save_json(CONTENT_FILE, content)
+    content = load_json(CONTENT_FILE)
+    active_anns = [a for a in content.get('announcements', []) if a.get('status') == 'active']
+    if active_anns:
+        for ann in active_anns:
+            type_icon = {"一般": "💡", "重要": "⚠️", "緊急": "🚨"}.get(ann.get('type', '一般'), "💡")
+            target_label = ann.get('target', '全部用戶')
+            end_display = "永久" if ann.get('end_date') is None else ann.get('end_date')
+            col1, col2, col3 = st.columns([5, 3, 1])
+            with col1:
+                st.markdown(f"**{type_icon} {ann.get('title', '無標題')}**")
+                st.caption(ann.get('content', ''))
+            with col2:
+                st.write(f"🎯 {target_label}")
+                st.write(f"📅 {ann.get('start_date', '')} → {end_display}")
+            with col3:
+                if st.button("🗑️ 刪除", key=f"del_ann_{ann.get('id')}"):
+                    ann['status'] = 'deleted'
+                    save_json(CONTENT_FILE, content)
+                    st.rerun()
+            st.divider()
+    else:
+        st.info("暫時冇生效中嘅公告")
+    with st.expander("📋 公告歷史（已過期/已刪除）"):
+        inactive = [a for a in content.get('announcements', []) if a.get('status') in ['expired', 'deleted']]
+        if inactive:
+            df = pd.DataFrame(inactive)
+            st.dataframe(df[['id', 'title', 'type', 'target', 'start_date', 'end_date', 'status', 'created_at']], use_container_width=True)
+        else:
+            st.info("暫無歷史記錄")
+    st.write("---")
+    st.write("上傳排位表")
     uploaded = st.file_uploader("選擇 CSV 排位表", type=['csv'], key="upload_racecard")
     if uploaded:
-        with open('racecard_uploaded.csv', 'wb') as f:
+        with open('HKCJ_FULL_YEAR_DATA.csv', 'wb') as f:
             f.write(uploaded.getbuffer())
         st.success("✅ 排位表已更新")
 
 def admin_automation():
     st.subheader("🤖 自動化工具")
-    st.caption("呢度可以手動觸發自動化任務，唔使等 GitHub Actions 排程。")
-    
-    # 初始化 session state 儲存結果
-    if "automation_log" not in st.session_state:
-        st.session_state.automation_log = {}
-    
-    st.divider()
-    
-    # ===== 任務清單 =====
-    tasks = [
-        {
-            "name": "📊 更新賽果數據",
-            "desc": "爬取最新賽果，更新 race_results_clean.csv",
-            "script": "fetch_results_2lang.py",
-            "args": []
-        },
-        {
-            "name": "📋 更新排位表",
-            "desc": "爬取最新排位表同賠率，更新 racecard_full.csv",
-            "script": "fetch_racecard_2lang.py",
-            "args": []
-        },
-        {
-            "name": "🎯 更新 AI 命中率",
-            "desc": "比對 AI 預測 vs 真實賽果，更新 accuracy.json",
-            "script": "update_ai_accuracy.py",
-            "args": []
-        },
-        {
-            "name": "🧠 重新訓練 AI 模型",
-            "desc": "重新訓練 XGBoost + CatBoost 模型（需時較長）",
-            "script": "train_models.py",
-            "args": []
-        },
-        {
-            "name": "🧹 自動維護",
-            "desc": "清理過期數據、更新用戶等級、發放每日虛擬幣",
-            "script": "auto_maintenance.py",
-            "args": []
-        }
-    ]
-    
-    # ===== 逐個任務顯示 =====
-    for i, task in enumerate(tasks):
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            st.markdown(f"**{task['name']}**")
-            st.caption(task['desc'])
-        with col2:
-            if st.button("▶️ 執行", key=f"run_task_{i}", use_container_width=True):
-                with st.spinner(f"正在執行 {task['name']}..."):
-                    import subprocess
-                    import os
-                    script_path = task["script"]
-                    
-                    # 檢查檔案是否存在
-                    if not os.path.exists(script_path):
-                        st.session_state.automation_log[task['name']] = (
-                            "error",
-                            f"❌ 搵唔到 `{script_path}`，請確認檔案已上傳到 GitHub。"
-                        )
-                    else:
-                        try:
-                            result = subprocess.run(
-                                ["python", script_path] + task["args"],
-                                capture_output=True,
-                                text=True,
-                                timeout=300  # 最長 5 分鐘
-                            )
-                            if result.returncode == 0:
-                                st.session_state.automation_log[task['name']] = (
-                                    "success",
-                                    f"✅ 執行成功！\n\n```\n{result.stdout[-1500:]}\n```"
-                                )
-                            else:
-                                st.session_state.automation_log[task['name']] = (
-                                    "error",
-                                    f"❌ 執行失敗（returncode={result.returncode}）\n\n```\n{result.stderr[-1500:]}\n```"
-                                )
-                        except subprocess.TimeoutExpired:
-                            st.session_state.automation_log[task['name']] = (
-                                "error",
-                                "⏰ 執行超時（超過 5 分鐘），請改為喺本地或 GitHub Actions 執行。"
-                            )
-                        except Exception as e:
-                            st.session_state.automation_log[task['name']] = (
-                                "error",
-                                f"❌ 發生錯誤：{e}"
-                            )
-                    st.rerun()
-        
-        # 顯示該任務嘅執行結果
-        if task['name'] in st.session_state.automation_log:
-            status, msg = st.session_state.automation_log[task['name']]
-            if status == "success":
-                st.success(msg)
-            else:
-                st.error(msg)
-        
-        st.divider()
-    
-    # ===== 一鍵執行全部 =====
-    st.markdown("### ⚡ 一鍵執行所有任務")
-    st.caption("依次執行：更新賽果 → 更新排位表 → 更新命中率（唔包括重新訓練模型）")
-    
-    if st.button("🚀 全部執行", use_container_width=True, key="run_all_tasks"):
-        st.warning("⚠️ 呢個操作需時較長，請耐心等候...")
-        # 呢度可以加入順序執行邏輯
-        st.info("建議逐個任務執行，方便睇到邊個出錯。")
-    
-    # ===== 清除日誌 =====
-    if st.button("🗑️ 清除執行日誌", use_container_width=True, key="clear_logs"):
-        st.session_state.automation_log = {}
-        st.success("✅ 已清除日誌！")
-        st.rerun()
+    auto = load_json(AUTOMATION_FILE)
+    days = st.number_input(
+        "提前幾天提醒",
+        min_value=1,
+        value=auto.get('remind_days', 3),
+        key="remind_days_auto"
+    )
+    if st.button("儲存設定", key="save_remind_auto"):
+        auto['remind_days'] = days
+        save_json(AUTOMATION_FILE, auto)
+        st.success("✅ 已儲存")
 
 def admin_security():
     st.subheader("🔐 安全與權限")
+    st.write("操作日誌")
     logs = load_logs()
     if logs.get('logs'):
-        st.dataframe(pd.DataFrame(logs['logs'][-20:]), use_container_width=True)
-
-def admin_user_monitor():
-    st.subheader("👁️ 用戶監控")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        users = load_users()
-        user_list = ["全部用戶"] + list(users.keys())
-        selected_user = st.selectbox("👤 篩選用戶", user_list, key="monitor_user")
-    with col2:
-        days = st.selectbox("📅 最近日數", [1, 7, 14, 30, 90, 365], index=3, key="monitor_days")
-    with col3:
-        action_options = {"全部動作": None, "🔑 登入": "login", "🔮 預測": "predict", "💳 付款申請": "payment_submit", "🎰 抽獎": "lottery", "🛍️ 購買": "purchase", "🚪 登出": "logout"}
-        selected_action_label = st.selectbox("🎯 篩選動作", list(action_options.keys()), key="monitor_action")
-        selected_action = action_options[selected_action_label]
-    username = None if selected_user == "全部用戶" else selected_user
-    logs = get_user_activity_logs(username, days, selected_action)
-    if not logs:
-        st.info("📭 沒有符合條件嘅活動記錄")
-        return
-    df = pd.DataFrame(logs)
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
-    df = df.sort_values('timestamp', ascending=False)
-    st.dataframe(df[['timestamp', 'username', 'action', 'details']], use_container_width=True, hide_index=True)
-
-def admin_lottery_config():
-    st.subheader("🎰 抽獎設定")
-    config = load_lottery_config()
-    st.markdown("### ⚙️ 全局設定")
-    with st.form(key="lottery_global_form"):
-        col1, col2, col3 = st.columns(3)
-        with col1: enabled = st.checkbox("開啟抽獎", value=config.get('enabled', True))
-        with col2: draws_per_day = st.number_input("每日抽獎次數", min_value=1, max_value=10, value=config.get('draws_per_day', 1), step=1)
-        with col3: allow_admin_gift = st.checkbox("允許管理員贈送", value=config.get('allow_admin_gift', True))
-        if st.form_submit_button("💾 儲存全局設定", type="primary"):
-            config['enabled'] = enabled
-            config['draws_per_day'] = draws_per_day
-            config['allow_admin_gift'] = allow_admin_gift
-            if save_lottery_config(config): st.success("✅ 已儲存"); st.rerun()
-    st.divider()
-    st.markdown("### 🎯 獎品機率管理")
-    prizes = config.get('prizes', [])
-    if not prizes: st.info("暫無獎品"); return
-    total_weight = sum(p.get('weight', 1) for p in prizes)
-    prob_data = []
-    for p in prizes:
-        weight = p.get('weight', 1)
-        prob = (weight / total_weight * 100) if total_weight > 0 else 0
-        stock = p.get('stock', -1)
-        prob_data.append({"ID": p.get('id'), "圖示": p.get('icon', '🎁'), "獎品": p.get('name', ''), "權重": weight, "機率": f"{prob:.2f}%", "庫存": "∞" if stock == -1 else str(stock)})
-    st.dataframe(pd.DataFrame(prob_data), use_container_width=True, hide_index=True)
-    fig = px.pie(pd.DataFrame(prob_data), names='獎品', values='權重', title='獎品中獎機率分佈')
-    st.plotly_chart(fig, use_container_width=True)
-    st.markdown("#### ✏️ 快速調整機率")
-    with st.form(key="quick_weight_form"):
-        new_weights = {}
-        cols = st.columns(min(len(prizes), 3))
-        for idx, p in enumerate(prizes):
-            col_idx = idx % 3
-            with cols[col_idx]:
-                st.markdown(f"**{p.get('icon', '🎁')} {p.get('name', '')}**")
-                new_w = st.number_input(f"權重", min_value=0, max_value=1000, value=int(p.get('weight', 1)), step=1, key=f"weight_input_{p.get('id')}")
-                new_weights[p.get('id')] = new_w
-        st.markdown("---")
-        preview_total = sum(new_weights.values())
-        if preview_total > 0:
-            preview_data = []
-            for p in prizes:
-                w = new_weights.get(p.get('id'), 0)
-                prob = (w / preview_total * 100) if preview_total > 0 else 0
-                preview_data.append({"獎品": f"{p.get('icon', '🎁')} {p.get('name', '')}", "新權重": w, "新機率": f"{prob:.2f}%"})
-            st.dataframe(pd.DataFrame(preview_data), use_container_width=True, hide_index=True)
-        if st.form_submit_button("💾 儲存所有權重", type="primary"):
-            for p in prizes:
-                new_w = new_weights.get(p.get('id'))
-                if new_w is not None: p['weight'] = max(1, new_w)
-            config['prizes'] = prizes
-            if save_lottery_config(config): st.success("✅ 已儲存！"); st.rerun()
-    st.markdown("#### ⚡ 快速預設")
-    col_preset1, col_preset2, col_preset3 = st.columns(3)
-    with col_preset1:
-        if st.button("🎯 平均分佈", use_container_width=True, key="preset_even"):
-            for p in prizes: p['weight'] = 10
-            config['prizes'] = prizes
-            save_lottery_config(config)
+        df_log = pd.DataFrame(logs['logs'][-20:])
+        st.dataframe(df_log, use_container_width=True)
+    st.write("多管理員管理")
+    users = load_users()
+    admin_list = [u for u, d in users.items() if d.get('group') == 'super_admin']
+    st.write("現有超級管理員：", ", ".join(admin_list) if admin_list else "無")
+    new_admin = st.text_input("新增超級管理員用戶名", key="new_admin_name")
+    if st.button("設為超級管理員", key="add_admin"):
+        if new_admin in users:
+            users[new_admin]['group'] = 'super_admin'
+            users[new_admin]['is_admin'] = True
+            users[new_admin]['predictions_limit'] = -1
+            save_users(users)
+            log_admin_action(st.session_state.username, f"新增超級管理員 {new_admin}")
+            st.success(f"✅ {new_admin} 已設為超級管理員")
             st.rerun()
-    with col_preset2:
-        if st.button("💰 重金輕獎", use_container_width=True, key="preset_small"):
-            for p in prizes:
-                if p.get('type') == 'virtual_coin':
-                    val = p.get('value', 0)
-                    p['weight'] = 40 if val <= 200 else (15 if val <= 600 else 5)
-                else: p['weight'] = 10
-            config['prizes'] = prizes
-            save_lottery_config(config)
-            st.rerun()
-    with col_preset3:
-        if st.button("🎁 VIP 導向", use_container_width=True, key="preset_vip"):
-            for p in prizes:
-                if p.get('type') == 'vip_days': p['weight'] = 25
-                elif p.get('type') == 'free_predictions': p['weight'] = 20
-                elif p.get('type') == 'virtual_coin': p['weight'] = 8
-                else: p['weight'] = 10
-            config['prizes'] = prizes
-            save_lottery_config(config)
-            st.rerun()
-    st.divider()
-    st.markdown("### 🎁 獎品管理")
-    with st.expander("➕ 新增獎品", expanded=False):
-        with st.form(key="add_prize_form"):
-            col1, col2 = st.columns(2)
-            with col1:
-                prize_name = st.text_input("獎品名稱", key="new_prize_name")
-                prize_type = st.selectbox("獎品類型", 
-                    ["virtual_coin", "vip_days", "free_predictions", "promo_code", "custom", "nothing"],
-                    format_func=lambda x: {
-                        "virtual_coin": "💰 虛擬幣", "vip_days": "👑 VIP 天數",
-                        "free_predictions": "🎯 免費預測次數", 
-                        "promo_code": "🎟️ 優惠碼（自動生成）",
-                        "custom": "🎁 自訂文字",
-                        "nothing": "😢 謝謝參與"
-                    }.get(x, x), key="new_prize_type")
-                
-                if prize_type == 'promo_code':
-                    st.markdown("**🎟️ 優惠碼設定：**")
-                    promo_discount_type = st.selectbox("折扣類型", 
-                        ["percentage", "fixed", "free"],
-                        format_func=lambda x: {"percentage": "百分比", "fixed": "固定金額", "free": "全免"}.get(x, x),
-                        key="new_prize_promo_type")
-                    if promo_discount_type == 'percentage':
-                        promo_discount_value = st.number_input("折扣百分比", min_value=1, max_value=100, value=20, key="new_prize_promo_value")
-                    elif promo_discount_type == 'fixed':
-                        promo_discount_value = st.number_input("減免金額", min_value=1, value=20, key="new_prize_promo_value")
-                    else:
-                        promo_discount_value = 0
-                    promo_valid_days = st.number_input("有效期（天）", min_value=1, value=7, key="new_prize_promo_days")
-                    prize_value = "auto"
-                else:
-                    prize_value = st.text_input("獎品數值", key="new_prize_value")
-                    promo_discount_type = None
-                    promo_discount_value = 0
-                    promo_valid_days = 0
-            with col2:
-                prize_weight = st.number_input("權重", min_value=1, value=10, step=1, key="new_prize_weight")
-                prize_stock = st.number_input("庫存（-1 = 無限）", min_value=-1, value=-1, step=1, key="new_prize_stock")
-                prize_icon = st.text_input("圖示", value="🎁", key="new_prize_icon")
-            if st.form_submit_button("✅ 新增", type="primary"):
-                if prize_name:
-                    if prize_type in ['virtual_coin', 'vip_days', 'free_predictions']:
-                        try: value = int(prize_value)
-                        except: st.error("數值必須係數字"); st.stop()
-                    elif prize_type == 'promo_code':
-                        value = "auto"
-                    else: value = prize_value
-                    new_id = max([p.get('id', 0) for p in prizes], default=0) + 1
-                    new_prize = {
-                        "id": new_id, "name": prize_name, "type": prize_type,
-                        "value": value, "weight": prize_weight,
-                        "stock": prize_stock, "icon": prize_icon
-                    }
-                    if prize_type == 'promo_code':
-                        new_prize['discount_type'] = promo_discount_type
-                        new_prize['discount_value'] = promo_discount_value
-                        new_prize['valid_days'] = promo_valid_days
-                    prizes.append(new_prize)
-                    config['prizes'] = prizes
-                    if save_lottery_config(config): st.success(f"✅ 已新增"); st.rerun()
-    with st.expander("✏️ 編輯 / 刪除獎品", expanded=False):
-        prize_options = {f"[{p.get('id')}] {p.get('name')}": p for p in prizes}
-        selected_label = st.selectbox("選擇獎品", list(prize_options.keys()), key="edit_prize_select")
-        selected_prize = prize_options[selected_label]
-        col_e1, col_e2 = st.columns(2)
-        with col_e1:
-            new_weight = st.number_input("新權重", min_value=1, value=int(selected_prize.get('weight', 1)), key="edit_prize_weight")
-            new_stock = st.number_input("新庫存", min_value=-1, value=int(selected_prize.get('stock', -1)), key="edit_prize_stock")
-        with col_e2:
-            new_name = st.text_input("新名稱", value=selected_prize.get('name', ''), key="edit_prize_name")
-            new_icon = st.text_input("新圖示", value=selected_prize.get('icon', '🎁'), key="edit_prize_icon")
-        col_btn1, col_btn2 = st.columns(2)
-        with col_btn1:
-            if st.button("💾 儲存", use_container_width=True, key="save_prize_edit"):
-                for p in prizes:
-                    if p.get('id') == selected_prize.get('id'):
-                        p['weight'] = new_weight
-                        p['stock'] = new_stock
-                        p['name'] = new_name
-                        p['icon'] = new_icon
-                        break
-                config['prizes'] = prizes
-                if save_lottery_config(config): st.success("✅ 已更新"); st.rerun()
-        with col_btn2:
-            if st.button("🗑️ 刪除", use_container_width=True, key="delete_prize"):
-                prizes = [p for p in prizes if p.get('id') != selected_prize.get('id')]
-                config['prizes'] = prizes
-                if save_lottery_config(config): st.success("✅ 已刪除"); st.rerun()
-    st.divider()
-    if config.get('allow_admin_gift', True):
-        st.markdown("### 🎁 管理員贈送獎品")
-        if prizes:
-            with st.form(key="admin_gift_prize_form"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    users = load_users()
-                    target_user = st.selectbox("選擇用戶", list(users.keys()), key="gift_prize_user")
-                with col2:
-                    gift_prize_label = st.selectbox("選擇獎品", [f"{p.get('icon', '🎁')} {p.get('name', '')}" for p in prizes], key="gift_prize_select")
-                if st.form_submit_button("🎁 確認贈送", type="primary"):
-                    selected_idx = [f"{p.get('icon', '🎁')} {p.get('name', '')}" for p in prizes].index(gift_prize_label)
-                    gift_prize = prizes[selected_idx]
-                    success, msg = admin_gift_prize(st.session_state.username, target_user, gift_prize)
-                    if success: st.success(msg); st.balloons()
-                    else: st.error(msg)
-    st.divider()
-    st.markdown("### 📋 全部抽獎記錄")
-    records = load_lottery_records()
-    all_records = records.get('records', [])
-    if all_records:
-        df_all = pd.DataFrame(all_records[-100:][::-1])
-        display_cols = ['draw_time', 'username', 'prize_name', 'source']
-        available_cols = [c for c in display_cols if c in df_all.columns]
-        st.dataframe(df_all[available_cols], use_container_width=True)
-
-def admin_shop_config():
-    st.subheader("🛍️ 商城設定")
-    config = load_shop_config()
-
-    # ========== 全局設定 ==========
-    with st.form(key="shop_global_form"):
-        enabled = st.checkbox("開啟商城", value=config.get('enabled', True))
-        if st.form_submit_button("💾 儲存", type="primary"):
-            config['enabled'] = enabled
-            if save_shop_config(config):
-                st.success("✅ 已儲存")
-                st.rerun()
-
-    st.divider()
-
-    # ========== 商品列表（可直接編輯） ==========
-    st.markdown("### 🎁 商品列表（可直接編輯）")
-    st.caption("💡 直接喺表格入面改價錢、庫存、名稱，改完撳「💾 儲存所有變更」")
-
-    items = config.get('items', [])
-
-    if items:
-        df_edit = pd.DataFrame(items)
-        display_cols = ['id', 'icon', 'name', 'type', 'value', 'price', 'stock', 'desc']
-        available_cols = [c for c in display_cols if c in df_edit.columns]
-        df_display = df_edit[available_cols].copy()
-
-        edited_df = st.data_editor(
-            df_display,
-            use_container_width=True,
-            hide_index=True,
-            num_rows="fixed",
-            column_config={
-                "id": st.column_config.NumberColumn("ID", disabled=True, width="small"),
-                "icon": st.column_config.TextColumn("圖示", width="small"),
-                "name": st.column_config.TextColumn("名稱", width="medium"),
-                "type": st.column_config.SelectboxColumn(
-                    "類型",
-                    options=["predictions", "vip_days", "lottery_draws", "title", "mystery_box"],
-                    width="medium"
-                ),
-                "value": st.column_config.TextColumn("數值", width="small"),
-                "price": st.column_config.NumberColumn("價格（幣）", min_value=1, step=100, width="small"),
-                "stock": st.column_config.NumberColumn("庫存（-1=∞）", min_value=-1, step=1, width="small"),
-                "desc": st.column_config.TextColumn("描述", width="large"),
-            },
-            key="shop_items_editor"
-        )
-
-        col_save1, col_save2 = st.columns([1, 3])
-        with col_save1:
-            if st.button("💾 儲存所有變更", type="primary", use_container_width=True, key="save_all_shop_items"):
-                new_items = []
-                for _, row in edited_df.iterrows():
-                    item = {
-                        "id": int(row.get('id', 0)),
-                        "icon": str(row.get('icon', '🎁')),
-                        "name": str(row.get('name', '')),
-                        "type": str(row.get('type', 'predictions')),
-                        "value": row.get('value', 0),
-                        "price": int(row.get('price', 1000)),
-                        "stock": int(row.get('stock', -1)),
-                        "desc": str(row.get('desc', ''))
-                    }
-                    if item['type'] in ['predictions', 'vip_days', 'lottery_draws']:
-                        try:
-                            item['value'] = int(item['value'])
-                        except:
-                            pass
-                    new_items.append(item)
-
-                config['items'] = new_items
-                if save_shop_config(config):
-                    st.success("✅ 已儲存所有商品變更！")
-                    st.rerun()
-                else:
-                    st.error("❌ 儲存失敗")
-        with col_save2:
-            st.caption("⚠️ 記得改完之後撳「💾 儲存所有變更」先生效")
-    else:
-        st.info("暫無商品")
-
-    st.divider()
-
-    # ========== 新增物品 ==========
-    with st.expander("➕ 新增物品", expanded=False):
-        with st.form(key="add_shop_item_form"):
-            col1, col2 = st.columns(2)
-            with col1:
-                item_name = st.text_input("物品名稱", key="new_shop_name")
-                item_type = st.selectbox("物品類型",
-                    ["predictions", "vip_days", "lottery_draws", "title", "mystery_box"],
-                    format_func=lambda x: {
-                        "predictions": "🎯 額外預測次數",
-                        "vip_days": "👑 VIP 天數",
-                        "lottery_draws": "🎰 額外抽獎次數",
-                        "title": "💎 特殊稱號",
-                        "mystery_box": "🎁 神秘禮盒"
-                    }.get(x, x), key="new_shop_type")
-                item_value = st.text_input("物品數值", key="new_shop_value")
-            with col2:
-                item_price = st.number_input("價格", min_value=1, value=1000, step=100, key="new_shop_price")
-                item_stock = st.number_input("庫存（-1 = 無限）", min_value=-1, value=-1, step=1, key="new_shop_stock")
-                item_icon = st.text_input("圖示", value="🎁", key="new_shop_icon")
-                item_desc = st.text_input("描述", key="new_shop_desc")
-            if st.form_submit_button("✅ 新增", type="primary"):
-                if item_name:
-                    if item_type in ['predictions', 'vip_days', 'lottery_draws']:
-                        try:
-                            value = int(item_value)
-                        except:
-                            st.error("數值必須係數字")
-                            st.stop()
-                    else:
-                        value = item_value
-                    new_id = max([i.get('id', 0) for i in items], default=0) + 1
-                    items.append({
-                        "id": new_id, "name": item_name, "type": item_type,
-                        "value": value, "price": item_price,
-                        "stock": item_stock, "icon": item_icon, "desc": item_desc
-                    })
-                    config['items'] = items
-                    if save_shop_config(config):
-                        st.success(f"✅ 已新增")
-                        st.rerun()
-
-    # ========== 刪除物品 ==========
-    if items:
-        with st.expander("🗑️ 刪除物品", expanded=False):
-            item_options = {f"[{i.get('id')}] {i.get('name')}": i for i in items}
-            selected_label = st.selectbox("選擇物品", list(item_options.keys()), key="delete_shop_item_select")
-            selected_item = item_options[selected_label]
-            if st.button("🗑️ 確認刪除", key="delete_shop_item_btn"):
-                items = [i for i in items if i.get('id') != selected_item.get('id')]
-                config['items'] = items
-                if save_shop_config(config):
-                    st.success("✅ 已刪除")
-                    st.rerun()
-
-    st.divider()
-
-    # ========== 銷售記錄 ==========
-    st.markdown("### 📋 銷售記錄")
-    purchases = load_shop_purchases()
-    all_purchases = purchases.get('purchases', [])
-    if all_purchases:
-        df_all = pd.DataFrame(all_purchases[-100:][::-1])
-        display_cols = ['purchased_at', 'username', 'item_name', 'price']
-        available_cols = [c for c in display_cols if c in df_all.columns]
-        st.dataframe(df_all[available_cols], use_container_width=True)
-    else:
-        st.info("暫無銷售記錄")
-
+        else:
+            st.error("用戶不存在")
 def admin_system_settings():
     users = load_users()
     admin_username = st.session_state.get('admin_username', 'admin')
@@ -3254,154 +3364,319 @@ def admin_system_settings():
         else:
             st.error("❌ 儲存失敗，請檢查檔案權限。")
 
+# ============================================================
+# 後台頁面
+# ============================================================
+def admin_page():
+    if 'admin_authenticated' not in st.session_state:
+        st.session_state.admin_authenticated = False
+    if not st.session_state.admin_authenticated:
+        st.title("🔐 後台管理 - 身份驗證")
+        st.markdown("請輸入管理員密碼以進入後台")
+        admin_pw = st.text_input("管理員密碼", type="password", key="admin_login_pw")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔓 解鎖後台", type="primary", key="unlock_admin"):
+                if admin_pw == CONFIG["admin_password"]:
+                    st.session_state.admin_authenticated = True
+                    st.session_state.admin_username = "admin"
+                    log_admin_action("admin", "登入後台")
+                    st.success("✅ 密碼正確！")
+                    st.rerun()
+                else:
+                    st.error("❌ 密碼錯誤！")
+        with col2:
+            if st.button("⬅️ 返回主頁", key="back_home_from_admin"):
+                st.session_state.show_admin = False
+                st.rerun()
+        return
+    users = load_users()
+    admin_username = st.session_state.get('admin_username', 'admin')
+    user_group = users.get(admin_username, {}).get('group', 'free')
+    is_super_admin = (user_group == 'super_admin')
+    st.title("🔐 後台管理")
+    st.info(f"👤 管理員：{admin_username} | 身份：{'超級管理員' if is_super_admin else '管理員'}")
+    if st.button("🚪 登出後台", key="logout_admin"):
+        st.session_state.admin_authenticated = False
+        st.session_state.show_admin = False
+        st.rerun()
+    st.divider()
+    tab_functions = {
+        "📊 儀表板": admin_dashboard,
+        "👥 用戶管理": admin_user_management if CONFIG.get("module_user_management", True) else lambda: st.info("模組已關閉"),
+        "📊 次數管理": admin_manage_predictions,
+        "📊 數據分析": admin_analytics if CONFIG.get("module_analytics", True) else lambda: st.info("模組已關閉"),
+        "🏇 馬匹排行榜": admin_horse_ranking,
+        "👨‍🏫 騎師排行榜": admin_jockey_ranking,
+        "👨‍🏫 練馬師排行榜": admin_trainer_ranking,
+        "📊 場地/路程分析": admin_course_analysis,
+        "📅 每月報告": admin_monthly_report,
+        "💰 財務": admin_finance if CONFIG.get("module_finance", True) else lambda: st.info("模組已關閉"),
+        "🎟️ 優惠碼": admin_promo_codes if CONFIG.get("module_promo", True) else lambda: st.info("模組已關閉"),
+        "📈 預測監控": admin_accuracy_monitor,
+        "⏰ 訂閱管理": admin_subscription,
+        "📤 付款審核": admin_payment_review,
+        "📡 監控": admin_monitoring if CONFIG.get("module_monitoring", True) else lambda: st.info("模組已關閉"),
+        "📝 內容": admin_content if CONFIG.get("module_content", True) else lambda: st.info("模組已關閉"),
+        "🤖 自動維護": admin_auto_maintenance,
+        "🤖 自動化": admin_automation if CONFIG.get("module_automation", True) else lambda: st.info("模組已關閉"),
+        "🔐 安全": admin_security if CONFIG.get("module_security", True) else lambda: st.info("模組已關閉"),
+    }
+    base_tabs = ["📊 儀表板", "👥 用戶管理", "📊 次數管理", "📊 數據分析",
+                 "🏇 馬匹排行榜", "👨‍🏫 騎師排行榜", "👨‍🏫 練馬師排行榜",
+                 "📊 場地/路程分析", "📅 每月報告",
+                 "💰 財務", "🎟️ 優惠碼", "📈 預測監控", "⏰ 訂閱管理",
+                 "📤 付款審核", "📡 監控", "📝 內容", "🤖 自動維護",
+                 "🤖 自動化", "🔐 安全"]
+    if is_super_admin:
+        tab_names = base_tabs + ["⚙️ 系統設定"]
+        tab_functions["⚙️ 系統設定"] = admin_system_settings
+    else:
+        tab_names = base_tabs
+    tabs = st.tabs(tab_names)
+    for i, name in enumerate(tab_names):
+        with tabs[i]:
+            tab_functions[name]()
+
+# ============================================================
+# 主頁面（已加入賽事日曆、倒數計時、管理員贈送幣）
+# ============================================================
+def main():
+    if 'logged_in' not in st.session_state:
+        st.session_state.logged_in = False
+    if 'username' not in st.session_state:
+        st.session_state.username = None
+    if 'role' not in st.session_state:
+        st.session_state.role = 'free'
+    if 'usage_count' not in st.session_state:
+        st.session_state.usage_count = 0
+    if 'show_admin' not in st.session_state:
+        st.session_state.show_admin = False
+    if 'show_history' not in st.session_state:
+        st.session_state.show_history = False
+    if 'admin_authenticated' not in st.session_state:
+        st.session_state.admin_authenticated = False
+    if 'show_bet' not in st.session_state:
+        st.session_state.show_bet = False
+    if 'show_leaderboard' not in st.session_state:
+        st.session_state.show_leaderboard = False
+
+    content = load_json(CONTENT_FILE)
+    announcements = content.get('announcements', [])
+    today = datetime.now().date()
+    active_anns = []
+    for ann in announcements:
+        if ann.get('status') != 'active':
+            continue
+        start = datetime.strptime(ann['start_date'], '%Y-%m-%d').date()
+        if start > today:
+            continue
+        end = ann.get('end_date')
+        if end:
+            end_date = datetime.strptime(end, '%Y-%m-%d').date()
+            if end_date < today:
+                continue
+        target = ann.get('target', '全部用戶')
+        if target != '全部用戶':
+            if not st.session_state.get('logged_in', False):
+                continue
+            user = load_users().get(st.session_state.username, {})
+            group = user.get('group', 'free')
+            if target == '付費用戶' and group not in ['paid', 'VIP', 'super_admin']:
+                continue
+            if target == 'VIP' and group not in ['VIP', 'super_admin']:
+                continue
+            if target == '免費用戶' and group != 'free':
+                continue
+        active_anns.append(ann)
+
+    if CONFIG["enable_registration"] and not st.session_state.logged_in:
+        login_page()
+        return
+
+    if st.session_state.show_admin and CONFIG["enable_admin"]:
         admin_page()
         return
-    col1, col2, col3, col4 = st.columns([5, 1, 1, 1])
 
+    # ====== 標題 ======
+    col1, col2, col3 = st.columns([5, 1, 1])
     with col1:
-        # ===== 賽事倒數計時器 =====
-        try:
-            hk_tz = pytz.timezone("Asia/Hong_Kong")
-            now_hk = datetime.now(hk_tz)
-            wd = now_hk.weekday()
-            target = None
-            race_name = ""
-            venue = ""
-            if wd == 2:
-                rt = now_hk.replace(hour=19, minute=15, second=0, microsecond=0)
-                if now_hk < rt:
-                    target, race_name, venue = rt, "跑馬地夜馬", "HV"
-            elif wd == 6:
-                rt = now_hk.replace(hour=12, minute=30, second=0, microsecond=0)
-                if now_hk < rt:
-                    target, race_name, venue = rt, "沙田日馬", "ST"
-            if target is None:
-                for i in range(1, 8):
-                    fut = now_hk + timedelta(days=i)
-                    if fut.weekday() == 2:
-                        target = fut.replace(hour=19, minute=15, second=0, microsecond=0)
-                        race_name, venue = "跑馬地夜馬", "HV"
-                        break
-                    elif fut.weekday() == 6:
-                        target = fut.replace(hour=12, minute=30, second=0, microsecond=0)
-                        race_name, venue = "沙田日馬", "ST"
-                        break
-            if target:
-                diff = target - now_hk
-                ts = int(diff.total_seconds())
-                if ts > 0:
-                    d = ts // 86400
-                    h = (ts % 86400) // 3600
-                    m = (ts % 3600) // 60
-                    s = ts % 60
-                    bg = "linear-gradient(135deg, #ff6b6b, #ee5a24)" if target.date() == now_hk.date() else "linear-gradient(135deg, #667eea, #764ba2)"
-                    title = f"🔥 今日有賽事！{race_name}" if target.date() == now_hk.date() else f"⏰ 距離下場賽事：{race_name}"
-                    st.markdown(f"""
-                    <div style="background:{bg};padding:18px 22px;border-radius:14px;color:white;box-shadow:0 6px 20px rgba(102,126,234,0.35);margin-bottom:14px;">
-                        <div style="font-size:14px;opacity:0.9;margin-bottom:6px;">{title}</div>
-                        <div style="display:flex;gap:14px;align-items:baseline;flex-wrap:wrap;">
-                            <div style="text-align:center;"><div style="font-size:34px;font-weight:800;line-height:1;">{d}</div><div style="font-size:11px;opacity:0.8;">日</div></div>
-                            <div style="text-align:center;"><div style="font-size:34px;font-weight:800;line-height:1;">{h:02d}</div><div style="font-size:11px;opacity:0.8;">時</div></div>
-                            <div style="text-align:center;"><div style="font-size:34px;font-weight:800;line-height:1;">{m:02d}</div><div style="font-size:11px;opacity:0.8;">分</div></div>
-                            <div style="text-align:center;"><div style="font-size:34px;font-weight:800;line-height:1;">{s:02d}</div><div style="font-size:11px;opacity:0.8;">秒</div></div>
-                        </div>
-                        <div style="font-size:12px;opacity:0.85;margin-top:8px;">📍 {target.strftime('%Y年%m月%d日 %H:%M')} · {venue}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-        except Exception:
-            pass  # 倒數計時器出錯都唔會影響主程式
-
         st.title("🏇 賽馬預測系統")
         st.markdown("AI 驅動・即時預測・彩池推薦")
-        st.caption(f"{datetime.now().strftime('%Y年%m月%d日')}")
-
+        st.caption(f"{datetime.now().strftime('%Y年%m月%d日')} · 36個特徵 · 三模型融合 · 六種彩池")
     with col2:
-        if CONFIG.get("enable_admin") and st.session_state.get("role") == "super_admin":
-            if st.button("🔐 後台", use_container_width=True, key="go_to_admin_btn"):
+        if CONFIG["enable_admin"] and st.session_state.get("role") == "super_admin":
+            if st.button("🔐 後台", use_container_width=True, key="go_to_admin"):
                 st.session_state.show_admin = True
                 st.session_state.admin_authenticated = False
                 st.rerun()
-
     with col3:
-        if st.session_state.get("logged_in", False):
-            with st.popover("👤 個人中心", use_container_width=True):
-                username = st.session_state.get("username", "用戶")
-                st.markdown(f"#### 歡迎，{username}！")
-                st.divider()
-
-                # ===== 1. 個人預測紀錄 =====
-                with st.expander("📜 我的預測紀錄", expanded=False):
-                    try:
-                        import json
-                        with open("accuracy.json", "r", encoding="utf-8") as f:
-                            records = json.load(f)
-                        # 假設記錄格式係 [{"user": "xxx", "date": "...", "prediction": "...", "result": "..."}]
-                        # 你可以根據實際結構調整
-                        my_records = [r for r in records if r.get("user") == username]
-                        if my_records:
-                            st.dataframe(my_records[-10:], use_container_width=True)
-                        else:
-                            st.info("暫時未有預測紀錄。")
-                    except FileNotFoundError:
-                        st.info("暫時未有預測紀錄。")
-                    except Exception as e:
-                        st.error(f"讀取紀錄失敗: {e}")
-
-                st.divider()
-
-                # ===== 2. 更改密碼 =====
-                with st.expander("🔑 更改密碼", expanded=False):
-                    old_pw = st.text_input("舊密碼", type="password", key="old_pw_input")
-                    new_pw = st.text_input("新密碼", type="password", key="new_pw_input")
-                    confirm_pw = st.text_input("確認新密碼", type="password", key="confirm_pw_input")
-                    if st.button("確認更改", use_container_width=True, key="change_pw_btn"):
-                        if not old_pw or not new_pw or not confirm_pw:
-                            st.warning("請填寫所有欄位！")
-                        elif new_pw != confirm_pw:
-                            st.error("兩次新密碼不一致！")
-                        else:
-                            try:
-                                import json
-                                with open("users.json", "r", encoding="utf-8") as f:
-                                    users = json.load(f)
-                                if username in users and users[username].get("password") == old_pw:
-                                    users[username]["password"] = new_pw
-                                    with open("users.json", "w", encoding="utf-8") as f:
-                                        json.dump(users, f, ensure_ascii=False, indent=2)
-                                    st.success("✅ 密碼已成功更改！")
-                                else:
-                                    st.error("❌ 舊密碼不正確！")
-                            except Exception as e:
-                                st.error(f"更改失敗: {e}")
-    with col4:
-        if st.session_state.get("logged_in", False):
-            if st.button("🚪 登出", use_container_width=True):
-                st.session_state.logged_in = False
-                st.session_state.username = None
+        if st.session_state.get('logged_in', False):
+            if st.button("🚪 登出", use_container_width=True, key="logout_main"):
+                for key in ['logged_in', 'username', 'role', 'usage_count', 'show_history']:
+                    if key in st.session_state:
+                        del st.session_state[key]
                 st.rerun()
+
+    # ====== ⭐ 賽事日曆 + 倒數計時 ======
+    st.markdown("---")
+    display_race_calendar()
     st.markdown("---")
 
-    st.markdown("---")
-    if st.session_state.logged_in:
+    # ====== 今日免費重心推介 ======
+    if CONFIG.get("enable_daily_free_tip", True):
+        try:
+            df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
+            df_sched = standardize_columns_safe(df_sched)
+            if 'race_date' in df_sched.columns:
+                df_sched['race_date'] = pd.to_datetime(df_sched['race_date'], errors='coerce')
+                df_sched = df_sched.dropna(subset=['race_date'])
+                today_dt = datetime.now().date()
+                day_races = df_sched[df_sched['race_date'].dt.date == today_dt]
+                if not day_races.empty:
+                    first_race = day_races.sort_values('race_no').iloc[0]
+                    race_date_str = first_race['race_date'].strftime('%Y-%m-%d')
+                    race_no = int(first_race['race_no'])
+                    result, pool = run_prediction(race_date_str, race_no)
+                    if result is not None and not result.empty:
+                        top1 = result.iloc[0]
+                        st.markdown("---")
+                        st.markdown("### 🌟 今日免費重心推介")
+                        st.markdown(f"""
+                        <div style="background: linear-gradient(135deg, #fff8e1, #ffecb3);border-radius:16px;padding:15px 20px;border:2px solid #ffb300;box-shadow:0 2px 8px rgba(255,179,0,0.2);">
+                            <div style="display:flex;align-items:center;gap:15px;flex-wrap:wrap;">
+                                <span style="font-size:28px;">🏇</span>
+                                <div>
+                                    <span style="font-size:18px;font-weight:bold;">{top1['horse_name']}</span>
+                                    <span style="font-size:14px;color:#555;">（第 {race_no} 場）</span><br>
+                                    <span style="font-size:14px;color:#888;">勝率 <b style="color:#2e7d32;">{top1['預測勝率']:.2%}</b>　檔位 {top1['draw']}</span>
+                                </div>
+                                <div style="margin-left:auto;">
+                                    <span style="background:#ff6f00;color:white;padding:4px 14px;border-radius:20px;font-size:12px;">🎯 每日重心</span>
+                                </div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        st.markdown("---")
+        except:
+            pass
+
+    if CONFIG["enable_registration"] and st.session_state.logged_in:
         show_user_dashboard(st.session_state.username)
+    elif not CONFIG["enable_registration"]:
+        st.info("🔓 目前為公開模式，任何人皆可使用")
+
+    st.markdown("---")
+    st.subheader("🧠 模型自我學習 & 表現分析")
+    acc = load_accuracy()
+    records = acc.get('records', [])
+    if records:
+        total = len([r for r in records if r.get('is_hit') is not None])
+        hit = sum(1 for r in records if r.get('is_hit') is True)
+        hit_rate = hit/total if total>0 else 0
+        roi = (hit * 400 - total * 100) / (total * 100) if total>0 else 0
+        config = load_system_config()
+        xgb_w = config.get('xgb_weight', 25)
+        cat_w = config.get('cat_weight', 1)
+
+        col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+        col_stat1.metric("📊 總預測", total)
+        col_stat2.metric("🎯 命中次數", hit)
+        col_stat3.metric("📈 命中率", f"{hit_rate:.2%}")
+        col_stat4.metric("💰 ROI (模擬)", f"{roi:.2%}")
+
+        if len(records) >= 10:
+            recent = records[-10:]
+            hit_seq = [1 if r.get('is_hit') is True else 0 for r in recent]
+            st.caption("📊 最近 10 場命中情況： " + "".join(["✅" if h else "❌" for h in hit_seq]))
+
+        st.caption(f"⚙️ 當前模型融合權重：XGBoost **{xgb_w}** : CatBoost **{cat_w}**")
+
+        with st.expander("📊 特徵重要性分析（CatBoost）"):
+            try:
+                cat_model = CatBoostClassifier()
+                cat_model.load_model('hk_catboost_model.cbm')
+                importances = cat_model.get_feature_importance()
+                feature_names = EXPECTED_FEATURES
+                if len(importances) == len(feature_names):
+                    df_imp = pd.DataFrame({
+                        '特徵': feature_names,
+                        '重要性': importances
+                    }).sort_values('重要性', ascending=False).head(15)
+                    fig = px.bar(df_imp, x='重要性', y='特徵', orientation='h',
+                                title='Top 15 特徵重要性',
+                                color='重要性', color_continuous_scale='Blues')
+                    fig.update_layout(height=400)
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("特徵數量不匹配")
+            except Exception as e:
+                st.info(f"無法載入 CatBoost 模型：{e}")
+
+        with st.expander("📈 命中率趨勢圖"):
+            if records:
+                df_records = pd.DataFrame(records)
+                if 'date' in df_records.columns and 'is_hit' in df_records.columns:
+                    df_records['date'] = pd.to_datetime(df_records['date'])
+                    df_records = df_records.dropna(subset=['date', 'is_hit'])
+                    if not df_records.empty:
+                        daily = df_records.groupby(df_records['date'].dt.date).agg(
+                            total=('is_hit', 'count'),
+                            hit=('is_hit', lambda x: (x==True).sum())
+                        ).reset_index()
+                        daily['hit_rate'] = daily['hit'] / daily['total']
+                        fig2 = px.line(daily, x='date', y='hit_rate',
+                                       title='每日命中率趨勢',
+                                       markers=True)
+                        fig2.update_layout(yaxis_tickformat='.0%')
+                        st.plotly_chart(fig2, use_container_width=True)
+                    else:
+                        st.info("未有足夠數據")
+                else:
+                    st.info("未有日期或命中數據")
+            else:
+                st.info("暫時未有預測記錄")
+    else:
+        st.info("暫時未有預測記錄，未能進行自我學習分析。請先執行預測。")
+
     st.markdown("---")
     st.subheader("🎯 賽事預測控制")
+
     col_date, col_race, col_btn = st.columns([2, 2, 1])
-    with col_date: date = st.date_input("📅 選擇日期", value=pd.to_datetime("2026-09-06"), key="predict_date_mid")
-    with col_race: race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=0, key="predict_race_mid")
-    with col_btn: predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
+
+    with col_date:
+        date = st.date_input("📅 選擇日期", value=pd.to_datetime("2026-09-06"), key="predict_date_mid")
+
+    with col_race:
+        race_no = st.selectbox("🏇 選擇場次", list(range(1, 12)), index=0, key="predict_race_mid")
+
+    with col_btn:
+        predict_btn = st.button("🚀 執行預測", type="primary", use_container_width=True, key="predict_btn_mid")
+
     if predict_btn:
         date_str = date.strftime("%Y-%m-%d")
-        with st.spinner("⏳ 正在預測..."):
+        with st.spinner(f"⏳ 正在預測 {date_str} 第 {race_no} 場..."):
             try:
                 result, pool = run_prediction(date_str, race_no)
                 if result is not None and not result.empty:
-                    st.success("✅ 預測完成！")
-                    if pool: st.info(pool)
+                    st.success(f"✅ {date_str} 第 {race_no} 場預測完成！")
+                    if pool:
+                        st.info(pool)
                     st.dataframe(result, use_container_width=True)
-            except Exception as e: st.error(f"❌ 錯誤：{e}")
-    # ========== AI 預測表現及賽果對比 ==========
-    with st.expander("🤖 AI 預測表現 & 賽果對比（點擊展開）", expanded=True):
+                else:
+                    st.error("❌ 未能獲取預測結果，請檢查排位表")
+            except Exception as e:
+                st.error(f"❌ 預測過程發生錯誤：{e}")
+                import traceback
+                st.code(traceback.format_exc())    
+    # ============================================================
+    # 🤖 AI 預測表現 + 真實賽果對比（公開）
+    # ============================================================
+    # ========== AI 預測表現及賽果對比（揀場次顯示） ==========
+    # ========== AI 預測表現及賽果對比（揀日期 + 揀場次） ==========
+    with st.expander("🤖 AI 預測表現 & 賽果對比（點擊展開）", expanded=False):
+        
+        # 1. 讀取 AI 預測紀錄
         ai_file = "ai_predictions.json"
         predictions = {}
         if os.path.exists(ai_file):
@@ -3413,8 +3688,9 @@ def admin_system_settings():
                 st.error(f"❌ 讀取預測紀錄失敗：{e}")
                 predictions = {}
         else:
-            st.warning("⚠️ 尚未有任何預測紀錄")
+            st.warning("⚠️ 尚未有任何預測紀錄，請先執行預測")
 
+        # 2. 讀取真實賽果
         result_file = "race_results_clean.csv"
         df_results = pd.DataFrame()
         if os.path.exists(result_file):
@@ -3426,19 +3702,18 @@ def admin_system_settings():
                     df_results = pd.DataFrame()
                 else:
                     df_results['horse_name'] = df_results['horse_name'].str.strip()
-                    df_results['horse_name'] = df_results['horse_name'].str.replace(r'\s*\([^)]*\)', '', regex=True).str.strip()
                     df_results['finish_position'] = pd.to_numeric(df_results['finish_position'], errors='coerce')
                     df_results['race_no'] = pd.to_numeric(df_results['race_no'], errors='coerce').astype(int)
                     df_results['race_date'] = pd.to_datetime(df_results['race_date'], errors='coerce')
-                    df_results = df_results.dropna(subset=['race_date'])
             except Exception as e:
                 st.error(f"❌ 讀取賽果失敗：{e}")
                 df_results = pd.DataFrame()
         else:
             st.warning("⚠️ 找不到賽果檔案 race_results_clean.csv")
 
+        # 3. 將 predictions 轉換成 DataFrame
         pred_list = []
-        if predictions and not df_results.empty:
+        if predictions:
             for key, value in predictions.items():
                 if '_' not in key:
                     continue
@@ -3459,45 +3734,71 @@ def admin_system_settings():
                     else:
                         continue
                 cleaned = [str(h).strip() for h in horse_list if str(h).strip()]
-                cleaned = [re.sub(r'\s*\([^)]*\)', '', h).strip() for h in cleaned]
                 for idx, horse in enumerate(cleaned[:4], 1):
-                    pred_list.append({'日期': date_str, '場次': race_no, '預測名次': idx, '預測馬': horse})
-            if pred_list:
-                st.info(f"✅ 成功解析 {len(pred_list)} 筆預測（頭四名）")
-
+                    pred_list.append({
+                        '日期': date_str,
+                        '場次': race_no,
+                        '預測名次': idx,
+                        '預測馬': horse
+                    })
+        
+        # 4. 如果預測同賽果都有數據，顯示選擇器
         if pred_list and not df_results.empty:
             df_pred = pd.DataFrame(pred_list)
             df_pred['場次'] = df_pred['場次'].astype(int)
             df_pred['預測名次'] = df_pred['預測名次'].astype(int)
-            df_pred['預測馬'] = df_pred['預測馬'].str.replace(r'\s*\([^)]*\)', '', regex=True).str.strip()
-
-            pred_dates = set(df_pred['日期'].unique())
-            result_dates = set(df_results['race_date'].dt.strftime('%Y-%m-%d').unique())
-            available_dates = sorted(pred_dates & result_dates)
-
+            
+            # 取得所有有預測嘅日期
+            pred_dates = sorted(df_pred['日期'].unique())
+            # 同時只顯示有賽果嘅日期
+            result_dates = df_results['race_date'].dt.strftime('%Y-%m-%d').unique()
+            available_dates = [d for d in pred_dates if d in result_dates]
+            
             if available_dates:
-                selected_date = st.selectbox("📅 選擇日期", available_dates, key="result_date_select")
+                # 🔥 日期選擇器
+                selected_date = st.selectbox(
+                    "📅 選擇日期",
+                    available_dates,
+                    format_func=lambda x: x
+                )
+                
+                # 過濾該日期嘅預測
                 df_pred_date = df_pred[df_pred['日期'] == selected_date].copy()
+                # 過濾該日期嘅賽果
                 df_result_date = df_results[df_results['race_date'].dt.strftime('%Y-%m-%d') == selected_date].copy()
-
-                pred_races = set(df_pred_date['場次'].unique())
-                result_races = set(df_result_date['race_no'].unique())
-                available_races = sorted(pred_races & result_races)
-
+                
+                # 取得該日期有預測嘅場次
+                pred_races = sorted(df_pred_date['場次'].unique())
+                result_races = sorted(df_result_date['race_no'].unique())
+                available_races = [r for r in pred_races if r in result_races]
+                
                 if available_races:
-                    selected_race = st.selectbox("🏇 選擇場次", available_races, format_func=lambda x: f"第 {x} 場", key="result_race_select")
+                    # 🔥 場次選擇器
+                    selected_race = st.selectbox(
+                        "🏇 選擇場次",
+                        available_races,
+                        format_func=lambda x: f"第 {x} 場"
+                    )
+                    
+                    # 過濾該場嘅預測
                     df_pred_race = df_pred_date[df_pred_date['場次'] == selected_race].copy()
+                    # 過濾該場嘅賽果（頭4名）
                     df_result_race = df_result_date[df_result_date['race_no'] == selected_race].copy()
                     df_result_race = df_result_race.sort_values('finish_position').head(4)
+                    
+                    # 合併
                     df_result_race.rename(columns={'finish_position': '真實名次', 'horse_name': '真實馬'}, inplace=True)
-                    df_result_race['真實馬'] = df_result_race['真實馬'].str.replace(r'\s*\([^)]*\)', '', regex=True).str.strip()
-
                     df_compare = df_pred_race.merge(df_result_race, left_on='預測名次', right_on='真實名次', how='left')
-                    df_compare['結果'] = df_compare.apply(lambda row: '命中' if row['預測馬'] == row['真實馬'] else '失準', axis=1)
+                    df_compare['結果'] = df_compare.apply(
+                        lambda row: '命中' if row['預測馬'] == row['真實馬'] else '失準',
+                        axis=1
+                    )
+                    
                     display_df = df_compare[['預測名次', '預測馬', '真實名次', '真實馬', '結果']].copy()
                     display_df.columns = ['名次', '預測馬', '真實名次', '真實馬', '結果']
+                    
                     st.write(f"📊 {selected_date} 第 {selected_race} 場 預測 vs 賽果")
-
+                    
                     def highlight_row(row):
                         if row['結果'] == '命中':
                             return ['background-color: #d4edda; color: black'] * len(row)
@@ -3505,47 +3806,119 @@ def admin_system_settings():
                             return ['background-color: #f8d7da; color: black'] * len(row)
                         else:
                             return ['background-color: white; color: black'] * len(row)
-
+                    
                     styled_df = display_df.style.apply(highlight_row, axis=1)
-                    st.dataframe(styled_df, use_container_width=True, hide_index=True)
+                    st.dataframe(
+                        styled_df,
+                        use_container_width=True,
+                        hide_index=True
+                    )
                 else:
-                    st.info("ℹ️ 所選日期沒有可比較嘅場次")
+                    st.info(f"ℹ️ {selected_date} 沒有可比對嘅場次（預測同賽果場次不匹配）")
             else:
-                st.info("ℹ️ 沒有同時存在預測同賽果嘅日期")
+                st.info("ℹ️ 沒有日期同時有預測同賽果數據")
         else:
             st.info("ℹ️ 請確保已有預測紀錄及賽果數據")
+    # ============================================================
+    # 🎮 虛擬投注
+    # ============================================================
     if st.session_state.get('logged_in', False):
         st.markdown("---")
-        st.subheader("🎰 每日抽獎")
-        col_lot1, col_lot2 = st.columns([1, 3])
-        with col_lot1:
-            if st.button("🎁 抽獎", use_container_width=True, key="btn_lottery"):
-                st.session_state.show_lottery = not st.session_state.get('show_lottery', False)
-        with col_lot2:
-            can_draw, msg = user_can_draw_today(st.session_state.username)
-            if can_draw: st.success(f"🎉 {msg}")
-            else: st.info(f"⏰ {msg}")
-        if st.session_state.get('show_lottery', False):
-            show_lottery_interface(st.session_state.username)
-    if st.session_state.get('logged_in', False):
+        st.subheader("🎮 虛擬投注")
+        st.caption("用虛擬幣體驗投注樂趣，唔使真錢！")
+
+        col_v1, col_v2, col_v3 = st.columns([1, 1, 2])
+        with col_v1:
+            if st.button("💰 投注模擬器", use_container_width=True, key="btn_bet"):
+                st.session_state.show_bet = not st.session_state.get('show_bet', False)
+                st.session_state.show_leaderboard = False
+        with col_v2:
+            if st.button("🏆 排行榜", use_container_width=True, key="btn_leaderboard"):
+                st.session_state.show_leaderboard = not st.session_state.get('show_leaderboard', False)
+                st.session_state.show_bet = False
+        with col_v3:
+            users = load_users()
+            user_data = users.get(st.session_state.username, {})
+            balance = user_data.get('virtual_balance', 0)
+            st.info(f"💎 你嘅虛擬幣結餘：**${balance:,.0f}**")
+
+        if st.session_state.get('show_bet', False):
+            show_betting_interface(st.session_state.username)
+
+        if st.session_state.get('show_leaderboard', False):
+            show_leaderboard()
+
+        # ⭐ 管理員贈送虛擬幣（只有超級管理員可見）
+        if st.session_state.get('role') == 'super_admin':
+            st.markdown("---")
+            st.subheader("🎁 管理員贈送虛擬幣")
+            with st.form(key="admin_gift_form"):
+                col_g1, col_g2, col_g3 = st.columns([2, 1, 1])
+                with col_g1:
+                    target_user = st.selectbox("選擇用戶", list(load_users().keys()), key="gift_user")
+                with col_g2:
+                    gift_amount = st.number_input("金額", min_value=1, value=100, step=50, key="gift_amount")
+                with col_g3:
+                    submit_gift = st.form_submit_button("🎁 贈送")
+                if submit_gift:
+                    if target_user == st.session_state.username:
+                        st.error("❌ 唔可以送俾自己")
+                    else:
+                        users = load_users()
+                        if target_user in users:
+                            users[target_user]['virtual_balance'] = users[target_user].get('virtual_balance', 0) + gift_amount
+                            save_users(users)
+                            log_admin_action(st.session_state.username, f"贈送 ${gift_amount} 虛擬幣給 {target_user}")
+                            st.success(f"✅ 已贈送 ${gift_amount} 虛擬幣給 {target_user}")
+                            st.rerun()
+                        else:
+                            st.error("❌ 用戶不存在")
+
         st.markdown("---")
-        st.subheader("🛍️ 虛擬商城")
-        col_shop1, col_shop2 = st.columns([1, 3])
-        with col_shop1:
-            if st.button("🛒 進入商城", use_container_width=True, key="btn_shop"):
-                st.session_state.show_shop = not st.session_state.get('show_shop', False)
-        with col_shop2:
-            shop_balance = get_user_real_balance_shop(st.session_state.username)
-            st.info(f"💎 你嘅餘額：**${shop_balance:,.0f}**")
-        if st.session_state.get('show_shop', False):
-            show_shop_interface(st.session_state.username)
+
+    # ====== 付款功能 ======
     st.markdown("---")
     st.subheader("💳 付款功能")
-    if st.session_state.get('logged_in'): show_paywall()
-    else: st.info("請先登入以使用付款功能")
+
+    if st.session_state.get('logged_in'):
+        show_paywall()
+    else:
+        st.info("請先登入以使用付款功能")
+        if st.button("前往登入"):
+            st.session_state.page_mode = "login"
+            st.rerun()
+
+    # ====== 今日賽程 ======
+    st.subheader("📅 今日賽程")
+    try:
+        df_sched = pd.read_csv('HKCJ_FULL_YEAR_DATA.csv', encoding='utf-8-sig')
+        df_sched = standardize_columns_safe(df_sched)
+        if 'race_date' in df_sched.columns:
+            df_sched['race_date'] = pd.to_datetime(df_sched['race_date'], errors='coerce')
+            df_sched = df_sched.dropna(subset=['race_date'])
+            today = datetime.now().date()
+            day_races = df_sched[df_sched['race_date'].dt.date == today]
+            if day_races.empty:
+                st.info("今日沒有賽事")
+            else:
+                for course in day_races['race_course'].unique():
+                    races = day_races[day_races['race_course'] == course]['race_no'].unique()
+                    st.write(f"🏟️ **{course}**：第 {', '.join(map(str, sorted(races)))} 場")
+        else:
+            st.info("今日沒有賽事")
+    except:
+        st.info("今日沒有賽事")
+
     st.divider()
-    st.warning("⚠️ 預測僅供參考，不構成投注建議。")
-    st.caption(f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | v18.4")
+    st.warning("⚠️ **免責聲明**：本系統提供之預測僅供參考，不構成投注建議。賽馬活動涉及風險，用戶應量力而為，本系統不對任何投注損失負責。用戶必須年滿18歲。使用本服務即表示同意以上條款。")
+
+    col_f1, col_f2, col_f3 = st.columns(3)
+    with col_f1:
+        st.caption(f"🕐 最後更新：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    with col_f2:
+        st.caption("🔐 數據來源：HKJC | 系統版本：v14.0-用戶體驗版")
+    with col_f3:
+        st.caption("💬 Telegram：@bryhjdjbrbxibvrjskofndhiebdpaq")
 
 if __name__ == '__main__':
     main()
