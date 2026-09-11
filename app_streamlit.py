@@ -358,42 +358,169 @@ def generate_pool_recommendations(df):
 
     return rec
 
+@st.cache_resource
+def load_ml_models():
+    """載入 XGBoost + CatBoost 模型"""
+    import pickle
+    xgb_model = None
+    cat_model = None
+
+    try:
+        with open('hk_racing_model.pkl', 'rb') as f:
+            obj = pickle.load(f)
+            xgb_model = obj[0] if isinstance(obj, tuple) else obj
+    except Exception as e:
+        print(f"XGBoost 載入失敗：{e}")
+
+    try:
+        from catboost import CatBoostClassifier
+        cat_model = CatBoostClassifier()
+        cat_model.load_model('hk_catboost_model.cbm')
+    except Exception as e:
+        print(f"CatBoost 載入失敗：{e}")
+
+    return xgb_model, cat_model
+
+
+def _build_features(race_df, history_df):
+    """為排位表每匹馬計算特徵"""
+    import numpy as np
+
+    history_df = history_df.copy()
+    history_df['race_date'] = pd.to_datetime(history_df['race_date'], errors='coerce')
+    history_df = history_df.dropna(subset=['race_date'])
+    history_df['finish_position'] = pd.to_numeric(history_df['finish_position'], errors='coerce')
+    history_df = history_df.dropna(subset=['finish_position'])
+
+    result = race_df.copy()
+
+    # 初始化所有特徵
+    feature_cols = [
+        'draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
+        'jockey_win_rate_50', 'trainer_win_rate_50',
+        'distance_win_rate', 'distance_avg_rank',
+        'win_odds', 'weight_change', 'jockey_trainer_win_rate',
+        'course_win_rate', 'course_avg_rank',
+        'days_since_last_run', 'odds_rank_in_race',
+        'rtg_change', 'jockey_horse_win_rate',
+        'races_last14days', 'going_win_rate',
+        'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
+        'early_pace', 'finish_speed',
+        'last_trial_rank', 'last_trial_time',
+        'jockey_win_rate_5', 'jockey_win_rate_10', 'draw_win_rate',
+        'days_since_injury', 'injury_30d', 'injury_60d', 'injury_90d',
+        'total_injuries', 'injury_severity'
+    ]
+    for c in feature_cols:
+        if c not in result.columns:
+            result[c] = 0.0
+
+    # 填充基本欄位
+    if 'draw' in race_df.columns:
+        result['draw'] = pd.to_numeric(race_df['draw'], errors='coerce').fillna(0)
+    if 'weight' in race_df.columns:
+        result['weight'] = pd.to_numeric(race_df['weight'], errors='coerce').fillna(0)
+    if 'distance' in race_df.columns:
+        result['distance'] = pd.to_numeric(race_df['distance'], errors='coerce').fillna(0)
+    if 'rtg' in race_df.columns:
+        result['Rtg.'] = pd.to_numeric(race_df['rtg'], errors='coerce').fillna(0)
+    if 'win_odds' in race_df.columns:
+        result['win_odds'] = pd.to_numeric(race_df['win_odds'], errors='coerce').fillna(0)
+
+    # 賠率排名
+    if 'win_odds' in result.columns:
+        result['odds_rank_in_race'] = result['win_odds'].rank(method='min', ascending=True).fillna(0)
+
+    # 歷史統計
+    if not history_df.empty:
+        # 騎師勝率
+        if 'jockey' in history_df.columns and 'jockey' in result.columns:
+            jockey_stats = history_df.groupby('jockey').apply(
+                lambda g: (g['finish_position'] == 1).sum() / max(len(g), 1)
+            ).to_dict()
+            result['jockey_win_rate_50'] = result['jockey'].map(jockey_stats).fillna(0)
+
+        # 練馬師勝率
+        if 'trainer' in history_df.columns and 'trainer' in result.columns:
+            trainer_stats = history_df.groupby('trainer').apply(
+                lambda g: (g['finish_position'] == 1).sum() / max(len(g), 1)
+            ).to_dict()
+            result['trainer_win_rate_50'] = result['trainer'].map(trainer_stats).fillna(0)
+
+        # 馬匹近3場平均名次
+        if 'horse_id' in history_df.columns and 'horse_id' in result.columns:
+            def _avg3(g):
+                g = g.sort_values('race_date').tail(3)
+                return g['finish_position'].mean() if len(g) > 0 else 99
+            avg3 = history_df.groupby('horse_id').apply(_avg3).to_dict()
+            result['avg_rank_last3'] = result['horse_id'].map(avg3).fillna(99)
+
+            # 馬匹同路程勝率
+            if 'distance' in history_df.columns and 'distance' in result.columns:
+                def _dist_win(row):
+                    sub = history_df[(history_df['horse_id'] == row['horse_id']) &
+                                     (history_df['distance'] == row['distance'])]
+                    return 0 if len(sub) == 0 else (sub['finish_position'] == 1).sum() / len(sub)
+                result['distance_win_rate'] = result.apply(_dist_win, axis=1)
+
+            # 騎練組合勝率
+            if 'jockey' in history_df.columns and 'trainer' in history_df.columns:
+                def _jt_win(row):
+                    sub = history_df[(history_df['jockey'] == row['jockey']) &
+                                     (history_df['trainer'] == row['trainer'])]
+                    return 0 if len(sub) == 0 else (sub['finish_position'] == 1).sum() / len(sub)
+                result['jockey_trainer_win_rate'] = result.apply(_jt_win, axis=1)
+
+            # 出賽相隔日數
+            last_run = history_df.groupby('horse_id')['race_date'].max().to_dict()
+            result['days_since_last_run'] = result['horse_id'].map(
+                lambda h: (datetime.now() - last_run[h]).days if h in last_run else 999
+            ).fillna(999)
+
+    # 填充剩餘特徵
+    for c in feature_cols:
+        result[c] = pd.to_numeric(result[c], errors='coerce').fillna(0)
+
+    return result
+
+
 def run_prediction(date_str, race_no):
+    """用真正 ML 模型預測"""
     if not os.path.exists("racecard_uploaded.csv"):
         st.error("❌ 找不到 racecard_uploaded.csv")
         return None, None
 
+    # 讀取排位表
     try:
-        df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
+        race_df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
     except Exception as e:
         st.error(f"❌ 讀取失敗：{e}")
         return None, None
 
-    rename_map = {
-        '馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
-        '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
-        '負磅': 'weight', '馬號': 'horse_id', '賠率': 'win_odds'
-    }
-    existing = [c for c in rename_map if c in df.columns]
+    rename_map = {'馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
+                  '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
+                  '負磅': 'weight', '馬號': 'horse_id', '賠率': 'win_odds',
+                  '路程': 'distance', '評分': 'rtg'}
+    existing = [c for c in rename_map if c in race_df.columns]
     if existing:
-        df.rename(columns={c: rename_map[c] for c in existing}, inplace=True)
+        race_df.rename(columns={c: rename_map[c] for c in existing}, inplace=True)
 
-    if 'race_date' not in df.columns:
+    if 'race_date' not in race_df.columns:
         st.error("❌ 缺少 '比賽日期'")
         return None, None
 
-    df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce')
-    df = df.dropna(subset=['race_date'])
-    df['race_date_str'] = df['race_date'].dt.strftime('%Y-%m-%d')
+    race_df['race_date'] = pd.to_datetime(race_df['race_date'], errors='coerce')
+    race_df = race_df.dropna(subset=['race_date'])
+    race_df['race_date_str'] = race_df['race_date'].dt.strftime('%Y-%m-%d')
 
-    available_dates = sorted(df['race_date_str'].unique())
+    available_dates = sorted(race_df['race_date_str'].unique())
     if not available_dates:
         st.error("❌ 無可用日期")
         return None, None
     if date_str not in available_dates:
         date_str = available_dates[-1]
 
-    df_date = df[df['race_date_str'] == date_str]
+    df_date = race_df[race_df['race_date_str'] == date_str]
     if 'race_no' not in df_date.columns:
         st.error("❌ 缺少 '場次'")
         return None, None
@@ -406,30 +533,96 @@ def run_prediction(date_str, race_no):
             st.error("❌ 無場次")
             return None, None
 
-    filtered = df_date[df_date['race_no'] == race_no]
+    filtered = df_date[df_date['race_no'] == race_no].copy().reset_index(drop=True)
     if filtered.empty:
         st.error("❌ 無馬匹數據")
         return None, None
 
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
-    if 'win_odds' in filtered.columns:
-        win_odds = pd.to_numeric(filtered['win_odds'], errors='coerce').fillna(4.0).replace(0, 4.0)
+    # 讀取歷史數據
+    history_df = pd.DataFrame()
+    if os.path.exists("ALL_DATA_MERGED.csv"):
+        try:
+            history_df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig', low_memory=False)
+            history_df.columns = [str(c).replace('\ufeff', '').strip() for c in history_df.columns]
+            if 'finish_position' not in history_df.columns and 'Pla' in history_df.columns:
+                history_df['finish_position'] = history_df['Pla']
+        except Exception as e:
+            st.warning(f"⚠️ 讀取歷史數據失敗：{e}")
+
+    # 建立特徵
+    with st.spinner("🔧 計算特徵中..."):
+        features_df = _build_features(filtered, history_df)
+
+    # 載入模型
+    xgb_model, cat_model = load_ml_models()
+
+    # 模型預測
+    feature_cols = ['draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
+                    'jockey_win_rate_50', 'trainer_win_rate_50',
+                    'distance_win_rate', 'distance_avg_rank', 'win_odds',
+                    'weight_change', 'jockey_trainer_win_rate',
+                    'course_win_rate', 'course_avg_rank',
+                    'days_since_last_run', 'odds_rank_in_race',
+                    'rtg_change', 'jockey_horse_win_rate',
+                    'races_last14days', 'going_win_rate',
+                    'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
+                    'early_pace', 'finish_speed', 'last_trial_rank',
+                    'last_trial_time', 'jockey_win_rate_5', 'jockey_win_rate_10',
+                    'draw_win_rate', 'days_since_injury', 'injury_30d',
+                    'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity']
+
+    X = features_df[feature_cols].fillna(0).values
+
+    pred_proba = None
+    model_used = []
+
+    if xgb_model is not None:
+        try:
+            pred_xgb = xgb_model.predict_proba(X)[:, 1]
+            pred_proba = pred_xgb
+            model_used.append("XGBoost")
+        except Exception as e:
+            st.warning(f"⚠️ XGBoost 預測失敗：{e}")
+
+    if cat_model is not None:
+        try:
+            pred_cat = cat_model.predict_proba(X)[:, 1]
+            if pred_proba is not None:
+                pred_proba = (pred_proba + pred_cat) / 2  # 平均
+            else:
+                pred_proba = pred_cat
+            model_used.append("CatBoost")
+        except Exception as e:
+            st.warning(f"⚠️ CatBoost 預測失敗：{e}")
+
+    # 如果模型都失敗，用賠率回退
+    if pred_proba is None:
+        st.warning("⚠️ 冇可用模型，改用賠率估算")
+        win_odds = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0).replace(0, 4.0)
+        inv = 1 / win_odds
+        pred_proba = (inv / inv.sum()).values
+        model_used.append("賠率估算")
     else:
-        win_odds = pd.Series([4.0] * len(filtered))
+        st.success(f"✅ 使用模型：{', '.join(model_used)}")
 
-    inv = 1 / win_odds
-    final_pred = inv / inv.sum()
+    # 正規化
+    pred_proba = pred_proba / pred_proba.sum()
 
-    result_cols = [c for c in ['horse_name', 'draw', 'weight', 'jockey', 'trainer'] if c in filtered.columns]
-    result_df = filtered[result_cols].copy()
-    result_df['預測勝率'] = final_pred.values
+    # 結果
+    result_df = filtered[['horse_name']].copy()
+    for c in ['draw', 'weight', 'jockey', 'trainer']:
+        if c in filtered.columns:
+            result_df[c] = filtered[c]
+    result_df['預測勝率'] = pred_proba
     result_df['值博指數'] = result_df['預測勝率'] * 10
     result_df['信心指數'] = result_df['預測勝率'].apply(
         lambda x: '⭐⭐⭐ 高' if x > 0.2 else '⭐⭐ 中' if x > 0.1 else '⭐ 低'
     )
-    result_df = result_df.sort_values('預測勝率', ascending=False)
+    result_df = result_df.sort_values('預測勝率', ascending=False).reset_index(drop=True)
 
+    # 儲存預測記錄
     ai_file = "ai_predictions.json"
     ai_data = load_json(ai_file) if os.path.exists(ai_file) else {}
     key = f"{date_str}_{race_no}"
@@ -439,6 +632,7 @@ def run_prediction(date_str, race_no):
         "top_horse": result_df.iloc[0]['horse_name'],
         "top_prob": float(result_df.iloc[0]['預測勝率']),
         "all_horses": result_df['horse_name'].tolist(),
+        "model_used": model_used,
         "predicted_at": datetime.now().isoformat()
     }
     with open(ai_file, 'w', encoding='utf-8') as f:
