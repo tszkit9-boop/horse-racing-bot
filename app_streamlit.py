@@ -2824,6 +2824,13 @@ def admin_page():
         "🏇 馬匹排行榜": admin_horse_ranking,
         "👨‍🏫 騎師排行榜": admin_jockey_ranking,
         "👨‍🏫 練馬師排行榜": admin_trainer_ranking,
+        def admin_course_analysis():
+    st.subheader("📊 場地/路程勝率分析")
+    st.info("此功能需要更詳細的場地與路程數據，暫未開放。")
+
+def admin_monthly_report():
+    st.subheader("📅 每月命中率報告")
+    st.info("此功能需要預測記錄對比，暫未開放。")
         "📊 場地/路程分析": admin_course_analysis,
         "📅 每月報告": admin_monthly_report,
         "💰 財務": admin_finance,
