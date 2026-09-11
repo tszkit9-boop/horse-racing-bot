@@ -640,27 +640,12 @@ def run_prediction(date_str, race_no):
     # ===== CatBoost =====
     if cat_model is not None:
         try:
-                        # CatBoost 特徵數偵測（更穩健）
-            n_cat = 36
-            try:
-                n_cat = cat_model.n_features_in_
-            except Exception:
-                try:
-                    n_cat = len(cat_model.feature_names_)
-                except Exception:
-                    n_cat = 36
-
-            if n_cat == 9:
-                features_9 = ['draw', 'weight', 'distance', 'Rtg.', 'win_odds',
-                              'jockey_win_rate_50', 'trainer_win_rate_50',
-                              'avg_rank_last3', 'odds_rank_in_race']
-                X_cat = features_df[features_9].fillna(0).values
-            else:
-                X_cat = features_df[features_36].fillna(0).values
-
-            pred_cat = cat_model.predict_proba(X_cat)[:, 1]            
-            st.write(f"✅ CatBoost 預測成功：{len(pred_cat)} 匹馬")
-            models_used.append(f"CatBoost({n_cat}特徵)")
+            # CatBoost 固定用 36 特徵（本地訓練）
+            X_cat = features_df[features_36].fillna(0).values
+            pred_cat = cat_model.predict_proba(X_cat)[:, 1]
+            models_used.append("CatBoost(36特徵)")
+        except Exception as e:
+            st.warning(f"⚠️ CatBoost 失敗：{e}")
         except Exception as e:
             st.warning(f"⚠️ CatBoost 失敗：{e}")
 
