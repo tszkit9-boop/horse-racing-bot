@@ -1796,7 +1796,7 @@ def admin_downloads():
             st.error(f"❌ 讀取失敗：{e}")
     else:
         st.info("ℹ️ 未有 ai_predictions.json")
-        except Exception as e:
+    except Exception as e:
             st.error(f"❌ 讀取失敗：{e}")
     else:
         st.info("ℹ️ 未有 ai_predictions.json（執行過預測先會有）")
