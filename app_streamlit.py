@@ -3002,8 +3002,7 @@ def main():
     col1, col2, col3, col4 = st.columns([5, 1, 1, 1])
     with col1:    
     # 賽事倒數計時器
-    render_countdown()
-        st.title("🏇 賽馬預測系統")
+         st.title("🏇 賽馬預測系統")
         st.markdown("AI 驅動・即時預測・彩池推薦")
         st.caption(f"{datetime.now().strftime('%Y年%m月%d日')}")
     with col2:
