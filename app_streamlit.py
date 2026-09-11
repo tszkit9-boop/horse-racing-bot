@@ -3181,7 +3181,6 @@ def admin_system_settings():
         return
 def admin_system_config():
     st.subheader("⚙️ 系統設定")
-    st.caption("改完之後記得撳「儲存設定」")
 
     try:
         with open("system_config.json", "r", encoding="utf-8") as f:
@@ -3189,83 +3188,36 @@ def admin_system_config():
     except Exception:
         config = {}
 
-    st.markdown("### 🔌 功能開關")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        enable_registration = st.checkbox("開放註冊", value=config.get("enable_registration", True), key="cfg_reg")
-    with col2:
-        enable_payment = st.checkbox("啟用付款", value=config.get("enable_payment", True), key="cfg_pay")
-    with col3:
-        enable_admin = st.checkbox("啟用後台", value=config.get("enable_admin", True), key="cfg_admin")
-
-    col4, col5, col6 = st.columns(3)
-    with col4:
-        enable_lottery = st.checkbox("啟用抽獎", value=config.get("enable_lottery", True), key="cfg_lottery")
-    with col5:
-        enable_shop = st.checkbox("啟用商城", value=config.get("enable_shop", True), key="cfg_shop")
-    with col6:
-        enable_chat = st.checkbox("啟用聊天室", value=config.get("enable_chat", True), key="cfg_chat")
-
-    col7, col8, col9 = st.columns(3)
-    with col7:
-        enable_ip = st.checkbox("IP 重複註冊限制", value=config.get("enable_ip_restriction", True), key="cfg_ip")
-    with col8:
-        enable_multi = st.checkbox("多層級邀請獎勵", value=config.get("enable_multi_level_invite", True), key="cfg_multi")
-    with col9:
-        enable_main = st.checkbox("自動維護", value=config.get("enable_auto_maintenance", True), key="cfg_main")
-
-    st.divider()
-    st.markdown("### 💰 價格設定")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        price_day = st.number_input("日費 (HKD)", value=int(config.get("price_day", 18)), min_value=0, key="cfg_price_day")
-    with col2:
-        price_month = st.number_input("月費 (HKD)", value=int(config.get("price_month", 128)), min_value=0, key="cfg_price_month")
-    with col3:
-        price_quarter = st.number_input("季費 (HKD)", value=int(config.get("price_quarter", 328)), min_value=0, key="cfg_price_quarter")
-
-    st.divider()
-    st.markdown("### 🎁 免費與獎勵")
     col1, col2 = st.columns(2)
-    with col1:
-        free_limit = st.number_input("免費預測次數", value=int(config.get("free_limit", 2)), min_value=0, key="cfg_free_limit")
-    with col2:
-        daily_coin = st.number_input("每日派發虛擬幣", value=int(config.get("daily_virtual_coin", 1000)), min_value=0, key="cfg_daily_coin")
 
-    st.divider()
-    st.markdown("### 🔐 安全設定")
-    col1, col2 = st.columns(2)
     with col1:
-        admin_password = st.text_input("管理員密碼", value=config.get("admin_password", ""), type="password", key="cfg_admin_pw")
-    with col2:
-        currency = st.text_input("貨幣單位", value=config.get("currency", "HKD"), key="cfg_currency")
+        enable_registration = st.checkbox("開放註冊", value=config.get("enable_registration", True))
+        enable_payment = st.checkbox("啟用付款", value=config.get("enable_payment", True))
+        enable_admin = st.checkbox("啟用後台", value=config.get("enable_admin", True))
+        price_day = st.number_input("日費價格", min_value=0, value=config.get("price_day", 18), step=1)
+        price_month = st.number_input("月費價格", min_value=0, value=config.get("price_month", 128), step=1)
+        price_quarter = st.number_input("季費價格", min_value=0, value=config.get("price_quarter", 328), step=1)
 
-    st.divider()
-    if st.button("💾 儲存設定", type="primary", key="save_cfg_btn"):
+    with col2:
+        free_limit = st.number_input("免費預測次數", min_value=0, value=config.get("free_limit", 2), step=1)
+        admin_password = st.text_input("管理員密碼", value=config.get("admin_password", ""), type="password")
+        daily_virtual_coin = st.number_input("每日派發虛擬幣", min_value=0, value=config.get("daily_virtual_coin", 1000), step=100)
+
+    if st.button("💾 儲存設定", type="primary"):
         new_config = {
             "enable_registration": enable_registration,
             "enable_payment": enable_payment,
             "enable_admin": enable_admin,
-            "enable_lottery": enable_lottery,
-            "enable_shop": enable_shop,
-            "enable_chat": enable_chat,
-            "enable_ip_restriction": enable_ip,
-            "enable_multi_level_invite": enable_multi,
-            "enable_auto_maintenance": enable_main,
             "price_day": price_day,
             "price_month": price_month,
             "price_quarter": price_quarter,
             "free_limit": free_limit,
-            "daily_virtual_coin": daily_coin,
             "admin_password": admin_password,
-            "currency": currency,
+            "daily_virtual_coin": daily_virtual_coin,
         }
-        try:
-            with open("system_config.json", "w", encoding="utf-8") as f:
-                json.dump(new_config, f, ensure_ascii=False, indent=2)
+        if save_system_config(new_config):
             st.success("✅ 設定已儲存！")
-        except Exception as e:
-            st.error(f"❌ 儲存失敗: {e}")
+            st.rerun()
 
 def admin_page():
     if 'admin_authenticated' not in st.session_state:
