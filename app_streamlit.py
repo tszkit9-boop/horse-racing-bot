@@ -2202,7 +2202,6 @@ def admin_accuracy_monitor():
     import re
 
     def clean_name(name):
-        """清洗馬名：去括號 + 編號 + 空格"""
         if not name:
             return ""
         name = str(name).strip()
@@ -2244,13 +2243,12 @@ def admin_accuracy_monitor():
         results_df['race_no'] = pd.to_numeric(results_df['race_no'], errors='coerce').astype('Int64')
         results_df['finish_position'] = pd.to_numeric(results_df['finish_position'], errors='coerce')
         results_df['horse_name'] = results_df['horse_name'].astype(str).str.strip()
-        # 🔧 清洗賽果馬名
         results_df['horse_name_clean'] = results_df['horse_name'].apply(clean_name)
     except Exception as e:
         st.error(f"❌ 讀取賽果失敗：{e}")
         return
 
-    # ===== 3. 逐個比對 =====
+    # ===== 3. 逐個比對（Top 3）=====
     compare_rows = []
     hit_count = 0
     total_count = 0
@@ -2259,9 +2257,9 @@ def admin_accuracy_monitor():
     for key, pred in ai_data.items():
         date_str = pred.get('date')
         race_no = pred.get('race')
-        top_horse = pred.get('top_horse')
+        all_horses = pred.get('all_horses', [])
 
-        if not date_str or not race_no or not top_horse:
+        if not date_str or not race_no or not all_horses:
             continue
 
         try:
@@ -2269,35 +2267,53 @@ def admin_accuracy_monitor():
         except Exception:
             continue
 
-        # 搵對應賽果（冠軍）
+        # 預測頭 3 匹
+        top3_pred = all_horses[:3]
+        while len(top3_pred) < 3:
+            top3_pred.append('-')
+
+        # 真實頭 3 名
         matched = results_df[
             (results_df['race_date_str'] == date_str) &
-            (results_df['race_no'] == race_no_int) &
-            (results_df['finish_position'] == 1)
-        ]
+            (results_df['race_no'] == race_no_int)
+        ].sort_values('finish_position').head(3)
 
         if matched.empty:
             compare_rows.append({
-                '日期': date_str, '場次': race_no_int,
-                '預測頭馬': top_horse, '真實頭馬': '⏳ 未有賽果', '結果': '⏳ 待定'
+                '日期': date_str,
+                '場次': race_no_int,
+                '預測 #1': top3_pred[0],
+                '預測 #2': top3_pred[1],
+                '預測 #3': top3_pred[2],
+                '真實 #1': '⏳',
+                '真實 #2': '⏳',
+                '真實 #3': '⏳',
+                '結果': '⏳ 待定'
             })
             pending_count += 1
         else:
-            real_winner = matched.iloc[0]['horse_name']
-            real_winner_clean = matched.iloc[0]['horse_name_clean']
-            pred_clean = clean_name(top_horse)
+            real_top3 = matched['horse_name'].tolist()
+            while len(real_top3) < 3:
+                real_top3.append('-')
 
-            # 🔧 用清洗後嘅名對比
-            is_hit = (pred_clean == real_winner_clean)
+            # 用預測頭馬 vs 真實頭馬 判斷命中
+            pred_top1_clean = clean_name(top3_pred[0])
+            real_top1_clean = clean_name(real_top3[0])
+            is_hit = (pred_top1_clean == real_top1_clean)
 
             total_count += 1
             if is_hit:
                 hit_count += 1
 
             compare_rows.append({
-                '日期': date_str, '場次': race_no_int,
-                '預測頭馬': top_horse,
-                '真實頭馬': real_winner,
+                '日期': date_str,
+                '場次': race_no_int,
+                '預測 #1': top3_pred[0],
+                '預測 #2': top3_pred[1],
+                '預測 #3': top3_pred[2],
+                '真實 #1': real_top3[0],
+                '真實 #2': real_top3[1],
+                '真實 #3': real_top3[2],
                 '結果': '✅ 命中' if is_hit else '❌ 失準'
             })
 
@@ -2315,10 +2331,11 @@ def admin_accuracy_monitor():
     if pending_count > 0:
         st.caption(f"⏳ 仲有 {pending_count} 場未出賽果")
 
-    # ===== 5. 對比表 =====
+    # ===== 5. 對比表（Top 3）=====
     if compare_rows:
         st.divider()
-        st.subheader("📋 預測 vs 賽果對比")
+        st.subheader("📋 預測 Top 3 vs 真實 Top 3")
+
         df = pd.DataFrame(compare_rows).sort_values(['日期', '場次'], ascending=[False, True])
 
         def _color(row):
@@ -2336,7 +2353,8 @@ def admin_accuracy_monitor():
         st.subheader("📈 命中率走勢")
 
         df_chart = pd.DataFrame([r for r in compare_rows if r['結果'] != '⏳ 待定'])
-        if not df_chart.empty:
+        if not df_chart.empty and '結果' in df_chart.columns:
+            df_chart = df_chart.reset_index(drop=True)
             df_chart['累積命中'] = (df_chart['結果'] == '✅ 命中').cumsum()
             df_chart['累積場次'] = range(1, len(df_chart) + 1)
             df_chart['累積命中率'] = df_chart['累積命中'] / df_chart['累積場次']
