@@ -2476,7 +2476,166 @@ def admin_accuracy_monitor():
     col2.metric("命中次數", hit)
     col3.metric("命中率", f"{hit_rate:.2%}")
 
-def admin_subscription(): st.subheader("⏰ 訂閱管理"); st.info("功能開發中")
+def admin_subscription():
+    st.subheader("⏰ 訂閱管理")
+    
+    # ===== 1. 讀取用戶資料 =====
+    try:
+        with open("users.json", "r", encoding="utf-8") as f:
+            users = json.load(f)
+    except FileNotFoundError:
+        st.error("❌ 搵唔到 users.json")
+        return
+    except Exception as e:
+        st.error(f"❌ 讀取失敗: {e}")
+        return
+    
+    # ===== 2. 篩選出所有付費用戶（VIP / paid） =====
+    paid_users = []
+    for username, info in users.items():
+        role = info.get("role", "free")
+        if role in ["VIP", "paid", "super_admin"]:
+            expiry = info.get("vip_expiry", "")
+            # 計算剩餘天數
+            days_left = "永久"
+            if expiry:
+                try:
+                    exp_date = datetime.strptime(expiry, "%Y-%m-%d").date()
+                    delta = (exp_date - datetime.now().date()).days
+                    days_left = f"{delta} 天" if delta > 0 else "已過期"
+                except Exception:
+                    days_left = "格式錯誤"
+            
+            paid_users.append({
+                "用戶名": username,
+                "角色": role,
+                "到期日": expiry if expiry else "無",
+                "剩餘": days_left,
+                "註冊日": info.get("register_date", "無"),
+            })
+    
+    # ===== 3. 統計 =====
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("📊 付費用戶總數", len(paid_users))
+    with col2:
+        vip_count = sum(1 for u in paid_users if u["角色"] == "VIP")
+        st.metric("👑 VIP 數量", vip_count)
+    with col3:
+        expired_count = sum(1 for u in paid_users if u["剩餘"] == "已過期")
+        st.metric("⚠️ 已過期", expired_count)
+    
+    st.divider()
+    
+    # ===== 4. 顯示所有付費用戶 =====
+    if not paid_users:
+        st.info("暫無付費用戶。")
+        return
+    
+    st.markdown("### 📋 付費用戶清單")
+    df_paid = pd.DataFrame(paid_users)
+    st.dataframe(df_paid, use_container_width=True, hide_index=True)
+    
+    st.divider()
+    
+    # ===== 5. 管理操作 =====
+    st.markdown("### ⚙️ 管理操作")
+    
+    # 選擇要操作嘅用戶
+    all_usernames = [u["用戶名"] for u in paid_users]
+    selected_user = st.selectbox("選擇用戶", all_usernames, key="sub_mgmt_user")
+    
+    if selected_user:
+        user_info = users[selected_user]
+        current_expiry = user_info.get("vip_expiry", "")
+        
+        st.info(f"**{selected_user}** 當前到期日：`{current_expiry if current_expiry else '未設定'}`")
+        
+        col_a, col_b, col_c, col_d = st.columns(4)
+        
+        with col_a:
+            if st.button("➕ 加 7 日", use_container_width=True, key="add_7"):
+                new_expiry = _add_days_to_expiry(current_expiry, 7)
+                users[selected_user]["vip_expiry"] = new_expiry
+                users[selected_user]["role"] = "VIP"
+                with open("users.json", "w", encoding="utf-8") as f:
+                    json.dump(users, f, ensure_ascii=False, indent=2)
+                st.success(f"✅ 已加 7 日，新到期日：{new_expiry}")
+                st.rerun()
+        
+        with col_b:
+            if st.button("➕ 加 30 日", use_container_width=True, key="add_30"):
+                new_expiry = _add_days_to_expiry(current_expiry, 30)
+                users[selected_user]["vip_expiry"] = new_expiry
+                users[selected_user]["role"] = "VIP"
+                with open("users.json", "w", encoding="utf-8") as f:
+                    json.dump(users, f, ensure_ascii=False, indent=2)
+                st.success(f"✅ 已加 30 日，新到期日：{new_expiry}")
+                st.rerun()
+        
+        with col_c:
+            if st.button("➕ 加 90 日", use_container_width=True, key="add_90"):
+                new_expiry = _add_days_to_expiry(current_expiry, 90)
+                users[selected_user]["vip_expiry"] = new_expiry
+                users[selected_user]["role"] = "VIP"
+                with open("users.json", "w", encoding="utf-8") as f:
+                    json.dump(users, f, ensure_ascii=False, indent=2)
+                st.success(f"✅ 已加 90 日，新到期日：{new_expiry}")
+                st.rerun()
+        
+        with col_d:
+            if st.button("❌ 取消 VIP", use_container_width=True, key="cancel_vip"):
+                users[selected_user]["role"] = "free"
+                users[selected_user]["vip_expiry"] = ""
+                with open("users.json", "w", encoding="utf-8") as f:
+                    json.dump(users, f, ensure_ascii=False, indent=2)
+                st.warning(f"⚠️ 已取消 {selected_user} 嘅 VIP")
+                st.rerun()
+    
+    st.divider()
+    
+    # ===== 6. 自動過期檢查 =====
+    st.markdown("### 🔄 自動過期檢查")
+    st.caption("檢查所有已過期嘅 VIP，自動降返做免費用戶。")
+    
+    if st.button("🔍 立即檢查過期用戶", use_container_width=True, key="check_expired"):
+        expired_list = []
+        today = datetime.now().date()
+        for username, info in users.items():
+            if info.get("role") == "VIP" and info.get("vip_expiry"):
+                try:
+                    exp_date = datetime.strptime(info["vip_expiry"], "%Y-%m-%d").date()
+                    if exp_date < today:
+                        expired_list.append(username)
+                except Exception:
+                    pass
+        
+        if expired_list:
+            for u in expired_list:
+                users[u]["role"] = "free"
+                users[u]["vip_expiry"] = ""
+            with open("users.json", "w", encoding="utf-8") as f:
+                json.dump(users, f, ensure_ascii=False, indent=2)
+            st.success(f"✅ 已自動降級 {len(expired_list)} 位過期用戶：{', '.join(expired_list)}")
+            st.rerun()
+        else:
+            st.info("✅ 冇發現過期用戶。")
+
+
+def _add_days_to_expiry(current_expiry, days):
+    """輔助函數：喺現有到期日上加天數，如果已過期就由今日開始計"""
+    today = datetime.now().date()
+    if current_expiry:
+        try:
+            base = datetime.strptime(current_expiry, "%Y-%m-%d").date()
+            if base < today:
+                base = today
+        except Exception:
+            base = today
+    else:
+        base = today
+    new_date = base + timedelta(days=days)
+    return new_date.strftime("%Y-%m-%d")
 
 def admin_payment_review():
     st.subheader("📤 付款審核")
@@ -2516,7 +2675,123 @@ def admin_content():
             f.write(uploaded.getbuffer())
         st.success("✅ 排位表已更新")
 
-def admin_automation(): st.subheader("🤖 自動化工具"); st.info("功能開發中")
+def admin_automation():
+    st.subheader("🤖 自動化工具")
+    st.caption("呢度可以手動觸發自動化任務，唔使等 GitHub Actions 排程。")
+    
+    # 初始化 session state 儲存結果
+    if "automation_log" not in st.session_state:
+        st.session_state.automation_log = {}
+    
+    st.divider()
+    
+    # ===== 任務清單 =====
+    tasks = [
+        {
+            "name": "📊 更新賽果數據",
+            "desc": "爬取最新賽果，更新 race_results_clean.csv",
+            "script": "fetch_results_2lang.py",
+            "args": []
+        },
+        {
+            "name": "📋 更新排位表",
+            "desc": "爬取最新排位表同賠率，更新 racecard_full.csv",
+            "script": "fetch_racecard_2lang.py",
+            "args": []
+        },
+        {
+            "name": "🎯 更新 AI 命中率",
+            "desc": "比對 AI 預測 vs 真實賽果，更新 accuracy.json",
+            "script": "update_ai_accuracy.py",
+            "args": []
+        },
+        {
+            "name": "🧠 重新訓練 AI 模型",
+            "desc": "重新訓練 XGBoost + CatBoost 模型（需時較長）",
+            "script": "train_models.py",
+            "args": []
+        },
+        {
+            "name": "🧹 自動維護",
+            "desc": "清理過期數據、更新用戶等級、發放每日虛擬幣",
+            "script": "auto_maintenance.py",
+            "args": []
+        }
+    ]
+    
+    # ===== 逐個任務顯示 =====
+    for i, task in enumerate(tasks):
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            st.markdown(f"**{task['name']}**")
+            st.caption(task['desc'])
+        with col2:
+            if st.button("▶️ 執行", key=f"run_task_{i}", use_container_width=True):
+                with st.spinner(f"正在執行 {task['name']}..."):
+                    import subprocess
+                    import os
+                    script_path = task["script"]
+                    
+                    # 檢查檔案是否存在
+                    if not os.path.exists(script_path):
+                        st.session_state.automation_log[task['name']] = (
+                            "error",
+                            f"❌ 搵唔到 `{script_path}`，請確認檔案已上傳到 GitHub。"
+                        )
+                    else:
+                        try:
+                            result = subprocess.run(
+                                ["python", script_path] + task["args"],
+                                capture_output=True,
+                                text=True,
+                                timeout=300  # 最長 5 分鐘
+                            )
+                            if result.returncode == 0:
+                                st.session_state.automation_log[task['name']] = (
+                                    "success",
+                                    f"✅ 執行成功！\n\n```\n{result.stdout[-1500:]}\n```"
+                                )
+                            else:
+                                st.session_state.automation_log[task['name']] = (
+                                    "error",
+                                    f"❌ 執行失敗（returncode={result.returncode}）\n\n```\n{result.stderr[-1500:]}\n```"
+                                )
+                        except subprocess.TimeoutExpired:
+                            st.session_state.automation_log[task['name']] = (
+                                "error",
+                                "⏰ 執行超時（超過 5 分鐘），請改為喺本地或 GitHub Actions 執行。"
+                            )
+                        except Exception as e:
+                            st.session_state.automation_log[task['name']] = (
+                                "error",
+                                f"❌ 發生錯誤：{e}"
+                            )
+                    st.rerun()
+        
+        # 顯示該任務嘅執行結果
+        if task['name'] in st.session_state.automation_log:
+            status, msg = st.session_state.automation_log[task['name']]
+            if status == "success":
+                st.success(msg)
+            else:
+                st.error(msg)
+        
+        st.divider()
+    
+    # ===== 一鍵執行全部 =====
+    st.markdown("### ⚡ 一鍵執行所有任務")
+    st.caption("依次執行：更新賽果 → 更新排位表 → 更新命中率（唔包括重新訓練模型）")
+    
+    if st.button("🚀 全部執行", use_container_width=True, key="run_all_tasks"):
+        st.warning("⚠️ 呢個操作需時較長，請耐心等候...")
+        # 呢度可以加入順序執行邏輯
+        st.info("建議逐個任務執行，方便睇到邊個出錯。")
+    
+    # ===== 清除日誌 =====
+    if st.button("🗑️ 清除執行日誌", use_container_width=True, key="clear_logs"):
+        st.session_state.automation_log = {}
+        st.success("✅ 已清除日誌！")
+        st.rerun()
 
 def admin_security():
     st.subheader("🔐 安全與權限")
@@ -2904,23 +3179,202 @@ def admin_system_settings():
     if user_group != 'super_admin':
         st.error("⛔ 只有超級管理員可以修改")
         return
+def admin_system_config():
     st.subheader("⚙️ 系統設定")
-    config = load_system_config()
+    st.caption("呢度嘅設定會即時生效。改完之後記得撳「儲存設定」。")
+
+    # ===== 讀取現有設定 =====
+    try:
+        with open("system_config.json", "r", encoding="utf-8") as f:
+            config = json.load(f)
+    except Exception:
+        config = {}
+
+    # ===== 1. 功能開關 =====
+    st.markdown("### 🔌 功能開關")
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        enable_registration = st.checkbox(
+            "✅ 開放註冊",
+            value=config.get("enable_registration", True),
+            key="cfg_reg"
+        )
+    with col2:
+        enable_payment = st.checkbox(
+            "✅ 啟用付款",
+            value=config.get("enable_payment", True),
+            key="cfg_pay"
+        )
+    with col3:
+        enable_admin = st.checkbox(
+            "✅ 啟用後台",
+            value=config.get("enable_admin", True),
+            key="cfg_admin"
+        )
+
+    col4, col5, col6 = st.columns(3)
+    with col4:
+        enable_lottery = st.checkbox(
+            "🎰 啟用抽獎",
+            value=config.get("enable_lottery", True),
+            key="cfg_lottery"
+        )
+    with col5:
+        enable_shop = st.checkbox(
+            "🛒 啟用商城",
+            value=config.get("enable_shop", True),
+            key="cfg_shop"
+        )
+    with col6:
+        enable_chat = st.checkbox(
+            "💬 啟用聊天室",
+            value=config.get("enable_chat", True),
+            key="cfg_chat"
+        )
+
+    col7, col8, col9 = st.columns(3)
+    with col7:
+        enable_ip_restriction = st.checkbox(
+            "🔒 IP 重複註冊限制",
+            value=config.get("enable_ip_restriction", True),
+            key="cfg_ip"
+        )
+    with col8:
+        enable_multi_level_invite = st.checkbox(
+            "👥 多層級邀請獎勵",
+            value=config.get("enable_multi_level_invite", True),
+            key="cfg_multi"
+        )
+    with col9:
+        enable_auto_maintenance = st.checkbox(
+            "🔧 自動維護",
+            value=config.get("enable_auto_maintenance", True),
+            key="cfg_main"
+        )
+
+    st.divider()
+
+    # ===== 2. 價格設定 =====
+    st.markdown("### 💰 付費方案價格")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        price_day = st.number_input(
+            "日費價格 (HKD)",
+            value=int(config.get("price_day", 18)),
+            min_value=0,
+            key="cfg_price_day"
+        )
+    with col2:
+        price_month = st.number_input(
+            "月費價格 (HKD)",
+            value=int(config.get("price_month", 128)),
+            min_value=0,
+            key="cfg_price_month"
+        )
+    with col3:
+        price_quarter = st.number_input(
+            "季費價格 (HKD)",
+            value=int(config.get("price_quarter", 328)),
+            min_value=0,
+            key="cfg_price_quarter"
+        )
+
+    st.divider()
+
+    # ===== 3. 免費與獎勵設定 =====
+    st.markdown("### 🎁 免費與獎勵設定")
     col1, col2 = st.columns(2)
     with col1:
-        enable_registration = st.checkbox("開放註冊", value=config.get("enable_registration", True))
-        enable_payment = st.checkbox("啟用付款", value=config.get("enable_payment", True))
-        enable_admin = st.checkbox("啟用後台", value=config.get("enable_admin", True))
-        price_day = st.number_input("日費價格", min_value=0, value=config.get("price_day", 18), step=1)
-        price_month = st.number_input("月費價格", min_value=0, value=config.get("price_month", 128), step=1)
-        price_quarter = st.number_input("季費價格", min_value=0, value=config.get("price_quarter", 328), step=1)
+        free_limit = st.number_input(
+            "免費預測次數",
+            value=int(config.get("free_limit", 2)),
+            min_value=0,
+            key="cfg_free_limit"
+        )
     with col2:
-        free_limit = st.number_input("免費預測次數", min_value=0, value=config.get("free_limit", 2), step=1)
-        admin_password = st.text_input("管理員密碼", value=config.get("admin_password", "z54060437K"), type="password")
-        daily_virtual_coin = st.number_input("每日派發虛擬幣", min_value=0, value=config.get("daily_virtual_coin", 1000), step=100)
-    if st.button("💾 儲存設定", type="primary"):
-        new_config = {"enable_registration": enable_registration, "enable_payment": enable_payment, "enable_admin": enable_admin, "free_limit": free_limit, "admin_password": admin_password, "price_day": price_day, "price_month": price_month, "price_quarter": price_quarter, "daily_virtual_coin": daily_virtual_coin}
-        if save_system_config(new_config): st.success("✅ 設定已儲存！"); st.rerun()
+        daily_virtual_coin = st.number_input(
+            "每日派發虛擬幣",
+            value=int(config.get("daily_virtual_coin", 1000)),
+            min_value=0,
+            key="cfg_daily_coin"
+        )
+
+    st.divider()
+
+    # ===== 4. 安全設定 =====
+    st.markdown("### 🔐 安全設定")
+    col1, col2 = st.columns(2)
+    with col1:
+        admin_password = st.text_input(
+            "管理員密碼",
+            value=config.get("admin_password", ""),
+            type="password",
+            key="cfg_admin_pw"
+        )
+    with col2:
+        currency = st.text_input(
+            "貨幣單位",
+            value=config.get("currency", "HKD"),
+            key="cfg_currency"
+        )
+
+    st.divider()
+
+    # ===== 5. AI 模型設定 =====
+    st.markdown("### 🧠 AI 模型設定")
+    col1, col2 = st.columns(2)
+    with col1:
+        xgb_weight = st.number_input(
+            "XGBoost 權重",
+            value=float(config.get("xgb_weight", 5)),
+            min_value=0.0,
+            key="cfg_xgb"
+        )
+    with col2:
+        cat_weight = st.number_input(
+            "CatBoost 權重",
+            value=float(config.get("cat_weight", 20)),
+            min_value=0.0,
+            key="cfg_cat"
+        )
+
+    st.divider()
+
+    # ===== 6. 儲存設定 =====
+    col_a, col_b = st.columns([1, 3])
+    with col_a:
+        if st.button("💾 儲存設定", use_container_width=True, type="primary", key="save_config_btn"):
+            new_config = {
+                "enable_registration": enable_registration,
+                "enable_payment": enable_payment,
+                "enable_admin": enable_admin,
+                "enable_lottery": enable_lottery,
+                "enable_shop": enable_shop,
+                "enable_chat": enable_chat,
+                "enable_ip_restriction": enable_ip_restriction,
+                "enable_multi_level_invite": enable_multi_level_invite,
+                "enable_auto_maintenance": enable_auto_maintenance,
+                "price_day": price_day,
+                "price_month": price_month,
+                "price_quarter": price_quarter,
+                "free_limit": free_limit,
+                "daily_virtual_coin": daily_virtual_coin,
+                "admin_password": admin_password,
+                "currency": currency,
+                "xgb_weight": xgb_weight,
+                "cat_weight": cat_weight,
+            }
+            try:
+                with open("system_config.json", "w", encoding="utf-8") as f:
+                    json.dump(new_config, f, ensure_ascii=False, indent=2)
+                st.success("✅ 設定已儲存！(下次重新部署時會還原，建議喺 GitHub 直接改 system_config.json)")
+                st.balloons()
+            except Exception as e:
+                st.error(f"❌ 儲存失敗: {e}")
+
+    with col_b:
+        st.info("💡 **溫馨提示**：Streamlit Cloud 每次重新部署都會讀取 GitHub 上嘅 `system_config.json`。如果你想設定永久生效，請直接去 GitHub 改 `system_config.json`。")
 
 def admin_page():
     if 'admin_authenticated' not in st.session_state:
