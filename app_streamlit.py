@@ -3068,9 +3068,54 @@ def main():
     with col3:
         if st.session_state.get("logged_in", False):
             with st.popover("👤 個人中心", use_container_width=True):
-                st.write(f"歡迎，{st.session_state.get('username', '用戶')}！")
-                # 你可以在這裡加入更多個人中心內容
+                username = st.session_state.get("username", "用戶")
+                st.markdown(f"#### 歡迎，{username}！")
+                st.divider()
 
+                # ===== 1. 個人預測紀錄 =====
+                with st.expander("📜 我的預測紀錄", expanded=False):
+                    try:
+                        import json
+                        with open("accuracy.json", "r", encoding="utf-8") as f:
+                            records = json.load(f)
+                        # 假設記錄格式係 [{"user": "xxx", "date": "...", "prediction": "...", "result": "..."}]
+                        # 你可以根據實際結構調整
+                        my_records = [r for r in records if r.get("user") == username]
+                        if my_records:
+                            st.dataframe(my_records[-10:], use_container_width=True)
+                        else:
+                            st.info("暫時未有預測紀錄。")
+                    except FileNotFoundError:
+                        st.info("暫時未有預測紀錄。")
+                    except Exception as e:
+                        st.error(f"讀取紀錄失敗: {e}")
+
+                st.divider()
+
+                # ===== 2. 更改密碼 =====
+                with st.expander("🔑 更改密碼", expanded=False):
+                    old_pw = st.text_input("舊密碼", type="password", key="old_pw_input")
+                    new_pw = st.text_input("新密碼", type="password", key="new_pw_input")
+                    confirm_pw = st.text_input("確認新密碼", type="password", key="confirm_pw_input")
+                    if st.button("確認更改", use_container_width=True, key="change_pw_btn"):
+                        if not old_pw or not new_pw or not confirm_pw:
+                            st.warning("請填寫所有欄位！")
+                        elif new_pw != confirm_pw:
+                            st.error("兩次新密碼不一致！")
+                        else:
+                            try:
+                                import json
+                                with open("users.json", "r", encoding="utf-8") as f:
+                                    users = json.load(f)
+                                if username in users and users[username].get("password") == old_pw:
+                                    users[username]["password"] = new_pw
+                                    with open("users.json", "w", encoding="utf-8") as f:
+                                        json.dump(users, f, ensure_ascii=False, indent=2)
+                                    st.success("✅ 密碼已成功更改！")
+                                else:
+                                    st.error("❌ 舊密碼不正確！")
+                            except Exception as e:
+                                st.error(f"更改失敗: {e}")
     with col4:
         if st.session_state.get("logged_in", False):
             if st.button("🚪 登出", use_container_width=True):
