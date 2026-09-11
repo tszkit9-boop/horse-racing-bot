@@ -526,8 +526,7 @@ def run_prediction(date_str, race_no):
     try:
         race_df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig', header=0)
         race_df = _repair_racecard(race_df)
-        st.write(f"📋 修復後日期：{sorted(race_df['race_date'].unique())}")
-    except Exception as e:
+        except Exception as e:
         st.error(f"❌ 讀取失敗：{e}")
         return None, None
 
