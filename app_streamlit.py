@@ -449,51 +449,65 @@ def run_prediction(date_str, race_no):
 def _rank_from_csv(col_keywords):
     try:
         df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig', low_memory=False)
-        df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
-        df = df.loc[:, ~df.columns.duplicated()]
+    except Exception as e:
+        st.error(f"❌ 讀取 ALL_DATA_MERGED.csv 失敗：{e}")
+        return None
 
-        pos_col = None
-        for c in df.columns:
-            if str(c).lower() in ['pla', '名次', 'finish_position']:
-                pos_col = c
-                break
+    df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
+    df = df.loc[:, ~df.columns.duplicated()]
 
-        target_col = None
-        for c in df.columns:
-            if any(k in str(c).lower() for k in col_keywords):
-                target_col = c
-                break
+    pos_col = None
+    for c in df.columns:
+        if str(c).lower() in ['pla', '名次', 'finish_position', 'finishing_position', 'pos', 'rank']:
+            pos_col = c
+            break
 
-        if not pos_col or not target_col:
-            st.error(f"❌ 搵唔到欄位！名次: {pos_col}, 目標: {target_col}")
-            return None
+    target_col = None
+    for c in df.columns:
+        if any(k in str(c).lower() for k in col_keywords):
+            target_col = c
+            break
 
-        ts = df[target_col]
-        if isinstance(ts, pd.DataFrame):
-            ts = ts.iloc[:, 0]
-        ps = df[pos_col]
-        if isinstance(ps, pd.DataFrame):
-            ps = ps.iloc[:, 0]
+    if not pos_col or not target_col:
+        st.error(f"❌ 搵唔到欄位！名次: {pos_col}, 目標: {target_col}")
+        st.write("可用欄位：", df.columns.tolist()[:30])
+        return None
 
-        temp = pd.DataFrame({
-            'name': ts.astype(str).str.strip(),
-            'finish_position': pd.to_numeric(
-                ps.astype(str).str.extract(r'(\d+)')[0],
-                errors='coerce'
-            )
-        })
-        temp = temp.dropna(subset=['finish_position'])
-        temp = temp[~temp['name'].str.lower().isin(['nan', 'none', ''])]
+    ts = df[target_col]
+    if isinstance(ts, pd.DataFrame):
+        ts = ts.iloc[:, 0]
+    ps = df[pos_col]
+    if isinstance(ps, pd.DataFrame):
+        ps = ps.iloc[:, 0]
 
-        if temp.empty:
-            st.warning("⚠️ 過濾後數據為空！")
-            return None
+    pos_numeric = pd.to_numeric(ps, errors='coerce')
+    if pos_numeric.notna().sum() == 0:
+        pos_numeric = pd.to_numeric(
+            ps.astype(str).str.extract(r'(\d+)')[0],
+            errors='coerce'
+        )
 
-        total = temp.groupby('name').size().reset_index(name='總出賽')
-        wins = temp[temp['finish_position'] == 1].groupby('name').size().reset_index(name='勝出')
-        stats = pd.merge(total, wins, on='name', how='left').fillna({'勝出': 0})
-        stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
-        return stats.sort_values('勝出', ascending=False)
+    temp = pd.DataFrame({
+        'name': ts.astype(str).str.strip(),
+        'finish_position': pos_numeric
+    })
+    temp = temp.dropna(subset=['finish_position'])
+    temp = temp[~temp['name'].str.lower().isin(['nan', 'none', ''])]
+
+    if temp.empty:
+        st.warning("⚠️ 過濾後數據為空！")
+        with st.expander("🔍 診斷資訊（點擊展開）"):
+            st.write(f"總行數：{len(df)}")
+            st.write(f"使用欄位：名次=`{pos_col}`, 目標=`{target_col}`")
+            st.write(f"名次欄位樣本：{ps.head(10).tolist()}")
+            st.write(f"目標欄位樣本：{ts.head(10).tolist()}")
+        return None
+
+    total = temp.groupby('name').size().reset_index(name='總出賽')
+    wins = temp[temp['finish_position'] == 1].groupby('name').size().reset_index(name='勝出')
+    stats = pd.merge(total, wins, on='name', how='left').fillna({'勝出': 0})
+    stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
+    return stats.sort_values('勝出', ascending=False)
     except Exception as e:
         st.error(f"讀取失敗: {e}")
         return None
@@ -888,27 +902,186 @@ def admin_finance():
 def admin_promo_codes():
     st.subheader("🎟️ 優惠碼管理")
     promos = load_promos()
-    c1, c2 = st.columns(2)
-    with c1:
-        if promos:
-            st.dataframe(pd.DataFrame.from_dict(promos, orient='index'), use_container_width=True)
-        else:
-            st.info("暫無")
-    with c2:
-        dur = st.number_input("有效期 (天)", min_value=1, value=30, key="pr_dur")
-        dt = st.selectbox("類型", ["percentage", "fixed", "free"], key="pr_dt")
-        dv = st.number_input("折扣數值", min_value=0, value=20, key="pr_dv")
-        if st.button("產生", key="pr_gen"):
+
+    # ===== 統計 =====
+    if promos:
+        total = len(promos)
+        used = sum(1 for p in promos.values() if p.get('used', False))
+        active = sum(1 for p in promos.values() if not p.get('used', False) and _is_promo_valid(p))
+        expired = sum(1 for p in promos.values() if not p.get('used', False) and not _is_promo_valid(p))
+        total_discount = sum(p.get('discount_amount', 0) for p in promos.values() if p.get('used', False))
+
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("🎟️ 總數", total)
+        c2.metric("✅ 已使用", used)
+        c3.metric("🟢 有效", active)
+        c4.metric("🔴 已過期", expired)
+        c5.metric("💰 總折扣", f"${total_discount:.0f}")
+    else:
+        total = used = active = expired = 0
+
+    st.divider()
+
+    # ===== 產生新優惠碼 =====
+    st.subheader("➕ 產生新優惠碼")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        duration = st.number_input("有效期 (天)", min_value=1, value=30, key="pr_dur")
+        quantity = st.number_input("數量", min_value=1, value=1, max_value=100, key="pr_qty")
+        dtype = st.selectbox(
+            "折扣類型",
+            ["percentage", "fixed", "free", "first_order", "min_spend"],
+            key="pr_dtype",
+            format_func=lambda x: {
+                "percentage": "百分比折扣（如 20% off）",
+                "fixed": "固定金額（如 -$50）",
+                "free": "完全免費",
+                "first_order": "首單優惠（只限首次付款）",
+                "min_spend": "滿減（消費滿 X 減 Y）"
+            }.get(x, x)
+        )
+    with col2:
+        dval = st.number_input("折扣數值", min_value=0, value=20, key="pr_dval",
+            help="百分比：20 = 8折；固定：減 $20；滿減：折扣金額")
+        min_spend = st.number_input("最低消費 (滿減用)", min_value=0, value=100, key="pr_minspend")
+        max_uses = st.number_input("每人限用次數", min_value=0, value=1, key="pr_maxuses",
+            help="0 = 不限")
+    with col3:
+        st.write("")
+        st.write("")
+        note = st.text_input("備註（選填）", key="pr_note", placeholder="例如：中秋活動")
+
+    if st.button("🎟️ 產生優惠碼", type="primary", use_container_width=True, key="pr_gen"):
+        new_codes = []
+        for _ in range(int(quantity)):
             code = generate_promo_code()
             promos[code] = {
                 "used": False,
-                "expiry": (datetime.now() + timedelta(days=dur)).isoformat(),
-                "discount_type": dt,
-                "discount_value": dv
+                "expiry": (datetime.now() + timedelta(days=duration)).isoformat(),
+                "created_at": datetime.now().isoformat(),
+                "discount_type": dtype,
+                "discount_value": dval,
+                "min_spend": min_spend,
+                "max_uses_per_user": max_uses,
+                "used_by": [],
+                "discount_amount": 0,
+                "note": note
             }
+            new_codes.append(code)
+        save_promos(promos)
+        st.success(f"✅ 已產生 {len(new_codes)} 個優惠碼！")
+        st.code("\n".join(new_codes))
+        st.rerun()
+
+    st.divider()
+
+    # ===== 篩選器 =====
+    if promos:
+        st.subheader("📋 優惠碼清單")
+        filter_option = st.radio(
+            "篩選",
+            ["全部", "有效", "已使用", "已過期"],
+            horizontal=True,
+            key="pr_filter"
+        )
+
+        filtered = {}
+        for code, p in promos.items():
+            is_used = p.get('used', False)
+            is_valid = _is_promo_valid(p)
+            if filter_option == "全部":
+                filtered[code] = p
+            elif filter_option == "有效" and not is_used and is_valid:
+                filtered[code] = p
+            elif filter_option == "已使用" and is_used:
+                filtered[code] = p
+            elif filter_option == "已過期" and not is_used and not is_valid:
+                filtered[code] = p
+
+        if filtered:
+            rows = []
+            for code, p in filtered.items():
+                expiry = p.get('expiry', '')
+                days_left = "永久"
+                if expiry:
+                    try:
+                        exp_dt = datetime.fromisoformat(expiry)
+                        delta = (exp_dt - datetime.now()).days
+                        days_left = f"{delta} 天" if delta >= 0 else "已過期"
+                    except Exception:
+                        pass
+
+                used_by = p.get('used_by', [])
+                used_by_str = ", ".join(used_by) if used_by else "-"
+                status = "✅ 已使用" if p.get('used', False) else ("🟢 有效" if _is_promo_valid(p) else "🔴 過期")
+
+                rows.append({
+                    "優惠碼": code,
+                    "類型": p.get('discount_type', ''),
+                    "數值": p.get('discount_value', 0),
+                    "狀態": status,
+                    "剩餘": days_left,
+                    "使用者": used_by_str,
+                    "備註": p.get('note', '')
+                })
+
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        else:
+            st.info(f"冇符合「{filter_option}」嘅優惠碼")
+
+    st.divider()
+
+    # ===== 快速操作 =====
+    st.subheader("⚡ 快速操作")
+    ca, cb, cc = st.columns(3)
+    with ca:
+        if st.button("🧹 清理過期優惠碼", use_container_width=True, key="pr_clean"):
+            before = len(promos)
+            promos = {k: v for k, v in promos.items()
+                      if v.get('used', False) or _is_promo_valid(v)}
             save_promos(promos)
-            st.success(f"✅ `{code}`")
+            st.success(f"✅ 已清理 {before - len(promos)} 個過期優惠碼")
             st.rerun()
+    with cb:
+        if st.button("📥 下載優惠碼 CSV", use_container_width=True, key="pr_download"):
+            if promos:
+                rows = []
+                for code, p in promos.items():
+                    rows.append({
+                        "優惠碼": code,
+                        "類型": p.get('discount_type', ''),
+                        "數值": p.get('discount_value', 0),
+                        "過期日": p.get('expiry', ''),
+                        "已使用": p.get('used', False),
+                        "備註": p.get('note', '')
+                    })
+                csv = pd.DataFrame(rows).to_csv(index=False).encode('utf-8-sig')
+                st.download_button(
+                    "⬇️ 點擊下載",
+                    data=csv,
+                    file_name=f"promo_codes_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv",
+                    key="pr_dl_btn"
+                )
+    with cc:
+        if st.button("🗑️ 清空所有優惠碼", use_container_width=True, key="pr_clear_all"):
+            if st.checkbox("確認清空？", key="pr_confirm_clear"):
+                save_promos({})
+                st.success("✅ 已清空所有優惠碼")
+                st.rerun()
+
+
+def _is_promo_valid(promo):
+    """檢查優惠碼係咪有效"""
+    if promo.get('used', False):
+        return False
+    expiry = promo.get('expiry')
+    if not expiry:
+        return True
+    try:
+        return datetime.fromisoformat(expiry) >= datetime.now()
+    except Exception:
+        return False
 
 def admin_accuracy_monitor():
     st.subheader("📈 預測準確率監控")
