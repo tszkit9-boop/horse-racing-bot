@@ -671,6 +671,81 @@ def admin_shop_config():
                 st.rerun()
         except Exception as e:
             st.error(f"編輯器錯誤：{e}")
+    def show_paywall():
+    st.subheader("💳 選擇你嘅方案")
+    plan_options = {
+        "day": f"☀️ 日費  ${CONFIG['price_day']}   (1天)",
+        "month": f"📆 月費  ${CONFIG['price_month']}  (30天)",
+        "quarter": f"📅 季費  ${CONFIG['price_quarter']} (90天)"
+    }
+
+    with st.form(key="payment_form"):
+        plan_choice = st.radio(
+            "請選擇付費方案：",
+            options=list(plan_options.keys()),
+            format_func=lambda x: plan_options[x],
+            horizontal=True,
+            key="plan_radio"
+        )
+        promo_input = st.text_input("優惠碼（如有）", key="promo_input_form")
+
+        st.divider()
+        st.markdown("""
+        **📤 付款方式：FPS 轉數快 `12345678`（SHTSN SYSTEM）**
+        💬 過數後請將截圖發送 Telegram：**@bryhjdjbrbxibvrjskofndhiebdpaq**
+        """)
+
+        submitted = st.form_submit_button("📩 提交付款申請", type="primary")
+
+        if submitted:
+            if not plan_choice:
+                st.error("❌ 請選擇方案")
+                return
+            username = st.session_state.get('username')
+            if not username:
+                st.error("❌ 請先登入")
+                return
+
+            original_price = get_plan_price(plan_choice)
+            final_price = original_price
+            discount_desc = ""
+            promo_code_used = None
+
+            if promo_input:
+                promos = load_promos()
+                promo_data = promos.get(promo_input.strip())
+                if promo_data and not promo_data.get('used', False):
+                    expiry = promo_data.get('expiry')
+                    valid = True
+                    if expiry:
+                        try:
+                            if datetime.fromisoformat(expiry) < datetime.now():
+                                valid = False
+                        except Exception:
+                            pass
+                    if valid:
+                        dtype = promo_data.get('discount_type', 'percentage')
+                        dval = promo_data.get('discount_value', 0)
+                        if dtype == 'percentage':
+                            final_price = original_price * (1 - dval / 100)
+                            discount_desc = f"{dval}% 折扣"
+                        elif dtype == 'fixed':
+                            final_price = max(0, original_price - dval)
+                            discount_desc = f"減 ${dval}"
+                        elif dtype == 'free':
+                            final_price = 0
+                            discount_desc = "全免！"
+                        final_price = round(final_price, 2)
+                        promo_code_used = promo_input.strip()
+                        st.success(f"✅ 優惠碼已套用！折扣後：${final_price}")
+                else:
+                    st.warning("⚠️ 優惠碼無效")
+
+            success, msg = submit_payment_request(username, plan_choice, final_price, discount_desc, promo_code_used)
+            if success:
+                st.success(msg)
+                st.info(f"方案：{get_plan_name(plan_choice)}，金額：${final_price}")
+                st.info("📩 提交後請 Telegram 通知管理員")
 
 def show_lottery_interface(username):
     st.subheader("🎰 每日抽獎")
