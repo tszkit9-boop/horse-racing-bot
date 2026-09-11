@@ -662,6 +662,7 @@ def show_lottery_interface(username):
         st.info("請先登入")
         return
 
+    # 倒數計時
     try:
         hk_tz = pytz.timezone("Asia/Hong_Kong")
         now = datetime.now(hk_tz)
@@ -678,14 +679,22 @@ def show_lottery_interface(username):
         st.warning("暫無獎品，請管理員新增")
         return
 
+    # 檢查用戶抽獎次數
     users = load_users()
     user = users.get(username, {})
-    today = datetime.now().strftime('%Y-%m-%d')
-    if user.get('last_lottery_date') == today:
-        st.warning("⚠️ 今日已抽過獎，聽日再嚟！")
+    lottery_chances = user.get('lottery_chances', 0)
+
+    st.markdown(f"### 🎟️ 你仲有 **{lottery_chances}** 次抽獎機會")
+
+    if lottery_chances <= 0:
+        st.warning("⚠️ 你冇抽獎次數啦！請聯絡管理員增加。")
         return
 
     if st.button("🎲 抽獎！", type="primary", use_container_width=True):
+        # 扣一次抽獎次數
+        users[username]['lottery_chances'] = lottery_chances - 1
+
+        # 抽獎邏輯
         weights = [_safe_int(p.get('weight', 1), 1) for p in prizes]
         if sum(weights) <= 0:
             weights = [1] * len(prizes)
@@ -712,15 +721,17 @@ def show_lottery_interface(username):
                 "used": False,
                 "expiry": (datetime.now() + timedelta(days=30)).isoformat(),
                 "discount_type": "percentage",
-                "discount_value": 20
+                "discount_value": 20,
+                "source": "lottery",
+                "created_by": username
             }
             save_promos(promos)
             st.success(f"🎉 恭喜你抽到優惠碼：**{code}**")
         else:
             st.info(f"你抽到：{pname}")
 
-        users[username]['last_lottery_date'] = today
         save_users(users)
+        st.rerun()
 
 def show_shop_interface(username):
     st.subheader("🛒 虛擬商城")
