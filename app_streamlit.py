@@ -524,8 +524,9 @@ def run_prediction(date_str, race_no):
     if not available_dates:
         st.error("❌ 無可用日期")
         return None, None
-    if date_str not in available_dates:
-        date_str = available_dates[-1]
+    # 自動使用 CSV 入面最新嘅日期
+    date_str = available_dates[-1]
+    st.info(f"📅 自動使用 CSV 最新日期：**{date_str}**")
 
     df_date = race_df[race_df['race_date_str'] == date_str]
     if 'race_no' not in df_date.columns:
