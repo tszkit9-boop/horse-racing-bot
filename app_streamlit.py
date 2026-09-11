@@ -1036,7 +1036,6 @@ def admin_manage_predictions():
         st.info("暫無用戶")
         return
 
-    # 揀用戶
     sel = st.selectbox("👤 揀用戶", list(users.keys()), key="mp_user")
     if not sel:
         return
@@ -1045,30 +1044,22 @@ def admin_manage_predictions():
     lottery_chances = user.get('lottery_chances', 0)
     cur_bal = user.get('virtual_balance', 0)
 
-    st.info(f"你而家揀緊：**{sel}**（抽獎 {lottery_chances} 次 / 虛擬幣 ${cur_bal:,.0f}）")
+    st.info(f"你而家揀緊：**{sel}**　|　🎰 抽獎 {lottery_chances} 次　|　💰 虛擬幣 ${cur_bal:,.0f}")
 
-    st.divider()
+    col1, col2 = st.columns(2)
 
-    # 加抽獎次數
-    st.markdown("### 🎰 抽獎次數")
-    c1, c2 = st.columns([3, 1])
-    with c1:
-        add_lottery = st.number_input("加幾多次", min_value=1, value=1, key="add_lot")
-    with c2:
-        st.write("")
+    with col1:
+        st.markdown("**🎰 加抽獎次數**")
+        add_lottery = st.number_input("次數", min_value=1, value=1, key="add_lot")
         if st.button("➕ 加抽獎", use_container_width=True, key="do_add_lot"):
             users[sel]['lottery_chances'] = lottery_chances + add_lottery
             save_users(users)
-            st.success(f"✅ 已幫 {sel} 加 {add_lottery} 次抽獎")
+            st.success(f"✅ 已幫 {sel} 加 {add_lottery} 次")
             st.rerun()
 
-    # 送虛擬幣
-    st.markdown("### 💰 虛擬幣")
-    c1, c2 = st.columns([3, 1])
-    with c1:
-        add_coin = st.number_input("送幾多", min_value=1, value=100, step=100, key="add_coin")
-    with c2:
-        st.write("")
+    with col2:
+        st.markdown("**💰 送虛擬幣**")
+        add_coin = st.number_input("金額", min_value=1, value=100, step=100, key="add_coin")
         if st.button("🎁 送幣", use_container_width=True, key="do_add_coin"):
             users[sel]['virtual_balance'] = cur_bal + add_coin
             save_users(users)
