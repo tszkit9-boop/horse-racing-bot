@@ -3215,9 +3215,12 @@ def admin_system_config():
             "admin_password": admin_password,
             "daily_virtual_coin": daily_virtual_coin,
         }
-        if save_system_config(new_config):
+        try:
+            with open("system_config.json", "w", encoding="utf-8") as f:
+                json.dump(new_config, f, ensure_ascii=False, indent=2)
             st.success("✅ 設定已儲存！")
-            st.rerun()
+        except Exception as e:
+            st.error(f"❌ 儲存失敗: {e}")
 
 def admin_page():
     if 'admin_authenticated' not in st.session_state:
