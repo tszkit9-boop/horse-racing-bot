@@ -2203,32 +2203,58 @@ def admin_jockey_ranking():
     st.subheader("🏇 騎師勝率排行榜")
     try:
         df = pd.read_csv("ALL_DATA_MERGED.csv")
+        df = df.reset_index(drop=True) # 防止索引衝突
         df.columns = df.columns.str.strip()
-        df = df.loc[:, ~df.columns.duplicated()]
 
-        if 'Pla' in df.columns:
-            df['finish_position'] = df['Pla']
+        # 1. 自動搵出「名次」欄位
+        pos_col = None
+        for c in df.columns:
+            if c.lower() in ['pla', '名次', 'finishposition', 'finish_position']:
+                pos_col = c
+                break
+        if pos_col is None:
+            st.error(f"搵唔到名次欄位！現有欄位: {df.columns.tolist()[:10]}...")
+            return
 
-        if 'jockey' in df.columns and 'finish_position' in df.columns:
-            # 極簡提取，避免任何複雜轉換
-            temp = df[['jockey', 'finish_position']].copy()
-            temp['finish_position'] = temp['finish_position'].astype(str).str.extract(r'(\d+)').astype(float)
-            temp = temp.dropna()
-            temp = temp[temp['jockey'].astype(str).str.strip() != '']
+        # 2. 自動搵出「騎師」欄位
+        jockey_col = None
+        for c in df.columns:
+            if 'jockey' in c.lower() or '騎師' in c:
+                jockey_col = c
+                break
+        if jockey_col is None:
+            st.error("搵唔到騎師欄位！")
+            return
 
-            if temp.empty:
-                st.warning("⚠️ 數據為空，顯示原始數據供檢查：")
-                st.write(df[['jockey', 'Pla']].head(10))  # 顯示原始數據
-                return
+        # 3. 安全提取數據（避開任何索引問題）
+        temp = pd.DataFrame()
+        temp['jockey'] = df[jockey_col].astype(str)
+        temp['finish_position'] = df[pos_col]
 
-            total = temp.groupby('jockey').size().reset_index(name='總出賽')
-            wins = temp[temp['finish_position'] == 1].groupby('jockey').size().reset_index(name='勝出')
-            stats = pd.merge(total, wins, on='jockey', how='left').fillna({'勝出': 0})
-            stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
-            stats = stats.sort_values('勝出', ascending=False).rename(columns={'jockey': '騎師'})
-            st.dataframe(stats.head(20), use_container_width=True)
-        else:
-            st.info("暫無足夠數據 (欄位缺失)")
+        # 4. 清理數據
+        temp['jockey'] = temp['jockey'].str.strip()
+        temp['finish_position'] = pd.to_numeric(temp['finish_position'], errors='coerce')
+        temp = temp[temp['jockey'] != 'nan']
+        temp = temp[temp['jockey'] != '']
+        temp = temp.dropna(subset=['finish_position'])
+
+        if temp.empty:
+            st.warning("⚠️ 過濾後數據為空！")
+            st.dataframe(temp.head(10))
+            return
+
+        # 5. 計算勝率
+        total = temp['jockey'].value_counts().reset_index()
+        total.columns = ['騎師', '總出賽']
+        winners = temp[temp['finish_position'] == 1]
+        wins = winners['jockey'].value_counts().reset_index()
+        wins.columns = ['騎師', '勝出']
+
+        stats = pd.merge(total, wins, on='騎師', how='left').fillna({'勝出': 0})
+        stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
+        stats = stats.sort_values('勝出', ascending=False)
+        st.dataframe(stats.head(20), use_container_width=True)
+
     except Exception as e:
         st.error(f"讀取數據失敗: {e}")
 
@@ -2236,32 +2262,58 @@ def admin_trainer_ranking():
     st.subheader("🏇 練馬師勝率排行榜")
     try:
         df = pd.read_csv("ALL_DATA_MERGED.csv")
+        df = df.reset_index(drop=True)
         df.columns = df.columns.str.strip()
-        df = df.loc[:, ~df.columns.duplicated()]
 
-        if 'Pla' in df.columns:
-            df['finish_position'] = df['Pla']
+        # 1. 自動搵出「名次」欄位
+        pos_col = None
+        for c in df.columns:
+            if c.lower() in ['pla', '名次', 'finishposition', 'finish_position']:
+                pos_col = c
+                break
+        if pos_col is None:
+            st.error(f"搵唔到名次欄位！現有欄位: {df.columns.tolist()[:10]}...")
+            return
 
-        if 'trainer' in df.columns and 'finish_position' in df.columns:
-            # 極簡提取，避免任何複雜轉換
-            temp = df[['trainer', 'finish_position']].copy()
-            temp['finish_position'] = temp['finish_position'].astype(str).str.extract(r'(\d+)').astype(float)
-            temp = temp.dropna()
-            temp = temp[temp['trainer'].astype(str).str.strip() != '']
+        # 2. 自動搵出「練馬師」欄位
+        trainer_col = None
+        for c in df.columns:
+            if 'trainer' in c.lower() or '練馬師' in c:
+                trainer_col = c
+                break
+        if trainer_col is None:
+            st.error("搵唔到練馬師欄位！")
+            return
 
-            if temp.empty:
-                st.warning("⚠️ 數據為空，顯示原始數據供檢查：")
-                st.write(df[['trainer', 'Pla']].head(10))  # 顯示原始數據
-                return
+        # 3. 安全提取數據
+        temp = pd.DataFrame()
+        temp['trainer'] = df[trainer_col].astype(str)
+        temp['finish_position'] = df[pos_col]
 
-            total = temp.groupby('trainer').size().reset_index(name='總出賽')
-            wins = temp[temp['finish_position'] == 1].groupby('trainer').size().reset_index(name='勝出')
-            stats = pd.merge(total, wins, on='trainer', how='left').fillna({'勝出': 0})
-            stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
-            stats = stats.sort_values('勝出', ascending=False).rename(columns={'trainer': '練馬師'})
-            st.dataframe(stats.head(20), use_container_width=True)
-        else:
-            st.info("暫無足夠數據 (欄位缺失)")
+        # 4. 清理數據
+        temp['trainer'] = temp['trainer'].str.strip()
+        temp['finish_position'] = pd.to_numeric(temp['finish_position'], errors='coerce')
+        temp = temp[temp['trainer'] != 'nan']
+        temp = temp[temp['trainer'] != '']
+        temp = temp.dropna(subset=['finish_position'])
+
+        if temp.empty:
+            st.warning("⚠️ 過濾後數據為空！")
+            st.dataframe(temp.head(10))
+            return
+
+        # 5. 計算勝率
+        total = temp['trainer'].value_counts().reset_index()
+        total.columns = ['練馬師', '總出賽']
+        winners = temp[temp['finish_position'] == 1]
+        wins = winners['trainer'].value_counts().reset_index()
+        wins.columns = ['練馬師', '勝出']
+
+        stats = pd.merge(total, wins, on='練馬師', how='left').fillna({'勝出': 0})
+        stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
+        stats = stats.sort_values('勝出', ascending=False)
+        st.dataframe(stats.head(20), use_container_width=True)
+
     except Exception as e:
         st.error(f"讀取數據失敗: {e}")
 def admin_monthly_report():
