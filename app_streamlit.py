@@ -640,7 +640,15 @@ def run_prediction(date_str, race_no):
     # ===== CatBoost =====
     if cat_model is not None:
         try:
-            n_cat = cat_model.n_features_in_ if hasattr(cat_model, 'n_features_in_') else 36
+                        # CatBoost 特徵數偵測（更穩健）
+            n_cat = 36
+            try:
+                n_cat = cat_model.n_features_in_
+            except Exception:
+                try:
+                    n_cat = len(cat_model.feature_names_)
+                except Exception:
+                    n_cat = 36
 
             if n_cat == 9:
                 features_9 = ['draw', 'weight', 'distance', 'Rtg.', 'win_odds',
