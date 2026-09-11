@@ -2210,12 +2210,18 @@ def admin_jockey_ranking():
             df['finish_position'] = df['Pla']
             
         if 'jockey' in df.columns and 'finish_position' in df.columns:
-            df['finish_position'] = df['finish_position'].astype(str).str.extract(r'(\d+)').astype(float)
-            temp = df.dropna(subset=['jockey', 'finish_position'])
+            # 用同馬匹排行榜一樣嘅穩健寫法
+            jockey_col = df['jockey'].iloc[:, 0] if isinstance(df['jockey'], pd.DataFrame) else df['jockey']
+            pos_col = df['finish_position'].iloc[:, 0] if isinstance(df['finish_position'], pd.DataFrame) else df['finish_position']
+            
+            temp = pd.DataFrame({'jockey': jockey_col, 'finish_position': pos_col}).dropna()
             temp = temp[temp['jockey'].astype(str).str.strip() != '']
+            temp['finish_position'] = temp['finish_position'].astype(str).str.extract(r'(\d+)').astype(float)
+            temp = temp.dropna(subset=['finish_position'])
             
             total = temp.groupby('jockey').size().reset_index(name='總出賽')
             wins = temp[temp['finish_position'] == 1].groupby('jockey').size().reset_index(name='勝出')
+            
             stats = pd.merge(total, wins, on='jockey', how='left').fillna({'勝出': 0})
             stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
             stats = stats.sort_values('勝出', ascending=False).rename(columns={'jockey': '騎師'})
@@ -2236,41 +2242,19 @@ def admin_trainer_ranking():
             df['finish_position'] = df['Pla']
             
         if 'trainer' in df.columns and 'finish_position' in df.columns:
-            df['finish_position'] = df['finish_position'].astype(str).str.extract(r'(\d+)').astype(float)
-            temp = df.dropna(subset=['trainer', 'finish_position'])
-            temp = temp[temp['trainer'].astype(str).str.strip() != '']
-            
-            total = temp.groupby('trainer').size().reset_index(name='總出賽')
-            wins = temp[temp['finish_position'] == 1].groupby('trainer').size().reset_index(name='勝出')
-            stats = pd.merge(total, wins, on='trainer', how='left').fillna({'勝出': 0})
-            stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
-            stats = stats.sort_values('勝出', ascending=False).rename(columns={'trainer': '練馬師'})
-            st.dataframe(stats.head(20), use_container_width=True)
-        else:
-            st.info("暫無足夠數據 (欄位缺失)")
-    except Exception as e:
-        st.error(f"讀取數據失敗: {e}")
-def admin_trainer_ranking():
-    st.subheader("🏇 練馬師勝率排行榜")
-    try:
-        df = pd.read_csv("ALL_DATA_MERGED.csv")
-        df = standardize_columns_safe(df)
-        df = df.loc[:, ~df.columns.duplicated()]
-        
-        if 'trainer' in df.columns and 'finish_position' in df.columns:
+            # 用同馬匹排行榜一樣嘅穩健寫法
             trainer_col = df['trainer'].iloc[:, 0] if isinstance(df['trainer'], pd.DataFrame) else df['trainer']
             pos_col = df['finish_position'].iloc[:, 0] if isinstance(df['finish_position'], pd.DataFrame) else df['finish_position']
             
-            temp_df = pd.DataFrame({'trainer': trainer_col, 'finish_position': pos_col}).dropna()
-            temp_df = temp_df[temp_df['trainer'].astype(str).str.strip() != '']
-            temp_df['finish_position'] = pd.to_numeric(temp_df['finish_position'], errors='coerce')
-            temp_df = temp_df.dropna(subset=['finish_position'])
+            temp = pd.DataFrame({'trainer': trainer_col, 'finish_position': pos_col}).dropna()
+            temp = temp[temp['trainer'].astype(str).str.strip() != '']
+            temp['finish_position'] = temp['finish_position'].astype(str).str.extract(r'(\d+)').astype(float)
+            temp = temp.dropna(subset=['finish_position'])
             
-            total_races = temp_df.groupby('trainer').size().reset_index(name='總出賽')
-            winners = temp_df[temp_df['finish_position'] == 1]
-            wins = winners.groupby('trainer').size().reset_index(name='勝出')
+            total = temp.groupby('trainer').size().reset_index(name='總出賽')
+            wins = temp[temp['finish_position'] == 1].groupby('trainer').size().reset_index(name='勝出')
             
-            stats = pd.merge(total_races, wins, on='trainer', how='left').fillna({'勝出': 0})
+            stats = pd.merge(total, wins, on='trainer', how='left').fillna({'勝出': 0})
             stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
             stats = stats.sort_values('勝出', ascending=False).rename(columns={'trainer': '練馬師'})
             st.dataframe(stats.head(20), use_container_width=True)
