@@ -563,30 +563,56 @@ def _rank_from_csv(col_keywords):
     return stats.sort_values('勝出', ascending=False)
 
 
+def _get_pos_series(df):
+    """自动选择名次欄位：优先 Pla，如果冇就用 finish_position"""
+    # 試 Pla（用位置索引，避免隱藏字元）
+    pla_idx = None
+    for i, c in enumerate(df.columns):
+        if str(c).strip().lower() == 'pla':
+            pla_idx = i
+            break
+    if pla_idx is None:
+        pla_idx = 2  # 預設第 3 列
+
+    pos = pd.to_numeric(df.iloc[:, pla_idx], errors='coerce')
+    if pos.notna().sum() >= 100:
+        return pos, f'Pla (第 {pla_idx} 列)'
+
+    # 如果 Pla 唔得，試 finish_position
+    if 'finish_position' in df.columns:
+        pos = pd.to_numeric(df['finish_position'], errors='coerce')
+        if pos.notna().sum() >= 100:
+            return pos, 'finish_position'
+
+    return pos, '未知'
+
+
 def admin_horse_ranking():
     st.subheader("🏇 馬匹勝率排行榜")
     try:
         df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig', low_memory=False)
         df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
 
-        # 用 finish_position 做名次
-        temp = pd.DataFrame()
-        temp['horse'] = df['horse_name'].astype(str).str.strip()
-        temp['finish_position'] = pd.to_numeric(df['finish_position'], errors='coerce')
+        pos_series, pos_name = _get_pos_series(df)
+        st.caption(f"📊 使用名次欄位：**{pos_name}**（有效數據：{pos_series.notna().sum()}）")
 
-        temp = temp.dropna(subset=['finish_position'])
-        temp = temp[~temp['horse'].str.lower().isin(['nan', 'none', ''])]
+        temp = pd.DataFrame()
+        temp['馬匹'] = df['horse_name'].astype(str).str.strip()
+        temp['名次'] = pos_series
+        temp = temp.dropna(subset=['名次'])
+        temp = temp[~temp['馬匹'].str.lower().isin(['nan', 'none', ''])]
 
         if temp.empty:
             st.warning("⚠️ 過濾後數據為空！")
             return
 
-        total = temp.groupby('horse').size().reset_index(name='總出賽')
-        wins = temp[temp['finish_position'] == 1].groupby('horse').size().reset_index(name='勝出')
-        stats = pd.merge(total, wins, on='horse', how='left').fillna({'勝出': 0})
-        stats['勝出'] = stats['勝出'].astype(int)
+        total = temp['馬匹'].value_counts()
+        wins = temp[temp['名次'] == 1]['馬匹'].value_counts()
+        stats = pd.DataFrame({'馬匹': total.index, '總出賽': total.values})
+        stats['勝出'] = stats['馬匹'].map(wins).fillna(0).astype(int)
         stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
-        stats = stats.sort_values('勝出', ascending=False).rename(columns={'horse': '馬匹'})
+        stats = stats.sort_values('勝出', ascending=False).reset_index(drop=True)
+
         st.success(f"✅ 共 {len(stats)} 匹馬")
         st.dataframe(stats.head(30), use_container_width=True)
     except Exception as e:
@@ -599,30 +625,26 @@ def admin_jockey_ranking():
         df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig', low_memory=False)
         df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
 
-        temp = pd.DataFrame()
-        temp['jockey'] = df['jockey'].astype(str).str.strip()
-        temp['finish_position'] = pd.to_numeric(df['finish_position'], errors='coerce')
+        pos_series, pos_name = _get_pos_series(df)
+        st.caption(f"📊 使用名次欄位：**{pos_name}**（有效數據：{pos_series.notna().sum()}）")
 
-        temp = temp.dropna(subset=['finish_position'])
-        temp = temp[~temp['jockey'].str.lower().isin(['nan', 'none', ''])]
+        temp = pd.DataFrame()
+        temp['騎師'] = df['jockey'].astype(str).str.strip()
+        temp['名次'] = pos_series
+        temp = temp.dropna(subset=['名次'])
+        temp = temp[~temp['騎師'].str.lower().isin(['nan', 'none', ''])]
 
         if temp.empty:
             st.warning("⚠️ 過濾後數據為空！")
             return
 
-        # 用 value_counts 代替 groupby（更穩定）
-        total_counts = temp['jockey'].value_counts()
-        wins_counts = temp[temp['finish_position'] == 1]['jockey'].value_counts()
-
-        stats = pd.DataFrame({
-            '騎師': total_counts.index,
-            '總出賽': total_counts.values
-        })
-        stats['勝出'] = stats['騎師'].map(wins_counts).fillna(0).astype(int)
+        total = temp['騎師'].value_counts()
+        wins = temp[temp['名次'] == 1]['騎師'].value_counts()
+        stats = pd.DataFrame({'騎師': total.index, '總出賽': total.values})
+        stats['勝出'] = stats['騎師'].map(wins).fillna(0).astype(int)
         stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
         stats = stats.sort_values('勝出', ascending=False).reset_index(drop=True)
 
-        # 中文對照
         jmap = {}
         if os.path.exists("jockey_mapping.json"):
             try:
@@ -636,8 +658,6 @@ def admin_jockey_ranking():
         st.dataframe(stats.head(30), use_container_width=True)
     except Exception as e:
         st.error(f"讀取失敗：{e}")
-        import traceback
-        st.code(traceback.format_exc())
 
 
 def admin_trainer_ranking():
@@ -646,25 +666,23 @@ def admin_trainer_ranking():
         df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig', low_memory=False)
         df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
 
-        temp = pd.DataFrame()
-        temp['trainer'] = df['trainer'].astype(str).str.strip()
-        temp['finish_position'] = pd.to_numeric(df['finish_position'], errors='coerce')
+        pos_series, pos_name = _get_pos_series(df)
+        st.caption(f"📊 使用名次欄位：**{pos_name}**（有效數據：{pos_series.notna().sum()}）")
 
-        temp = temp.dropna(subset=['finish_position'])
-        temp = temp[~temp['trainer'].str.lower().isin(['nan', 'none', ''])]
+        temp = pd.DataFrame()
+        temp['練馬師'] = df['trainer'].astype(str).str.strip()
+        temp['名次'] = pos_series
+        temp = temp.dropna(subset=['名次'])
+        temp = temp[~temp['練馬師'].str.lower().isin(['nan', 'none', ''])]
 
         if temp.empty:
             st.warning("⚠️ 過濾後數據為空！")
             return
 
-        total_counts = temp['trainer'].value_counts()
-        wins_counts = temp[temp['finish_position'] == 1]['trainer'].value_counts()
-
-        stats = pd.DataFrame({
-            '練馬師': total_counts.index,
-            '總出賽': total_counts.values
-        })
-        stats['勝出'] = stats['練馬師'].map(wins_counts).fillna(0).astype(int)
+        total = temp['練馬師'].value_counts()
+        wins = temp[temp['名次'] == 1]['練馬師'].value_counts()
+        stats = pd.DataFrame({'練馬師': total.index, '總出賽': total.values})
+        stats['勝出'] = stats['練馬師'].map(wins).fillna(0).astype(int)
         stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
         stats = stats.sort_values('勝出', ascending=False).reset_index(drop=True)
 
@@ -681,8 +699,6 @@ def admin_trainer_ranking():
         st.dataframe(stats.head(30), use_container_width=True)
     except Exception as e:
         st.error(f"讀取失敗：{e}")
-        import traceback
-        st.code(traceback.format_exc())
 def admin_lottery_config():
     st.subheader("🎰 抽獎設定")
     config = load_lottery_config()
