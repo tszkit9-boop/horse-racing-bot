@@ -1786,7 +1786,7 @@ def admin_page():
         ("🎟️ 優惠碼", admin_promo_codes),
         ("📈 預測監控", admin_accuracy_monitor),
         ("⏰ 訂閱管理", admin_subscription),
-        ("📤 付款審核", admin_payment_review),
+       #("📤 付款審核", admin_payment_review),
         ("📡 監控", admin_monitoring),
         ("📝 內容", admin_content),
         ("🤖 自動維護", admin_auto_maintenance),
