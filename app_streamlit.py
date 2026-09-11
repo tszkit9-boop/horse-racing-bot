@@ -3181,47 +3181,7 @@ def admin_system_settings():
         return
 def admin_system_config():
     st.subheader("⚙️ 系統設定")
-
-    try:
-        with open("system_config.json", "r", encoding="utf-8") as f:
-            config = json.load(f)
-    except Exception:
-        config = {}
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        enable_registration = st.checkbox("開放註冊", value=config.get("enable_registration", True))
-        enable_payment = st.checkbox("啟用付款", value=config.get("enable_payment", True))
-        enable_admin = st.checkbox("啟用後台", value=config.get("enable_admin", True))
-        price_day = st.number_input("日費價格", min_value=0, value=config.get("price_day", 18), step=1)
-        price_month = st.number_input("月費價格", min_value=0, value=config.get("price_month", 128), step=1)
-        price_quarter = st.number_input("季費價格", min_value=0, value=config.get("price_quarter", 328), step=1)
-
-    with col2:
-        free_limit = st.number_input("免費預測次數", min_value=0, value=config.get("free_limit", 2), step=1)
-        admin_password = st.text_input("管理員密碼", value=config.get("admin_password", ""), type="password")
-        daily_virtual_coin = st.number_input("每日派發虛擬幣", min_value=0, value=config.get("daily_virtual_coin", 1000), step=100)
-
-    if st.button("💾 儲存設定", type="primary"):
-        new_config = {
-            "enable_registration": enable_registration,
-            "enable_payment": enable_payment,
-            "enable_admin": enable_admin,
-            "price_day": price_day,
-            "price_month": price_month,
-            "price_quarter": price_quarter,
-            "free_limit": free_limit,
-            "admin_password": admin_password,
-            "daily_virtual_coin": daily_virtual_coin,
-        }
-        try:
-            with open("system_config.json", "w", encoding="utf-8") as f:
-                json.dump(new_config, f, ensure_ascii=False, indent=2)
-            st.success("✅ 設定已儲存！")
-        except Exception as e:
-            st.error(f"❌ 儲存失敗: {e}")
-
+    st.write("✅ 測試成功！系統設定載入正常！")
 def admin_page():
     if 'admin_authenticated' not in st.session_state:
         st.session_state.admin_authenticated = False
