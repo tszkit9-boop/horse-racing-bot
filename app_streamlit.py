@@ -899,6 +899,18 @@ def admin_finance():
             st.success("✅ 已記錄")
             st.rerun()
 
+def _is_promo_valid(promo):
+    if promo.get('used', False):
+        return False
+    expiry = promo.get('expiry')
+    if not expiry:
+        return True
+    try:
+        return datetime.fromisoformat(expiry) >= datetime.now()
+    except Exception:
+        return False
+
+
 def admin_promo_codes():
     st.subheader("🎟️ 優惠碼管理")
     promos = load_promos()
@@ -936,20 +948,18 @@ def admin_promo_codes():
                 "percentage": "百分比折扣（如 20% off）",
                 "fixed": "固定金額（如 -$50）",
                 "free": "完全免費",
-                "first_order": "首單優惠（只限首次付款）",
+                "first_order": "首單優惠",
                 "min_spend": "滿減（消費滿 X 減 Y）"
             }.get(x, x)
         )
     with col2:
-        dval = st.number_input("折扣數值", min_value=0, value=20, key="pr_dval",
-            help="百分比：20 = 8折；固定：減 $20；滿減：折扣金額")
+        dval = st.number_input("折扣數值", min_value=0, value=20, key="pr_dval")
         min_spend = st.number_input("最低消費 (滿減用)", min_value=0, value=100, key="pr_minspend")
-        max_uses = st.number_input("每人限用次數", min_value=0, value=1, key="pr_maxuses",
-            help="0 = 不限")
+        max_uses = st.number_input("每人限用次數", min_value=0, value=1, key="pr_maxuses")
     with col3:
         st.write("")
         st.write("")
-        note = st.text_input("備註（選填）", key="pr_note", placeholder="例如：中秋活動")
+        note = st.text_input("備註（選填）", key="pr_note")
 
     if st.button("🎟️ 產生優惠碼", type="primary", use_container_width=True, key="pr_gen"):
         new_codes = []
@@ -975,7 +985,7 @@ def admin_promo_codes():
 
     st.divider()
 
-    # ===== 篩選器 =====
+    # ===== 篩選清單 =====
     if promos:
         st.subheader("📋 優惠碼清單")
         filter_option = st.radio(
@@ -1043,46 +1053,35 @@ def admin_promo_codes():
             st.success(f"✅ 已清理 {before - len(promos)} 個過期優惠碼")
             st.rerun()
     with cb:
-        if st.button("📥 下載優惠碼 CSV", use_container_width=True, key="pr_download"):
-            if promos:
-                rows = []
-                for code, p in promos.items():
-                    rows.append({
-                        "優惠碼": code,
-                        "類型": p.get('discount_type', ''),
-                        "數值": p.get('discount_value', 0),
-                        "過期日": p.get('expiry', ''),
-                        "已使用": p.get('used', False),
-                        "備註": p.get('note', '')
-                    })
-                csv = pd.DataFrame(rows).to_csv(index=False).encode('utf-8-sig')
-                st.download_button(
-                    "⬇️ 點擊下載",
-                    data=csv,
-                    file_name=f"promo_codes_{datetime.now().strftime('%Y%m%d')}.csv",
-                    mime="text/csv",
-                    key="pr_dl_btn"
-                )
+        if promos:
+            rows = []
+            for code, p in promos.items():
+                rows.append({
+                    "優惠碼": code,
+                    "類型": p.get('discount_type', ''),
+                    "數值": p.get('discount_value', 0),
+                    "過期日": p.get('expiry', ''),
+                    "已使用": p.get('used', False),
+                    "備註": p.get('note', '')
+                })
+            csv = pd.DataFrame(rows).to_csv(index=False).encode('utf-8-sig')
+            st.download_button(
+                "📥 下載優惠碼 CSV",
+                data=csv,
+                file_name=f"promo_codes_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                use_container_width=True,
+                key="pr_dl_btn"
+            )
     with cc:
+        confirm_clear = st.checkbox("確認清空", key="pr_confirm_clear")
         if st.button("🗑️ 清空所有優惠碼", use_container_width=True, key="pr_clear_all"):
-            if st.checkbox("確認清空？", key="pr_confirm_clear"):
+            if confirm_clear:
                 save_promos({})
                 st.success("✅ 已清空所有優惠碼")
                 st.rerun()
-
-
-def _is_promo_valid(promo):
-    """檢查優惠碼係咪有效"""
-    if promo.get('used', False):
-        return False
-    expiry = promo.get('expiry')
-    if not expiry:
-        return True
-    try:
-        return datetime.fromisoformat(expiry) >= datetime.now()
-    except Exception:
-        return False
-
+            else:
+                st.warning("請先勾選「確認清空」")
 def admin_accuracy_monitor():
     st.subheader("📈 預測準確率監控")
     acc = load_accuracy()
