@@ -2205,83 +2205,107 @@ def admin_jockey_ranking():
     st.subheader("🏇 騎師勝率排行榜")
     try:
         df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig')
-        df.columns = df.columns.astype(str).str.replace('\ufeff', '').str.strip()
+        # 1. 清理欄位名（去 BOM、去空格）
+        df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
+        # 2. 去除重複欄位名
         df = df.loc[:, ~df.columns.duplicated()]
 
-        # 1. 自動搵出所有包含 "pla" 或 "名次" 嘅欄位，無視大細寫同隱藏字元
-        pla_cols = [c for c in df.columns if 'pla' in c.lower() or '名次' in c]
+        # 3. 自動搵出包含 "jockey" 或 "騎師" 嘅欄位
         jockey_cols = [c for c in df.columns if 'jockey' in c.lower() or '騎師' in c]
+        pos_cols = [c for c in df.columns if 'pla' in c.lower() or '名次' in c]
 
-        if not pla_cols or not jockey_cols:
-            st.error(f"❌ 搵唔到欄位！Pla欄: {pla_cols}, 騎師欄: {jockey_cols}")
+        if not jockey_cols or not pos_cols:
+            st.error(f"❌ 搵唔到欄位！")
             return
 
-        # 2. 強制改名做標準名，確保之後嘅程式碼一定讀到
-        df = df.rename(columns={pla_cols[0]: 'finish_position', jockey_cols[0]: 'jockey'})
+        # 4. 終極防彈：安全提取並強制轉為 Series（防止重複欄位導致變成表格）
+        jockey_series = df[jockey_cols[0]]
+        if isinstance(jockey_series, pd.DataFrame):
+            jockey_series = jockey_series.iloc[:, 0]
 
-        # 3. 清理數據（同馬匹排行榜一模一樣嘅成功邏輯）
-        df['finish_position'] = pd.to_numeric(df['finish_position'].astype(str).str.extract(r'(\d+)')[0], errors='coerce')
-        df['jockey'] = df['jockey'].astype(str).str.strip()
-        
-        temp = df.dropna(subset=['finish_position', 'jockey']).copy()
+        pos_series = df[pos_cols[0]]
+        if isinstance(pos_series, pd.DataFrame):
+            pos_series = pos_series.iloc[:, 0]
+
+        # 5. 建立乾淨嘅 DataFrame
+        temp = pd.DataFrame()
+        temp['jockey'] = jockey_series.astype(str).str.strip()
+        # 提取名次數字（用 replace 方法代替 str.extract，更穩陣）
+        temp['finish_position'] = pos_series.astype(str).str.replace(r'\D', '', regex=True)
+
+        # 6. 清理無效數據
+        temp['finish_position'] = pd.to_numeric(temp['finish_position'], errors='coerce')
+        temp = temp.dropna(subset=['finish_position'])
         temp = temp[~temp['jockey'].str.lower().isin(['nan', 'none', ''])]
 
         if temp.empty:
             st.warning("⚠️ 過濾後數據為空！")
             return
 
-        # 4. 計算勝率
+        # 7. 計算勝率
         total = temp.groupby('jockey').size().reset_index(name='總出賽')
         wins = temp[temp['finish_position'] == 1].groupby('jockey').size().reset_index(name='勝出')
         stats = pd.merge(total, wins, on='jockey', how='left').fillna({'勝出': 0})
         stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
         stats = stats.sort_values('勝出', ascending=False).rename(columns={'jockey': '騎師'})
-        
+
         st.success(f"✅ 成功計算！共 {len(stats)} 位騎師")
         st.dataframe(stats.head(20), use_container_width=True)
-        
+
     except Exception as e:
         st.error(f"讀取數據失敗: {e}")
+
 
 def admin_trainer_ranking():
     st.subheader("🏇 練馬師勝率排行榜")
     try:
         df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig')
-        df.columns = df.columns.astype(str).str.replace('\ufeff', '').str.strip()
+        # 1. 清理欄位名（去 BOM、去空格）
+        df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
+        # 2. 去除重複欄位名
         df = df.loc[:, ~df.columns.duplicated()]
 
-        # 1. 自動搵出所有包含 "pla" 或 "名次" 嘅欄位
-        pla_cols = [c for c in df.columns if 'pla' in c.lower() or '名次' in c]
+        # 3. 自動搵出包含 "trainer" 或 "練馬師" 嘅欄位
         trainer_cols = [c for c in df.columns if 'trainer' in c.lower() or '練馬師' in c]
+        pos_cols = [c for c in df.columns if 'pla' in c.lower() or '名次' in c]
 
-        if not pla_cols or not trainer_cols:
-            st.error(f"❌ 搵唔到欄位！Pla欄: {pla_cols}, 練馬師欄: {trainer_cols}")
+        if not trainer_cols or not pos_cols:
+            st.error(f"❌ 搵唔到欄位！")
             return
 
-        # 2. 強制改名做標準名
-        df = df.rename(columns={pla_cols[0]: 'finish_position', trainer_cols[0]: 'trainer'})
+        # 4. 終極防彈：安全提取並強制轉為 Series
+        trainer_series = df[trainer_cols[0]]
+        if isinstance(trainer_series, pd.DataFrame):
+            trainer_series = trainer_series.iloc[:, 0]
 
-        # 3. 清理數據
-        df['finish_position'] = pd.to_numeric(df['finish_position'].astype(str).str.extract(r'(\d+)')[0], errors='coerce')
-        df['trainer'] = df['trainer'].astype(str).str.strip()
-        
-        temp = df.dropna(subset=['finish_position', 'trainer']).copy()
+        pos_series = df[pos_cols[0]]
+        if isinstance(pos_series, pd.DataFrame):
+            pos_series = pos_series.iloc[:, 0]
+
+        # 5. 建立乾淨嘅 DataFrame
+        temp = pd.DataFrame()
+        temp['trainer'] = trainer_series.astype(str).str.strip()
+        temp['finish_position'] = pos_series.astype(str).str.replace(r'\D', '', regex=True)
+
+        # 6. 清理無效數據
+        temp['finish_position'] = pd.to_numeric(temp['finish_position'], errors='coerce')
+        temp = temp.dropna(subset=['finish_position'])
         temp = temp[~temp['trainer'].str.lower().isin(['nan', 'none', ''])]
 
         if temp.empty:
             st.warning("⚠️ 過濾後數據為空！")
             return
 
-        # 4. 計算勝率
+        # 7. 計算勝率
         total = temp.groupby('trainer').size().reset_index(name='總出賽')
         wins = temp[temp['finish_position'] == 1].groupby('trainer').size().reset_index(name='勝出')
         stats = pd.merge(total, wins, on='trainer', how='left').fillna({'勝出': 0})
         stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
         stats = stats.sort_values('勝出', ascending=False).rename(columns={'trainer': '練馬師'})
-        
+
         st.success(f"✅ 成功計算！共 {len(stats)} 位練馬師")
         st.dataframe(stats.head(20), use_container_width=True)
-        
+
     except Exception as e:
         st.error(f"讀取數據失敗: {e}")
 def admin_monthly_report():
