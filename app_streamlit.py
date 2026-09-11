@@ -2178,17 +2178,29 @@ def admin_promo_codes():
 def admin_accuracy_monitor():
     st.subheader("📈 AI 預測準確率監控")
 
+    import re
+
+    def clean_name(name):
+        """清洗馬名：去括號 + 編號 + 空格"""
+        if not name:
+            return ""
+        name = str(name).strip()
+        name = re.sub(r'\([A-Z]\d+\)', '', name)
+        name = re.sub(r'\(.*?\)', '', name)
+        name = re.sub(r'[A-Z]\d+$', '', name)
+        return name.strip()
+
     # ===== 1. 讀取 AI 預測 =====
     ai_file = "ai_predictions.json"
     if not os.path.exists(ai_file):
-        st.warning("⚠️ 未有 AI 預測記錄，請先去主頁執行預測")
+        st.warning("⚠️ 未有 AI 預測記錄")
         return
 
     try:
         with open(ai_file, 'r', encoding='utf-8') as f:
             ai_data = json.load(f)
     except Exception as e:
-        st.error(f"❌ 讀取 ai_predictions.json 失敗：{e}")
+        st.error(f"❌ 讀取失敗：{e}")
         return
 
     if not ai_data:
@@ -2200,7 +2212,7 @@ def admin_accuracy_monitor():
     # ===== 2. 讀取真實賽果 =====
     result_file = "race_results_clean.csv"
     if not os.path.exists(result_file):
-        st.warning("⚠️ 未有賽果檔案 race_results_clean.csv")
+        st.warning("⚠️ 未有賽果檔案")
         return
 
     try:
@@ -2211,11 +2223,13 @@ def admin_accuracy_monitor():
         results_df['race_no'] = pd.to_numeric(results_df['race_no'], errors='coerce').astype('Int64')
         results_df['finish_position'] = pd.to_numeric(results_df['finish_position'], errors='coerce')
         results_df['horse_name'] = results_df['horse_name'].astype(str).str.strip()
+        # 🔧 清洗賽果馬名
+        results_df['horse_name_clean'] = results_df['horse_name'].apply(clean_name)
     except Exception as e:
         st.error(f"❌ 讀取賽果失敗：{e}")
         return
 
-    # ===== 3. 逐個預測比對 =====
+    # ===== 3. 逐個比對 =====
     compare_rows = []
     hit_count = 0
     total_count = 0
@@ -2225,17 +2239,16 @@ def admin_accuracy_monitor():
         date_str = pred.get('date')
         race_no = pred.get('race')
         top_horse = pred.get('top_horse')
-        model_used = pred.get('model_used', [])
 
         if not date_str or not race_no or not top_horse:
             continue
 
-        # 搵對應賽果
         try:
             race_no_int = int(race_no)
         except Exception:
             continue
 
+        # 搵對應賽果（冠軍）
         matched = results_df[
             (results_df['race_date_str'] == date_str) &
             (results_df['race_no'] == race_no_int) &
@@ -2243,60 +2256,56 @@ def admin_accuracy_monitor():
         ]
 
         if matched.empty:
-            # 未有賽果
             compare_rows.append({
-                '日期': date_str,
-                '場次': race_no_int,
-                '預測頭馬': top_horse,
-                '真實頭馬': '⏳ 未有賽果',
-                '結果': '⏳ 待定'
+                '日期': date_str, '場次': race_no_int,
+                '預測頭馬': top_horse, '真實頭馬': '⏳ 未有賽果', '結果': '⏳ 待定'
             })
             pending_count += 1
         else:
             real_winner = matched.iloc[0]['horse_name']
-            is_hit = (top_horse == real_winner)
+            real_winner_clean = matched.iloc[0]['horse_name_clean']
+            pred_clean = clean_name(top_horse)
+
+            # 🔧 用清洗後嘅名對比
+            is_hit = (pred_clean == real_winner_clean)
+
             total_count += 1
             if is_hit:
                 hit_count += 1
 
             compare_rows.append({
-                '日期': date_str,
-                '場次': race_no_int,
+                '日期': date_str, '場次': race_no_int,
                 '預測頭馬': top_horse,
                 '真實頭馬': real_winner,
                 '結果': '✅ 命中' if is_hit else '❌ 失準'
             })
 
-    # ===== 4. 顯示統計 =====
+    # ===== 4. 統計 =====
     st.divider()
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("📊 總預測", len(ai_data))
     c2.metric("✅ 已比對", total_count)
     c3.metric("🎯 命中次數", hit_count)
     if total_count > 0:
-        hit_rate = hit_count / total_count
-        c4.metric("📈 命中率", f"{hit_rate:.2%}")
+        c4.metric("📈 命中率", f"{hit_count / total_count:.2%}")
     else:
         c4.metric("📈 命中率", "N/A")
 
     if pending_count > 0:
         st.caption(f"⏳ 仲有 {pending_count} 場未出賽果")
 
-    # ===== 5. 顯示對比表 =====
+    # ===== 5. 對比表 =====
     if compare_rows:
         st.divider()
         st.subheader("📋 預測 vs 賽果對比")
-
-        df = pd.DataFrame(compare_rows)
-        df = df.sort_values(['日期', '場次'], ascending=[False, True]).reset_index(drop=True)
+        df = pd.DataFrame(compare_rows).sort_values(['日期', '場次'], ascending=[False, True])
 
         def _color(row):
             if row['結果'] == '✅ 命中':
                 return ['background-color: #d4edda'] * len(row)
             elif row['結果'] == '❌ 失準':
                 return ['background-color: #f8d7da'] * len(row)
-            else:
-                return ['background-color: #fff3cd'] * len(row)
+            return ['background-color: #fff3cd'] * len(row)
 
         st.dataframe(df.style.apply(_color, axis=1), use_container_width=True, hide_index=True)
 
