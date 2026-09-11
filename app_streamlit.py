@@ -491,30 +491,45 @@ def _build_features(race_df, history_df):
 
     return result
 def _repair_racecard(df):
-    first_col = df.columns[0]
+    """自動修復混合格式嘅 racecard CSV"""
+    # 讀取原始檔案（唔用 header）
+    df_raw = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig', header=None, dtype=str)
+
     std_cols = ['horse_id', 'horse_name', 'draw', 'weight', 'jockey',
                 'trainer', 'race_no', 'race_date', 'win_odds']
 
-    mask_header = df[first_col].astype(str).str.strip().str.lower() == 'race_date'
-    if mask_header.any():
-        df = df[~mask_header].copy()
+    # 中文格式欄位順序：馬號,馬名,檔位,負磅,騎師,練馬師,場次,比賽日期,賠率
+    cn_cols = ['horse_id', 'horse_name', 'draw', 'weight', 'jockey',
+               'trainer', 'race_no', 'race_date', 'win_odds']
 
-    first_vals = df[first_col].astype(str).str.strip()
-    cn_mask = first_vals.str.match(r'^\d+$')
-    en_mask = first_vals.str.match(r'^\d{4}-\d{2}-\d{2}$')
+    # 英文格式欄位順序：race_date,race_no,horse_no,horse_name,draw,weight,jockey,trainer,win_odds
+    en_cols = ['race_date', 'race_no', 'horse_id', 'horse_name',
+               'draw', 'weight', 'jockey', 'trainer', 'win_odds']
 
-    cn_df = df[cn_mask].copy()
-    en_df = df[en_mask].copy()
+    parts = []
 
-    if not cn_df.empty:
-        cn_df.columns = std_cols
+    for _, row in df_raw.iterrows():
+        first_val = str(row[0]).strip()
 
-    if not en_df.empty:
-        en_df.columns = ['race_date', 'race_no', 'horse_id', 'horse_name',
-                         'draw', 'weight', 'jockey', 'trainer', 'win_odds']
-        en_df = en_df[std_cols]
+        # 跳過 header 行
+        if first_val.lower() in ['馬號', 'race_date', 'nan', '']:
+            continue
 
-    result = pd.concat([cn_df, en_df], ignore_index=True)
+        # 中文格式：第一列係純數字（馬號）
+        if first_val.isdigit():
+            row_df = pd.DataFrame([row.values], columns=cn_cols)
+            parts.append(row_df)
+
+        # 英文格式：第一列係日期（YYYY-MM-DD）
+        elif len(first_val) == 10 and first_val[4] == '-' and first_val[7] == '-':
+            row_df = pd.DataFrame([row.values], columns=en_cols)
+            parts.append(row_df)
+
+    if not parts:
+        return pd.DataFrame(columns=std_cols)
+
+    result = pd.concat(parts, ignore_index=True)
+    result = result[std_cols]
     return result
 
 def run_prediction(date_str, race_no):
