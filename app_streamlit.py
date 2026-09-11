@@ -597,7 +597,23 @@ def admin_lottery_config():
                         config["prizes"] = prizes
                         save_lottery_config(config)
                         st.success("✅ 已刪除")
-                        st.rerun()
+                        st.rerun()    
+    # ============================================================
+    # 💳 付款功能
+    # ============================================================
+    if CONFIG.get("enable_payment", True):
+        st.divider()
+        st.subheader("💳 付款功能")
+        if st.session_state.get('logged_in', False):
+            if st.button("💳 前往付款", use_container_width=True, key="go_payment"):
+                st.session_state.show_payment = True
+            if st.session_state.get('show_payment', False):
+                show_paywall()
+                if st.button("⬅️ 返回", key="back_pay"):
+                    st.session_state.show_payment = False
+                    st.rerun()
+        else:
+            st.info("請先登入以使用付款功能")
 
 def admin_shop_config():
     st.subheader("🛒 商城設定")
