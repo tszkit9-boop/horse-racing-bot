@@ -2137,19 +2137,157 @@ def admin_promo_codes():
             else:
                 st.warning("請先勾選「確認清空」")
 def admin_accuracy_monitor():
-    st.subheader("📈 預測準確率監控")
-    acc = load_accuracy()
-    records = acc.get('records', [])
-    if not records:
-        st.info("暫無預測記錄")
+    st.subheader("📈 AI 預測準確率監控")
+
+    # ===== 1. 讀取 AI 預測 =====
+    ai_file = "ai_predictions.json"
+    if not os.path.exists(ai_file):
+        st.warning("⚠️ 未有 AI 預測記錄，請先去主頁執行預測")
         return
-    df = pd.DataFrame(records)
-    total = len(df)
-    hit = df[df['is_hit'] == True].shape[0] if 'is_hit' in df.columns else 0
-    c1, c2, c3 = st.columns(3)
-    c1.metric("總預測", total)
-    c2.metric("命中", hit)
-    c3.metric("命中率", f"{hit/total:.2%}" if total > 0 else "0%")
+
+    try:
+        with open(ai_file, 'r', encoding='utf-8') as f:
+            ai_data = json.load(f)
+    except Exception as e:
+        st.error(f"❌ 讀取 ai_predictions.json 失敗：{e}")
+        return
+
+    if not ai_data:
+        st.warning("⚠️ 未有 AI 預測記錄")
+        return
+
+    st.info(f"📊 總共 {len(ai_data)} 個預測記錄")
+
+    # ===== 2. 讀取真實賽果 =====
+    result_file = "race_results_clean.csv"
+    if not os.path.exists(result_file):
+        st.warning("⚠️ 未有賽果檔案 race_results_clean.csv")
+        return
+
+    try:
+        results_df = pd.read_csv(result_file, encoding='utf-8-sig')
+        results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
+        results_df = results_df.dropna(subset=['race_date'])
+        results_df['race_date_str'] = results_df['race_date'].dt.strftime('%Y-%m-%d')
+        results_df['race_no'] = pd.to_numeric(results_df['race_no'], errors='coerce').astype('Int64')
+        results_df['finish_position'] = pd.to_numeric(results_df['finish_position'], errors='coerce')
+        results_df['horse_name'] = results_df['horse_name'].astype(str).str.strip()
+    except Exception as e:
+        st.error(f"❌ 讀取賽果失敗：{e}")
+        return
+
+    # ===== 3. 逐個預測比對 =====
+    compare_rows = []
+    hit_count = 0
+    total_count = 0
+    pending_count = 0
+
+    for key, pred in ai_data.items():
+        date_str = pred.get('date')
+        race_no = pred.get('race')
+        top_horse = pred.get('top_horse')
+        model_used = pred.get('model_used', [])
+
+        if not date_str or not race_no or not top_horse:
+            continue
+
+        # 搵對應賽果
+        try:
+            race_no_int = int(race_no)
+        except Exception:
+            continue
+
+        matched = results_df[
+            (results_df['race_date_str'] == date_str) &
+            (results_df['race_no'] == race_no_int) &
+            (results_df['finish_position'] == 1)
+        ]
+
+        if matched.empty:
+            # 未有賽果
+            compare_rows.append({
+                '日期': date_str,
+                '場次': race_no_int,
+                '預測頭馬': top_horse,
+                '真實頭馬': '⏳ 未有賽果',
+                '結果': '⏳ 待定'
+            })
+            pending_count += 1
+        else:
+            real_winner = matched.iloc[0]['horse_name']
+            is_hit = (top_horse == real_winner)
+            total_count += 1
+            if is_hit:
+                hit_count += 1
+
+            compare_rows.append({
+                '日期': date_str,
+                '場次': race_no_int,
+                '預測頭馬': top_horse,
+                '真實頭馬': real_winner,
+                '結果': '✅ 命中' if is_hit else '❌ 失準'
+            })
+
+    # ===== 4. 顯示統計 =====
+    st.divider()
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("📊 總預測", len(ai_data))
+    c2.metric("✅ 已比對", total_count)
+    c3.metric("🎯 命中次數", hit_count)
+    if total_count > 0:
+        hit_rate = hit_count / total_count
+        c4.metric("📈 命中率", f"{hit_rate:.2%}")
+    else:
+        c4.metric("📈 命中率", "N/A")
+
+    if pending_count > 0:
+        st.caption(f"⏳ 仲有 {pending_count} 場未出賽果")
+
+    # ===== 5. 顯示對比表 =====
+    if compare_rows:
+        st.divider()
+        st.subheader("📋 預測 vs 賽果對比")
+
+        df = pd.DataFrame(compare_rows)
+        df = df.sort_values(['日期', '場次'], ascending=[False, True]).reset_index(drop=True)
+
+        def _color(row):
+            if row['結果'] == '✅ 命中':
+                return ['background-color: #d4edda'] * len(row)
+            elif row['結果'] == '❌ 失準':
+                return ['background-color: #f8d7da'] * len(row)
+            else:
+                return ['background-color: #fff3cd'] * len(row)
+
+        st.dataframe(df.style.apply(_color, axis=1), use_container_width=True, hide_index=True)
+
+    # ===== 6. 命中率走勢 =====
+    if total_count > 0:
+        st.divider()
+        st.subheader("📈 命中率走勢")
+
+        df_chart = pd.DataFrame([r for r in compare_rows if r['結果'] != '⏳ 待定'])
+        if not df_chart.empty:
+            df_chart['累積命中'] = (df_chart['結果'] == '✅ 命中').cumsum()
+            df_chart['累積場次'] = range(1, len(df_chart) + 1)
+            df_chart['累積命中率'] = df_chart['累積命中'] / df_chart['累積場次']
+
+            if HAS_PLOTLY:
+                fig = px.line(
+                    df_chart,
+                    x='累積場次',
+                    y='累積命中率',
+                    title='累積命中率走勢',
+                    markers=True
+                )
+                fig.update_layout(yaxis_tickformat='.0%', height=350)
+                st.plotly_chart(fig, use_container_width=True)
+
+    # ===== 7. 管理員操作 =====
+    st.divider()
+    st.subheader("🔧 管理操作")
+    if st.button("🔄 重新整理", use_container_width=True, key="refresh_acc"):
+        st.rerun()
 
 def admin_subscription():
     st.subheader("⏰ 訂閱管理")
