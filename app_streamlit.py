@@ -1743,9 +1743,8 @@ def admin_auto_maintenance():
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        if st.button("🔄 比對賽果", use_container_width=True, key="btn_compare"):
+        if st.button("🔄 比對賽果", use_container_width=True, key="btn_compare_maintenance"):
             try:
-                # 🔥 直接用 ai_predictions.json 比對
                 hit_count, msg = update_ai_accuracy()
                 st.session_state.operation_result = ('success', f"✅ {msg}")
             except Exception as e:
@@ -1753,7 +1752,7 @@ def admin_auto_maintenance():
             st.rerun()
 
     with col2:
-        if st.button("⚖️ 調整權重", use_container_width=True, key="btn_adjust_weights"):
+        if st.button("⚖️ 調整權重", use_container_width=True, key="btn_adjust_weights_maintenance"):
             try:
                 result = adjust_model_weights()
                 st.session_state.operation_result = (
@@ -1765,7 +1764,7 @@ def admin_auto_maintenance():
             st.rerun()
 
     with col3:
-        if st.button("⏰ 終止過期會員", use_container_width=True, key="btn_expire"):
+        if st.button("⏰ 終止過期會員", use_container_width=True, key="btn_expire_maintenance"):
             try:
                 users = load_users()
                 today = datetime.now()
@@ -1791,15 +1790,7 @@ def admin_auto_maintenance():
             st.rerun()
 
     with col4:
-        if st.button("🎯 更新 AI 命中率", use_container_width=True, key="btn_update_ai"):
-            try:
-                hit_count, msg = update_ai_accuracy()
-                st.session_state.operation_result = ('success', f"✅ {msg}")
-            except Exception as e:
-                st.session_state.operation_result = ('error', f"❌ 失敗：{str(e)}")
-            st.rerun()
-    with col4:
-        if st.button("🎯 更新 AI 命中率", use_container_width=True, key="btn_update_ai"):
+        if st.button("🎯 更新 AI 命中率", use_container_width=True, key="btn_update_ai_maintenance"):
             try:
                 hit_count, msg = update_ai_accuracy()
                 st.session_state.operation_result = ('success', f"✅ {msg}")
