@@ -1173,7 +1173,6 @@ def run_prediction(date_str, race_no):
         st.error(f"❌ 讀取失敗：{e}")
         return None, None
 
-    # 標準化欄位名
     rename_map = {
         '馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
         '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
@@ -1215,8 +1214,8 @@ def run_prediction(date_str, race_no):
     filtered = df_date[df_date['race_no'] == race_no].copy()
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
-    # ========== 建立 36 個特徵（順序必須同模型一致） ==========
-    MODEL_FEATURES = [
+    # ========== 完整 36 個特徵 ==========
+    MODEL_FEATURES_36 = [
         'draw', 'weight', 'distance', 'Rtg.', '近3場平均名次',
         '騎師近50場勝率', '練馬師近50場勝率', '同路程歷史勝率', '同路程歷史平均名次',
         'win_odds', '體重變化', '騎練組合勝率', '詳細賽道歷史勝率', '詳細賽道歷史平均名次',
@@ -1228,7 +1227,12 @@ def run_prediction(date_str, race_no):
         '傷患總次數', '傷患嚴重程度'
     ]
 
-    # 特徵映射：模型特徵名 → 你嘅欄位名
+    # 9 個特徵版本（雲端模型可能用呢個）
+    MODEL_FEATURES_9 = [
+        'draw', 'weight', 'distance', 'Rtg.', 'win_odds',
+        '近3場平均名次', '騎師近50場勝率', '練馬師近50場勝率', '出賽相隔日數'
+    ]
+
     FEATURE_MAPPING = {
         'draw': 'draw',
         'weight': 'weight',
@@ -1268,23 +1272,15 @@ def run_prediction(date_str, race_no):
         '傷患嚴重程度': 'injury_severity',
     }
 
-    # 建立特徵矩陣（嚴格按照 MODEL_FEATURES 順序）
-    X_data = {}
-    for model_feat in MODEL_FEATURES:
-        col_name = FEATURE_MAPPING.get(model_feat)
-        if col_name and col_name in filtered.columns:
-            X_data[model_feat] = pd.to_numeric(filtered[col_name], errors='coerce').fillna(0).values
-        else:
-            X_data[model_feat] = np.zeros(len(filtered))
-
-    # 🔥 用 list 按順序建立 array
-    X_array = np.array([X_data[feat] for feat in MODEL_FEATURES]).T
-    X_array = X_array.astype(float)
-
-    # 檢查 shape
-    if X_array.shape[1] != 36:
-        st.error(f"❌ 特徵數量錯誤：{X_array.shape[1]}，需要 36")
-        return None, None
+    def build_features(feature_list):
+        X_data = {}
+        for model_feat in feature_list:
+            col_name = FEATURE_MAPPING.get(model_feat)
+            if col_name and col_name in filtered.columns:
+                X_data[model_feat] = pd.to_numeric(filtered[col_name], errors='coerce').fillna(0).values
+            else:
+                X_data[model_feat] = np.zeros(len(filtered))
+        return np.array([X_data[feat] for feat in feature_list]).T.astype(float)
 
     # ========== 嘗試載入模型 ==========
     model_used = False
@@ -1296,24 +1292,49 @@ def run_prediction(date_str, race_no):
         cat_model = CatBoostClassifier()
         cat_model.load_model('hk_catboost_model.cbm')
 
-        # 🔥 XGBoost 預測（用 NumPy array，避免特徵名稱檢查）
+        # 🔥 偵測 XGBoost 需要幾多個特徵
+        n_features = 36  # 預設
+        if hasattr(xgb_model, 'n_features_in_'):
+            n_features = xgb_model.n_features_in_
+        
+        st.info(f"🔍 模型需要 {n_features} 個特徵")
+
+        # 根據需要嘅特徵數量選擇特徵列表
+        if n_features == 9:
+            features_to_use = MODEL_FEATURES_9
+        elif n_features == 36:
+            features_to_use = MODEL_FEATURES_36
+        else:
+            # 動態：取前 n_features 個
+            features_to_use = MODEL_FEATURES_36[:n_features]
+
+        X_array = build_features(features_to_use)
+        st.info(f"📊 實際特徵 shape：{X_array.shape}")
+
+        # 確保特徵數量正確
+        if X_array.shape[1] != n_features:
+            st.error(f"❌ 特徵數量不匹配：{X_array.shape[1]} vs {n_features}")
+            raise ValueError("Feature mismatch")
+
+        # 預測
         xgb_pred = xgb_model.predict_proba(X_array)[:, 1]
 
-        # 🔥 CatBoost 預測（用 NumPy array）
-        cat_pred = cat_model.predict_proba(X_array)[:, 1]
+        # CatBoost
+        try:
+            cat_pred = cat_model.predict_proba(X_array)[:, 1]
+        except:
+            cat_pred = xgb_pred  # 如果 CatBoost 失敗，就用 XGBoost
 
-        # 加權融合
         config = load_system_config()
         xgb_w = config.get('xgb_weight', 25)
         cat_w = config.get('cat_weight', 1)
         final_pred = (xgb_pred * xgb_w + cat_pred * cat_w) / (xgb_w + cat_w)
 
         model_used = True
-        st.success(f"🤖 使用 AI 模型預測（XGBoost {xgb_w} : CatBoost {cat_w}）")
+        st.success(f"🤖 使用 AI 模型預測（{n_features} 個特徵，XGBoost {xgb_w} : CatBoost {cat_w}）")
 
     except Exception as e:
         st.warning(f"⚠️ 模型載入失敗，改用賠率估算：{e}")
-        # Fallback：賠率估算
         odds_col = None
         for col in ['win_odds', '賠率', '獨贏賠率', 'odds']:
             if col in filtered.columns:
@@ -1329,22 +1350,11 @@ def run_prediction(date_str, race_no):
 
     # ========== 建立結果 ==========
     result_df = filtered[['horse_name']].copy()
-    if 'draw' in filtered.columns:
-        result_df['draw'] = filtered['draw'].values
-    else:
-        result_df['draw'] = 0
-    if 'weight' in filtered.columns:
-        result_df['weight'] = filtered['weight'].values
-    else:
-        result_df['weight'] = 0
-    if 'jockey' in filtered.columns:
-        result_df['jockey'] = filtered['jockey'].values
-    else:
-        result_df['jockey'] = ''
-    if 'trainer' in filtered.columns:
-        result_df['trainer'] = filtered['trainer'].values
-    else:
-        result_df['trainer'] = ''
+    for col in ['draw', 'weight', 'jockey', 'trainer']:
+        if col in filtered.columns:
+            result_df[col] = filtered[col].values
+        else:
+            result_df[col] = 0 if col in ['draw', 'weight'] else ''
 
     result_df['預測勝率'] = final_pred
     result_df['值博指數'] = result_df['預測勝率'] * 10
