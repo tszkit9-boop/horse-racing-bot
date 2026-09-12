@@ -496,9 +496,9 @@ def _repair_racecard(df):
 
     # ===== 格式 1：全新 15 欄格式（中英文）=====
     if 'horse_name_cn' in df.columns:
-        df['馬名'] = df['horse_name_cn']
+        df['馬名'] = df['horse_name_cn'].astype(str).str.strip()
         df['騎師'] = df['jockey_cn'].astype(str).str.replace(r'\s*\(.*?\)', '', regex=True).str.strip()
-        df['練馬師'] = df['trainer_cn']
+        df['練馬師'] = df['trainer_cn'].astype(str).str.strip()
         df['馬號'] = df.get('horse_no', '')
         df['檔位'] = df.get('draw', '')
         df['負磅'] = df.get('weight', '')
@@ -508,19 +508,24 @@ def _repair_racecard(df):
 
     # ===== 格式 2：中文 9 欄格式（舊版）=====
     elif '馬名' in df.columns:
-        pass  # 原本就係中文格式，唔使改
+        pass  # 原本就係中文格式
 
     # ===== 格式 3：英文 9 欄格式 =====
     elif 'horse_name' in df.columns:
-        df['馬名'] = df['horse_name']
-        df['騎師'] = df['jockey']
-        df['練馬師'] = df['trainer']
+        df['馬名'] = df['horse_name'].astype(str).str.strip()
+        df['騎師'] = df['jockey'].astype(str).str.strip()
+        df['練馬師'] = df['trainer'].astype(str).str.strip()
         df['馬號'] = df.get('horse_no', '')
         df['檔位'] = df.get('draw', '')
         df['負磅'] = df.get('weight', '')
         df['場次'] = df.get('race_no', '')
         df['比賽日期'] = df.get('race_date', '')
         df['賠率'] = df.get('win_odds', 4.0)
+
+    # ===== 統一強制轉換類型 =====
+    df['場次'] = pd.to_numeric(df['場次'], errors='coerce').fillna(0).astype(int)
+    df['賠率'] = pd.to_numeric(df['賠率'], errors='coerce').fillna(4.0)
+    df['比賽日期'] = df['比賽日期'].astype(str)
 
     return df
 
