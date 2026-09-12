@@ -197,6 +197,36 @@ def log_admin_action(admin, action):
         'action': action
     })
     save_json(LOG_FILE, logs)
+def log_user_activity(username, action, detail=""):
+    """記錄用戶活動"""
+    log_file = "user_activity_log.json"
+    try:
+        if os.path.exists(log_file):
+            with open(log_file, 'r', encoding='utf-8') as f:
+                logs = json.load(f)
+        else:
+            logs = {"records": []}
+    except Exception:
+        logs = {"records": []}
+
+    if "records" not in logs:
+        logs["records"] = []
+
+    logs["records"].append({
+        "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        "username": username,
+        "action": action,
+        "detail": detail
+    })
+
+    # 只保留最近 5000 條
+    logs["records"] = logs["records"][-5000:]
+
+    try:
+        with open(log_file, 'w', encoding='utf-8') as f:
+            json.dump(logs, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
 
 def load_finance():
     return load_json(FINANCE_FILE)
@@ -878,6 +908,7 @@ def run_prediction(date_str, race_no):
         json.dump(ai_data, f, ensure_ascii=False, indent=2)
 
     # 取得用戶會員級別
+    user_group = st.session_state.get('role', 'free')    
     user_group = st.session_state.get('role', 'free')
     return result_df, generate_pool_recommendations(result_df, user_group)
 
@@ -2504,6 +2535,79 @@ def admin_payment_review():
                 st.error(msg)
             st.rerun()
         st.divider()
+def admin_user_activity():
+    st.subheader("👤 用戶記錄")
+    st.caption("記錄用戶嘅登入、預測、抽獎、購買、付款等活動。")
+
+    log_file = "user_activity_log.json"
+
+    if not os.path.exists(log_file):
+        st.info("📭 暫無任何用戶活動記錄")
+        return
+
+    try:
+        with open(log_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception as e:
+        st.error(f"❌ 讀取失敗：{e}")
+        return
+
+    records = data.get("records", [])
+    if not records:
+        st.info("📭 暫無任何用戶活動記錄")
+        return
+
+    st.markdown("### 📊 活動統計")
+    df_all = pd.DataFrame(records)
+    c1, c2, c3 = st.columns(3)
+    c1.metric("📋 總記錄數", len(df_all))
+    c2.metric("👥 活躍用戶", df_all['username'].nunique())
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    c3.metric("📅 今日記錄", len(df_all[df_all['time'].str.startswith(today_str)]))
+
+    st.divider()
+    st.markdown("### 🔍 篩選")
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        user_filter = st.selectbox(
+            "選擇用戶",
+            ["全部"] + sorted(df_all['username'].unique().tolist()),
+            key="act_user_filter"
+        )
+    with col2:
+        action_filter = st.selectbox(
+            "活動類型",
+            ["全部"] + sorted(df_all['action'].unique().tolist()),
+            key="act_action_filter"
+        )
+    with col3:
+        limit = st.number_input("顯示最近幾多條", min_value=10, max_value=5000, value=100, step=10, key="act_limit")
+
+    df_filtered = df_all.copy()
+    if user_filter != "全部":
+        df_filtered = df_filtered[df_filtered['username'] == user_filter]
+    if action_filter != "全部":
+        df_filtered = df_filtered[df_filtered['action'] == action_filter]
+
+    df_filtered = df_filtered.tail(int(limit)).iloc[::-1].reset_index(drop=True)
+    df_filtered.index = df_filtered.index + 1
+
+    st.write(f"**顯示 {len(df_filtered)} 條記錄**")
+
+    df_display = df_filtered[['time', 'username', 'action', 'detail']].copy()
+    df_display.columns = ['時間', '用戶', '活動', '詳情']
+    st.dataframe(df_display, use_container_width=True)
+
+    csv_data = df_display.to_csv(index=False).encode('utf-8-sig')
+    st.download_button(
+        label="📥 下載用戶記錄 CSV",
+        data=csv_data,
+        file_name=f"user_activity_{datetime.now().strftime('%Y%m%d')}.csv",
+        mime="text/csv",
+        use_container_width=True,
+        key="dl_user_activity"
+    )
 
 def admin_monitoring():
     st.subheader("📡 系統監控")
@@ -2747,7 +2851,8 @@ def admin_page():
         ("📝 內容", admin_content),
         ("🤖 自動維護", admin_auto_maintenance),
         ("🤖 自動化", admin_automation),
-        ("🔐 安全", admin_security),
+        ("🔐 安全", admin_security),        
+        ("👤 用戶記錄", admin_user_activity),
         ("🎰 抽獎設定", admin_lottery_config),
         ("🛒 商城設定", admin_shop_config),
         ("🎯 彩池設定", admin_pool_config),
@@ -2847,6 +2952,7 @@ def login_page():
                 if user:
                     st.session_state.logged_in = True
                     st.session_state.username = u
+                    log_user_activity(u, "登入", "登入成功")
                     st.session_state.role = user.get('group', 'free')
                     st.rerun()
                 else:
@@ -2967,6 +3073,7 @@ def login_page():
                                         users[level3_user]['invite_rewards'] = users[level3_user].get('invite_rewards', 0) + bonus3
 
                         save_users(users)
+                        log_user_activity(new_user, "註冊", f"邀請人：{invited_by or '無'}")
                         st.success(f"✅ 註冊成功！你獲得 {CONFIG.get('invite_rewards', {}).get('level1', 5)} 次額外預測獎勵！")
                         st.session_state.page_mode = "login"
                         st.rerun()
