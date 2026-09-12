@@ -538,7 +538,6 @@ def run_prediction(date_str, race_no):
         return None, None
 
     try:
-    try:
         race_df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
         race_df = _repair_racecard(race_df)
         # 🔥 刪除重複欄位，防止 'duplicate keys' 錯誤
@@ -548,8 +547,6 @@ def run_prediction(date_str, race_no):
         race_df['win_odds'] = pd.to_numeric(race_df.get('win_odds', 4.0), errors='coerce').fillna(4.0).astype(float)
         race_df['race_date'] = race_df.get('race_date', '').astype(str)
     except Exception as e:
-        st.error(f"❌ 讀取失敗：{e}")
-        return None, None
         st.error(f"❌ 讀取失敗：{e}")
         return None, None
 
