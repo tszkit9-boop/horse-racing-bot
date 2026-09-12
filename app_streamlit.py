@@ -2875,37 +2875,44 @@ def main():
                     key="batch_pred_date"
                 )
 
-            with col_btn:
-                st.write("")
-                run_batch = st.button(
-                    "🔮 一鍵預測",
-                    use_container_width=True,
-                    key="batch_predict_btn"
-                )
-
             with col_status:
                 st.write("")
                 date_str = selected_date.strftime("%Y-%m-%d")
-
                 if not os.path.exists("racecard_uploaded.csv"):
                     st.error("❌ 找不到 racecard_uploaded.csv")
                 else:
                     try:
                         rc_df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
                         rc_df = _repair_racecard(rc_df)
-                        if isinstance(rc_df['race_date'], pd.DataFrame):
-                            rc_df['race_date'] = rc_df['race_date'].iloc[:, 0]
-                        rc_df['race_date'] = pd.to_datetime(rc_df['race_date'], errors='coerce')
-                        rc_df = rc_df.dropna(subset=['race_date'])
-                        rc_df['race_date_str'] = rc_df['race_date'].dt.strftime('%Y-%m-%d')
-                        rc_df['race_no'] = pd.to_numeric(rc_df['race_no'], errors='coerce').fillna(0).astype(int)
+                        rc_df = rc_df.loc[:, ~rc_df.columns.duplicated()]
 
-                        day_races = sorted(rc_df[rc_df['race_date_str'] == date_str]['race_no'].unique())
+                        # 同 run_prediction 一樣，標準化欄位名
+                        rename_map = {
+                            '馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
+                            '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
+                            '負磅': 'weight', '馬號': 'horse_id', '賠率': 'win_odds'
+                        }
+                        existing = [c for c in rename_map if c in rc_df.columns]
+                        if existing:
+                            rc_df.rename(columns={c: rename_map[c] for c in existing}, inplace=True)
+                        rc_df = rc_df.loc[:, ~rc_df.columns.duplicated()]
 
-                        if not day_races:
-                            st.warning(f"⚠️ {date_str} 冇任何場次數據")
+                        if 'race_date' not in rc_df.columns:
+                            st.error("❌ 賽事數據缺少日期欄位")
                         else:
-                            st.success(f"✅ 準備就緒（共 {len(day_races)} 場）")
+                            if isinstance(rc_df['race_date'], pd.DataFrame):
+                                rc_df['race_date'] = rc_df['race_date'].iloc[:, 0]
+                            rc_df['race_date'] = pd.to_datetime(rc_df['race_date'], errors='coerce')
+                            rc_df = rc_df.dropna(subset=['race_date'])
+                            rc_df['race_date_str'] = rc_df['race_date'].dt.strftime('%Y-%m-%d')
+                            rc_df['race_no'] = pd.to_numeric(rc_df['race_no'], errors='coerce').fillna(0).astype(int)
+
+                            day_races = sorted(rc_df[rc_df['race_date_str'] == date_str]['race_no'].unique())
+
+                            if not day_races:
+                                st.warning(f"⚠️ {date_str} 冇任何場次數據")
+                            else:
+                                st.success(f"✅ 準備就緒（共 {len(day_races)} 場）")
                     except Exception as e:
                         st.error(f"讀取失敗：{e}")
 
