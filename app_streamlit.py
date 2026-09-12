@@ -2859,9 +2859,9 @@ def main():
     # ============================================================
     # 🔧 管理員專用：一鍵預測所有場次
     # ============================================================
-    if st.session_state.get('role') == 'super_admin':
+if st.session_state.get('role') == 'super_admin':
     with st.expander("🛠️ 管理員工具：一鍵預測所有場次"):
-    st.caption("⚠️ 只限管理員使用，會自動預測指定日期嘅所有場次。")
+        st.caption("⚠️ 只限管理員使用...")
 
     col1, col2, col3 = st.columns([2, 1, 2])
 
