@@ -537,9 +537,7 @@ def run_prediction(date_str, race_no):
         st.error("❌ 找不到 racecard_uploaded.csv")
         return None, None
 
-    try:
-        race_df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
-    try:
+       try:
         race_df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
         race_df = _repair_racecard(race_df)
         # 🔥 終極強制轉換，防止 '<' 錯誤
