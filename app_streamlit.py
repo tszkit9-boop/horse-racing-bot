@@ -2290,7 +2290,6 @@ def admin_accuracy_monitor():
         st.error(f"❌ 讀取賽果失敗：{e}")
         return
 
-    # 建立真實頭 3 名對照表
     real_top3 = {}
     for _, row in results_df.iterrows():
         if pd.isna(row['race_no']) or pd.isna(row['finish_position']):
@@ -2304,7 +2303,6 @@ def admin_accuracy_monitor():
                 'pos': int(row['finish_position'])
             })
 
-    # 比對
     compare_rows = []
     combo_hit = 0
     total_with_result = 0
@@ -2317,7 +2315,6 @@ def admin_accuracy_monitor():
         race_no = pred.get('race')
         all_horses = pred.get('all_horses', [])
 
-        # 取預測頭 3 名
         pred_top3 = all_horses[:3] if len(all_horses) >= 3 else all_horses
         pred_top3_str = ", ".join(pred_top3)
 
@@ -2338,7 +2335,6 @@ def admin_accuracy_monitor():
         real_names = [r['horse'] for r in real_top3_list]
         real_str = ", ".join([f"{r['horse']}({r['pos']})" for r in real_top3_list])
 
-        # 計算命中數
         hits = [h for h in pred_top3 if h in real_names]
         hit_count = len(hits)
 
@@ -2361,7 +2357,6 @@ def admin_accuracy_monitor():
             '結果': result_str
         })
 
-    # 統計
     st.divider()
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("📊 總預測", len(ai_data))
@@ -2382,7 +2377,6 @@ def admin_accuracy_monitor():
     if pending_count > 0:
         st.caption(f"⏳ 仲有 {pending_count} 場未出賽果")
 
-    # 顯示對比表
     if compare_rows:
         st.divider()
         st.subheader("📋 預測頭3名 vs 真實頭3名")
@@ -2399,7 +2393,7 @@ def admin_accuracy_monitor():
         st.dataframe(df.style.apply(_color, axis=1), use_container_width=True, hide_index=True)
 
     # ===== 6. 命中率走勢 =====
-    if total_count > 0:
+if total_with_result > 0:
         st.divider()
         st.subheader("📈 命中率走勢")
 
