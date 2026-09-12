@@ -3331,120 +3331,115 @@ def main():
                         status.text("✅ 完成！")
                         st.success(f"✅ 成功 {success_count} 場，失敗 {fail_count} 場")
 
-                        if all_results:
-                            st.divider()
-                        # ===== 🎯 跨場彩池推薦 =====
-                        if all_results:
-                            st.divider()
-                            st.subheader("🎯 跨場彩池推薦")
+                        # 🔥 儲存到 session_state（防止 rerun 時消失）
+                        st.session_state['batch_all_results'] = all_results
+                        st.session_state['batch_date_str'] = date_str
+                except Exception as e:
+                    st.error(f"執行失敗：{e}")
 
-                            race_list = sorted(all_results.keys())
+            # ===== 讀取 session_state 嘅結果 =====
+            all_results = st.session_state.get('batch_all_results', {})
+            date_str_saved = st.session_state.get('batch_date_str', '')
 
-                            # ===== 1. 孖寶（手動揀起始場次）=====
-                            st.markdown("#### 🎯 孖寶（連續 2 場）")
-                            if len(race_list) >= 2:
-                                double_start = st.selectbox(
-                                    "孖寶起始場次",
-                                    race_list,
-                                    index=None,
-                                    placeholder="請選擇孖寶起始場次...",
-                                    key="double_start_selector"
-                                )
+            if all_results:
+                st.divider()
+                st.subheader(f"🎯 {date_str_saved} 跨場彩池推薦")
 
-                                if double_start is not None:
-                                    d_idx = race_list.index(double_start)
-                                    d_races = race_list[d_idx:d_idx + 2]
-                                    if len(d_races) >= 2:
-                                        d1 = all_results[d_races[0]].iloc[0]['horse_name']
-                                        d2 = all_results[d_races[1]].iloc[0]['horse_name']
-                                        st.success(f"**【孖寶】第 {d_races[0]}-{d_races[1]} 場**：{d1} + {d2}")
-                                    else:
-                                        st.warning(f"⚠️ 由第 {double_start} 場開始，唔夠 2 場數據")
-                                else:
-                                    st.info("👆 請揀孖寶起始場次")
-                            else:
-                                st.warning("⚠️ 唔夠 2 場賽事，冇孖寶")
+                race_list = sorted(all_results.keys())
 
-                            st.divider()
+                # ===== 1. 孖寶 =====
+                st.markdown("#### 🎯 孖寶（連續 2 場）")
+                if len(race_list) >= 2:
+                    double_start = st.selectbox(
+                        "孖寶起始場次",
+                        race_list,
+                        index=None,
+                        placeholder="請選擇孖寶起始場次...",
+                        key="double_start_selector"
+                    )
+                    if double_start is not None:
+                        d_idx = race_list.index(double_start)
+                        d_races = race_list[d_idx:d_idx + 2]
+                        if len(d_races) >= 2:
+                            d1 = all_results[d_races[0]].iloc[0]['horse_name']
+                            d2 = all_results[d_races[1]].iloc[0]['horse_name']
+                            st.success(f"**【孖寶】第 {d_races[0]}-{d_races[1]} 場**：{d1} + {d2}")
+                        else:
+                            st.warning(f"⚠️ 由第 {double_start} 場開始，唔夠 2 場數據")
+                else:
+                    st.warning("⚠️ 唔夠 2 場賽事，冇孖寶")
 
-                            # ===== 2. 三寶（手動揀起始場次）=====
-                            st.markdown("#### 🎯 三寶（連續 3 場）")
-                            if len(race_list) >= 3:
-                                treble_start = st.selectbox(
-                                    "三寶起始場次",
-                                    race_list,
-                                    index=None,
-                                    placeholder="請選擇三寶起始場次...",
-                                    key="treble_start_selector"
-                                )
+                st.divider()
 
-                                if treble_start is not None:
-                                    t_idx = race_list.index(treble_start)
-                                    t_races = race_list[t_idx:t_idx + 3]
-                                    if len(t_races) >= 3:
-                                        t1 = all_results[t_races[0]].iloc[0]['horse_name']
-                                        t2 = all_results[t_races[1]].iloc[0]['horse_name']
-                                        t3 = all_results[t_races[2]].iloc[0]['horse_name']
-                                        st.success(f"**【三寶】第 {t_races[0]}-{t_races[2]} 場**：{t1} + {t2} + {t3}")
-                                    else:
-                                        st.warning(f"⚠️ 由第 {treble_start} 場開始，唔夠 3 場數據")
-                                else:
-                                    st.info("👆 請揀三寶起始場次")
-                            else:
-                                st.warning("⚠️ 唔夠 3 場賽事，冇三寶")
+                # ===== 2. 三寶 =====
+                st.markdown("#### 🎯 三寶（連續 3 場）")
+                if len(race_list) >= 3:
+                    treble_start = st.selectbox(
+                        "三寶起始場次",
+                        race_list,
+                        index=None,
+                        placeholder="請選擇三寶起始場次...",
+                        key="treble_start_selector"
+                    )
+                    if treble_start is not None:
+                        t_idx = race_list.index(treble_start)
+                        t_races = race_list[t_idx:t_idx + 3]
+                        if len(t_races) >= 3:
+                            t1 = all_results[t_races[0]].iloc[0]['horse_name']
+                            t2 = all_results[t_races[1]].iloc[0]['horse_name']
+                            t3 = all_results[t_races[2]].iloc[0]['horse_name']
+                            st.success(f"**【三寶】第 {t_races[0]}-{t_races[2]} 場**：{t1} + {t2} + {t3}")
+                        else:
+                            st.warning(f"⚠️ 由第 {treble_start} 場開始，唔夠 3 場數據")
+                else:
+                    st.warning("⚠️ 唔夠 3 場賽事，冇三寶")
 
-                            st.divider()
+                st.divider()
 
-                            # ===== 3. 六環彩（手動揀起始場次）=====
-                            st.markdown("#### 🎯 六環彩（連續 6 場）")
-                            if len(race_list) >= 6:
-                                six_up_start = st.selectbox(
-                                    "六環彩起始場次",
-                                    race_list,
-                                    index=None,
-                                    placeholder="請選擇六環彩起始場次...",
-                                    key="six_up_start_selector"
-                                )
+                # ===== 3. 六環彩 =====
+                st.markdown("#### 🎯 六環彩（連續 6 場）")
+                if len(race_list) >= 6:
+                    six_up_start = st.selectbox(
+                        "六環彩起始場次",
+                        race_list,
+                        index=None,
+                        placeholder="請選擇六環彩起始場次...",
+                        key="six_up_start_selector"
+                    )
+                    if six_up_start is not None:
+                        s_idx = race_list.index(six_up_start)
+                        six_up_races = race_list[s_idx:s_idx + 6]
+                        if len(six_up_races) >= 6:
+                            horses = [all_results[rn].iloc[0]['horse_name'] for rn in six_up_races]
+                            st.success(f"**【六環彩】第 {six_up_races[0]}-{six_up_races[-1]} 場**：{' + '.join(horses)}")
+                        else:
+                            st.warning(f"⚠️ 由第 {six_up_start} 場開始，唔夠 6 場數據（只有 {len(six_up_races)} 場）")
+                else:
+                    st.warning("⚠️ 唔夠 6 場賽事，冇六環彩")
 
-                                if six_up_start is not None:
-                                    s_idx = race_list.index(six_up_start)
-                                    six_up_races = race_list[s_idx:s_idx + 6]
-                                    if len(six_up_races) >= 6:
-                                        horses = [all_results[rn].iloc[0]['horse_name'] for rn in six_up_races]
-                                        st.success(f"**【六環彩】第 {six_up_races[0]}-{six_up_races[-1]} 場**：{' + '.join(horses)}")
-                                    else:
-                                        st.warning(f"⚠️ 由第 {six_up_start} 場開始，唔夠 6 場數據（只有 {len(six_up_races)} 場）")
-                                else:
-                                    st.info("👆 請揀六環彩起始場次")
-                            else:
-                                st.warning("⚠️ 唔夠 6 場賽事，冇六環彩")
+                st.divider()
 
-                            st.divider()
-
-                        # ===== 📊 各場預測結果 =====
-                        if all_results:
-                            st.subheader("📊 各場預測結果")
-                            race_list = sorted(all_results.keys())
-                            cols_per_row = 3
-
-                            for i in range(0, len(race_list), cols_per_row):
-                                cols = st.columns(cols_per_row)
-                                for j, col in enumerate(cols):
-                                    idx = i + j
-                                    if idx >= len(race_list):
-                                        break
-                                    rn = race_list[idx]
-                                    with col:
-                                        st.markdown(f"**🏇 第 {rn} 場**")
-                                        df = all_results[rn].copy()
-                                        display_cols = ['horse_name']
-                                        if 'draw' in df.columns:
-                                            display_cols.append('draw')
-                                        display_cols.append('預測勝率')
-                                        df_show = df[display_cols].head(3).copy()
-                                        df_show.columns = ['馬名', '檔位', '勝率'][:len(display_cols)]
-                                        df_show['勝率'] = df_show['勝率'].apply(lambda x: f"{x:.1%}")
-                                        st.dataframe(df_show, use_container_width=True, hide_index=True)
+                # ===== 4. 各場預測結果 =====
+                st.subheader("📊 各場預測結果")
+                cols_per_row = 3
+                for i in range(0, len(race_list), cols_per_row):
+                    cols = st.columns(cols_per_row)
+                    for j, col in enumerate(cols):
+                        idx = i + j
+                        if idx >= len(race_list):
+                            break
+                        rn = race_list[idx]
+                        with col:
+                            st.markdown(f"**🏇 第 {rn} 場**")
+                            df = all_results[rn].copy()
+                            cols_to_show = ['horse_name']
+                            if 'draw' in df.columns:
+                                cols_to_show.append('draw')
+                            cols_to_show.append('預測勝率')
+                            df_show = df[cols_to_show].head(3).copy()
+                            df_show.columns = ['馬名', '檔位', '勝率'][:len(cols_to_show)]
+                            df_show['勝率'] = df_show['勝率'].apply(lambda x: f"{x:.1%}")
+                            st.dataframe(df_show, use_container_width=True, hide_index=True)
                 except Exception as e:
                     st.error(f"執行失敗：{e}")
     cd, cr, cbtn = st.columns([2, 2, 1])
