@@ -2871,13 +2871,22 @@ def main():
             with col_date:
                 selected_date = st.date_input(
                     "📅 選擇日期",
-                    value=pd.to_datetime("2026-09-13"),
+                    value=pd.to_datetime("2026-09-06"),
                     key="batch_pred_date"
+                )
+
+            with col_btn:
+                st.write("")
+                run_batch = st.button(
+                    "🔮 一鍵預測",
+                    use_container_width=True,
+                    key="batch_predict_btn"
                 )
 
             with col_status:
                 st.write("")
                 date_str = selected_date.strftime("%Y-%m-%d")
+
                 if not os.path.exists("racecard_uploaded.csv"):
                     st.error("❌ 找不到 racecard_uploaded.csv")
                 else:
@@ -2886,7 +2895,7 @@ def main():
                         rc_df = _repair_racecard(rc_df)
                         rc_df = rc_df.loc[:, ~rc_df.columns.duplicated()]
 
-                        # 同 run_prediction 一樣，標準化欄位名
+                        # 標準化欄位名
                         rename_map = {
                             '馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
                             '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
@@ -2916,12 +2925,24 @@ def main():
                     except Exception as e:
                         st.error(f"讀取失敗：{e}")
 
-            # 如果撳咗一鍵預測
+            # ===== 如果撳咗一鍵預測 =====
             if run_batch:
                 date_str = selected_date.strftime("%Y-%m-%d")
                 try:
                     rc_df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
                     rc_df = _repair_racecard(rc_df)
+                    rc_df = rc_df.loc[:, ~rc_df.columns.duplicated()]
+
+                    rename_map = {
+                        '馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
+                        '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
+                        '負磅': 'weight', '馬號': 'horse_id', '賠率': 'win_odds'
+                    }
+                    existing = [c for c in rename_map if c in rc_df.columns]
+                    if existing:
+                        rc_df.rename(columns={c: rename_map[c] for c in existing}, inplace=True)
+                    rc_df = rc_df.loc[:, ~rc_df.columns.duplicated()]
+
                     if isinstance(rc_df['race_date'], pd.DataFrame):
                         rc_df['race_date'] = rc_df['race_date'].iloc[:, 0]
                     rc_df['race_date'] = pd.to_datetime(rc_df['race_date'], errors='coerce')
