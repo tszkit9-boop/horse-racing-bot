@@ -491,63 +491,38 @@ def _build_features(race_df, history_df):
 
     return result
 def _repair_racecard(df):
-    """終極版：逐行讀取，明確判斷格式"""
-    import csv
+    """自動適應任何格式嘅 racecard CSV"""
+    df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
 
-    # 直接讀原始檔案，唔用 pandas 嘅 header
-    rows = []
-    with open("racecard_uploaded.csv", "r", encoding="utf-8-sig") as f:
-        reader = csv.reader(f)
-        for row in reader:
-            rows.append(row)
+    # ===== 格式 1：全新 15 欄格式（中英文）=====
+    if 'horse_name_cn' in df.columns:
+        df['馬名'] = df['horse_name_cn']
+        df['騎師'] = df['jockey_cn'].astype(str).str.replace(r'\s*\(.*?\)', '', regex=True).str.strip()
+        df['練馬師'] = df['trainer_cn']
+        df['馬號'] = df.get('horse_no', '')
+        df['檔位'] = df.get('draw', '')
+        df['負磅'] = df.get('weight', '')
+        df['場次'] = df.get('race_no', '')
+        df['比賽日期'] = df.get('race_date', '')
+        df['賠率'] = df.get('win_odds', 4.0)
 
-    if len(rows) < 2:
-        return pd.DataFrame()
+    # ===== 格式 2：中文 9 欄格式（舊版）=====
+    elif '馬名' in df.columns:
+        pass  # 原本就係中文格式，唔使改
 
-    cn_rows = []  # 中文格式
-    en_rows = []  # 英文格式
+    # ===== 格式 3：英文 9 欄格式 =====
+    elif 'horse_name' in df.columns:
+        df['馬名'] = df['horse_name']
+        df['騎師'] = df['jockey']
+        df['練馬師'] = df['trainer']
+        df['馬號'] = df.get('horse_no', '')
+        df['檔位'] = df.get('draw', '')
+        df['負磅'] = df.get('weight', '')
+        df['場次'] = df.get('race_no', '')
+        df['比賽日期'] = df.get('race_date', '')
+        df['賠率'] = df.get('win_odds', 4.0)
 
-    for row in rows:
-        if len(row) < 9:
-            continue
-
-        first = str(row[0]).strip()
-
-        # 跳過 header
-        if first in ['馬號', 'race_date', ''] or first.lower() == 'nan':
-            continue
-
-        # 中文格式：第一列係純數字（馬號）
-        if first.isdigit():
-            cn_rows.append(row[:9])
-
-        # 英文格式：第一列係日期（YYYY-MM-DD）
-        elif len(first) == 10 and first[4] == '-' and first[7] == '-':
-            en_rows.append(row[:9])
-
-    # 轉 DataFrame
-    std_cols = ['horse_id', 'horse_name', 'draw', 'weight', 'jockey',
-                'trainer', 'race_no', 'race_date', 'win_odds']
-
-    frames = []
-
-    # 中文格式（欄位順序：馬號,馬名,檔位,負磅,騎師,練馬師,場次,比賽日期,賠率）
-    if cn_rows:
-        df_cn = pd.DataFrame(cn_rows, columns=std_cols)
-        frames.append(df_cn)
-
-    # 英文格式（欄位順序：race_date,race_no,horse_no,horse_name,draw,weight,jockey,trainer,win_odds）
-    if en_rows:
-        df_en = pd.DataFrame(en_rows, columns=['race_date', 'race_no', 'horse_id', 'horse_name',
-                                                'draw', 'weight', 'jockey', 'trainer', 'win_odds'])
-        df_en = df_en[std_cols]
-        frames.append(df_en)
-
-    if not frames:
-        return pd.DataFrame()
-
-    result = pd.concat(frames, ignore_index=True)
-    return result
+    return df
 
 def run_prediction(date_str, race_no):
     """用真正 ML 模型預測"""
