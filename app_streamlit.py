@@ -2534,7 +2534,7 @@ def admin_security():
         st.dataframe(pd.DataFrame(logs['logs'][-20:]), use_container_width=True)
     else:
         st.info("暫無日誌")
-    def admin_pool_config():
+def admin_pool_config():
     st.subheader("🎯 彩池設定")
     st.caption("可以獨立開關每個彩池，同設定最低會員級別。")
 
