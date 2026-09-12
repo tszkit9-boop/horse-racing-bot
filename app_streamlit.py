@@ -218,13 +218,55 @@ def save_payment_proofs(d):
     return save_json(PAYMENT_PROOFS_FILE, d)
 
 def load_lottery_config():
-    return load_json(LOTTERY_FILE, {"prizes": []})
-
-def save_lottery_config(c):
+    default_config = {
+        "prizes": [
+            {"name": "100 虛擬幣", "type": "virtual_coin", "value": 100, "weight": 5, "description": "送 100 虛擬幣"},
+            {"name": "500 虛擬幣", "type": "virtual_coin", "value": 500, "weight": 2, "description": "送 500 虛擬幣"},
+            {"name": "1000 虛擬幣", "type": "virtual_coin", "value": 1000, "weight": 1, "description": "送 1000 虛擬幣"},
+            {"name": "VIP 1 天", "type": "vip_days", "value": 1, "weight": 10, "description": "1 天 VIP 體驗"},
+            {"name": "免費預測 3 次", "type": "free_predictions", "value": 3, "weight": 20, "description": "額外 3 次預測"},
+            {"name": "20% 折扣優惠碼", "type": "promo_code", "value": 20, "weight": 10, "description": "購物 8 折"},
+            {"name": "謝謝參與", "type": "nothing", "value": 0, "weight": 30, "description": "下次再嚟"}
+        ]
+    }
+    
+    if os.path.exists("lottery_config.json"):
+        try:
+            with open("lottery_config.json", "r", encoding='utf-8') as f:
+                config = json.load(f)
+            if config.get("prizes"):
+                return config
+        except Exception:
+            pass
+            
+    # 如果檔案唔存在、讀取失敗或者係空嘅，就寫入預設值
+    with open("lottery_config.json", "w", encoding='utf-8') as f:
+        json.dump(default_config, f, ensure_ascii=False, indent=2)
+    return default_config
     return save_json(LOTTERY_FILE, c)
 
 def load_shop_config():
-    return load_json(SHOP_FILE, {"items": []})
+    default_config = {
+        "items": [
+            {"name": "額外 5 次預測", "type": "predictions", "price": 500, "stock": 100, "description": "增加 5 次預測機會"},
+            {"name": "VIP 7 天體驗", "type": "vip_days", "price": 3000, "stock": 50, "description": "7 天 VIP 權限"},
+            {"name": "神秘盲盒", "type": "mystery_box", "price": 1000, "stock": 20, "description": "隨機獲得獎品"}
+        ]
+    }
+    
+    if os.path.exists("shop_config.json"):
+        try:
+            with open("shop_config.json", "r", encoding='utf-8') as f:
+                config = json.load(f)
+            if config.get("items"):
+                return config
+        except Exception:
+            pass
+            
+    # 如果檔案唔存在、讀取失敗或者係空嘅，就寫入預設值
+    with open("shop_config.json", "w", encoding='utf-8') as f:
+        json.dump(default_config, f, ensure_ascii=False, indent=2)
+    return default_config
 
 def save_shop_config(c):
     return save_json(SHOP_FILE, c)
