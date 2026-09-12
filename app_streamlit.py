@@ -37,7 +37,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-CONFIG_FILE = 'system_config.json'
 DEFAULT_CONFIG = {
     "enable_registration": True, "enable_payment": True, "enable_admin": True,
     "enable_lottery": True, "enable_shop": True,
@@ -45,6 +44,21 @@ DEFAULT_CONFIG = {
     "price_day": 18, "price_month": 128, "price_quarter": 328,
     "daily_virtual_coin": 1000, "virtual_coin_enabled": True,
     "enable_invite_reward": True,
+    # ===== 🎯 彩池設定 =====
+    "pool_config": {
+        "win": {"enabled": True, "required_group": "free", "label": "獨贏"},
+        "place": {"enabled": True, "required_group": "free", "label": "位置"},
+        "quinella": {"enabled": True, "required_group": "free", "label": "連贏"},
+        "quinella_place": {"enabled": True, "required_group": "free", "label": "位置Q"},
+        "tierce": {"enabled": True, "required_group": "paid", "label": "三重彩"},
+        "trio": {"enabled": True, "required_group": "paid", "label": "單T"},
+        "quartet": {"enabled": True, "required_group": "VIP", "label": "四重彩"},
+        "exacta": {"enabled": True, "required_group": "VIP", "label": "二重彩"},
+        "first4": {"enabled": True, "required_group": "VIP", "label": "四連環"},
+        "double": {"enabled": True, "required_group": "VIP", "label": "孖寶"},
+        "treble": {"enabled": True, "required_group": "VIP", "label": "三寶"},
+        "six_up": {"enabled": True, "required_group": "VIP", "label": "六環彩"},
+    },
 }
 
 def load_json(fp, default=None):
@@ -290,69 +304,137 @@ def reject_payment_request(username, request_id, admin_username):
             return True, "已拒絕該申請"
     return False, "找不到該申請"
 
-def generate_pool_recommendations(df):
+def generate_pool_recommendations(df, user_group='free'):
+    """生成彩池推薦（按會員級別 + 每個彩池只出一個組合）"""
     if df.empty:
         return "⚠️ 無數據"
-    names = df['horse_name'].tolist()
-    probs = df['預測勝率'].tolist()
 
-    def sc(idxs):
-        s = 1.0
-        for i in idxs:
-            s *= probs[i]
-        return s / len(idxs)
+    # 讀取彩池設定
+    config = load_system_config()
+    pool_config = config.get('pool_config', {})
 
-    rec = "【獨贏】\n"
-    for _, r in df.head(3).iterrows():
-        rec += f"  {r['horse_name']}（{r['預測勝率']:.1%}）\n"
+    # 如果冇 pool_config，用預設
+    if not pool_config:
+        pool_config = {
+            "win": {"enabled": True, "required_group": "free", "label": "獨贏"},
+            "place": {"enabled": True, "required_group": "free", "label": "位置"},
+            "quinella": {"enabled": True, "required_group": "free", "label": "連贏"},
+            "quinella_place": {"enabled": True, "required_group": "free", "label": "位置Q"},
+            "tierce": {"enabled": True, "required_group": "paid", "label": "三重彩"},
+            "trio": {"enabled": True, "required_group": "paid", "label": "單T"},
+            "quartet": {"enabled": True, "required_group": "VIP", "label": "四重彩"},
+            "exacta": {"enabled": True, "required_group": "VIP", "label": "二重彩"},
+            "first4": {"enabled": True, "required_group": "VIP", "label": "四連環"},
+            "double": {"enabled": True, "required_group": "VIP", "label": "孖寶"},
+            "treble": {"enabled": True, "required_group": "VIP", "label": "三寶"},
+            "six_up": {"enabled": True, "required_group": "VIP", "label": "六環彩"},
+        }
 
-    rec += "\n【位置】\n"
-    for _, r in df.head(4).iterrows():
-        rec += f"  {r['horse_name']}（{r['預測勝率']:.1%}）\n"
+    # 會員級別優先順序
+    group_levels = {'free': 0, 'paid': 1, 'VIP': 2, 'super_admin': 99}
+    user_level = group_levels.get(user_group, 0)
 
-    rec += "\n【連贏】\n"
-    pairs = sorted(
-        [(sc([i, j]), i, j)
-         for i in range(min(len(names), 5))
-         for j in range(i + 1, min(len(names), 6))],
-        reverse=True
-    )
-    for _, i, j in pairs[:5]:
-        rec += f"  {names[i]} + {names[j]}\n"
+    # 排序預測結果
+    df_sorted = df.sort_values('預測勝率', ascending=False).reset_index(drop=True)
+    names = df_sorted['horse_name'].tolist()
+    probs = df_sorted['預測勝率'].tolist()
 
-    rec += "\n【位置Q】\n"
-    qp = sorted(
-        [(sc([i, j]), i, j)
-         for i in range(min(len(names), 6))
-         for j in range(i + 1, min(len(names), 8))
-         if j < len(names)],
-        reverse=True
-    )
-    for _, i, j in qp[:6]:
-        rec += f"  {names[i]} + {names[j]}\n"
+    # 每個彩池只出一個組合
+    def get_win():
+        if len(names) >= 1:
+            return f"  {names[0]}（{probs[0]:.1%}）"
+        return ""
 
-    rec += "\n【三重彩 / 單T】\n"
-    tc = sorted(
-        [(sc([i, j, k]), i, j, k)
-         for i in range(min(len(names), 4))
-         for j in range(min(len(names), 5))
-         for k in range(min(len(names), 6))
-         if len({i, j, k}) == 3],
-        reverse=True
-    )
-    for _, i, j, k in tc[:5]:
-        rec += f"  {names[i]} > {names[j]} > {names[k]}\n"
+    def get_place():
+        if len(names) >= 2:
+            return f"  {names[0]}（{probs[0]:.1%}）+ {names[1]}（{probs[1]:.1%}）"
+        elif len(names) >= 1:
+            return f"  {names[0]}（{probs[0]:.1%}）"
+        return ""
 
-    rec += "\n【四重彩】\n"
-    qt = sorted(
-        [(sc([i, j, k, l]), i, j, k, l)
-         for i in range(min(len(names), 4))
-         for j in range(min(len(names), 5))
-         for k in range(min(len(names), 6))
-         for l in range(min(len(names), 7))
-         if len({i, j, k, l}) == 4],
-        reverse=True
-    )
+    def get_quinella():
+        if len(names) >= 2:
+            return f"  {names[0]} + {names[1]}"
+        return ""
+
+    def get_quinella_place():
+        if len(names) >= 2:
+            return f"  {names[0]} + {names[1]}"
+        return ""
+
+    def get_tierce():
+        if len(names) >= 3:
+            return f"  {names[0]} > {names[1]} > {names[2]}"
+        return ""
+
+    def get_trio():
+        if len(names) >= 3:
+            return f"  {names[0]} + {names[1]} + {names[2]}"
+        return ""
+
+    def get_quartet():
+        if len(names) >= 4:
+            return f"  {names[0]} > {names[1]} > {names[2]} > {names[3]}"
+        return ""
+
+    def get_exacta():
+        if len(names) >= 2:
+            return f"  {names[0]} > {names[1]}"
+        return ""
+
+    def get_first4():
+        if len(names) >= 4:
+            return f"  {names[0]} + {names[1]} + {names[2]} + {names[3]}"
+        return ""
+
+    def get_double():
+        return "  ⚠️ 需要 2 場賽事數據（孖寶）"
+
+    def get_treble():
+        return "  ⚠️ 需要 3 場賽事數據（三寶）"
+
+    def get_six_up():
+        return "  ⚠️ 需要 6 場賽事數據（六環彩）"
+
+    # 彩池生成器對應
+    generators = {
+        'win': get_win,
+        'place': get_place,
+        'quinella': get_quinella,
+        'quinella_place': get_quinella_place,
+        'tierce': get_tierce,
+        'trio': get_trio,
+        'quartet': get_quartet,
+        'exacta': get_exacta,
+        'first4': get_first4,
+        'double': get_double,
+        'treble': get_treble,
+        'six_up': get_six_up,
+    }
+
+    # 按順序生成推薦
+    rec_lines = []
+    for key, cfg in pool_config.items():
+        if not cfg.get('enabled', True):
+            continue
+
+        required = cfg.get('required_group', 'free')
+        required_level = group_levels.get(required, 0)
+
+        if user_level < required_level:
+            rec_lines.append(f"【{cfg.get('label', key)}】🔒 需要更高級會員")
+            continue
+
+        gen = generators.get(key)
+        if gen:
+            content = gen()
+            if content:
+                rec_lines.append(f"【{cfg.get('label', key)}】\n{content}")
+
+    if not rec_lines:
+        return "⚠️ 所有彩池已關閉或未開放"
+
+    return "\n\n".join(rec_lines)
     for _, i, j, k, l in qt[:3]:
         rec += f"  {names[i]} > {names[j]} > {names[k]} > {names[l]}\n"
 
@@ -748,7 +830,9 @@ def run_prediction(date_str, race_no):
     with open(ai_file, 'w', encoding='utf-8') as f:
         json.dump(ai_data, f, ensure_ascii=False, indent=2)
 
-    return result_df, generate_pool_recommendations(result_df)
+    # 取得用戶會員級別
+    user_group = st.session_state.get('role', 'free')
+    return result_df, generate_pool_recommendations(result_df, user_group)
 
 def _find_data_col(df, keywords):
     """搵一個有數據嘅欄位（唔止名要對，仲要有實際值）"""
@@ -2450,6 +2534,101 @@ def admin_security():
         st.dataframe(pd.DataFrame(logs['logs'][-20:]), use_container_width=True)
     else:
         st.info("暫無日誌")
+    def admin_pool_config():
+    st.subheader("🎯 彩池設定")
+    st.caption("可以獨立開關每個彩池，同設定最低會員級別。")
+
+    config = load_system_config()
+    pool_config = config.get('pool_config', {})
+
+    # 如果未有彩池設定，用預設值
+    if not pool_config:
+        pool_config = {
+            "win": {"enabled": True, "required_group": "free", "label": "獨贏"},
+            "place": {"enabled": True, "required_group": "free", "label": "位置"},
+            "quinella": {"enabled": True, "required_group": "free", "label": "連贏"},
+            "quinella_place": {"enabled": True, "required_group": "free", "label": "位置Q"},
+            "tierce": {"enabled": True, "required_group": "paid", "label": "三重彩"},
+            "trio": {"enabled": True, "required_group": "paid", "label": "單T"},
+            "quartet": {"enabled": True, "required_group": "VIP", "label": "四重彩"},
+            "exacta": {"enabled": True, "required_group": "VIP", "label": "二重彩"},
+            "first4": {"enabled": True, "required_group": "VIP", "label": "四連環"},
+            "double": {"enabled": True, "required_group": "VIP", "label": "孖寶"},
+            "treble": {"enabled": True, "required_group": "VIP", "label": "三寶"},
+            "six_up": {"enabled": True, "required_group": "VIP", "label": "六環彩"},
+        }
+
+    st.markdown("### 📊 彩池列表")
+
+    # 顯示表格式設定
+    updated_config = {}
+
+    for key, cfg in pool_config.items():
+        col1, col2, col3 = st.columns([2, 1, 2])
+
+        with col1:
+            st.markdown(f"**{cfg.get('label', key)}**")
+            st.caption(f"`{key}`")
+
+        with col2:
+            enabled = st.checkbox(
+                "啟用",
+                value=cfg.get('enabled', True),
+                key=f"pool_enabled_{key}"
+            )
+
+        with col3:
+            group_options = ['free', 'paid', 'VIP']
+            group_labels = {
+                'free': '🆓 普通用戶',
+                'paid': '💰 付費用戶（日/月）',
+                'VIP': '👑 VIP / 季費 / 年費'
+            }
+            current_group = cfg.get('required_group', 'free')
+            if current_group not in group_options:
+                current_group = 'free'
+            required_group = st.selectbox(
+                "最低會員級別",
+                group_options,
+                index=group_options.index(current_group),
+                format_func=lambda x: group_labels[x],
+                key=f"pool_group_{key}"
+            )
+
+        updated_config[key] = {
+            "enabled": enabled,
+            "required_group": required_group,
+            "label": cfg.get('label', key)
+        }
+
+        st.divider()
+
+    if st.button("💾 儲存彩池設定", type="primary", use_container_width=True, key="save_pool_cfg"):
+        config['pool_config'] = updated_config
+        if save_system_config(config):
+            st.success("✅ 彩池設定已儲存！")
+            time.sleep(1)
+            st.rerun()
+        else:
+            st.error("❌ 儲存失敗")
+
+
+def _get_pool_config_default():
+    """回傳預設彩池設定"""
+    return {
+        "win": {"enabled": True, "required_group": "free", "label": "獨贏"},
+        "place": {"enabled": True, "required_group": "free", "label": "位置"},
+        "quinella": {"enabled": True, "required_group": "free", "label": "連贏"},
+        "quinella_place": {"enabled": True, "required_group": "free", "label": "位置Q"},
+        "tierce": {"enabled": True, "required_group": "paid", "label": "三重彩"},
+        "trio": {"enabled": True, "required_group": "paid", "label": "單T"},
+        "quartet": {"enabled": True, "required_group": "VIP", "label": "四重彩"},
+        "exacta": {"enabled": True, "required_group": "VIP", "label": "二重彩"},
+        "first4": {"enabled": True, "required_group": "VIP", "label": "四連環"},
+        "double": {"enabled": True, "required_group": "VIP", "label": "孖寶"},
+        "treble": {"enabled": True, "required_group": "VIP", "label": "三寶"},
+        "six_up": {"enabled": True, "required_group": "VIP", "label": "六環彩"},
+    }
 
 def admin_system_settings():
     st.subheader("⚙️ 系統設定")
@@ -2540,6 +2719,7 @@ def admin_page():
         ("🔐 安全", admin_security),
         ("🎰 抽獎設定", admin_lottery_config),
         ("🛒 商城設定", admin_shop_config),
+        ("🎯 彩池設定", admin_pool_config),
         ("⚙️ 系統設定", admin_system_settings),
     ]
 
