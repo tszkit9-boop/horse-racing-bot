@@ -563,12 +563,11 @@ def run_prediction(date_str, race_no):
         st.error("❌ 缺少 '比賽日期'")
         return None, None
 
+    # 🔥 安全提取 race_date（防止重複欄位導致變咗 DataFrame）
+    if isinstance(race_df['race_date'], pd.DataFrame):
+        race_df['race_date'] = race_df['race_date'].iloc[:, 0]
     race_df['race_date'] = pd.to_datetime(race_df['race_date'], errors='coerce')
     race_df = race_df.dropna(subset=['race_date'])
-
-    race_df['race_date'] = pd.to_datetime(race_df['race_date'], errors='coerce')
-    race_df = race_df.dropna(subset=['race_date'])
-    race_df['race_date_str'] = race_df['race_date'].dt.strftime('%Y-%m-%d')
 
     # 轉換 race_no 做數字
     race_df['race_no'] = pd.to_numeric(race_df['race_no'], errors='coerce').fillna(0).astype(int)
