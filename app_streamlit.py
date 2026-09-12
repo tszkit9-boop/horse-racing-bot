@@ -537,7 +537,7 @@ def run_prediction(date_str, race_no):
         st.error("❌ 找不到 racecard_uploaded.csv")
         return None, None
 
-       try:
+    try:
         race_df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
         race_df = _repair_racecard(race_df)
         # 🔥 終極強制轉換，防止 '<' 錯誤
@@ -547,6 +547,7 @@ def run_prediction(date_str, race_no):
     except Exception as e:
         st.error(f"❌ 讀取失敗：{e}")
         return None, None
+
     rename_map = {
         '馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
         '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
@@ -560,6 +561,9 @@ def run_prediction(date_str, race_no):
     if 'race_date' not in race_df.columns:
         st.error("❌ 缺少 '比賽日期'")
         return None, None
+
+    race_df['race_date'] = pd.to_datetime(race_df['race_date'], errors='coerce')
+    race_df = race_df.dropna(subset=['race_date'])
 
     race_df['race_date'] = pd.to_datetime(race_df['race_date'], errors='coerce')
     race_df = race_df.dropna(subset=['race_date'])
