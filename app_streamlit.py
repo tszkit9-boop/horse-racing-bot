@@ -43,7 +43,12 @@ DEFAULT_CONFIG = {
     "currency": "HKD", "free_limit": 2, "admin_password": "z54060437K",
     "price_day": 18, "price_month": 128, "price_quarter": 328,
     "daily_virtual_coin": 1000, "virtual_coin_enabled": True,
-    "enable_invite_reward": True,
+    "enable_invite_reward": True,    
+    "invite_rewards": {
+        "level1": 5,   # 直接邀請人：+5 次預測
+        "level2": 2,   # 上線（A 邀請 B，B 邀請 C → A 得 2 次）
+        "level3": 1,   # 上上線：+1 次
+    },
     # ===== 🎯 彩池設定 =====
     "pool_config": {
         "win": {"enabled": True, "required_group": "free", "label": "獨贏"},
@@ -2847,42 +2852,122 @@ def login_page():
                 else:
                     st.error("❌ 用戶名或密碼錯誤")
     else:
-        with st.form("reg_form"):
-            nu = st.text_input("新用戶名（最少 3 字）", key="reg_user")
-            np1 = st.text_input("密碼", type="password", key="reg_p1")
-            np2 = st.text_input("確認密碼", type="password", key="reg_p2")
-            ag = st.checkbox("✅ 我已閱讀並同意服務條款", key="reg_agree")
-            if st.form_submit_button("註冊"):
-                if len(nu) < 3:
-                    st.error("❌ 用戶名至少 3 字")
-                elif np1 != np2:
+        st.subheader("📝 註冊新帳號")
+        with st.form("register_form"):
+            new_user = st.text_input("用戶名稱（最少 3 個字）", key="reg_user")
+            phone = st.text_input("手機號碼（可選）", key="reg_phone")
+            new_pass = st.text_input("密碼", type="password", key="reg_pass")
+            new_pass2 = st.text_input("確認密碼", type="password", key="reg_pass2")
+
+            # ===== 邀請碼 =====
+            if CONFIG.get("enable_invite_reward", True):
+                invite_code_input = st.text_input(
+                    "邀請碼（如有）",
+                    key="reg_invite_code",
+                    placeholder="輸入朋友嘅邀請碼，雙方都會獲得獎勵"
+                )
+            else:
+                invite_code_input = None
+
+            agree_terms = st.checkbox("✅ 我已閱讀並同意服務條款", key="agree_terms")
+            submitted = st.form_submit_button("註冊")
+
+            if submitted:
+                if len(new_user) < 3:
+                    st.error("❌ 用戶名稱至少 3 個字")
+                elif new_pass != new_pass2:
                     st.error("❌ 密碼不一致")
-                elif len(np1) < 4:
-                    st.error("❌ 密碼至少 4 字")
-                elif not ag:
+                elif len(new_pass) < 4:
+                    st.error("❌ 密碼至少 4 個字")
+                elif not agree_terms:
                     st.error("❌ 請同意服務條款")
                 else:
                     users = load_users()
-                    if nu in users:
-                        st.error("❌ 用戶名已被使用")
+
+                    # ===== 驗證邀請碼 =====
+                    invited_by = None
+                    if CONFIG.get("enable_invite_reward", True) and invite_code_input:
+                        invite_code_input = invite_code_input.strip().upper()
+                        for uid, u in users.items():
+                            if u.get('invite_code', '').upper() == invite_code_input:
+                                invited_by = uid
+                                break
+                        if not invited_by:
+                            st.error("❌ 邀請碼無效，請確認後再試")
+                            st.stop()
+
+                    if new_user in users:
+                        st.error("❌ 用戶名稱已被使用")
                     else:
-                        users[nu] = {
-                            'password': np1, 'phone': '', 'is_paid': False,
-                            'paid_date': None, 'expiry_date': None,
-                            'free_usage': 0, 'total_usage': 0,
+                        # ===== 建立新用戶 =====
+                        users[new_user] = {
+                            'password': new_pass,
+                            'phone': phone,
+                            'is_paid': False,
+                            'paid_date': None,
+                            'expiry_date': None,
+                            'free_usage': 0,
+                            'total_usage': 0,
                             'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                            'note': '', 'group': 'free', 'plan': None,
-                            'predictions_limit': CONFIG["free_limit"],
+                            'note': '',
+                            'group': 'free',
+                            'plan': None,
+                            'predictions_limit': CONFIG.get("free_limit", 2),
                             'history': [],
                             'terms_agreed': datetime.now().isoformat(),
-                            'invite_code': nu.upper() + str(random.randint(100, 999)),
-                            'invited_by': None, 'invite_rewards': 0, 'invite_count': 0,
-                            'level': '🥉 銅牌會員', 'exp': 0, 'badges': [],
+                            'invite_code': new_user.upper() + str(random.randint(100, 999)),
+                            'invited_by': invited_by,
+                            'invite_rewards': 0,
+                            'invite_count': 0,
+                            'referred_users': [],  # 直接下線列表
+                            'level': '🥉 銅牌會員',
+                            'exp': 0,
+                            'badges': [],
                             'virtual_balance': CONFIG.get('daily_virtual_coin', 1000),
-                            'last_claim_date': '', 'bets': [], 'last_lottery_date': ""
+                            'last_claim_date': '',
+                            'bets': [],
+                            'last_lottery_date': ''
                         }
+
+                        # ===== 多級獎勵回溯 =====
+                        if invited_by and CONFIG.get("enable_invite_reward", True):
+                            rewards = CONFIG.get("invite_rewards", {"level1": 5, "level2": 2, "level3": 1})
+
+                            # Level 1：直接邀請人
+                            inviter = users.get(invited_by)
+                            if inviter:
+                                bonus1 = rewards.get("level1", 5)
+                                if inviter.get('predictions_limit', 0) != -1:
+                                    inviter['predictions_limit'] = inviter.get('predictions_limit', 0) + bonus1
+                                inviter['invite_count'] = inviter.get('invite_count', 0) + 1
+                                inviter['invite_rewards'] = inviter.get('invite_rewards', 0) + bonus1
+                                if 'referred_users' not in inviter:
+                                    inviter['referred_users'] = []
+                                if new_user not in inviter['referred_users']:
+                                    inviter['referred_users'].append(new_user)
+
+                                # 新用戶自己都獲得獎勵
+                                users[new_user]['predictions_limit'] += rewards.get("level1", 5)
+                                users[new_user]['invite_rewards'] += rewards.get("level1", 5)
+
+                                # Level 2：上線（邀請人嘅邀請人）
+                                level2_user = inviter.get('invited_by')
+                                if level2_user and level2_user in users:
+                                    bonus2 = rewards.get("level2", 2)
+                                    if users[level2_user].get('predictions_limit', 0) != -1:
+                                        users[level2_user]['predictions_limit'] += bonus2
+                                    users[level2_user]['invite_rewards'] = users[level2_user].get('invite_rewards', 0) + bonus2
+
+                                    # Level 3：上上線
+                                    level3_user = users[level2_user].get('invited_by')
+                                    if level3_user and level3_user in users:
+                                        bonus3 = rewards.get("level3", 1)
+                                        if users[level3_user].get('predictions_limit', 0) != -1:
+                                            users[level3_user]['predictions_limit'] += bonus3
+                                        users[level3_user]['invite_rewards'] = users[level3_user].get('invite_rewards', 0) + bonus3
+
                         save_users(users)
-                        st.success("✅ 註冊成功！請登入")
+                        st.success(f"✅ 註冊成功！你獲得 {CONFIG.get('invite_rewards', {}).get('level1', 5)} 次額外預測獎勵！")
                         st.session_state.page_mode = "login"
                         st.rerun()
 
@@ -2922,7 +3007,28 @@ def main():
             group = user_data.get('group', 'free')
             level = user_data.get('level', '🥉 銅牌會員')
 
-            with st.popover("👤 個人中心", use_container_width=True):
+            with st.popover("👤 個人中心", use_container_width=True):                
+                # ===== 推薦記錄 =====
+                with st.expander("👥 我的推薦記錄", expanded=False):
+                    users_all = load_users()
+                    me = users_all.get(st.session_state.get('username', ''), {})
+                    referred = me.get('referred_users', [])
+                    invite_code = me.get('invite_code', '')
+                    invite_count = me.get('invite_count', 0)
+                    invite_rewards = me.get('invite_rewards', 0)
+
+                    st.markdown(f"**你嘅邀請碼**：`{invite_code}`")
+                    st.caption(f"已成功邀請 **{invite_count}** 位朋友，共獲得 **{invite_rewards}** 次額外預測")
+
+                    if referred:
+                        st.markdown("**直接下線列表：**")
+                        df_ref = pd.DataFrame({
+                            "用戶": referred,
+                            "註冊時間": [users_all.get(u, {}).get('created_at', '') for u in referred]
+                        })
+                        st.dataframe(df_ref, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("📭 暫時未邀請過朋友")
                 st.markdown(f"### 👤 {username}")
                 st.markdown(f"**級別**：{group.upper()}　|　**等級**：{level}")
                 st.metric("💰 虛擬幣結餘", f"${virtual_balance:,.0f}")
