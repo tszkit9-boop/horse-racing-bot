@@ -540,6 +540,7 @@ def run_prediction(date_str, race_no):
     try:
         race_df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
         race_df = _repair_racecard(race_df)
+        race_df = race_df.loc[:, ~race_df.columns.duplicated()]   # ← 呢行
         # 🔥 終極強制轉換，防止 '<' 錯誤
         race_df['race_no'] = pd.to_numeric(race_df.get('race_no', 0), errors='coerce').fillna(0).astype(int)
         race_df['win_odds'] = pd.to_numeric(race_df.get('win_odds', 4.0), errors='coerce').fillna(4.0).astype(float)
