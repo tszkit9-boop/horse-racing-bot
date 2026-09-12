@@ -2962,11 +2962,15 @@ def main():
                         success_count = 0
                         fail_count = 0
 
+                        # 收集所有結果
+                        all_results = {}
+
                         for i, rn in enumerate(day_races):
                             status.text(f"⏳ 預測第 {rn} 場中...（{i+1}/{len(day_races)}）")
                             try:
                                 result, pool = run_prediction(date_str, int(rn))
                                 if result is not None and not result.empty:
+                                    all_results[int(rn)] = result
                                     success_count += 1
                                 else:
                                     fail_count += 1
@@ -2976,6 +2980,33 @@ def main():
 
                         status.text("✅ 完成！")
                         st.success(f"✅ 成功預測 {success_count} 場，失敗 {fail_count} 場")
+
+                        # ===== 打橫顯示每場結果 =====
+                        if all_results:
+                            st.divider()
+                            st.subheader("📊 各場預測結果")
+
+                            race_list = sorted(all_results.keys())
+                            cols_per_row = 3
+
+                            for i in range(0, len(race_list), cols_per_row):
+                                cols = st.columns(cols_per_row)
+                                for j, col in enumerate(cols):
+                                    idx = i + j
+                                    if idx >= len(race_list):
+                                        break
+                                    rn = race_list[idx]
+                                    with col:
+                                        st.markdown(f"**🏇 第 {rn} 場**")
+                                        df = all_results[rn].copy()
+                                        display_cols = ['horse_name']
+                                        if 'draw' in df.columns:
+                                            display_cols.append('draw')
+                                        display_cols.append('預測勝率')
+                                        df_show = df[display_cols].head(3).copy()
+                                        df_show.columns = ['馬名', '檔位', '勝率'][:len(display_cols)]
+                                        df_show['勝率'] = df_show['勝率'].apply(lambda x: f"{x:.1%}")
+                                        st.dataframe(df_show, use_container_width=True, hide_index=True)
                 except Exception as e:
                     st.error(f"讀取失敗：{e}")
 
