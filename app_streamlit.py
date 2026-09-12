@@ -559,6 +559,7 @@ def run_prediction(date_str, race_no):
     existing = [c for c in rename_map if c in race_df.columns]
     if existing:
         race_df.rename(columns={c: rename_map[c] for c in existing}, inplace=True)
+    race_df = race_df.loc[:, ~race_df.columns.duplicated()]   # ← 加呢行
 
     if 'race_date' not in race_df.columns:
         st.error("❌ 缺少 '比賽日期'")
