@@ -2412,7 +2412,7 @@ if total_with_result > 0:
                     markers=True
                 )
                 fig.update_layout(yaxis_tickformat='.0%', height=350)
-                st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True)
 
     # ===== 7. 管理員操作 =====
     st.divider()
