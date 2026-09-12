@@ -36,7 +36,7 @@ st.markdown("""
     header { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
-
+CONFIG_FILE = 'system_config.json'
 DEFAULT_CONFIG = {
     "enable_registration": True, "enable_payment": True, "enable_admin": True,
     "enable_lottery": True, "enable_shop": True,
