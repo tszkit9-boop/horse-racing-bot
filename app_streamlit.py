@@ -2357,7 +2357,6 @@ def admin_accuracy_monitor():
             '結果': result_str
         })
 
-    st.divider()
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("📊 總預測", len(ai_data))
     c2.metric("✅ 已比對", total_with_result)
@@ -2378,7 +2377,6 @@ def admin_accuracy_monitor():
         st.caption(f"⏳ 仲有 {pending_count} 場未出賽果")
 
     if compare_rows:
-        st.divider()
         st.subheader("📋 預測頭3名 vs 真實頭3名")
         df = pd.DataFrame(compare_rows).sort_values(['日期', '場次'], ascending=[False, True])
 
