@@ -571,6 +571,9 @@ def run_prediction(date_str, race_no):
     race_df['race_date'] = pd.to_datetime(race_df['race_date'], errors='coerce')
     race_df = race_df.dropna(subset=['race_date'])
 
+    # 🔥 建立 race_date_str（程式後面要用）
+    race_df['race_date_str'] = race_df['race_date'].dt.strftime('%Y-%m-%d')
+
     # 轉換 race_no 做數字
     race_df['race_no'] = pd.to_numeric(race_df['race_no'], errors='coerce').fillna(0).astype(int)
 
