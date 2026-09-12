@@ -2259,7 +2259,7 @@ def admin_promo_codes():
                 st.rerun()
             else:
                 st.warning("請先勾選「確認清空」")
-    def admin_accuracy_monitor():
+def admin_accuracy_monitor():
     st.subheader("📈 AI 預測準確率監控（頭 3 名）")
 
     ai_file = "ai_predictions.json"
