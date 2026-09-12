@@ -3440,8 +3440,6 @@ def main():
                             df_show.columns = ['馬名', '檔位', '勝率'][:len(cols_to_show)]
                             df_show['勝率'] = df_show['勝率'].apply(lambda x: f"{x:.1%}")
                             st.dataframe(df_show, use_container_width=True, hide_index=True)
-                except Exception as e:
-                    st.error(f"執行失敗：{e}")
     cd, cr, cbtn = st.columns([2, 2, 1])
     with cd:
         date = st.date_input("📅 日期", value=pd.to_datetime("2026-09-06"), key="pd_date")
