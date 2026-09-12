@@ -25,7 +25,8 @@
     "badges": [],
     "virtual_balance": 11000,
     "last_claim_date": "2026-09-02",
-    "bets": []
+    "bets": [],
+    "last_lottery_date": ""
   },
   "arkit": {
     "password": "z54060437K",
@@ -67,7 +68,8 @@
     "badges": [],
     "virtual_balance": 1000,
     "last_claim_date": "",
-    "bets": []
+    "bets": [],
+    "last_lottery_date": ""
   },
   "wan0811": {
     "username": "wan0811",
@@ -94,7 +96,8 @@
     "badges": [],
     "virtual_balance": 1000,
     "last_claim_date": "",
-    "bets": []
+    "bets": [],
+    "last_lottery_date": ""
   },
   "sing": {
     "password": "60567072",
@@ -120,7 +123,8 @@
     "badges": [],
     "virtual_balance": 1000,
     "last_claim_date": "",
-    "bets": []
+    "bets": [],
+    "last_lottery_date": ""
   },
   "ling": {
     "password": "au5749",
@@ -146,7 +150,8 @@
     "badges": [],
     "virtual_balance": 1000,
     "last_claim_date": "",
-    "bets": []
+    "bets": [],
+    "last_lottery_date": ""
   },
   "timiwong": {
     "password": "Liuxingo0",
@@ -172,7 +177,8 @@
     "badges": [],
     "virtual_balance": 1000001000,
     "last_claim_date": "",
-    "bets": []
+    "bets": [],
+    "last_lottery_date": ""
   },
   "Fyy": {
     "password": "Kito2548",
@@ -198,7 +204,8 @@
     "badges": [],
     "virtual_balance": 1000,
     "last_claim_date": "",
-    "bets": []
+    "bets": [],
+    "last_lottery_date": ""
   },
   "SingGor": {
     "password": "60567072",
@@ -224,7 +231,8 @@
     "badges": [],
     "virtual_balance": 1000,
     "last_claim_date": "",
-    "bets": []
+    "bets": [],
+    "last_lottery_date": ""
   },
   "jackyling": {
     "password": "Ling1986",
@@ -250,6 +258,61 @@
     "badges": [],
     "virtual_balance": 1000,
     "last_claim_date": "",
-    "bets": []
+    "bets": [],
+    "last_lottery_date": ""
+  },
+  "kitkit": {
+    "password": "67000300",
+    "phone": "",
+    "is_paid": false,
+    "paid_date": null,
+    "expiry_date": null,
+    "free_usage": 0,
+    "total_usage": 0,
+    "created_at": "2026-09-12 12:51:12",
+    "note": "系統超級管理員",
+    "group": "VIP",
+    "plan": null,
+    "predictions_limit": -1,
+    "history": [],
+    "terms_agreed": "2026-09-12T12:51:12.659941",
+    "invite_code": "KITKIT476",
+    "invited_by": null,
+    "invite_rewards": 0,
+    "invite_count": 0,
+    "level": "👑 傳說會員",
+    "exp": 0,
+    "badges": [],
+    "virtual_balance": 1000,
+    "last_claim_date": "",
+    "bets": [],
+    "last_lottery_date": ""
+  },
+  "shenggor": {
+    "password": "KKS123456KKS",
+    "phone": "",
+    "is_paid": false,
+    "paid_date": null,
+    "expiry_date": null,
+    "free_usage": 0,
+    "total_usage": 0,
+    "created_at": "2026-09-12 12:51:53",
+    "note": "系統超級管理員",
+    "group": "VIP",
+    "plan": null,
+    "predictions_limit": -1,
+    "history": [],
+    "terms_agreed": "2026-09-12T12:51:53.645750",
+    "invite_code": "SHENGGOR278",
+    "invited_by": null,
+    "invite_rewards": 0,
+    "invite_count": 0,
+    "level": "👑 傳說會員",
+    "exp": 0,
+    "badges": [],
+    "virtual_balance": 1000,
+    "last_claim_date": "",
+    "bets": [],
+    "last_lottery_date": ""
   }
 }
