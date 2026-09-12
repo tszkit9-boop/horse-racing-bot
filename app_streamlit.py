@@ -1467,6 +1467,19 @@ def show_lottery_interface(username):
 
     users = load_users()
     user = users.get(username, {})
+
+    # ===== 🔥 每日自動重置抽獎次數 =====
+    today = datetime.now().strftime('%Y-%m-%d')
+    if user.get('last_lottery_reset', '') != today:
+        # 每日免費派發 1 次抽獎機會（可自行調整）
+        daily_chances = 1
+        user['lottery_chances'] = user.get('lottery_chances', 0) + daily_chances
+        user['last_lottery_reset'] = today
+        users[username] = user
+        save_users(users)
+        st.success(f"🎁 每日重置！你獲得 {daily_chances} 次抽獎機會！")
+        st.rerun()
+
     lottery_chances = user.get('lottery_chances', 0)
 
     # 顯示抽獎次數
@@ -1481,7 +1494,7 @@ def show_lottery_interface(username):
     """, unsafe_allow_html=True)
 
     if lottery_chances <= 0:
-        st.warning("⚠️ 你冇抽獎次數啦！請聯絡管理員增加。")
+        st.warning("⚠️ 你冇抽獎次數啦！請聽日再嚟，或者聯絡管理員增加。")
         return
 
     # 初始化 session state
@@ -1494,7 +1507,6 @@ def show_lottery_interface(username):
     animation_placeholder = st.empty()
 
     if st.session_state.lottery_rolling:
-        # 顯示滾動動畫
         icons = ["🎁", "🎰", "💎", "🏆", "🎊", "⭐", "🍀", "🎯"]
         for i in range(12):
             icon = icons[i % len(icons)]
@@ -1570,7 +1582,6 @@ def show_lottery_interface(username):
         pval = _safe_int(chosen.get('value', 0), 0)
         pname = chosen.get('name', '獎品')
 
-        # 處理獎品
         icon = "🎁"
         desc = ""
 
