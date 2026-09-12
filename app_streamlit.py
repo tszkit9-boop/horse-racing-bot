@@ -539,15 +539,16 @@ def run_prediction(date_str, race_no):
 
     try:
         race_df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
-        race_df = _repair_racecard(race_df)        
-        # Debug：顯示修復結果
-        if not race_df.empty:
-            st.write(f"📋 修復後日期：{sorted(race_df['race_date'].unique())}")
-            st.write(f"📋 修復後總行數：{len(race_df)}")
+    try:
+        race_df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
+        race_df = _repair_racecard(race_df)
+        # 🔥 終極強制轉換，防止 '<' 錯誤
+        race_df['race_no'] = pd.to_numeric(race_df.get('race_no', 0), errors='coerce').fillna(0).astype(int)
+        race_df['win_odds'] = pd.to_numeric(race_df.get('win_odds', 4.0), errors='coerce').fillna(4.0).astype(float)
+        race_df['race_date'] = race_df.get('race_date', '').astype(str)
     except Exception as e:
         st.error(f"❌ 讀取失敗：{e}")
         return None, None
-
     rename_map = {
         '馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
         '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
@@ -582,8 +583,9 @@ def run_prediction(date_str, race_no):
     try:
         race_no = int(race_no)
     except Exception:
-        race_no = 1
-
+        race_no = 1    
+        # 🔥 確保 race_no 係數字
+    race_no = int(race_no)
     df_date = race_df[race_df['race_date_str'] == date_str]
     if 'race_no' not in df_date.columns:
         st.error("❌ 缺少 '場次'")
