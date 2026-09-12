@@ -543,9 +543,12 @@ def run_prediction(date_str, race_no):
         # 🔥 刪除重複欄位，防止 'duplicate keys' 錯誤
         race_df = race_df.loc[:, ~race_df.columns.duplicated()]
         # 🔥 終極強制轉換，防止 '<' 錯誤
-        race_df['race_no'] = pd.to_numeric(race_df.get('race_no', 0), errors='coerce').fillna(0).astype(int)
-        race_df['win_odds'] = pd.to_numeric(race_df.get('win_odds', 4.0), errors='coerce').fillna(4.0).astype(float)
-        race_df['race_date'] = race_df.get('race_date', '').astype(str)
+        if 'race_no' in race_df.columns:
+            race_df['race_no'] = pd.to_numeric(race_df['race_no'], errors='coerce').fillna(0).astype(int)
+        if 'win_odds' in race_df.columns:
+            race_df['win_odds'] = pd.to_numeric(race_df['win_odds'], errors='coerce').fillna(4.0).astype(float)
+        if 'race_date' in race_df.columns:
+            race_df['race_date'] = race_df['race_date'].astype(str)
     except Exception as e:
         st.error(f"❌ 讀取失敗：{e}")
         return None, None
