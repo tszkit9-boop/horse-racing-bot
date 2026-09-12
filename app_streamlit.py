@@ -2294,7 +2294,8 @@ def admin_accuracy_monitor():
         results_df['race_date_str'] = results_df['race_date'].dt.strftime('%Y-%m-%d')
         results_df['race_no'] = pd.to_numeric(results_df['race_no'], errors='coerce').astype('Int64')
         results_df['finish_position'] = pd.to_numeric(results_df['finish_position'], errors='coerce')
-        results_df['horse_name'] = results_df['horse_name'].astype(str).str.strip()
+        results_df['horse_name'] = results_df['horse_name'].astype(str).str.strip()        
+        results_df['horse_name'] = results_df['horse_name'].str.replace(r'\([A-Z]\d+\)', '', regex=True).str.strip()
     except Exception as e:
         st.error(f"❌ 讀取賽果失敗：{e}")
         return
