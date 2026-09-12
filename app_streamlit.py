@@ -2860,38 +2860,27 @@ def main():
     # 🔧 管理員專用：一鍵預測所有場次
     # ============================================================
     if st.session_state.get('role') == 'super_admin':
-        with st.expander("🔧 管理員工具：一鍵預測所有場次", expanded=False):
-            st.caption("⚠️ 只限管理員使用，會自動預測指定日期嘅所有場次。")
+with st.expander("🛠️ 管理員工具：一鍵預測所有場次"):
+    st.caption("⚠️ 只限管理員使用，會自動預測指定日期嘅所有場次。")
 
-            col_a, col_b = st.columns([2, 1])
-            with col_a:
-                batch_date = st.date_input(
-                    "📅 選擇日期",
-                    value=pd.to_datetime("2026-09-06"),
-                    key="batch_date_input"
-                )
-            with col_b:
-                st.write("")
-                st.write("")
-                if st.button("🚀 一鍵預測", type="primary", use_container_width=True, key="batch_predict_btn"):
-                    date_str = batch_date.strftime("%Y-%m-%d")
+    col1, col2, col3 = st.columns([2, 1, 2])
 
-                    # 讀取該日期有幾多場
-                    if not os.path.exists("racecard_uploaded.csv"):
-                        st.error("❌ 找不到 racecard_uploaded.csv")
-                    else:
-                        try:
-                            rc_df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
-                            rc_df = _repair_racecard(rc_df)
-                            rc_df['race_date'] = pd.to_datetime(rc_df['race_date'], errors='coerce')
-                            rc_df = rc_df.dropna(subset=['race_date'])
-                            rc_df['race_date_str'] = rc_df['race_date'].dt.strftime('%Y-%m-%d')
-                            rc_df['race_no'] = pd.to_numeric(rc_df['race_no'], errors='coerce').fillna(0).astype(int)
+    with col1:
+        selected_date = st.date_input("📅 選擇日期", value=pd.to_datetime("2026-09-13"), key="batch_pred_date")
 
-                            day_races = sorted(rc_df[rc_df['race_date_str'] == date_str]['race_no'].unique())
+    with col2:
+        st.write("")
+        st.write("")
+        predict_all_btn = st.button("🔮 一鍵預測", use_container_width=True, key="batch_predict_btn")
 
-                            if not day_races:
-                                st.warning(f"⚠️ {date_str} 冇任何場次數據")
+    with col3:
+        st.write("")
+        st.write("")
+        # 將警告訊息放在這裡，同日期、按鈕並排
+        if True: # 呢個要換成你原本檢查「有冇場次數據」嘅邏輯
+            st.warning(f"⚠️ {selected_date} 冇任何場次數據")
+        else:
+            st.success("✅ 準備就緒")
                             else:
                                 st.info(f"📋 準備預測 {date_str} 嘅 {len(day_races)} 場：{day_races}")
 
