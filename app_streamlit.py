@@ -491,7 +491,7 @@ def _build_features(race_df, history_df):
 
     return result
 def _repair_racecard(df):
-    """自動適應任何格式嘅 racecard CSV"""
+    """自動適應任何格式嘅 racecard CSV（強制轉換類型）"""
     df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
 
     # ===== 格式 1：全新 15 欄格式（中英文）=====
@@ -508,7 +508,7 @@ def _repair_racecard(df):
 
     # ===== 格式 2：中文 9 欄格式（舊版）=====
     elif '馬名' in df.columns:
-        pass  # 原本就係中文格式
+        pass
 
     # ===== 格式 3：英文 9 欄格式 =====
     elif 'horse_name' in df.columns:
@@ -522,9 +522,11 @@ def _repair_racecard(df):
         df['比賽日期'] = df.get('race_date', '')
         df['賠率'] = df.get('win_odds', 4.0)
 
-    # ===== 統一強制轉換類型 =====
+    # ===== 🔥 統一強制轉換類型（修復 '<' 錯誤）=====
     df['場次'] = pd.to_numeric(df['場次'], errors='coerce').fillna(0).astype(int)
-    df['賠率'] = pd.to_numeric(df['賠率'], errors='coerce').fillna(4.0)
+    df['賠率'] = pd.to_numeric(df['賠率'], errors='coerce').fillna(4.0).astype(float)
+    df['檔位'] = pd.to_numeric(df['檔位'], errors='coerce').fillna(0).astype(int)
+    df['負磅'] = pd.to_numeric(df['負磅'], errors='coerce').fillna(0).astype(float)
     df['比賽日期'] = df['比賽日期'].astype(str)
 
     return df
