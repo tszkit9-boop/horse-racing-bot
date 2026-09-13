@@ -386,11 +386,9 @@ def generate_pool_recommendations(df, user_group='free'):
     if df.empty:
         return "⚠️ 無數據"
 
-    # 讀取彩池設定
     config = load_system_config()
     pool_config = config.get('pool_config', {})
 
-    # 如果冇 pool_config，用預設
     if not pool_config:
         pool_config = {
             "win": {"enabled": True, "required_group": "free", "label": "獨贏"},
@@ -407,16 +405,13 @@ def generate_pool_recommendations(df, user_group='free'):
             "six_up": {"enabled": True, "required_group": "VIP", "label": "六環彩"},
         }
 
-    # 會員級別優先順序
     group_levels = {'free': 0, 'paid': 1, 'VIP': 2, 'super_admin': 99}
     user_level = group_levels.get(user_group, 0)
 
-    # 排序預測結果
     df_sorted = df.sort_values('預測勝率', ascending=False).reset_index(drop=True)
-    names = df_sorted['horse_name'].tolist()
+    names = df_sorted['馬名'].tolist()
     probs = df_sorted['預測勝率'].tolist()
 
-    # 每個彩池只出一個組合
     def get_win():
         if len(names) >= 1:
             return f"  {names[0]}（{probs[0]:.1%}）"
@@ -473,35 +468,22 @@ def generate_pool_recommendations(df, user_group='free'):
     def get_six_up():
         return "  ⚠️ 需要 6 場賽事數據（六環彩）"
 
-    # 彩池生成器對應
     generators = {
-        'win': get_win,
-        'place': get_place,
-        'quinella': get_quinella,
-        'quinella_place': get_quinella_place,
-        'tierce': get_tierce,
-        'trio': get_trio,
-        'quartet': get_quartet,
-        'exacta': get_exacta,
-        'first4': get_first4,
-        'double': get_double,
-        'treble': get_treble,
+        'win': get_win, 'place': get_place, 'quinella': get_quinella,
+        'quinella_place': get_quinella_place, 'tierce': get_tierce,
+        'trio': get_trio, 'quartet': get_quartet, 'exacta': get_exacta,
+        'first4': get_first4, 'double': get_double, 'treble': get_treble,
         'six_up': get_six_up,
     }
 
-    # 按順序生成推薦
     rec_lines = []
     for key, cfg in pool_config.items():
         if not cfg.get('enabled', True):
             continue
-
         required = cfg.get('required_group', 'free')
-        required_level = group_levels.get(required, 0)
-
-        if user_level < required_level:
+        if user_level < group_levels.get(required, 0):
             rec_lines.append(f"【{cfg.get('label', key)}】🔒 需要更高級會員")
             continue
-
         gen = generators.get(key)
         if gen:
             content = gen()
@@ -510,6 +492,7 @@ def generate_pool_recommendations(df, user_group='free'):
 
     if not rec_lines:
         return "⚠️ 所有彩池已關閉或未開放"
+    return "\n\n".join(rec_lines)
 
     return "\n\n".join(rec_lines)
     for _, i, j, k, l in qt[:3]:
@@ -920,9 +903,9 @@ def run_prediction(date_str, race_no):
     key = f"{date_str}_{race_no}"
     ai_data[key] = {
         "date": date_str, "race": race_no,
-        "top_horse": result_df.iloc[0]['horse_name'],
+        "top_horse": result_df.iloc[0]['馬名'],
         "top_prob": float(result_df.iloc[0]['預測勝率']),
-        "all_horses": result_df['horse_name'].tolist(),
+        "all_horses": result_df['馬名'].tolist(),
         "model_used": models_used,
         "predicted_at": datetime.now().isoformat()
     }
