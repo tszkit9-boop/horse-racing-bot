@@ -881,10 +881,32 @@ def run_prediction(date_str, race_no):
     pred_proba = pred_proba / pred_proba.sum()
 
     # 結果
-    result_df = filtered[['horse_name']].copy()
+    # 🔥 提取馬號（優先順序：horse_id -> 馬號 -> 自動生成）
+    id_col = None
+    for col in ['horse_id', '馬號', 'horse_no']:
+        if col in filtered.columns:
+            id_col = col
+            break
+
+    if id_col:
+        result_df = filtered[[id_col, 'horse_name']].copy()
+        result_df = result_df.rename(columns={id_col: '馬號'})
+    else:
+        result_df = filtered[['horse_name']].copy()
+        result_df.insert(0, '馬號', range(1, len(result_df) + 1))
+
     for c in ['draw', 'weight', 'jockey', 'trainer']:
         if c in filtered.columns:
             result_df[c] = filtered[c]
+
+    # 重命名中文欄位
+    result_df = result_df.rename(columns={
+        'horse_name': '馬名',
+        'draw': '檔位',
+        'weight': '負磅',
+        'jockey': '騎師',
+        'trainer': '練馬師'
+    })
     result_df['預測勝率'] = pred_proba
     result_df['值博指數'] = result_df['預測勝率'] * 10
     result_df['信心指數'] = result_df['預測勝率'].apply(
