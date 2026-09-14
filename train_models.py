@@ -109,7 +109,7 @@ for col in pos_candidates:
     if col in results_df.columns:
         cleaned = pd.to_numeric(results_df[col].astype(str).str.extract(r'(\d+)')[0], errors='coerce')
         if cleaned.notna().any():
-            results_df['real_pos'] = cleaned  # 用一個絕對不會撞名嘅名
+            results_df['real_pos'] = cleaned
             found_pos = True
             print(f"  ✅ 成功使用 '{col}' 作名次來源，樣本：{cleaned.dropna().head(5).tolist()}")
             break
@@ -123,7 +123,10 @@ for col in ['finish_position', 'real_finish_position', 'real_pos', '__REAL_POS_T
     if col in racecard_df.columns:
         racecard_df = racecard_df.drop(columns=[col])
 
-# 🛡️ 關鍵修正 2：對右表（賽果）進行去重，確保 race_date_str + race_no + horse_id 唯一
+# 🛡️ 關鍵修正 2：去重之前，先刪除冇名次嘅行，確保真實數據唔會被空值蓋過！
+results_df = results_df.dropna(subset=['real_pos']).copy()
+
+# 🛡️ 關鍵修正 3：對右表（賽果）進行去重
 results_df_unique = results_df.drop_duplicates(subset=['race_date_str', 'race_no', 'horse_id'], keep='first')
 
 merged = pd.DataFrame()
@@ -154,7 +157,7 @@ if merged.empty:
     exit(1)
 
 # 建立標準嘅 finish_position
-merged['finish_position'] = merged['real_pos'].fillna(99) # 冇名次嘅當作 99
+merged['finish_position'] = merged['real_pos'].fillna(99)
 
 # 🔍 診斷：睇下 finish_position 係咪真係有數
 print(f"  🔍 診斷 - 合併後名次樣本：{merged['finish_position'].head(10).tolist()}")
