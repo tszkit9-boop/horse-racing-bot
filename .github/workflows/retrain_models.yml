@@ -1,24 +1,19 @@
-name: 自動重新訓練模型
+name: Retrain Models
 
 on:
   schedule:
-    # 香港時間 星期日 08:00 (UTC 00:00)
-    - cron: '0 0 * * 0'
-  workflow_dispatch:   # 容許手動觸發
-
-# 關鍵修改：授予 GitHub Actions 寫入權限（解決 git push 403 錯誤）
-permissions:
-  contents: write
+    - cron: '0 0 * * 0' # 每星期日 08:00 (香港時間 UTC+8)
+  workflow_dispatch:
 
 jobs:
   retrain:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # 👈 必須加呢句，先有權限 Push
+
     steps:
       - name: 檢出程式碼
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          persist-credentials: true
 
       - name: 設定 Python
         uses: actions/setup-python@v5
@@ -27,18 +22,15 @@ jobs:
 
       - name: 安裝依賴
         run: |
-          pip install --upgrade pip
-          pip install pandas numpy scikit-learn xgboost catboost
+          pip install pandas numpy xgboost catboost scikit-learn
 
       - name: 執行訓練
-        run: |
-          # 加入 -u 參數，強制即時輸出，方便睇到訓練進度
-          python -u train_models.py
+        run: python train_models.py
 
-      - name: 提交變更
+      - name: 提交並推送模型檔案
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add hk_racing_model.pkl hk_catboost_model.cbm model_info.json
-          git commit -m "自動重新訓練模型 $(date +'%Y-%m-%d %H:%M')" || echo "冇變更"
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add hk_racing_model.pkl hk_catboost_model.cbm hk_ranking_model.pkl model_info.json
+          git commit -m "Auto retrain models [skip ci]" || echo "No changes to commit"
           git push
