@@ -90,11 +90,10 @@ racecard_df = standardize_columns(racecard_df)
 results_df = standardize_columns(results_df)
 
 # ============================================================
-# 4️⃣ 合併數據（加強版：統一日期格式為 YYYYMMDD）
+# 4️⃣ 合併數據（完整版）
 # ============================================================
 print("🔗 合併數據...")
 
-# 確保兩個 DataFrame 都有標準化嘅日期字串 (YYYYMMDD)
 def standardize_date_for_merge(df):
     if 'race_date' in df.columns:
         df['race_date_str'] = pd.to_datetime(df['race_date'], errors='coerce').dt.strftime('%Y%m%d')
@@ -115,7 +114,7 @@ if all(c in racecard_df.columns for c in ['race_date_str', 'race_no', 'horse_id'
     )
     print(f"  第一層合併（完整 Key）：{len(merged)} 筆")
 
-# 如果失敗，降級只用 horse_id 合併，並顯示診斷資訊
+# 如果失敗，降級只用 horse_id 合併
 if merged.empty:
     print("  ⚠️ 完整 Key 對唔上，降級嘗試只用 horse_id 合併...")
     if 'horse_id' in racecard_df.columns and 'horse_id' in results_df.columns:
@@ -125,12 +124,23 @@ if merged.empty:
             how='inner'
         )
         print(f"  第二層合併（僅 horse_id）：{len(merged)} 筆")
-        
-        # 診斷：顯示為何對唔上
         print(f"  🔍 診斷 - 排位表日期樣本：{racecard_df['race_date_str'].dropna().unique()[:3]}")
         print(f"  🔍 診斷 - 賽果日期樣本：{results_df['race_date_str'].dropna().unique()[:3]}")
-        print(f"  🔍 診斷 - 排位表場次樣本：{racecard_df['race_no'].dropna().unique()[:3]}")
-        print(f"  🔍 診斷 - 賽果場次樣本：{results_df['race_no'].dropna().unique()[:3]}")
+
+# 👇👇👇 呢度就係上次漏咗嘅部分！補返定義 target 嘅邏輯 👇👇👇
+if merged.empty:
+    print("❌ 嚴重錯誤：無法合併任何數據！")
+    exit(1)
+
+merged['finish_position'] = merged['finish_position'].fillna(0)
+merged['target'] = (merged['finish_position'] == 1).astype(int)
+
+if merged['target'].nunique() < 2:
+    print("❌ 嚴重錯誤：頭馬比例只有一個值，無法訓練！")
+    exit(1)
+
+print(f"  最終合併數據：{len(merged)} 筆")
+print(f"  頭馬比例：{merged['target'].mean():.2%}")
 
 # ============================================================
 # 5️⃣ 特徵工程（36 特徵）
