@@ -131,12 +131,17 @@ if merged.empty:
     print("❌ 嚴重錯誤：無法合併任何數據！")
     exit(1)
 
-# 👇👇👇 呢度就係修正嘅核心！強制將 finish_position 轉做數字 👇👇👇
-merged['finish_position'] = pd.to_numeric(merged['finish_position'], errors='coerce').fillna(0)
+# 🔍 診斷：睇下 finish_position 到底係咩樣
+print(f"  🔍 診斷 - finish_position 樣本：{merged['finish_position'].head(10).tolist()}")
+
+# 👇👇👇 核心修正：強制抽出數字，處理 "1.0"、"1st"、"-" 等格式 👇👇👇
+merged['finish_position'] = merged['finish_position'].astype(str).str.extract(r'(\d+)')
+merged['finish_position'] = pd.to_numeric(merged['finish_position'], errors='coerce').fillna(99)
 merged['target'] = (merged['finish_position'] == 1).astype(int)
 
 if merged['target'].nunique() < 2:
     print("❌ 嚴重錯誤：頭馬比例只有一個值，無法訓練！")
+    print(f"  診斷 - target 唯一值：{merged['target'].unique()}")
     exit(1)
 
 print(f"  最終合併數據：{len(merged)} 筆")
