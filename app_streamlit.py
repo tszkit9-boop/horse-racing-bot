@@ -895,19 +895,17 @@ def run_prediction(date_str, race_no):
     result_df = result_df.sort_values('預測勝率', ascending=False).reset_index(drop=True)
 
     # 儲存
-    ai_file = "ai_predictions.json"
-    ai_data = load_json(ai_file) if os.path.exists(ai_file) else {}
+    # 儲存到 SQLite
+    from database import save_prediction
     key = f"{date_str}_{race_no}"
-    ai_data[key] = {
+    save_prediction(key, {
         "date": date_str, "race": race_no,
         "top_horse": result_df.iloc[0]['馬名'],
         "top_prob": float(result_df.iloc[0]['預測勝率']),
         "all_horses": result_df['馬名'].tolist(),
         "model_used": models_used,
         "predicted_at": datetime.now().isoformat()
-    }
-    with open(ai_file, 'w', encoding='utf-8') as f:
-        json.dump(ai_data, f, ensure_ascii=False, indent=2)
+    })
 
     user_group = st.session_state.get('role', 'free')
     return result_df, generate_pool_recommendations(result_df, user_group)
@@ -2351,13 +2349,11 @@ def admin_promo_codes():
 def admin_accuracy_monitor():
     st.subheader("📈 AI 預測準確率監控（頭 3 名）")
 
-    ai_file = "ai_predictions.json"
-    if not os.path.exists(ai_file):
+    from database import load_predictions
+    ai_data = load_predictions()
+    if not ai_data:
         st.warning("⚠️ 未有 AI 預測記錄")
         return
-
-    with open(ai_file, 'r', encoding='utf-8') as f:
-        ai_data = json.load(f)
 
     st.info(f"📊 總共 {len(ai_data)} 個預測記錄")
 
