@@ -3130,93 +3130,97 @@ def main():
             group = user_data.get('group', 'free')
             level = user_data.get('level', '🥉 銅牌會員')
 
-            with st.popover("👤 個人中心", use_container_width=True):                
-                # ===== 推薦記錄 =====
-                with st.expander("👥 我的推薦記錄", expanded=False):
-                    users_all = load_users()
-                    me = users_all.get(st.session_state.get('username', ''), {})
-                    referred = me.get('referred_users', [])
-                    invite_code = me.get('invite_code', '')
-                    invite_count = me.get('invite_count', 0)
-                    invite_rewards = me.get('invite_rewards', 0)
+                with st.popover("👤 個人中心", use_container_width=True):                
+                    # ===== 推薦記錄 =====
+                    with st.expander("👥 我的推薦記錄", expanded=False):
+                        users_all = load_users()
+                        me = users_all.get(st.session_state.get('username', ''), {})
+                        referred = me.get('referred_users', [])
+                        invite_code = me.get('invite_code', '')
+                        invite_count = me.get('invite_count', 0)
+                        invite_rewards = me.get('invite_rewards', 0)
 
-                    st.markdown(f"**你嘅邀請碼**：`{invite_code}`")
-                    st.caption(f"已成功邀請 **{invite_count}** 位朋友，共獲得 **{invite_rewards}** 次額外預測")
+                        st.markdown(f"**你嘅邀請碼**：`{invite_code}`")
+                        st.caption(f"已成功邀請 **{invite_count}** 位朋友，共獲得 **{invite_rewards}** 次額外預測")
 
-                    if referred:
-                        st.markdown("**直接下線列表：**")
-                        df_ref = pd.DataFrame({
-                            "用戶": referred,
-                            "註冊時間": [users_all.get(u, {}).get('created_at', '') for u in referred]
-                        })
-                        st.dataframe(df_ref, use_container_width=True, hide_index=True)
-                    else:
-                        st.info("📭 暫時未邀請過朋友")
-                st.markdown(f"### 👤 {username}")
-                st.markdown(f"**級別**：{group.upper()}　|　**等級**：{level}")
-                st.metric("💰 虛擬幣結餘", f"${virtual_balance:,.0f}")
-
-                st.divider()
-
-                # 更改密碼
-                with st.expander("🔑 更改密碼", expanded=False):
-                    old_pw = st.text_input("舊密碼", type="password", key="pc_old_pw")
-                    new_pw = st.text_input("新密碼（最少 4 字）", type="password", key="pc_new_pw")
-                    confirm_pw = st.text_input("確認新密碼", type="password", key="pc_confirm_pw")
-                    if st.button("✅ 確認更改", key="pc_change_pw", use_container_width=True):
-                        users2 = load_users()
-                        if username not in users2:
-                            st.error("❌ 用戶不存在")
-                        elif users2[username].get('password') != old_pw:
-                            st.error("❌ 舊密碼不正確")
-                        elif len(new_pw) < 4:
-                            st.error("❌ 新密碼最少 4 個字")
-                        elif new_pw != confirm_pw:
-                            st.error("❌ 兩次密碼不一致")
+                        if referred:
+                            st.markdown("**直接下線列表：**")
+                            df_ref = pd.DataFrame({
+                                "用戶": referred,
+                                "註冊時間": [users_all.get(u, {}).get('created_at', '') for u in referred]
+                            })
+                            st.dataframe(df_ref, use_container_width=True, hide_index=True)
                         else:
-                            users2[username]['password'] = new_pw
-                            if save_users(users2):
-                                st.success("✅ 密碼已更改！")
-                            else:
-                                st.error("❌ 儲存失敗")
+                            st.info("📭 暫時未邀請過朋友")
+                    st.markdown(f"### 👤 {username}")
+                    st.markdown(f"**級別**：{group.upper()}　|　**等級**：{level}")
+                    st.metric("💰 虛擬幣結餘", f"${virtual_balance:,.0f}")
 
-                # 預測記錄
-                with st.expander("📜 預測記錄", expanded=False):
-                    history = user_data.get('history', [])
-                    if not history:
-                        st.info("📭 暫無預測記錄")
-                    else:
-                        total = len(history)
-                        hits = sum(1 for h in history if h.get('is_hit') is True)
-                        hit_rate = hits / total if total > 0 else 0
-                        hc1, hc2, hc3 = st.columns(3)
-                        hc1.metric("總預測", total)
-                        hc2.metric("命中", hits)
-                        hc3.metric("命中率", f"{hit_rate:.1%}")
-                        st.divider()
-                        df_hist = pd.DataFrame(history[-20:][::-1])
-                        cols = [c for c in ['date', 'race', 'horse', 'is_hit'] if c in df_hist.columns]
-                        if cols:
-                            df_show = df_hist[cols].copy()
-                            df_show.rename(columns={
-                                'date': '日期', 'race': '場次',
-                                'horse': '預測馬', 'is_hit': '結果'
-                            }, inplace=True)
-                            if '結果' in df_show.columns:
-                                df_show['結果'] = df_show['結果'].apply(
-                                    lambda x: '✅' if x is True else ('❌' if x is False else '⏳')
-                                )
-                            st.dataframe(df_show, use_container_width=True, hide_index=True)
-    with c4:
-        if st.session_state.get('logged_in', False):
-            if st.button("🚪 登出", use_container_width=True, key="logout_main"):
-                for k in ['logged_in', 'username', 'role']:
-                    if k in st.session_state:
-                        del st.session_state[k]
-                st.rerun()
-    st.markdown("---")
-    display_race_calendar()
-    st.markdown("---")
+                    st.divider()
+
+                    # 更改密碼
+                    with st.expander("🔑 更改密碼", expanded=False):
+                        old_pw = st.text_input("舊密碼", type="password", key="pc_old_pw")
+                        new_pw = st.text_input("新密碼（最少 4 字）", type="password", key="pc_new_pw")
+                        confirm_pw = st.text_input("確認新密碼", type="password", key="pc_confirm_pw")
+                        if st.button("✅ 確認更改", key="pc_change_pw", use_container_width=True):
+                            users2 = load_users()
+                            if username not in users2:
+                                st.error("❌ 用戶不存在")
+                            elif users2[username].get('password') != old_pw:
+                                st.error("❌ 舊密碼不正確")
+                            elif len(new_pw) < 4:
+                                st.error("❌ 新密碼最少 4 個字")
+                            elif new_pw != confirm_pw:
+                                st.error("❌ 兩次密碼不一致")
+                            else:
+                                users2[username]['password'] = new_pw
+                                if save_users(users2):
+                                    st.success("✅ 密碼已更改！")
+                                else:
+                                    st.error("❌ 儲存失敗")
+
+                    # 預測記錄
+                    with st.expander("📜 預測記錄", expanded=False):
+                        history = user_data.get('history', [])
+                        if not history:
+                            st.info("📭 暫無預測記錄")
+                        else:
+                            total = len(history)
+                            hits = sum(1 for h in history if h.get('is_hit') is True)
+                            hit_rate = hits / total if total > 0 else 0
+                            hc1, hc2, hc3 = st.columns(3)
+                            hc1.metric("總預測", total)
+                            hc2.metric("命中", hits)
+                            hc3.metric("命中率", f"{hit_rate:.1%}")
+                            st.divider()
+                            df_hist = pd.DataFrame(history[-20:][::-1])
+                            cols = [c for c in ['date', 'race', 'horse', 'is_hit'] if c in df_hist.columns]
+                            if cols:
+                                df_show = df_hist[cols].copy()
+                                df_show.rename(columns={
+                                    'date': '日期', 'race': '場次',
+                                    'horse': '預測馬', 'is_hit': '結果'
+                                }, inplace=True)
+                                if '結果' in df_show.columns:
+                                    df_show['結果'] = df_show['結果'].apply(
+                                        lambda x: '✅' if x is True else ('❌' if x is False else '⏳')
+                                    )
+                                st.dataframe(df_show, use_container_width=True, hide_index=True)
+                                
+                # 👇 呢句就係新加嘅「常見問題」連結，放喺個人中心下面
+                st.page_link("pages/FAQ.py", label="❓ 常見問題")
+                
+        with c4:
+            if st.session_state.get('logged_in', False):
+                if st.button("🚪 登出", use_container_width=True, key="logout_main"):
+                    for k in ['logged_in', 'username', 'role']:
+                        if k in st.session_state:
+                            del st.session_state[k]
+                    st.rerun()
+        st.markdown("---")
+        display_race_calendar()
+        st.markdown("---")
 
     if st.session_state.logged_in:
         ca, cb = st.columns(2)
