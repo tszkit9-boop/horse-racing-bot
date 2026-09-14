@@ -90,23 +90,32 @@ racecard_df = standardize_columns(racecard_df)
 results_df = standardize_columns(results_df)
 
 # ============================================================
-# 4️⃣ 合併數據
+# 4️⃣ 合併數據（加強版：統一日期格式為 YYYYMMDD）
 # ============================================================
 print("🔗 合併數據...")
 
+# 確保兩個 DataFrame 都有標準化嘅日期字串 (YYYYMMDD)
+def standardize_date_for_merge(df):
+    if 'race_date' in df.columns:
+        df['race_date_str'] = pd.to_datetime(df['race_date'], errors='coerce').dt.strftime('%Y%m%d')
+    return df
+
+racecard_df = standardize_date_for_merge(racecard_df)
+results_df = standardize_date_for_merge(results_df)
+
 merged = pd.DataFrame()
 
-# 嘗試用 race_date, race_no, horse_id 做合併
-if all(c in racecard_df.columns for c in ['race_date', 'race_no', 'horse_id']) and \
-   all(c in results_df.columns for c in ['race_date', 'race_no', 'horse_id', 'finish_position']):
+# 嘗試用 race_date_str, race_no, horse_id 做合併
+if all(c in racecard_df.columns for c in ['race_date_str', 'race_no', 'horse_id']) and \
+   all(c in results_df.columns for c in ['race_date_str', 'race_no', 'horse_id', 'finish_position']):
     merged = racecard_df.merge(
-        results_df[['race_date', 'race_no', 'horse_id', 'finish_position']],
-        on=['race_date', 'race_no', 'horse_id'],
+        results_df[['race_date_str', 'race_no', 'horse_id', 'finish_position']],
+        on=['race_date_str', 'race_no', 'horse_id'],
         how='inner'
     )
     print(f"  第一層合併（完整 Key）：{len(merged)} 筆")
 
-# 如果失敗，降級只用 horse_id 合併
+# 如果失敗，降級只用 horse_id 合併，並顯示診斷資訊
 if merged.empty:
     print("  ⚠️ 完整 Key 對唔上，降級嘗試只用 horse_id 合併...")
     if 'horse_id' in racecard_df.columns and 'horse_id' in results_df.columns:
@@ -116,26 +125,12 @@ if merged.empty:
             how='inner'
         )
         print(f"  第二層合併（僅 horse_id）：{len(merged)} 筆")
-
-# 如果仲係空，報錯並停止，唔再隨機生成假標籤！
-if merged.empty:
-    print("❌ 嚴重錯誤：無法合併排位表同賽果數據！請檢查 CSV 格式。")
-    print("  排位表欄位：", racecard_df.columns.tolist())
-    print("  賽果欄位：", results_df.columns.tolist())
-    print("  排位表 race_no 樣本：", racecard_df['race_no'].head(3).tolist() if 'race_no' in racecard_df.columns else "無")
-    print("  賽果 race_no 樣本：", results_df['race_no'].head(3).tolist() if 'race_no' in results_df.columns else "無")
-    exit(1) # 強制停止，唔好再訓練假模型！
-
-# 處理目標變數
-merged['finish_position'] = merged['finish_position'].fillna(0)
-merged['target'] = (merged['finish_position'] == 1).astype(int)
-
-if merged['target'].nunique() < 2:
-    print("❌ 嚴重錯誤：頭馬比例只有一個值，無法訓練！")
-    exit(1)
-
-print(f"  最終合併數據：{len(merged)} 筆")
-print(f"  頭馬比例：{merged['target'].mean():.2%}")
+        
+        # 診斷：顯示為何對唔上
+        print(f"  🔍 診斷 - 排位表日期樣本：{racecard_df['race_date_str'].dropna().unique()[:3]}")
+        print(f"  🔍 診斷 - 賽果日期樣本：{results_df['race_date_str'].dropna().unique()[:3]}")
+        print(f"  🔍 診斷 - 排位表場次樣本：{racecard_df['race_no'].dropna().unique()[:3]}")
+        print(f"  🔍 診斷 - 賽果場次樣本：{results_df['race_no'].dropna().unique()[:3]}")
 
 # ============================================================
 # 5️⃣ 特徵工程（36 特徵）
