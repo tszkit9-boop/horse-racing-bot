@@ -257,7 +257,7 @@ info = {
     "cat_accuracy": cat_acc,
     "train_samples": len(X_train),
     "test_samples": len(X_test),
-    "features_used": FEATURES_EN,
+    "features_used": features_36,   # 👈 改咗呢度
     "merge_key": merge_key
 }
 with open("model_info.json", "w", encoding='utf-8') as f:
