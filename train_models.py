@@ -156,25 +156,37 @@ print(f"  最終合併數據：{len(merged)} 筆")
 print(f"  修正後頭馬比例：{merged['target'].mean():.2%}")
 
 # ============================================================
-# 7️⃣ 特徵工程
+# 7️⃣ 特徵工程（強制升級為 36 特徵，與雲端對齊）
 # ============================================================
-print("🔧 特徵工程...")
+print("🔧 特徵工程（36 特徵）...")
 
-FEATURES_EN = ['draw', 'act_wt', 'distance', 'rtg', 'win_odds']
-extra = ['jockey', 'trainer', 'going', 'race_course', 'weight']
-for f in extra:
-    if f in merged.columns and f not in FEATURES_EN:
-        FEATURES_EN.append(f)
+features_36 = [
+    'draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
+    'jockey_win_rate_50', 'trainer_win_rate_50',
+    'distance_win_rate', 'distance_avg_rank', 'win_odds',
+    'weight_change', 'jockey_trainer_win_rate',
+    'course_win_rate', 'course_avg_rank',
+    'days_since_last_run', 'odds_rank_in_race',
+    'rtg_change', 'jockey_horse_win_rate',
+    'races_last14days', 'going_win_rate',
+    'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
+    'early_pace', 'finish_speed', 'last_trial_rank',
+    'last_trial_time', 'jockey_win_rate_5', 'jockey_win_rate_10',
+    'draw_win_rate', 'days_since_injury', 'injury_30d',
+    'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity'
+]
 
-for f in FEATURES_EN:
+# 確保所有特徵都存在，唔存在就填 0
+for f in features_36:
     if f not in merged.columns:
         merged[f] = 0
     else:
         merged[f] = merged[f].fillna(0)
 
-X = merged[FEATURES_EN].copy()
+X = merged[features_36].copy()
 y = merged['target'].copy()
 
+# 處理類別型特徵（例如場地、騎師名等）
 for col in X.columns:
     if X[col].dtype == 'object':
         le = LabelEncoder()
@@ -185,7 +197,6 @@ X = X.astype(np.float32)
 y = y.astype(int)
 
 print(f"  特徵矩陣：{X.shape}")
-
 # ============================================================
 # 8️⃣ 分割訓練/測試集
 # ============================================================
