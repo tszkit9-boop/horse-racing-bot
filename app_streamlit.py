@@ -2679,16 +2679,16 @@ def admin_automation():
     st.markdown("### ⚙️ 自動化排程")
     st.info("以下自動化任務由 GitHub Actions 定時執行，唔需要人手操作。")
 
-        automation_data = [
-            {"Workflow": "retrain_models.yml", "執行時間": "每星期日 08:00", "用途": "自動重新訓練 AI 模型"},
-            {"Workflow": "update_results.yml", "執行時間": "星期日/一/四 08:00", "用途": "自動爬取賽果"},
-            {"Workflow": "update_racecard.yml", "執行時間": "星期三 17:00、星期六日 11:00", "用途": "自動爬取排位表"},
-            {"Workflow": "update_ai_accuracy.yml", "執行時間": "每日 20:00", "用途": "自動更新 AI 命中率"},
-        ]
-        st.dataframe(automation_data, use_container_width=True, hide_index=True)
+    automation_data = [
+        {"Workflow": "retrain_models.yml", "執行時間": "每星期日 08:00", "用途": "自動重新訓練 AI 模型"},
+        {"Workflow": "update_results.yml", "執行時間": "星期日/一/四 08:00", "用途": "自動爬取賽果"},
+        {"Workflow": "update_racecard.yml", "執行時間": "星期三 17:00、星期六日 11:00", "用途": "自動爬取排位表"},
+        {"Workflow": "update_ai_accuracy.yml", "執行時間": "每日 20:00", "用途": "自動更新 AI 命中率"},
+    ]
+    st.dataframe(automation_data, use_container_width=True, hide_index=True)
 
-        st.markdown("---")
-        st.caption("💡 提示：如果想手動觸發，可以喺 GitHub 倉庫嘅 Actions 頁面撳 Run workflow。")
+    st.markdown("---")
+    st.caption("💡 提示：如果想手動觸發，可以喺 GitHub 倉庫嘅 Actions 頁面撳 Run workflow。")
 
 def admin_security():
     st.subheader("🔐 安全與權限")
