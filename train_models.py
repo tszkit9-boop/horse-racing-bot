@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-train_models.py - 完整版 (包含 XGBoost + CatBoost + Ranking 三模型)
+train_models.py - 完整版 (加入智能清洗，修復合併失敗問題)
 用法: python train_models.py
 """
 
@@ -30,15 +30,39 @@ racecard_df = pd.read_csv("HKCJ_FULL_YEAR_DATA.csv", encoding='utf-8-sig')
 print(f"  排位表：{len(racecard_df)} 筆")
 
 # ============================================================
-# 2️⃣ 處理重複欄位
+# 2️⃣ 智能清洗數據（修復合併失敗的核心）
 # ============================================================
-def dedup_columns(df, name="df"):
-    if df.columns.duplicated().any():
-        df = df.loc[:, ~df.columns.duplicated(keep='first')]
+print("🧹 智能清洗數據...")
+
+def clean_data(df, is_racecard=False):
+    df = df.loc[:, ~df.columns.duplicated(keep='first')]
+    
+    # 統一日期格式
+    if 'race_date' in df.columns:
+        df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce').dt.strftime('%Y-%m-%d')
+    
+    # 統一場次格式（移除 "Race " 前綴）
+    if 'race_no' in df.columns:
+        df['race_no'] = df['race_no'].astype(str).str.replace(r'[^0-9]', '', regex=True)
+        df['race_no'] = pd.to_numeric(df['race_no'], errors='coerce').fillna(0).astype(int)
+    
+    # 統一馬匹編號格式（去空格、去特殊符號）
+    for id_col in ['horse_id', '馬號']:
+        if id_col in df.columns:
+            df[id_col] = df[id_col].astype(str).str.strip().str.replace(r'[^0-9a-zA-Z]', '', regex=True)
+    
+    # 如果係排位表，將 `比賽日期` 轉做 `race_date`
+    if is_racecard and '比賽日期' in df.columns and 'race_date' not in df.columns:
+        df['race_date'] = pd.to_datetime(df['比賽日期'], errors='coerce').dt.strftime('%Y-%m-%d')
+    
     return df
 
-racecard_df = dedup_columns(racecard_df, "排位表")
-results_df = dedup_columns(results_df, "賽果")
+results_df = clean_data(results_df, is_racecard=False)
+racecard_df = clean_data(racecard_df, is_racecard=True)
+
+# 檢查清洗後嘅數據
+print(f"  清洗後賽果記錄：{len(results_df)} 筆")
+print(f"  清洗後排位表記錄：{len(racecard_df)} 筆")
 
 # ============================================================
 # 3️⃣ 標準化欄位
@@ -66,98 +90,55 @@ racecard_df = standardize_columns(racecard_df)
 results_df = standardize_columns(results_df)
 
 # ============================================================
-# 4️⃣ 超強防爆日期解析
-# ============================================================
-print("📅 處理日期...")
-
-def super_parse_dates(df, col='race_date'):
-    if col not in df.columns:
-        return df, 0
-    df = df.loc[:, ~df.columns.duplicated()]
-    df[col] = df[col].astype(str).str.strip()
-    
-    try:
-        temp = pd.to_datetime(df[col], errors='coerce', format='mixed')
-        if temp.isna().all() and df[col].str.contains(r'\d{8}').any():
-            extracted = df[col].str.extract(r'(\d{8})')
-            temp = pd.to_datetime(extracted[0], errors='coerce', format='%Y%m%d')
-        if temp.isna().all():
-            numeric_series = pd.to_numeric(df[col], errors='coerce')
-            if numeric_series.notna().any():
-                try:
-                    temp = pd.to_datetime(numeric_series, errors='coerce', unit='D', origin='1899-12-30')
-                except (ValueError, TypeError):
-                    pass
-        if temp.isna().all():
-            print(f"  ⚠️ 日期完全無法解析，改用虛擬日期以防數據集變空。")
-            temp = pd.Series(pd.date_range(start='2020-01-01', periods=len(df), freq='D'))
-    except Exception as e:
-        print(f"  🛡️ 處理日期時發生意外錯誤，自動降級為虛擬日期。")
-        temp = pd.Series(pd.date_range(start='2020-01-01', periods=len(df), freq='D'))
-    
-    df[col] = temp
-    return df, df[col].isna().sum()
-
-racecard_df, _ = super_parse_dates(racecard_df)
-results_df, _ = super_parse_dates(results_df)
-
-print(f"  排位表記錄：{len(racecard_df)} 筆")
-print(f"  賽果記錄：{len(results_df)} 筆")
-
-# ============================================================
-# 5️⃣ 清理合併 Key 格式
-# ============================================================
-for col in ['race_no', 'horse_id']:
-    if col in racecard_df.columns:
-        racecard_df[col] = racecard_df[col].astype(str).str.replace(r'[^0-9a-zA-Z]', '', regex=True)
-    if col in results_df.columns:
-        results_df[col] = results_df[col].astype(str).str.replace(r'[^0-9a-zA-Z]', '', regex=True)
-
-merge_key = 'horse_id' if 'horse_id' in racecard_df.columns and 'horse_id' in results_df.columns else 'horse_name'
-print(f"  合併 key：{merge_key}")
-
-# ============================================================
-# 6️⃣ 智能合併
+# 4️⃣ 合併數據
 # ============================================================
 print("🔗 合併數據...")
 
 merged = pd.DataFrame()
 
-if 'race_date' in racecard_df.columns and 'race_date' in results_df.columns:
+# 嘗試用 race_date, race_no, horse_id 做合併
+if all(c in racecard_df.columns for c in ['race_date', 'race_no', 'horse_id']) and \
+   all(c in results_df.columns for c in ['race_date', 'race_no', 'horse_id', 'finish_position']):
     merged = racecard_df.merge(
-        results_df[['race_date', 'race_no', merge_key, 'finish_position']],
-        on=['race_date', 'race_no', merge_key],
+        results_df[['race_date', 'race_no', 'horse_id', 'finish_position']],
+        on=['race_date', 'race_no', 'horse_id'],
         how='inner'
     )
-    print(f"  第一層合併（帶日期）：{len(merged)} 筆")
+    print(f"  第一層合併（完整 Key）：{len(merged)} 筆")
 
+# 如果失敗，降級只用 horse_id 合併
 if merged.empty:
-    print("  ⚠️ 日期對唔上，嘗試降級：合併時忽略日期...")
-    merged = racecard_df.merge(
-        results_df[['race_no', merge_key, 'finish_position']],
-        on=['race_no', merge_key],
-        how='inner'
-    )
-    print(f"  第二層合併（無日期）：{len(merged)} 筆")
+    print("  ⚠️ 完整 Key 對唔上，降級嘗試只用 horse_id 合併...")
+    if 'horse_id' in racecard_df.columns and 'horse_id' in results_df.columns:
+        merged = racecard_df.merge(
+            results_df[['horse_id', 'finish_position']],
+            on='horse_id',
+            how='inner'
+        )
+        print(f"  第二層合併（僅 horse_id）：{len(merged)} 筆")
 
+# 如果仲係空，報錯並停止，唔再隨機生成假標籤！
 if merged.empty:
-    print("  ⚠️ 無法合併數據，使用排位表數據建立假標籤以確保流程完成...")
-    merged = racecard_df.copy()
-    merged['finish_position'] = np.random.choice([1, 2, 3, 4, 5], size=len(merged))
+    print("❌ 嚴重錯誤：無法合併排位表同賽果數據！請檢查 CSV 格式。")
+    print("  排位表欄位：", racecard_df.columns.tolist())
+    print("  賽果欄位：", results_df.columns.tolist())
+    print("  排位表 race_no 樣本：", racecard_df['race_no'].head(3).tolist() if 'race_no' in racecard_df.columns else "無")
+    print("  賽果 race_no 樣本：", results_df['race_no'].head(3).tolist() if 'race_no' in results_df.columns else "無")
+    exit(1) # 強制停止，唔好再訓練假模型！
 
+# 處理目標變數
 merged['finish_position'] = merged['finish_position'].fillna(0)
 merged['target'] = (merged['finish_position'] == 1).astype(int)
 
-# 🛡️ 終極保底：如果頭馬比例係 0%，自動隨機生成 10% 嘅 1 出嚟
 if merged['target'].nunique() < 2:
-    print("⚠️ 目標變數只有一個值（全為0），自動生成隨機標籤以確保 CatBoost 可以訓練！")
-    merged['target'] = np.random.choice([0, 1], size=len(merged), p=[0.9, 0.1])
+    print("❌ 嚴重錯誤：頭馬比例只有一個值，無法訓練！")
+    exit(1)
 
 print(f"  最終合併數據：{len(merged)} 筆")
-print(f"  修正後頭馬比例：{merged['target'].mean():.2%}")
+print(f"  頭馬比例：{merged['target'].mean():.2%}")
 
 # ============================================================
-# 7️⃣ 特徵工程（強制升級為 36 特徵，與雲端對齊）
+# 5️⃣ 特徵工程（36 特徵）
 # ============================================================
 print("🔧 特徵工程（36 特徵）...")
 
@@ -177,7 +158,6 @@ features_36 = [
     'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity'
 ]
 
-# 確保所有特徵都存在，唔存在就填 0
 for f in features_36:
     if f not in merged.columns:
         merged[f] = 0
@@ -187,7 +167,6 @@ for f in features_36:
 X = merged[features_36].copy()
 y = merged['target'].copy()
 
-# 處理類別型特徵
 for col in X.columns:
     if X[col].dtype == 'object':
         le = LabelEncoder()
@@ -200,7 +179,7 @@ y = y.astype(int)
 print(f"  特徵矩陣：{X.shape}")
 
 # ============================================================
-# 8️⃣ 分割訓練/測試集
+# 6️⃣ 分割訓練/測試集
 # ============================================================
 try:
     X_train, X_test, y_train, y_test = train_test_split(
@@ -214,7 +193,7 @@ except ValueError:
 print(f"  訓練集：{len(X_train)} 筆，測試集：{len(X_test)} 筆")
 
 # ============================================================
-# 9️⃣ 訓練 XGBoost
+# 7️⃣ 訓練 XGBoost
 # ============================================================
 print("🚀 訓練 XGBoost 模型...")
 xgb_model = xgb.XGBClassifier(
@@ -230,7 +209,7 @@ xgb_acc = xgb_model.score(X_test, y_test)
 print(f"  XGBoost 測試準確度：{xgb_acc:.2%}")
 
 # ============================================================
-# 🔟 訓練 CatBoost
+# 8️⃣ 訓練 CatBoost
 # ============================================================
 print("🚀 訓練 CatBoost 模型...")
 cat_model = CatBoostClassifier(
@@ -245,24 +224,18 @@ cat_acc = cat_model.score(X_test, y_test)
 print(f"  CatBoost 測試準確度：{cat_acc:.2%}")
 
 # ============================================================
-# 🔟.5 訓練 Ranking 模型（XGBRanker）
+# 9️⃣ 訓練 Ranking 模型
 # ============================================================
 print("🚀 訓練 Ranking 模型...")
 rank_model = None
 try:
-    # Ranking 需要按場次分組，重新排序數據
     merged_sorted = merged.sort_values(by=['race_date', 'race_no']).reset_index(drop=True)
-    
-    # 計算每場比賽嘅 group size
     group_sizes = merged_sorted.groupby(['race_date', 'race_no']).size().tolist()
     
-    # 提取特徵同標籤（必須跟 sorted 順序）
-    # 👇 以下呢兩句係修正咗嘅版本，加咗 .replace('-', 0) 處理字串問題
     X_rank_df = merged_sorted[features_36].replace('-', 0).apply(pd.to_numeric, errors='coerce').fillna(0)
     X_rank = X_rank_df.values.astype(np.float32)
     y_rank = merged_sorted['target'].values.astype(int)
 
-    # 確保 group_sizes 總和等於數據長度
     if sum(group_sizes) == len(X_rank):
         rank_model = XGBRanker(
             n_estimators=100,
@@ -279,7 +252,7 @@ except Exception as e:
     print(f"  ⚠️ Ranking 模型訓練失敗：{e}")
 
 # ============================================================
-# 1️⃣1️⃣ 儲存模型
+# 🔟 儲存模型
 # ============================================================
 print("💾 儲存模型...")
 with open('hk_racing_model.pkl', 'wb') as f:
@@ -300,7 +273,7 @@ info = {
     "train_samples": len(X_train),
     "test_samples": len(X_test),
     "features_used": features_36,
-    "merge_key": merge_key
+    "merge_key": "horse_id"
 }
 with open("model_info.json", "w", encoding='utf-8') as f:
     json.dump(info, f, ensure_ascii=False, indent=2)
