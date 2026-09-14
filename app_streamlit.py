@@ -2380,15 +2380,33 @@ def admin_accuracy_monitor():
         results_df['finish_position'] = pd.to_numeric(results_df['finish_position'], errors='coerce')
         results_df['horse_name'] = results_df['horse_name'].astype(str).str.strip()
         results_df['horse_name'] = results_df['horse_name'].str.replace(r'\([A-Z]\d+\)', '', regex=True).str.strip()
+        
+        # 檢查場地欄位 (venue / racecourse / 馬場)
+        venue_col = None
+        for col in ['venue', 'racecourse', '馬場']:
+            if col in results_df.columns:
+                venue_col = col
+                break
+                
     except Exception as e:
         st.error(f"❌ 讀取賽果失敗：{e}")
         return
 
     real_top3 = {}
+    venue_map = {}  # 用嚟記錄每場嘅場地
+    
     for _, row in results_df.iterrows():
         if pd.isna(row['race_no']) or pd.isna(row['finish_position']):
             continue
         key = f"{row['race_date_str']}_{int(row['race_no'])}"
+        
+        # 記錄場地
+        if key not in venue_map:
+            if venue_col:
+                venue_map[key] = row.get(venue_col, '未知')
+            else:
+                venue_map[key] = '未知'
+        
         if key not in real_top3:
             real_top3[key] = []
         if row['finish_position'] <= 3:
@@ -2413,10 +2431,15 @@ def admin_accuracy_monitor():
         pred_top3_str = ", ".join(pred_top3)
 
         lookup_key = f"{date_str}_{race_no}"
+        
+        # 取得場地
+        current_venue = venue_map.get(lookup_key, '未知')
+        
         if lookup_key not in real_top3 or not real_top3[lookup_key]:
             compare_rows.append({
                 '日期': date_str,
                 '場次': race_no,
+                '場地': current_venue,
                 '預測頭3名': pred_top3_str,
                 '真實頭3名': '⏳ 未有賽果',
                 '命中數': '-',
@@ -2445,6 +2468,7 @@ def admin_accuracy_monitor():
         compare_rows.append({
             '日期': date_str,
             '場次': race_no,
+            '場地': current_venue,
             '預測頭3名': pred_top3_str,
             '真實頭3名': real_str,
             '命中數': hit_count,
@@ -2469,7 +2493,66 @@ def admin_accuracy_monitor():
 
     if pending_count > 0:
         st.caption(f"⏳ 仲有 {pending_count} 場未出賽果")
+        
+    # ===== 新增 1：分場地命中率 =====
+    st.markdown("---")
+    st.subheader("📍 分場地命中率")
+    venue_stats = {}
+    for row in compare_rows:
+        v = row['場地']
+        if row['結果'] == '⏳ 待定':
+            continue
+        if v not in venue_stats:
+            venue_stats[v] = {'total': 0, 'hit': 0}
+        venue_stats[v]['total'] += 1
+        if row['命中數'] != '-' and int(row['命中數']) > 0:
+            venue_stats[v]['hit'] += 1
+            
+    if venue_stats:
+        vc1, vc2 = st.columns(2)
+        for idx, (v, stats) in enumerate(venue_stats.items()):
+            if stats['total'] > 0:
+                rate = stats['hit'] / stats['total']
+                if idx == 0:
+                    vc1.metric(f"{v} 命中率", f"{rate:.1%}", f"{stats['hit']}/{stats['total']} 場")
+                else:
+                    vc2.metric(f"{v} 命中率", f"{rate:.1%}", f"{stats['hit']}/{stats['total']} 場")
+    else:
+        st.info("暫時未有足夠數據計算分場地命中率")
+        
+    # ===== 新增 2：命中率走勢圖 =====
+    st.markdown("---")
+    st.subheader("📉 命中率走勢圖")
+    if compare_rows:
+        df_trend = pd.DataFrame(compare_rows)
+        df_trend = df_trend[df_trend['結果'] != '⏳ 待定'] # 只計已比對嘅場次
+        
+        if not df_trend.empty:
+            # 按日期分組計算命中率
+            trend_data = []
+            for date, group in df_trend.groupby('日期'):
+                total = len(group)
+                hits = len(group[group['命中數'] != '-'])
+                # 注意：命中數可能係字串，要轉換
+                hits_count = group['命中數'].apply(lambda x: int(x) if str(x).isdigit() else 0).sum()
+                hit_races = len(group[group['命中數'].apply(lambda x: int(x) if str(x).isdigit() else 0) > 0])
+                if total > 0:
+                    trend_data.append({
+                        '日期': date,
+                        '場次命中率': hit_races / total,
+                        '馬匹命中率': hits_count / (total * 3) # 粗略估算，假設每場預測3匹
+                    })
+            
+            df_trend_final = pd.DataFrame(trend_data).sort_values('日期')
+            
+            # 用 Plotly 畫折線圖
+            fig = px.line(df_trend_final, x='日期', y='場次命中率', markers=True, title='每日場次命中率走勢')
+            fig.update_layout(yaxis_tickformat='.0%', xaxis_title='日期', yaxis_title='命中率')
+            st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("暫無足夠數據顯示走勢圖")
 
+    # ===== 原有明細表 =====
     if compare_rows:
         st.subheader("📋 預測頭3名 vs 真實頭3名")
         df = pd.DataFrame(compare_rows).sort_values(['日期', '場次'], ascending=[False, True])
