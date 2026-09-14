@@ -896,6 +896,7 @@ def run_prediction(date_str, race_no):
 
     # 儲存
     # 儲存到 SQLite
+    # 儲存到 Supabase
     from database import save_prediction
     key = f"{date_str}_{race_no}"
     save_prediction(key, {
