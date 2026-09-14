@@ -3559,15 +3559,29 @@ def main():
                         rn = race_list[idx]
                         with col:
                             st.markdown(f"**🏇 第 {rn} 場**")
-                            df = all_results[rn].copy()
-                            cols_to_show = ['horse_name']
-                            if 'draw' in df.columns:
-                                cols_to_show.append('draw')
-                            cols_to_show.append('預測勝率')
-                            df_show = df[cols_to_show].head(3).copy()
-                            df_show.columns = ['馬名', '檔位', '勝率'][:len(cols_to_show)]
-                            df_show['勝率'] = df_show['勝率'].apply(lambda x: f"{x:.1%}")
-                            st.dataframe(df_show, use_container_width=True, hide_index=True)
+                    df = all_results[rn].copy()
+                    
+                    # 動態建立真正存在嘅欄位
+                    rename_map = {
+                        'horse_name': '馬名',
+                        'draw': '檔位',
+                        'win_odds': '賠率',
+                        'jockey': '騎師',
+                        'trainer': '練馬師',
+                        '預測勝率': '勝率'
+                    }
+                    
+                    cols_to_show = [c for c in rename_map.keys() if c in df.columns]
+                    valid_cols = [c for c in cols_to_show if c in df.columns]
+                    
+                    df_show = df[valid_cols].head(3).copy()
+                    df_show.rename(columns=rename_map, inplace=True)
+                    
+                    # 如果有勝率，就格式化做百分比
+                    if '勝率' in df_show.columns:
+                        df_show['勝率'] = df_show['勝率'].apply(lambda x: f"{x:.1%}")
+                    
+                    st.dataframe(df_show, use_container_width=True, hide_index=True)
     cd, cr, cbtn = st.columns([2, 2, 1])
     with cd:
         date = st.date_input("📅 日期", value=pd.to_datetime("2026-09-06"), key="pd_date")
