@@ -3112,11 +3112,26 @@ def main():
         return
 
 
-c1, c2, c3, c4 = st.columns([5, 1, 1, 1])
+    c1, c2, c3, c4 = st.columns([5, 1, 1, 1])
     with c1:
         st.title("🏇 賽馬預測系統")
         st.markdown("AI 驅動・即時預測・彩池推薦")
         st.caption(f"{datetime.now().strftime('%Y年%m月%d日')}")
+    with c2:
+        # 呢度係「後台」按鈕（保留你原本嘅代碼）
+        pass
+    with c3:
+        # 呢度係「個人中心」按鈕（保留你原本嘅代碼）
+        pass
+    with c4:
+        # 呢度係「登出」按鈕（保留你原本嘅代碼）
+        pass
+
+    # 👇 倒數卡片搬嚟呢度！記住同上面一樣縮排4格，佢就會佔滿成行（變橫額）
+    # 請將你原本「⏰ 距離下場賽事」嗰段代碼，直接貼喺呢度（縮排4格）
+    # 例如：
+    # st.markdown("⏰ 距離下場賽事：跑馬地夜馬")
+    # st.markdown("## 2 00 11")
     with c2:
         if CONFIG["enable_admin"] and st.session_state.get("role") == "super_admin":
             if st.button("🔐 後台", use_container_width=True, key="go_admin"):
