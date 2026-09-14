@@ -675,7 +675,7 @@ def _repair_racecard(df):
     return result
 
 def run_prediction(date_str, race_no):
-    """用真正 ML 模型預測"""
+    """用真正 ML 模型預測（統一 36 特徵版）"""
     if not os.path.exists("racecard_uploaded.csv"):
         st.error("❌ 找不到 racecard_uploaded.csv")
         return None, None
@@ -704,8 +704,6 @@ def run_prediction(date_str, race_no):
     race_df['race_date'] = pd.to_datetime(race_df['race_date'], errors='coerce')
     race_df = race_df.dropna(subset=['race_date'])
     race_df['race_date_str'] = race_df['race_date'].dt.strftime('%Y-%m-%d')
-
-    # 轉換 race_no 做數字
     race_df['race_no'] = pd.to_numeric(race_df['race_no'], errors='coerce').fillna(0).astype(int)
 
     available_dates = sorted(race_df['race_date_str'].unique())
@@ -717,7 +715,6 @@ def run_prediction(date_str, race_no):
         st.warning(f"⚠️ {date_str} 冇數據，自動改用 {available_dates[-1]}")
         date_str = available_dates[-1]
 
-    # 確保 race_no 係數字
     try:
         race_no = int(race_no)
     except Exception:
@@ -740,7 +737,6 @@ def run_prediction(date_str, race_no):
 
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
-    # 歷史數據
     history_df = pd.DataFrame()
     if os.path.exists("ALL_DATA_MERGED.csv"):
         try:
@@ -751,14 +747,11 @@ def run_prediction(date_str, race_no):
         except Exception as e:
             st.warning(f"⚠️ 讀取歷史數據失敗：{e}")
 
-    # 建立特徵
     with st.spinner("🔧 計算特徵中..."):
         features_df = _build_features(filtered, history_df)
 
-    # 載入模型
     xgb_model, cat_model, rank_model = load_ml_models()
 
-    # 特徵欄位
     features_36 = ['draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
                    'jockey_win_rate_50', 'trainer_win_rate_50',
                    'distance_win_rate', 'distance_avg_rank', 'win_odds',
@@ -773,79 +766,64 @@ def run_prediction(date_str, race_no):
                    'draw_win_rate', 'days_since_injury', 'injury_30d',
                    'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity']
 
-    # 自動偵測模型需要嘅特徵數量
     pred_xgb = None
     pred_cat = None
     pred_rank = None
     models_used = []
 
-    # ===== XGBoost =====
+    # ===== XGBoost（強制用 36 特徵）=====
     if xgb_model is not None:
         try:
-            n_xgb = getattr(xgb_model, 'n_features_in_', None)
-            if n_xgb is None:
-                n_xgb = 9  # 預設雲端版本
-
-            if n_xgb == 9:
-                # 雲端 9 特徵版本
-                features_9 = ['draw', 'weight', 'distance', 'Rtg.', 'win_odds',
-                              'jockey_win_rate_50', 'trainer_win_rate_50',
-                              'avg_rank_last3', 'odds_rank_in_race']
-                X_xgb = features_df[features_9].fillna(0).values
-            else:
-                X_xgb = features_df[features_36].fillna(0).values
-
+            X_xgb = features_df[features_36].fillna(0).values
             pred_xgb = xgb_model.predict_proba(X_xgb)[:, 1]
-            models_used.append(f"XGBoost({n_xgb}特徵)")
+            models_used.append("XGBoost(36特徵)")
         except Exception as e:
             st.warning(f"⚠️ XGBoost 失敗：{e}")
 
-    # ===== CatBoost =====
+    # ===== CatBoost（強制用 36 特徵）=====
     if cat_model is not None:
         try:
-            # CatBoost 固定用 36 特徵（本地訓練）
             X_cat = features_df[features_36].fillna(0).values
             pred_cat = cat_model.predict_proba(X_cat)[:, 1]
             models_used.append("CatBoost(36特徵)")
         except Exception as e:
             st.warning(f"⚠️ CatBoost 失敗：{e}")
 
-    # ===== Ranking =====
+    # ===== Ranking（強制用 36 特徵）=====
     if rank_model is not None:
         try:
-            n_rank = getattr(rank_model, 'n_features_in_', None)
-            if n_rank is None:
-                n_rank = 36
-
-            if n_rank == 9:
-                features_9 = ['draw', 'weight', 'distance', 'Rtg.', 'win_odds',
-                              'jockey_win_rate_50', 'trainer_win_rate_50',
-                              'avg_rank_last3', 'odds_rank_in_race']
-                X_rank = features_df[features_9].fillna(0).values
-            else:
-                X_rank = features_df[features_36].fillna(0).values
-
+            X_rank = features_df[features_36].fillna(0).values
             pred_rank = rank_model.predict(X_rank)
-            # 正規化做機率
             pred_rank = np.array(pred_rank, dtype=float)
             if pred_rank.max() > pred_rank.min():
                 pred_rank = (pred_rank - pred_rank.min()) / (pred_rank.max() - pred_rank.min())
-            models_used.append(f"Ranking({n_rank}特徵)")
+            models_used.append("Ranking(36特徵)")
         except Exception as e:
             st.warning(f"⚠️ Ranking 失敗：{e}")
 
-    # ===== 融合 =====
+    # ===== 融合（優先從 system_config 讀取權重）=====
     all_preds = [p for p in [pred_xgb, pred_cat, pred_rank] if p is not None]
-
     if all_preds:
-        # 加權平均（CatBoost 權重高啲）
+        import json
+        try:
+            with open("system_config.json", "r", encoding="utf-8") as f:
+                sys_config = json.load(f)
+            w_xgb = sys_config.get("xgb_weight", 0.3)
+            w_cat = sys_config.get("cat_weight", 0.5)
+            w_rank = 0.2 # 默認 Rank 權重
+            # 如果 system_config 寫 25/1，就自動轉換為比例
+            if w_xgb > 1 or w_cat > 1:
+                total = w_xgb + w_cat + w_rank
+                w_xgb = w_xgb / total
+                w_cat = w_cat / total
+                w_rank = w_rank / total
+        except Exception:
+            w_xgb, w_cat, w_rank = 0.3, 0.5, 0.2
+
         weights = []
-        if pred_xgb is not None:
-            weights.append(0.3)
-        if pred_cat is not None:
-            weights.append(0.5)
-        if pred_rank is not None:
-            weights.append(0.2)
+        if pred_xgb is not None: weights.append(w_xgb)
+        if pred_cat is not None: weights.append(w_cat)
+        if pred_rank is not None: weights.append(w_rank)
 
         weights = np.array(weights) / sum(weights)
 
@@ -853,18 +831,16 @@ def run_prediction(date_str, race_no):
         for i, p in enumerate(all_preds):
             pred_proba += weights[i] * p
 
-        st.success(f"✅ 使用模型：{', '.join(models_used)}")
+        st.success(f"✅ 使用模型：{', '.join(models_used)}（權重：XGB {weights[0]:.2f} / Cat {weights[1]:.2f}）")
     else:
         st.warning("⚠️ 冇可用模型，改用賠率估算")
         win_odds = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0).replace(0, 4.0)
         inv = 1 / win_odds
         pred_proba = (inv / inv.sum()).values
 
-    # 正規化
     pred_proba = pred_proba / pred_proba.sum()
 
-    # 結果
-    # 🔥 提取馬號（優先順序：horse_id -> 馬號 -> 自動生成）
+    # 提取馬號
     id_col = None
     for col in ['horse_id', '馬號', 'horse_no']:
         if col in filtered.columns:
@@ -882,13 +858,9 @@ def run_prediction(date_str, race_no):
         if c in filtered.columns:
             result_df[c] = filtered[c]
 
-    # 重命名中文欄位
     result_df = result_df.rename(columns={
-        'horse_name': '馬名',
-        'draw': '檔位',
-        'weight': '負磅',
-        'jockey': '騎師',
-        'trainer': '練馬師'
+        'horse_name': '馬名', 'draw': '檔位', 'weight': '負磅',
+        'jockey': '騎師', 'trainer': '練馬師'
     })
     result_df['預測勝率'] = pred_proba
     result_df['值博指數'] = result_df['預測勝率'] * 10
@@ -912,8 +884,6 @@ def run_prediction(date_str, race_no):
     with open(ai_file, 'w', encoding='utf-8') as f:
         json.dump(ai_data, f, ensure_ascii=False, indent=2)
 
-    # 取得用戶會員級別
-    user_group = st.session_state.get('role', 'free')    
     user_group = st.session_state.get('role', 'free')
     return result_df, generate_pool_recommendations(result_df, user_group)
 
