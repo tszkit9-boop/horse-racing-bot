@@ -257,8 +257,9 @@ try:
     group_sizes = merged_sorted.groupby(['race_date', 'race_no']).size().tolist()
     
     # 提取特徵同標籤（必須跟 sorted 順序）
-    X_rank = merged_sorted[features_36].fillna(0).values.astype(np.float32)
-    y_rank = merged_sorted['target'].values.astype(int)
+   X_rank_df = merged_sorted[features_36].replace('-', 0).apply(pd.to_numeric, errors='coerce').fillna(0)
+   X_rank = X_rank_df.values.astype(np.float32)
+   y_rank = merged_sorted['target'].values.astype(int)
 
     # 確保 group_sizes 總和等於數據長度
     if sum(group_sizes) == len(X_rank):
