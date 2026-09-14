@@ -2676,13 +2676,38 @@ def admin_auto_maintenance():
 
 def admin_automation():
     st.subheader("🤖 自動化工具")
-    st.info("此功能暫未開放。")
+            st.markdown("### ⚙️ 自動化排程")
+        st.info("以下自動化任務由 GitHub Actions 定時執行，唔需要人手操作。")
+
+        automation_data = [
+            {"Workflow": "retrain_models.yml", "執行時間": "每星期日 08:00", "用途": "自動重新訓練 AI 模型"},
+            {"Workflow": "update_results.yml", "執行時間": "星期日/一/四 08:00", "用途": "自動爬取賽果"},
+            {"Workflow": "update_racecard.yml", "執行時間": "星期三 17:00、星期六日 11:00", "用途": "自動爬取排位表"},
+            {"Workflow": "update_ai_accuracy.yml", "執行時間": "每日 20:00", "用途": "自動更新 AI 命中率"},
+        ]
+        st.dataframe(automation_data, use_container_width=True, hide_index=True)
+
+        st.markdown("---")
+        st.caption("💡 提示：如果想手動觸發，可以喺 GitHub 倉庫嘅 Actions 頁面撳 Run workflow。")
 
 def admin_security():
     st.subheader("🔐 安全與權限")
-    logs = load_json(LOG_FILE)
-    if logs.get('logs'):
-        st.dataframe(pd.DataFrame(logs['logs'][-20:]), use_container_width=True)
+        import os, json
+        log_file = "admin_log.json"
+        if os.path.exists(log_file):
+            try:
+                with open(log_file, "r", encoding="utf-8") as f:
+                    logs = json.load(f)
+                if logs:
+                    st.markdown("### 📋 管理員操作日誌")
+                    df_logs = pd.DataFrame(logs)
+                    st.dataframe(df_logs, use_container_width=True, hide_index=True)
+                else:
+                    st.info("📭 暫無操作記錄。")
+            except Exception as e:
+                st.warning(f"讀取日誌時出錯：{e}")
+        else:
+            st.info("📭 暫無日誌檔案。")
     else:
         st.info("暫無日誌")
 def admin_pool_config():
