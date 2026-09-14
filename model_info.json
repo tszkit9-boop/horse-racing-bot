@@ -1,10 +1,10 @@
 {
-  "trained_at": "2026-09-14T18:24:41.524915",
-  "xgb_accuracy": 0.905940594059406,
-  "cat_accuracy": 0.900990099009901,
+  "trained_at": "2026-09-14T18:29:17.408056",
+  "xgb_accuracy": 0.9284754869039624,
+  "cat_accuracy": 0.9284754869039624,
   "rank_trained": true,
-  "train_samples": 805,
-  "test_samples": 202,
+  "train_samples": 11911,
+  "test_samples": 2978,
   "features_used": [
     "draw",
     "weight",
