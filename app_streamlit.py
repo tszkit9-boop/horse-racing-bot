@@ -3112,32 +3112,21 @@ def main():
         return
 
 
-    c1, c2, c3, c4 = st.columns([5, 1, 1, 1])
+    c1, c2, c3, c4, c5 = st.columns([4, 1, 1, 1, 1])
     with c1:
         st.title("🏇 賽馬預測系統")
         st.markdown("AI 驅動・即時預測・彩池推薦")
         st.caption(f"{datetime.now().strftime('%Y年%m月%d日')}")
-    with c2:
-        # 呢度係「後台」按鈕（保留你原本嘅代碼）
-        pass
-    with c3:
-        # 呢度係「個人中心」按鈕（保留你原本嘅代碼）
-        pass
-    with c4:
-        # 呢度係「登出」按鈕（保留你原本嘅代碼）
-        pass
-
-    # 👇 倒數卡片搬嚟呢度！記住同上面一樣縮排4格，佢就會佔滿成行（變橫額）
-    # 請將你原本「⏰ 距離下場賽事」嗰段代碼，直接貼喺呢度（縮排4格）
-    # 例如：
-    # st.markdown("⏰ 距離下場賽事：跑馬地夜馬")
-    # st.markdown("## 2 00 11")
     with c2:
         if CONFIG["enable_admin"] and st.session_state.get("role") == "super_admin":
             if st.button("🔐 後台", use_container_width=True, key="go_admin"):
                 st.session_state.show_admin = True
                 st.rerun()
     with c3:
+        # 👇 新加嘅「常見問題」按鈕，同後台平排
+        if st.button("❓ 常見問題", use_container_width=True, key="faq_btn"):
+            st.switch_page("pages/FAQ.py")
+    with c4:
         if st.session_state.get('logged_in', False):
             username = st.session_state.username
             users = load_users()
@@ -3223,20 +3212,30 @@ def main():
                                     lambda x: '✅' if x is True else ('❌' if x is False else '⏳')
                                 )
                             st.dataframe(df_show, use_container_width=True, hide_index=True)
+    with c5:
+        if st.session_state.get('logged_in', False):
+            if st.button("🚪 登出", use_container_width=True, key="logout_main"):
+                for k in ['logged_in', 'username', 'role']:
+                    if k in st.session_state:
+                        del st.session_state[k]
+                st.rerun()
 
-            # 👇 常見問題連結，同 with st.popover 對齊（12 格）
-            st.page_link("pages/FAQ.py", label="❓ 常見問題")
-                
-        with c4:
-            if st.session_state.get('logged_in', False):
-                if st.button("🚪 登出", use_container_width=True, key="logout_main"):
-                    for k in ['logged_in', 'username', 'role']:
-                        if k in st.session_state:
-                            del st.session_state[k]
-                    st.rerun()
-        st.markdown("---")
-        display_race_calendar()
-        st.markdown("---")
+    st.markdown("---")
+    
+    # =========================================================================
+    # 👇👇👇 重要：倒數卡片（⏰ 距離下場賽事）一定要放喺呢度！ 👇👇👇
+    # 你必須將包含「⏰ 距離下場賽事」嘅代碼，原封不動咁貼喺呢度。
+    # 記住：呢度嘅代碼前面「唔可以有 with c1: 或者 with c2: 嘅縮排」，佢一定要係最左邊（或者同上面 c1, c2... 對齊）。
+    # 咁樣佢就會自動佔滿成行，變返做「成條橫額」！
+    # =========================================================================
+    
+    # (貼上你原本倒數卡片嘅代碼，例如：)
+    # st.markdown("⏰ 距離下場賽事：跑馬地夜馬")
+    # st.markdown("## 2 00 11")
+    # ...
+    
+    display_race_calendar()
+    st.markdown("---")
 
     if st.session_state.logged_in:
         ca, cb = st.columns(2)
