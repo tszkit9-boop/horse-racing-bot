@@ -2676,7 +2676,7 @@ def admin_auto_maintenance():
 
 def admin_automation():
     st.subheader("🤖 自動化工具")
-            st.markdown("### ⚙️ 自動化排程")
+    st.markdown("### ⚙️ 自動化排程")
         st.info("以下自動化任務由 GitHub Actions 定時執行，唔需要人手操作。")
 
         automation_data = [
