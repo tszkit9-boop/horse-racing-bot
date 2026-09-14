@@ -90,7 +90,7 @@ racecard_df = standardize_columns(racecard_df)
 results_df = standardize_columns(results_df)
 
 # ============================================================
-# 4️⃣ 合併數據（最終修復版：智能尋找有效名次欄位）
+# 4️⃣ 合併數據（最終修復版：絕對防止欄位衝突）
 # ============================================================
 print("🔗 合併數據...")
 
@@ -102,15 +102,15 @@ def standardize_date_for_merge(df):
 racecard_df = standardize_date_for_merge(racecard_df)
 results_df = standardize_date_for_merge(results_df)
 
-# 🛡️ 智能尋找有效嘅名次欄位（解決 finish_position 全為空嘅問題）
+# 🛡️ 智能尋找有效嘅名次欄位
 pos_candidates = ['finish_position', 'Pla.', '名次', '最終名次', 'result_position', 'Finish_Rank']
 found_pos = False
 for col in pos_candidates:
     if col in results_df.columns:
-        # 處理 "1.0", "1st", "1", "-" 等格式，強制抽出數字
         cleaned = pd.to_numeric(results_df[col].astype(str).str.extract(r'(\d+)')[0], errors='coerce')
         if cleaned.notna().any():
-            results_df['real_finish_position'] = cleaned
+            # 用一個絕對不會撞名嘅臨時名稱
+            results_df['__REAL_POS_TEMP__'] = cleaned
             found_pos = True
             print(f"  ✅ 成功使用 '{col}' 作名次來源，樣本：{cleaned.dropna().head(5).tolist()}")
             break
@@ -119,13 +119,19 @@ if not found_pos:
     print("❌ 嚴重錯誤：賽果數據中找不到任何有效嘅名次欄位！")
     exit(1)
 
+# 🛡️ 強制刪除兩個 DataFrame 入面所有可能干擾嘅名次欄位
+for df_name, df in [('racecard', racecard_df), ('results', results_df)]:
+    for col in ['finish_position', 'real_finish_position', 'Pla.', '名次']:
+        if col in df.columns:
+            df.drop(columns=[col], inplace=True)
+
 merged = pd.DataFrame()
 
 # 嘗試用完整 Key 合併
 if all(c in racecard_df.columns for c in ['race_date_str', 'race_no', 'horse_id']) and \
-   all(c in results_df.columns for c in ['race_date_str', 'race_no', 'horse_id', 'real_finish_position']):
+   all(c in results_df.columns for c in ['race_date_str', 'race_no', 'horse_id', '__REAL_POS_TEMP__']):
     merged = racecard_df.merge(
-        results_df[['race_date_str', 'race_no', 'horse_id', 'real_finish_position']],
+        results_df[['race_date_str', 'race_no', 'horse_id', '__REAL_POS_TEMP__']],
         on=['race_date_str', 'race_no', 'horse_id'],
         how='inner'
     )
@@ -134,9 +140,9 @@ if all(c in racecard_df.columns for c in ['race_date_str', 'race_no', 'horse_id'
 # 如果失敗，降級只用 horse_id 合併
 if merged.empty:
     print("  ⚠️ 完整 Key 對唔上，降級嘗試只用 horse_id 合併...")
-    if 'horse_id' in racecard_df.columns and 'horse_id' in results_df.columns and 'real_finish_position' in results_df.columns:
+    if 'horse_id' in racecard_df.columns and 'horse_id' in results_df.columns and '__REAL_POS_TEMP__' in results_df.columns:
         merged = racecard_df.merge(
-            results_df[['horse_id', 'real_finish_position']],
+            results_df[['horse_id', '__REAL_POS_TEMP__']],
             on='horse_id',
             how='inner'
         )
@@ -146,12 +152,13 @@ if merged.empty:
     print("❌ 嚴重錯誤：無法合併任何數據！")
     exit(1)
 
-# 🔍 診斷：睇下 real_finish_position 係咪真係有數
-print(f"  🔍 診斷 - 合併後名次樣本：{merged['real_finish_position'].head(10).tolist()}")
+# 建立標準嘅 finish_position
+merged['finish_position'] = merged['__REAL_POS_TEMP__'].fillna(99) # 冇名次嘅當作 99
+merged.drop(columns=['__REAL_POS_TEMP__'], inplace=True)
 
-# 建立標準嘅 finish_position 同 target
-# 將 NaN 填補為 99（代表未有名次），避免影響頭馬判斷
-merged['finish_position'] = merged['real_finish_position'].fillna(99)
+# 🔍 診斷：睇下 finish_position 係咪真係有數
+print(f"  🔍 診斷 - 合併後名次樣本：{merged['finish_position'].head(10).tolist()}")
+
 merged['target'] = (merged['finish_position'] == 1).astype(int)
 
 if merged['target'].nunique() < 2:
