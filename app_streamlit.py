@@ -2381,19 +2381,26 @@ def admin_accuracy_monitor():
         results_df['horse_name'] = results_df['horse_name'].astype(str).str.strip()
         results_df['horse_name'] = results_df['horse_name'].str.replace(r'\([A-Z]\d+\)', '', regex=True).str.strip()
         
-        # 檢查場地欄位 (venue / racecourse / 馬場)
-        venue_col = None
-        for col in ['venue', 'racecourse', '馬場']:
-            if col in results_df.columns:
-                venue_col = col
-                break
+        # 👇👇👇 新增：如果 CSV 冇場地欄位，自動根據日期推算 👇👇👇
+        if 'venue' not in results_df.columns and 'racecourse' not in results_df.columns and '馬場' not in results_df.columns:
+            # 0=Monday, 1=Tuesday, 2=Wednesday, 3=Thursday, 4=Friday, 5=Saturday, 6=Sunday
+            results_df['venue'] = results_df['race_date'].apply(
+                lambda d: 'HV' if d.weekday() == 2 else ('ST' if d.weekday() in [5, 6] else '未知')
+            )
+        else:
+            # 如果有現成欄位，就直接用
+            for col in ['venue', 'racecourse', '馬場']:
+                if col in results_df.columns:
+                    results_df['venue'] = results_df[col]
+                    break
+        # 👆👆👆 新增部分完結 👆👆👆
                 
     except Exception as e:
         st.error(f"❌ 讀取賽果失敗：{e}")
         return
 
     real_top3 = {}
-    venue_map = {}  # 用嚟記錄每場嘅場地
+    venue_map = {}
     
     for _, row in results_df.iterrows():
         if pd.isna(row['race_no']) or pd.isna(row['finish_position']):
@@ -2402,10 +2409,7 @@ def admin_accuracy_monitor():
         
         # 記錄場地
         if key not in venue_map:
-            if venue_col:
-                venue_map[key] = row.get(venue_col, '未知')
-            else:
-                venue_map[key] = '未知'
+            venue_map[key] = row.get('venue', '未知')
         
         if key not in real_top3:
             real_top3[key] = []
@@ -2431,8 +2435,6 @@ def admin_accuracy_monitor():
         pred_top3_str = ", ".join(pred_top3)
 
         lookup_key = f"{date_str}_{race_no}"
-        
-        # 取得場地
         current_venue = venue_map.get(lookup_key, '未知')
         
         if lookup_key not in real_top3 or not real_top3[lookup_key]:
@@ -2494,7 +2496,7 @@ def admin_accuracy_monitor():
     if pending_count > 0:
         st.caption(f"⏳ 仲有 {pending_count} 場未出賽果")
         
-    # ===== 新增 1：分場地命中率 =====
+    # ===== 分場地命中率 =====
     st.markdown("---")
     st.subheader("📍 分場地命中率")
     venue_stats = {}
@@ -2520,39 +2522,32 @@ def admin_accuracy_monitor():
     else:
         st.info("暫時未有足夠數據計算分場地命中率")
         
-    # ===== 新增 2：命中率走勢圖 =====
+    # ===== 命中率走勢圖 =====
     st.markdown("---")
     st.subheader("📉 命中率走勢圖")
     if compare_rows:
         df_trend = pd.DataFrame(compare_rows)
-        df_trend = df_trend[df_trend['結果'] != '⏳ 待定'] # 只計已比對嘅場次
+        df_trend = df_trend[df_trend['結果'] != '⏳ 待定']
         
         if not df_trend.empty:
-            # 按日期分組計算命中率
             trend_data = []
             for date, group in df_trend.groupby('日期'):
                 total = len(group)
-                hits = len(group[group['命中數'] != '-'])
-                # 注意：命中數可能係字串，要轉換
-                hits_count = group['命中數'].apply(lambda x: int(x) if str(x).isdigit() else 0).sum()
                 hit_races = len(group[group['命中數'].apply(lambda x: int(x) if str(x).isdigit() else 0) > 0])
                 if total > 0:
                     trend_data.append({
                         '日期': date,
-                        '場次命中率': hit_races / total,
-                        '馬匹命中率': hits_count / (total * 3) # 粗略估算，假設每場預測3匹
+                        '場次命中率': hit_races / total
                     })
             
             df_trend_final = pd.DataFrame(trend_data).sort_values('日期')
-            
-            # 用 Plotly 畫折線圖
             fig = px.line(df_trend_final, x='日期', y='場次命中率', markers=True, title='每日場次命中率走勢')
             fig.update_layout(yaxis_tickformat='.0%', xaxis_title='日期', yaxis_title='命中率')
             st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("暫無足夠數據顯示走勢圖")
 
-    # ===== 原有明細表 =====
+    # ===== 明細表 =====
     if compare_rows:
         st.subheader("📋 預測頭3名 vs 真實頭3名")
         df = pd.DataFrame(compare_rows).sort_values(['日期', '場次'], ascending=[False, True])
