@@ -90,7 +90,7 @@ racecard_df = standardize_columns(racecard_df)
 results_df = standardize_columns(results_df)
 
 # ============================================================
-# 4️⃣ 合併數據（完整版）
+# 4️⃣ 合併數據（終極修復版：防止欄位衝突）
 # ============================================================
 print("🔗 合併數據...")
 
@@ -102,13 +102,33 @@ def standardize_date_for_merge(df):
 racecard_df = standardize_date_for_merge(racecard_df)
 results_df = standardize_date_for_merge(results_df)
 
+# 🛡️ 關鍵修正 1：提前處理賽果名次，並改名為 real_finish_position，防止同排位表撞名
+if 'finish_position' in results_df.columns:
+    results_df['real_finish_position'] = pd.to_numeric(
+        results_df['finish_position'].astype(str).str.extract(r'(\d+)')[0], 
+        errors='coerce'
+    )
+    results_df = results_df.drop(columns=['finish_position']) # 刪除原本嘅，避免衝突
+else:
+    for alt in ['Pla.', '名次', '最終名次', 'Position']:
+        if alt in results_df.columns:
+            results_df['real_finish_position'] = pd.to_numeric(
+                results_df[alt].astype(str).str.extract(r'(\d+)')[0], 
+                errors='coerce'
+            )
+            break
+
+# 🛡️ 關鍵修正 2：移除排位表中可能存在嘅空 finish_position，避免合併時污染數據
+if 'finish_position' in racecard_df.columns:
+    racecard_df = racecard_df.drop(columns=['finish_position'])
+
 merged = pd.DataFrame()
 
-# 嘗試用 race_date_str, race_no, horse_id 做合併
+# 嘗試用完整 Key 合併
 if all(c in racecard_df.columns for c in ['race_date_str', 'race_no', 'horse_id']) and \
-   all(c in results_df.columns for c in ['race_date_str', 'race_no', 'horse_id', 'finish_position']):
+   all(c in results_df.columns for c in ['race_date_str', 'race_no', 'horse_id', 'real_finish_position']):
     merged = racecard_df.merge(
-        results_df[['race_date_str', 'race_no', 'horse_id', 'finish_position']],
+        results_df[['race_date_str', 'race_no', 'horse_id', 'real_finish_position']],
         on=['race_date_str', 'race_no', 'horse_id'],
         how='inner'
     )
@@ -117,31 +137,27 @@ if all(c in racecard_df.columns for c in ['race_date_str', 'race_no', 'horse_id'
 # 如果失敗，降級只用 horse_id 合併
 if merged.empty:
     print("  ⚠️ 完整 Key 對唔上，降級嘗試只用 horse_id 合併...")
-    if 'horse_id' in racecard_df.columns and 'horse_id' in results_df.columns:
+    if 'horse_id' in racecard_df.columns and 'horse_id' in results_df.columns and 'real_finish_position' in results_df.columns:
         merged = racecard_df.merge(
-            results_df[['horse_id', 'finish_position']],
+            results_df[['horse_id', 'real_finish_position']],
             on='horse_id',
             how='inner'
         )
         print(f"  第二層合併（僅 horse_id）：{len(merged)} 筆")
-        print(f"  🔍 診斷 - 排位表日期樣本：{racecard_df['race_date_str'].dropna().unique()[:3]}")
-        print(f"  🔍 診斷 - 賽果日期樣本：{results_df['race_date_str'].dropna().unique()[:3]}")
 
 if merged.empty:
     print("❌ 嚴重錯誤：無法合併任何數據！")
     exit(1)
 
-# 🔍 診斷：睇下 finish_position 到底係咩樣
-print(f"  🔍 診斷 - finish_position 樣本：{merged['finish_position'].head(10).tolist()}")
+# 🔍 診斷：睇下 real_finish_position 係咪真係有數
+print(f"  🔍 診斷 - real_finish_position 樣本：{merged['real_finish_position'].head(10).tolist()}")
 
-# 👇👇👇 核心修正：強制抽出數字，處理 "1.0"、"1st"、"-" 等格式 👇👇👇
-merged['finish_position'] = merged['finish_position'].astype(str).str.extract(r'(\d+)')
-merged['finish_position'] = pd.to_numeric(merged['finish_position'], errors='coerce').fillna(99)
+# 建立標準嘅 finish_position 同 target
+merged['finish_position'] = merged['real_finish_position'].fillna(99) # 冇名次嘅當作 99
 merged['target'] = (merged['finish_position'] == 1).astype(int)
 
 if merged['target'].nunique() < 2:
     print("❌ 嚴重錯誤：頭馬比例只有一個值，無法訓練！")
-    print(f"  診斷 - target 唯一值：{merged['target'].unique()}")
     exit(1)
 
 print(f"  最終合併數據：{len(merged)} 筆")
