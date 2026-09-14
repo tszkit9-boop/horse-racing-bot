@@ -1,7 +1,8 @@
 {
-  "trained_at": "2026-09-14T17:12:47.770484",
-  "xgb_accuracy": 0.9207920792079208,
-  "cat_accuracy": 0.9207920792079208,
+  "trained_at": "2026-09-14T18:16:39.922813",
+  "xgb_accuracy": 0.900990099009901,
+  "cat_accuracy": 0.900990099009901,
+  "rank_trained": false,
   "train_samples": 805,
   "test_samples": 202,
   "features_used": [
