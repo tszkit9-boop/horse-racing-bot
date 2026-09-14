@@ -127,12 +127,12 @@ if merged.empty:
         print(f"  🔍 診斷 - 排位表日期樣本：{racecard_df['race_date_str'].dropna().unique()[:3]}")
         print(f"  🔍 診斷 - 賽果日期樣本：{results_df['race_date_str'].dropna().unique()[:3]}")
 
-# 👇👇👇 呢度就係上次漏咗嘅部分！補返定義 target 嘅邏輯 👇👇👇
 if merged.empty:
     print("❌ 嚴重錯誤：無法合併任何數據！")
     exit(1)
 
-merged['finish_position'] = merged['finish_position'].fillna(0)
+# 👇👇👇 呢度就係修正嘅核心！強制將 finish_position 轉做數字 👇👇👇
+merged['finish_position'] = pd.to_numeric(merged['finish_position'], errors='coerce').fillna(0)
 merged['target'] = (merged['finish_position'] == 1).astype(int)
 
 if merged['target'].nunique() < 2:
