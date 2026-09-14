@@ -533,8 +533,9 @@ def load_ml_models():
 
 
 def _build_features(race_df, history_df):
-    """為排位表每匹馬計算特徵"""
+    """為排位表每匹馬計算特徵（加入馬名對照）"""
     import numpy as np
+    import os
 
     history_df = history_df.copy()
     history_df['race_date'] = pd.to_datetime(history_df['race_date'], errors='coerce')
@@ -543,6 +544,28 @@ def _build_features(race_df, history_df):
     history_df = history_df.dropna(subset=['finish_position'])
 
     result = race_df.copy()
+
+    # ========================================================
+    # 🛡️ 關鍵新增：加載馬名對照表，將中文馬名轉做真實 horse_id
+    # ========================================================
+    mapping_file = "horse_name_mapping.csv"
+    if os.path.exists(mapping_file):
+        try:
+            mapping_df = pd.read_csv(mapping_file, encoding='utf-8-sig')
+            if 'horse_name' in mapping_df.columns and 'horse_id' in mapping_df.columns:
+                mapping_dict = dict(zip(
+                    mapping_df['horse_name'].astype(str).str.strip(),
+                    mapping_df['horse_id'].astype(str).str.strip()
+                ))
+                if 'horse_name' in result.columns:
+                    # 根據馬名去搵真實 horse_id
+                    mapped_ids = result['horse_name'].astype(str).str.strip().map(mapping_dict)
+                    # 如果成功對照到，就用真實 horse_id；對唔到就保留原本嘅
+                    result['horse_id'] = mapped_ids.fillna(result['horse_id']).astype(str).str.strip()
+                    print(f"✅ 成功加載馬名對照表，替換了 {mapped_ids.notna().sum()} 匹馬嘅 ID")
+        except Exception as e:
+            print(f"⚠️ 加載馬名對照表失敗：{e}")
+    # ========================================================
 
     # 初始化所有特徵
     feature_cols = [
@@ -631,47 +654,6 @@ def _build_features(race_df, history_df):
     for c in feature_cols:
         result[c] = pd.to_numeric(result[c], errors='coerce').fillna(0)
 
-    return result
-def _repair_racecard(df):
-    """自動修復混合格式嘅 racecard CSV"""
-    # 讀取原始檔案（唔用 header）
-    df_raw = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig', header=None, dtype=str)
-
-    std_cols = ['horse_id', 'horse_name', 'draw', 'weight', 'jockey',
-                'trainer', 'race_no', 'race_date', 'win_odds']
-
-    # 中文格式欄位順序：馬號,馬名,檔位,負磅,騎師,練馬師,場次,比賽日期,賠率
-    cn_cols = ['horse_id', 'horse_name', 'draw', 'weight', 'jockey',
-               'trainer', 'race_no', 'race_date', 'win_odds']
-
-    # 英文格式欄位順序：race_date,race_no,horse_no,horse_name,draw,weight,jockey,trainer,win_odds
-    en_cols = ['race_date', 'race_no', 'horse_id', 'horse_name',
-               'draw', 'weight', 'jockey', 'trainer', 'win_odds']
-
-    parts = []
-
-    for _, row in df_raw.iterrows():
-        first_val = str(row[0]).strip()
-
-        # 跳過 header 行
-        if first_val.lower() in ['馬號', 'race_date', 'nan', '']:
-            continue
-
-        # 中文格式：第一列係純數字（馬號）
-        if first_val.isdigit():
-            row_df = pd.DataFrame([row.values], columns=cn_cols)
-            parts.append(row_df)
-
-        # 英文格式：第一列係日期（YYYY-MM-DD）
-        elif len(first_val) == 10 and first_val[4] == '-' and first_val[7] == '-':
-            row_df = pd.DataFrame([row.values], columns=en_cols)
-            parts.append(row_df)
-
-    if not parts:
-        return pd.DataFrame(columns=std_cols)
-
-    result = pd.concat(parts, ignore_index=True)
-    result = result[std_cols]
     return result
 
 def run_prediction(date_str, race_no):
