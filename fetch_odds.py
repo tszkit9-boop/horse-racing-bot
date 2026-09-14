@@ -118,4 +118,32 @@ def main():
     print(f"✅ 成功寫入 {len(records)} 條賠率記錄到 {OUTPUT_CSV}")
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) < 3:
+        print("用法: python fetch_odds.py YYYY-MM-DD ST/HV")
+        sys.exit(1)
+
+    date_str = sys.argv[1]
+    racecourse = sys.argv[2].upper()
+
+    records = fetch_odds(date_str, racecourse)
+
+    # 如果冇爬到數據，我哋照樣建立一個有 Header 嘅空檔案，避免 Git 報錯
+    if not records:
+        print("⚠️ 冇爬到任何賠率數據，建立空檔案以便下次使用。")
+        if not os.path.isfile(OUTPUT_CSV):
+            with open(OUTPUT_CSV, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f)
+                writer.writerow(["crawl_time", "race_date", "racecourse", "race_no", "horse_no", "horse_name", "win_odds"])
+        return
+
+    # 寫入 CSV（如果檔案存在就 Append，唔存在就建立並寫 Header）
+    file_exists = os.path.isfile(OUTPUT_CSV)
+    fieldnames = ["crawl_time", "race_date", "racecourse", "race_no", "horse_no", "horse_name", "win_odds"]
+
+    with open(OUTPUT_CSV, "a", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        if not file_exists:
+            writer.writeheader()
+        writer.writerows(records)
+
+    print(f"✅ 成功寫入 {len(records)} 條賠率記錄到 {OUTPUT_CSV}")
