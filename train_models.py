@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-train_models.py - 終極絕對防爆版 (修復 Target only one unique value)
+train_models.py - 完整版 (包含 XGBoost + CatBoost + Ranking 三模型)
 用法: python train_models.py
 """
 
@@ -9,11 +9,13 @@ import pandas as pd
 import numpy as np
 import pickle
 import warnings
+import json
 warnings.filterwarnings('ignore')
 from datetime import datetime
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 import xgboost as xgb
+from xgboost import XGBRanker
 from catboost import CatBoostClassifier
 
 # ============================================================
@@ -143,11 +145,10 @@ if merged.empty:
     merged = racecard_df.copy()
     merged['finish_position'] = np.random.choice([1, 2, 3, 4, 5], size=len(merged))
 
-# ⭐ 目標變數修正：防止只有一個唯一值令 CatBoost 報錯！
 merged['finish_position'] = merged['finish_position'].fillna(0)
 merged['target'] = (merged['finish_position'] == 1).astype(int)
 
-# 🛡️ 終極保底：如果頭馬比例係 0%，自動隨機生成 10% 嘅 1 出嚟，保證有兩個類別可以訓練！
+# 🛡️ 終極保底：如果頭馬比例係 0%，自動隨機生成 10% 嘅 1 出嚟
 if merged['target'].nunique() < 2:
     print("⚠️ 目標變數只有一個值（全為0），自動生成隨機標籤以確保 CatBoost 可以訓練！")
     merged['target'] = np.random.choice([0, 1], size=len(merged), p=[0.9, 0.1])
@@ -186,7 +187,7 @@ for f in features_36:
 X = merged[features_36].copy()
 y = merged['target'].copy()
 
-# 處理類別型特徵（例如場地、騎師名等）
+# 處理類別型特徵
 for col in X.columns:
     if X[col].dtype == 'object':
         le = LabelEncoder()
@@ -197,6 +198,7 @@ X = X.astype(np.float32)
 y = y.astype(int)
 
 print(f"  特徵矩陣：{X.shape}")
+
 # ============================================================
 # 8️⃣ 分割訓練/測試集
 # ============================================================
@@ -243,6 +245,38 @@ cat_acc = cat_model.score(X_test, y_test)
 print(f"  CatBoost 測試準確度：{cat_acc:.2%}")
 
 # ============================================================
+# 🔟.5 訓練 Ranking 模型（XGBRanker）
+# ============================================================
+print("🚀 訓練 Ranking 模型...")
+rank_model = None
+try:
+    # Ranking 需要按場次分組，重新排序數據
+    merged_sorted = merged.sort_values(by=['race_date', 'race_no']).reset_index(drop=True)
+    
+    # 計算每場比賽嘅 group size
+    group_sizes = merged_sorted.groupby(['race_date', 'race_no']).size().tolist()
+    
+    # 提取特徵同標籤（必須跟 sorted 順序）
+    X_rank = merged_sorted[features_36].fillna(0).values.astype(np.float32)
+    y_rank = merged_sorted['target'].values.astype(int)
+
+    # 確保 group_sizes 總和等於數據長度
+    if sum(group_sizes) == len(X_rank):
+        rank_model = XGBRanker(
+            n_estimators=100,
+            learning_rate=0.1,
+            max_depth=5,
+            objective='rank:pairwise',
+            random_state=42
+        )
+        rank_model.fit(X_rank, y_rank, group=group_sizes)
+        print("  Ranking 模型訓練完成！")
+    else:
+        print("  ⚠️ 分組大小與數據長度不符，跳過 Ranking 訓練。")
+except Exception as e:
+    print(f"  ⚠️ Ranking 模型訓練失敗：{e}")
+
+# ============================================================
 # 1️⃣1️⃣ 儲存模型
 # ============================================================
 print("💾 儲存模型...")
@@ -251,17 +285,22 @@ with open('hk_racing_model.pkl', 'wb') as f:
 
 cat_model.save_model('hk_catboost_model.cbm')
 
+if rank_model is not None:
+    with open('hk_ranking_model.pkl', 'wb') as f:
+        pickle.dump(rank_model, f)
+    print("  ✅ 已儲存 hk_ranking_model.pkl")
+
 info = {
     "trained_at": datetime.now().isoformat(),
     "xgb_accuracy": xgb_acc,
     "cat_accuracy": cat_acc,
+    "rank_trained": rank_model is not None,
     "train_samples": len(X_train),
     "test_samples": len(X_test),
-    "features_used": features_36,   # 👈 改咗呢度
+    "features_used": features_36,
     "merge_key": merge_key
 }
 with open("model_info.json", "w", encoding='utf-8') as f:
-    import json
     json.dump(info, f, ensure_ascii=False, indent=2)
 
 print("📝 訓練資訊已儲存到 model_info.json")
