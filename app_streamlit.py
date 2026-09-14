@@ -532,6 +532,49 @@ def load_ml_models():
     return xgb_model, cat_model, rank_model
 
 
+def _repair_racecard(df):
+    """自動修復混合格式嘅 racecard CSV"""
+    # 讀取原始檔案（唔用 header）
+    df_raw = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig', header=None, dtype=str)
+
+    std_cols = ['horse_id', 'horse_name', 'draw', 'weight', 'jockey',
+                'trainer', 'race_no', 'race_date', 'win_odds']
+
+    # 中文格式欄位順序：馬號,馬名,檔位,負磅,騎師,練馬師,場次,比賽日期,賠率
+    cn_cols = ['horse_id', 'horse_name', 'draw', 'weight', 'jockey',
+               'trainer', 'race_no', 'race_date', 'win_odds']
+
+    # 英文格式欄位順序：race_date,race_no,horse_no,horse_name,draw,weight,jockey,trainer,win_odds
+    en_cols = ['race_date', 'race_no', 'horse_id', 'horse_name',
+               'draw', 'weight', 'jockey', 'trainer', 'win_odds']
+
+    parts = []
+
+    for _, row in df_raw.iterrows():
+        first_val = str(row[0]).strip()
+
+        # 跳過 header 行
+        if first_val.lower() in ['馬號', 'race_date', 'nan', '']:
+            continue
+
+        # 中文格式：第一列係純數字（馬號）
+        if first_val.isdigit():
+            row_df = pd.DataFrame([row.values], columns=cn_cols)
+            parts.append(row_df)
+
+        # 英文格式：第一列係日期（YYYY-MM-DD）
+        elif len(first_val) == 10 and first_val[4] == '-' and first_val[7] == '-':
+            row_df = pd.DataFrame([row.values], columns=en_cols)
+            parts.append(row_df)
+
+    if not parts:
+        return pd.DataFrame(columns=std_cols)
+
+    result = pd.concat(parts, ignore_index=True)
+    result = result[std_cols]
+    return result
+
+
 def _build_features(race_df, history_df):
     """為排位表每匹馬計算特徵（加入馬名對照）"""
     import numpy as np
