@@ -90,7 +90,7 @@ racecard_df = standardize_columns(racecard_df)
 results_df = standardize_columns(results_df)
 
 # ============================================================
-# 4️⃣ 合併數據（最終修復版：絕對防止欄位衝突）
+# 4️⃣ 合併數據（終極防衝突版）
 # ============================================================
 print("🔗 合併數據...")
 
@@ -109,8 +109,7 @@ for col in pos_candidates:
     if col in results_df.columns:
         cleaned = pd.to_numeric(results_df[col].astype(str).str.extract(r'(\d+)')[0], errors='coerce')
         if cleaned.notna().any():
-            # 用一個絕對不會撞名嘅臨時名稱
-            results_df['__REAL_POS_TEMP__'] = cleaned
+            results_df['real_pos'] = cleaned  # 用一個絕對不會撞名嘅名
             found_pos = True
             print(f"  ✅ 成功使用 '{col}' 作名次來源，樣本：{cleaned.dropna().head(5).tolist()}")
             break
@@ -119,19 +118,21 @@ if not found_pos:
     print("❌ 嚴重錯誤：賽果數據中找不到任何有效嘅名次欄位！")
     exit(1)
 
-# 🛡️ 強制刪除兩個 DataFrame 入面所有可能干擾嘅名次欄位
-for df_name, df in [('racecard', racecard_df), ('results', results_df)]:
-    for col in ['finish_position', 'real_finish_position', 'Pla.', '名次']:
-        if col in df.columns:
-            df.drop(columns=[col], inplace=True)
+# 🛡️ 關鍵修正 1：清空左表（排位表）中任何可能干擾嘅殘留欄位
+for col in ['finish_position', 'real_finish_position', 'real_pos', '__REAL_POS_TEMP__']:
+    if col in racecard_df.columns:
+        racecard_df = racecard_df.drop(columns=[col])
+
+# 🛡️ 關鍵修正 2：對右表（賽果）進行去重，確保 race_date_str + race_no + horse_id 唯一
+results_df_unique = results_df.drop_duplicates(subset=['race_date_str', 'race_no', 'horse_id'], keep='first')
 
 merged = pd.DataFrame()
 
 # 嘗試用完整 Key 合併
 if all(c in racecard_df.columns for c in ['race_date_str', 'race_no', 'horse_id']) and \
-   all(c in results_df.columns for c in ['race_date_str', 'race_no', 'horse_id', '__REAL_POS_TEMP__']):
+   all(c in results_df_unique.columns for c in ['race_date_str', 'race_no', 'horse_id', 'real_pos']):
     merged = racecard_df.merge(
-        results_df[['race_date_str', 'race_no', 'horse_id', '__REAL_POS_TEMP__']],
+        results_df_unique[['race_date_str', 'race_no', 'horse_id', 'real_pos']],
         on=['race_date_str', 'race_no', 'horse_id'],
         how='inner'
     )
@@ -140,9 +141,9 @@ if all(c in racecard_df.columns for c in ['race_date_str', 'race_no', 'horse_id'
 # 如果失敗，降級只用 horse_id 合併
 if merged.empty:
     print("  ⚠️ 完整 Key 對唔上，降級嘗試只用 horse_id 合併...")
-    if 'horse_id' in racecard_df.columns and 'horse_id' in results_df.columns and '__REAL_POS_TEMP__' in results_df.columns:
+    if 'horse_id' in racecard_df.columns and 'horse_id' in results_df_unique.columns and 'real_pos' in results_df_unique.columns:
         merged = racecard_df.merge(
-            results_df[['horse_id', '__REAL_POS_TEMP__']],
+            results_df_unique[['horse_id', 'real_pos']],
             on='horse_id',
             how='inner'
         )
@@ -153,8 +154,7 @@ if merged.empty:
     exit(1)
 
 # 建立標準嘅 finish_position
-merged['finish_position'] = merged['__REAL_POS_TEMP__'].fillna(99) # 冇名次嘅當作 99
-merged.drop(columns=['__REAL_POS_TEMP__'], inplace=True)
+merged['finish_position'] = merged['real_pos'].fillna(99) # 冇名次嘅當作 99
 
 # 🔍 診斷：睇下 finish_position 係咪真係有數
 print(f"  🔍 診斷 - 合併後名次樣本：{merged['finish_position'].head(10).tolist()}")
