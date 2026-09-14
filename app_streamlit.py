@@ -3112,7 +3112,7 @@ def main():
         return
 
 
-    c1, c2, c3, c4 = st.columns([5, 1, 1, 1])
+c1, c2, c3, c4 = st.columns([5, 1, 1, 1])
     with c1:
         st.title("🏇 賽馬預測系統")
         st.markdown("AI 驅動・即時預測・彩池推薦")
