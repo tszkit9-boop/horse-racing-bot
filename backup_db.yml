@@ -1,0 +1,28 @@
+name: Backup SQLite Database
+
+on:
+  schedule:
+    - cron: '0 16 * * *' # 每日香港時間 00:00
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 檢出程式碼
+        uses: actions/checkout@v4
+
+      - name: 提交並推送數據庫
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          if [ -f "predictions.db" ]; then
+            git add predictions.db
+            git commit -m "Auto backup predictions database [skip ci]" || echo "No changes to commit"
+            git push
+          else
+            echo "⚠️ 暫無 predictions.db 檔案，跳過備份。"
+          fi
