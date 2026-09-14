@@ -1,68 +1,49 @@
-import sqlite3
+import streamlit as st
 import json
-import os
 from datetime import datetime
+from supabase import create_client, Client
 
-DB_FILE = "predictions.db"
-
-def init_db():
-    """初始化數據庫，建立 predictions 表"""
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS predictions (
-            key TEXT PRIMARY KEY,
-            date TEXT,
-            race INTEGER,
-            top_horse TEXT,
-            top_prob REAL,
-            all_horses TEXT,
-            model_used TEXT,
-            predicted_at TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
+# 從 Streamlit Secrets 讀取連線資訊
+@st.cache_resource
+def get_supabase() -> Client:
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
 
 def save_prediction(key, data):
-    """儲存預測記錄（如果已存在就更新）"""
-    init_db()
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute('''
-        INSERT OR REPLACE INTO predictions (key, date, race, top_horse, top_prob, all_horses, model_used, predicted_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        key,
-        data.get('date'),
-        data.get('race'),
-        data.get('top_horse'),
-        data.get('top_prob'),
-        json.dumps(data.get('all_horses', []), ensure_ascii=False),
-        json.dumps(data.get('model_used', []), ensure_ascii=False),
-        data.get('predicted_at', datetime.now().isoformat())
-    ))
-    conn.commit()
-    conn.close()
+    """儲存預測記錄到 Supabase（如果已存在就更新）"""
+    try:
+        supabase = get_supabase()
+        supabase.table("predictions").upsert({
+            "key": key,
+            "date": data.get('date'),
+            "race": data.get('race'),
+            "top_horse": data.get('top_horse'),
+            "top_prob": data.get('top_prob'),
+            "all_horses": json.dumps(data.get('all_horses', []), ensure_ascii=False),
+            "model_used": json.dumps(data.get('model_used', []), ensure_ascii=False),
+            "predicted_at": data.get('predicted_at', datetime.now().isoformat())
+        }).execute()
+    except Exception as e:
+        print(f"⚠️ Supabase 儲存失敗：{e}")
 
 def load_predictions():
-    """讀取所有預測記錄，回傳與舊 JSON 格式一樣嘅 dict"""
-    init_db()
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT key, date, race, top_horse, top_prob, all_horses, model_used, predicted_at FROM predictions")
-    rows = c.fetchall()
-    conn.close()
-    
-    result = {}
-    for row in rows:
-        result[row[0]] = {
-            "date": row[1],
-            "race": row[2],
-            "top_horse": row[3],
-            "top_prob": row[4],
-            "all_horses": json.loads(row[5]) if row[5] else [],
-            "model_used": json.loads(row[6]) if row[6] else [],
-            "predicted_at": row[7]
-        }
-    return result
+    """從 Supabase 讀取所有預測記錄"""
+    try:
+        supabase = get_supabase()
+        response = supabase.table("predictions").select("*").execute()
+        result = {}
+        for row in response.data:
+            result[row["key"]] = {
+                "date": row["date"],
+                "race": row["race"],
+                "top_horse": row["top_horse"],
+                "top_prob": row["top_prob"],
+                "all_horses": json.loads(row["all_horses"]) if row["all_horses"] else [],
+                "model_used": json.loads(row["model_used"]) if row["model_used"] else [],
+                "predicted_at": row["predicted_at"]
+            }
+        return result
+    except Exception as e:
+        print(f"⚠️ Supabase 讀取失敗：{e}")
+        return {}
