@@ -27,3 +27,4 @@ python-dotenv
 # ===== 數據庫（可選） =====
 # supabase
 # psycopg2-binary
+supabase
