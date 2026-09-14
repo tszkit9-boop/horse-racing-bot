@@ -2692,24 +2692,23 @@ def admin_automation():
 
 def admin_security():
     st.subheader("🔐 安全與權限")
-        import os, json
-        log_file = "admin_log.json"
-        if os.path.exists(log_file):
-            try:
-                with open(log_file, "r", encoding="utf-8") as f:
-                    logs = json.load(f)
-                if logs:
-                    st.markdown("### 📋 管理員操作日誌")
-                    df_logs = pd.DataFrame(logs)
-                    st.dataframe(df_logs, use_container_width=True, hide_index=True)
-                else:
-                    st.info("📭 暫無操作記錄。")
-            except Exception as e:
-                st.warning(f"讀取日誌時出錯：{e}")
-        else:
-            st.info("📭 暫無日誌檔案。")
+    
+    import os, json
+    log_file = "admin_log.json"
+    if os.path.exists(log_file):
+        try:
+            with open(log_file, "r", encoding="utf-8") as f:
+                logs = json.load(f)
+            if logs:
+                st.markdown("### 📋 管理員操作日誌")
+                df_logs = pd.DataFrame(logs)
+                st.dataframe(df_logs, use_container_width=True, hide_index=True)
+            else:
+                st.info("📭 暫無操作記錄。")
+        except Exception as e:
+            st.warning(f"讀取日誌時出錯：{e}")
     else:
-        st.info("暫無日誌")
+        st.info("📭 暫無日誌檔案。")
 def admin_pool_config():
     st.subheader("🎯 彩池設定")
     st.caption("可以獨立開關每個彩池，同設定最低會員級別。")
