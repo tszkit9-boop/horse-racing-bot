@@ -2,13 +2,9 @@ name: Update Odds History
 
 on:
   schedule:
-    # 星期三 (跑馬地夜馬 HV)：香港時間 18:00 - 23:00 (每 30 分鐘)
-    # UTC 時間 = 10:00 - 15:00
-    - cron: '0,30 10-15 * * 3'
-    
-    # 星期六、日 (沙田日馬 ST)：香港時間 12:00 - 18:00 (每 30 分鐘)
-    # UTC 時間 = 4:00 - 10:00
-    - cron: '0,30 4-10 * * 6,0'
+    # 逢星期二、三、六、日 (香港時間 12:00 - 23:30，每 30 分鐘)
+    # 對應 UTC 時間 4:00 - 15:30
+    - cron: '0,30 4-15 * * 2,3,6,0'
     
   workflow_dispatch: # 允許手動觸發
 
@@ -33,11 +29,12 @@ jobs:
 
       - name: 執行賠率爬蟲（自動判斷 ST / HV）
         run: |
-          DAY=$(date +%u) # 1=Mon, 3=Wed, 6=Sat, 7=Sun
-          if [ "$DAY" -eq 3 ]; then
-            COURSE="HV" # 星期三跑馬地夜馬
+          DAY=$(date +%u)
+          # 判斷馬場 (如果係夜馬通常係 HV，日馬通常係 ST，呢度做個粗略判斷)
+          if [ "$DAY" -eq 3 ] || [ "$DAY" -eq 2 ]; then
+            COURSE="HV"
           else
-            COURSE="ST" # 星期六日沙田日馬
+            COURSE="ST"
           fi
           echo "今日係星期 $DAY，馬場設定為 $COURSE"
           python fetch_odds.py $(date +'%Y-%m-%d') $COURSE
@@ -46,6 +43,11 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add odds_history.csv
-          git commit -m "Auto update odds history [skip ci]" || echo "No changes to commit"
-          git push
+          # 關鍵修改：先檢查檔案存唔存在，唔存在就唔好 add，避免報錯！
+          if [ -f "odds_history.csv" ]; then
+            git add odds_history.csv
+            git commit -m "Auto update odds history [skip ci]" || echo "No changes to commit"
+            git push
+          else
+            echo "⚠️ 冇生成 odds_history.csv，跳過提交步驟。"
+          fi
