@@ -2104,6 +2104,143 @@ def admin_analytics():
         daily['cum'] = daily['new'].cumsum()
         fig = px.line(daily, x='date', y=['new', 'cum'], title='用戶增長')
         st.plotly_chart(fig, use_container_width=True)
+# ============================================================
+# 💰 付款審核
+# ============================================================
+def admin_payment_review():
+    st.subheader("📤 付款審核")
+    pending = get_all_pending_requests()
+    if not pending:
+        st.info("✅ 目前沒有待審核付款")
+        return
+    for item in pending:
+        u = item['username']
+        req = item['request']
+        c1, c2, c3, c4 = st.columns([2, 2, 1, 1])
+        c1.write(f"👤 **{u}**")
+        c2.write(f"📌 {req.get('plan_name')}　💰 ${req.get('final_price')}")
+        if c3.button("✅ 批准", key=f"ap_{req.get('id')}"):
+            ok, msg = approve_payment_request(u, req['id'], st.session_state.get('username', 'admin'))
+            if ok:
+                st.success(msg)
+            else:
+                st.error(msg)
+            st.rerun()
+        if c4.button("❌ 拒絕", key=f"rj_{req.get('id')}"):
+            ok, msg = reject_payment_request(u, req['id'], st.session_state.get('username', 'admin'))
+            if ok:
+                st.warning(msg)
+            else:
+                st.error(msg)
+            st.rerun()
+        st.divider()
+
+
+# ============================================================
+# ❤️ 打賞管理
+# ============================================================
+def admin_reward_management():
+    st.subheader("❤️ 打賞管理")
+    st.caption("審核用戶打賞，批准後會自動加 VIP 天數。")
+
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    try:
+        res = requests.get(
+            f"{SUPABASE_URL}/rest/v1/reward_history?order=rewarded_at.desc&limit=50",
+            headers=headers
+        )
+        records = res.json() if res.status_code == 200 else []
+    except Exception as e:
+        st.error(f"❌ 讀取打賞記錄失敗：{e}")
+        return
+
+    if not records:
+        st.info("📭 暫無打賞記錄。")
+        return
+
+    df = pd.DataFrame(records)
+    if 'status' in df.columns:
+        pending = df[df['status'] == 'pending']
+        approved = df[df['status'] == 'approved']
+        rejected = df[df['status'] == 'rejected']
+    else:
+        pending = df
+        approved = pd.DataFrame()
+        rejected = pd.DataFrame()
+
+    st.markdown(f"### 📋 待審核（{len(pending)} 筆）")
+    if pending.empty:
+        st.info("✅ 暫無待審核打賞。")
+    else:
+        for _, row in pending.iterrows():
+            with st.container():
+                c1, c2, c3, c4, c5, c6 = st.columns([2, 1, 1, 2, 1, 1])
+                c1.write(f"👤 **{row.get('username', '未知')}**")
+                c2.write(f"${row.get('amount', 0):.0f}")
+                c3.write(f"+{row.get('vip_days', 0)} 日")
+                c4.caption(f"🕐 {str(row.get('rewarded_at', ''))[:16]}")
+
+                if c5.button("✅ 批准", key=f"approve_{row['id']}", use_container_width=True):
+                    username = row.get('username')
+                    vip_days = int(row.get('vip_days', 0))
+
+                    u_res = requests.get(
+                        f"{SUPABASE_URL}/rest/v1/users?username=eq.{username}",
+                        headers=headers
+                    )
+                    if u_res.status_code == 200 and u_res.json():
+                        user = u_res.json()[0]
+                        expiry = user.get('expiry_date') or datetime.now().strftime('%Y-%m-%d')
+                        try:
+                            expiry_dt = datetime.strptime(expiry, '%Y-%m-%d')
+                        except Exception:
+                            expiry_dt = datetime.now()
+                        new_expiry = (expiry_dt + timedelta(days=vip_days)).strftime('%Y-%m-%d')
+
+                        requests.patch(
+                            f"{SUPABASE_URL}/rest/v1/users?username=eq.{username}",
+                            headers=headers,
+                            json={
+                                "user_group": "VIP",
+                                "is_paid": True,
+                                "expiry_date": new_expiry
+                            }
+                        )
+
+                    requests.patch(
+                        f"{SUPABASE_URL}/rest/v1/reward_history?id=eq.{row['id']}",
+                        headers=headers,
+                        json={"status": "approved"}
+                    )
+                    st.success(f"✅ 已批准 {username}，加 {vip_days} 日 VIP")
+                    st.rerun()
+
+                if c6.button("❌ 拒絕", key=f"reject_{row['id']}", use_container_width=True):
+                    requests.patch(
+                        f"{SUPABASE_URL}/rest/v1/reward_history?id=eq.{row['id']}",
+                        headers=headers,
+                        json={"status": "rejected"}
+                    )
+                    st.warning(f"已拒絕 {row.get('username', '')} 嘅打賞")
+                    st.rerun()
+
+    st.divider()
+    st.markdown(f"### ✅ 已批准（{len(approved)} 筆）")
+    if not approved.empty:
+        display_cols = [c for c in ['username', 'amount', 'vip_days', 'rewarded_at'] if c in approved.columns]
+        st.dataframe(approved[display_cols], use_container_width=True, hide_index=True)
+    else:
+        st.info("暫無已批准記錄。")
+
+    if not rejected.empty:
+        st.markdown(f"### ❌ 已拒絕（{len(rejected)} 筆）")
+        display_cols = [c for c in ['username', 'amount', 'vip_days', 'rewarded_at'] if c in rejected.columns]
+        st.dataframe(rejected[display_cols], use_container_width=True, hide_index=True)
 
 def admin_course_analysis():
     st.subheader("📊 場地/路程勝率分析")
@@ -3143,7 +3280,8 @@ def admin_page():
         ("🎟️ 優惠碼", admin_promo_codes),
         ("📈 預測監控", admin_accuracy_monitor),
         ("⏰ 訂閱管理", admin_subscription),
-       #("📤 付款審核", admin_payment_review),
+        ("📤 付款審核", admin_payment_review),      # 👈 刪除前面個 # 號
+        ("❤️ 打賞管理", admin_reward_management),  # 👈 加呢行
         ("📡 監控", admin_monitoring),
         ("📝 內容", admin_content),
         ("🤖 自動維護", admin_auto_maintenance),
