@@ -2351,12 +2351,13 @@ def admin_accuracy_monitor():
     st.subheader("📈 AI 預測準確率監控（頭 3 名）")
 
     from database import load_predictions
-    ai_data = load_predictions()  # 👈 改為 ai_data，令下面嘅代碼可以正常運作
-    
-    if not predictions:
+    ai_data = load_predictions()  # 👈 統一用 ai_data
+
+    if not ai_data:
         st.warning("⚠️ 尚未有任何預測紀錄，請先執行預測")
-    else:
-        st.info(f"✅ 成功讀取 {len(predictions)} 個預測紀錄")
+        return
+
+    st.info(f"✅ 成功讀取 {len(ai_data)} 個預測紀錄")
 
     result_file = "race_results_clean.csv"
     if not os.path.exists(result_file):
