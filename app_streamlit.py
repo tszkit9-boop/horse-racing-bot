@@ -3679,31 +3679,20 @@ def main():
                                 df_result_race = df_result_date[df_result_date['race_no'] == selected_race].copy().sort_values('finish_position').head(4)
                                 df_result_race = df_result_race.rename(columns={'finish_position': '真實名次', 'horse_name': '真實馬'})
 
-                                    # 🔥 修正對比邏輯：只按馬名，唔理名次
-                                    real_top3_names = df_result_race['真實馬'].tolist()
-                                    
-                                    df_pred_race['結果'] = df_pred_race['預測馬'].apply(
-                                        lambda x: '命中' if x in real_top3_names else '失準'
-                                    )
-                                    
-                                    hit_count = (df_pred_race['結果'] == '命中').sum()
-                                    
-                                    display_pred = df_pred_race[['預測名次', '預測馬', '結果']].copy()
-                                    display_pred.columns = ['預測名次', '預測馬', '結果']
-                                    
-                                    display_real = df_result_race[['真實名次', '真實馬']].reset_index(drop=True)
-                                    
-                                    display_df = pd.concat([display_pred, display_real], axis=1)
-                                    display_df.columns = ['預測名次', '預測馬', '結果', '真實名次', '真實馬']
-
-                                st.write(f"📊 {selected_date} 第 {selected_race} 場 預測 vs 賽果")
-
-                                def highlight_row(row):
-                                    if row['結果'] == '命中': return ['background-color: #d4edda; color: black'] * len(row)
-                                    elif row['結果'] == '失準': return ['background-color: #f8d7da; color: black'] * len(row)
-                                    return ['background-color: white; color: black'] * len(row)
-
-                                st.dataframe(display_df.style.apply(highlight_row, axis=1), use_container_width=True, hide_index=True)
+                                           # 🔥 修正對比邏輯：只按馬名，唔理名次
+                                real_top3_names = df_result_race['真實馬'].tolist()
+                                
+                                df_pred_race['結果'] = df_pred_race['預測馬'].apply(
+                                    lambda x: '命中' if x in real_top3_names else '失準'
+                                )
+                                
+                                display_pred = df_pred_race[['預測名次', '預測馬', '結果']].copy()
+                                display_pred.columns = ['名次', '預測馬', '結果']
+                                
+                                display_real = df_result_race[['真實名次', '真實馬']].reset_index(drop=True)
+                                display_real.columns = ['真實名次', '真實馬']
+                                
+                                display_df = pd.concat([display_pred, display_real], axis=1)
                             else:
                                 st.info(f"ℹ️ {selected_date} 沒有可比對嘅場次")
                         else:
