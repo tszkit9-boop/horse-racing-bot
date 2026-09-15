@@ -2751,7 +2751,6 @@ def admin_payment_review():
         st.divider()
 def admin_reward_management():
     st.subheader("❤️ 打賞管理")
-    st.caption("審核用戶打賞，批准後會自動加 VIP 天數。")
 
     headers = {
         "apikey": SUPABASE_KEY,
@@ -2759,85 +2758,223 @@ def admin_reward_management():
         "Content-Type": "application/json"
     }
 
-    try:
-        res = requests.get(
-            f"{SUPABASE_URL}/rest/v1/reward_history?order=rewarded_at.desc&limit=50",
-            headers=headers
-        )
-        records = res.json() if res.status_code == 200 else []
-    except Exception as e:
-        st.error(f"❌ 讀取打賞記錄失敗：{e}")
-        return
+    tab1, tab2 = st.tabs(["📋 審核打賞", "⚙️ 打賞設定"])
 
-    if not records:
-        st.info("📭 暫無打賞記錄。")
-        return
+    # ============================================================
+    # 📋 Tab 1：審核打賞
+    # ============================================================
+    with tab1:
+        st.caption("審核用戶打賞，批准後會自動加 VIP 天數。")
 
-    df = pd.DataFrame(records)
-    if 'status' in df.columns:
-        pending = df[df['status'] == 'pending']
-        approved = df[df['status'] == 'approved']
-        rejected = df[df['status'] == 'rejected']
-    else:
-        pending = df
-        approved = pd.DataFrame()
-        rejected = pd.DataFrame()
+        try:
+            res = requests.get(
+                f"{SUPABASE_URL}/rest/v1/reward_history?order=rewarded_at.desc&limit=50",
+                headers=headers
+            )
+            records = res.json() if res.status_code == 200 else []
+        except Exception as e:
+            st.error(f"❌ 讀取打賞記錄失敗：{e}")
+            records = []
 
-    st.markdown(f"### 📋 待審核（{len(pending)} 筆）")
-    if pending.empty:
-        st.info("✅ 暫無待審核打賞。")
-    else:
-        for _, row in pending.iterrows():
-            with st.container():
-                c1, c2, c3, c4, c5, c6 = st.columns([2, 1, 1, 2, 1, 1])
-                c1.write(f"👤 **{row.get('username', '未知')}**")
-                c2.write(f"${row.get('amount', 0):.0f}")
-                c3.write(f"+{row.get('vip_days', 0)} 日")
-                c4.caption(f"🕐 {str(row.get('rewarded_at', ''))[:16]}")
+        if not records:
+            st.info("📭 暫無打賞記錄。")
+        else:
+            df = pd.DataFrame(records)
+            if 'status' in df.columns:
+                pending = df[df['status'] == 'pending']
+                approved = df[df['status'] == 'approved']
+                rejected = df[df['status'] == 'rejected']
+            else:
+                pending = df
+                approved = pd.DataFrame()
+                rejected = pd.DataFrame()
 
-                if c5.button("✅ 批准", key=f"approve_{row['id']}", use_container_width=True):
-                    username = row.get('username')
-                    vip_days = int(row.get('vip_days', 0))
+            st.markdown(f"### 📋 待審核（{len(pending)} 筆）")
+            if pending.empty:
+                st.info("✅ 暫無待審核打賞。")
+            else:
+                for _, row in pending.iterrows():
+                    with st.container():
+                        c1, c2, c3, c4, c5, c6 = st.columns([2, 1, 1, 2, 1, 1])
+                        c1.write(f"👤 **{row.get('username', '未知')}**")
+                        c2.write(f"${row.get('amount', 0):.0f}")
+                        c3.write(f"+{row.get('vip_days', 0)} 日")
+                        c4.caption(f"🕐 {str(row.get('rewarded_at', ''))[:16]}")
 
-                    u_res = requests.get(
-                        f"{SUPABASE_URL}/rest/v1/users?username=eq.{username}",
+                        if c5.button("✅ 批准", key=f"approve_{row['id']}", use_container_width=True):
+                            username = row.get('username')
+                            vip_days = int(row.get('vip_days', 0))
+
+                            u_res = requests.get(
+                                f"{SUPABASE_URL}/rest/v1/users?username=eq.{username}",
+                                headers=headers
+                            )
+                            if u_res.status_code == 200 and u_res.json():
+                                user = u_res.json()[0]
+                                expiry = user.get('expiry_date') or datetime.now().strftime('%Y-%m-%d')
+                                try:
+                                    expiry_dt = datetime.strptime(expiry, '%Y-%m-%d')
+                                except Exception:
+                                    expiry_dt = datetime.now()
+                                new_expiry = (expiry_dt + timedelta(days=vip_days)).strftime('%Y-%m-%d')
+
+                                requests.patch(
+                                    f"{SUPABASE_URL}/rest/v1/users?username=eq.{username}",
+                                    headers=headers,
+                                    json={
+                                        "user_group": "VIP",
+                                        "is_paid": True,
+                                        "expiry_date": new_expiry
+                                    }
+                                )
+
+                            requests.patch(
+                                f"{SUPABASE_URL}/rest/v1/reward_history?id=eq.{row['id']}",
+                                headers=headers,
+                                json={"status": "approved"}
+                            )
+                            st.success(f"✅ 已批准 {username}，加 {vip_days} 日 VIP")
+                            st.rerun()
+
+                        if c6.button("❌ 拒絕", key=f"reject_{row['id']}", use_container_width=True):
+                            requests.patch(
+                                f"{SUPABASE_URL}/rest/v1/reward_history?id=eq.{row['id']}",
+                                headers=headers,
+                                json={"status": "rejected"}
+                            )
+                            st.warning(f"已拒絕 {row.get('username', '')} 嘅打賞")
+                            st.rerun()
+
+            st.divider()
+            st.markdown(f"### ✅ 已批准（{len(approved)} 筆）")
+            if not approved.empty:
+                display_cols = [c for c in ['username', 'amount', 'vip_days', 'rewarded_at'] if c in approved.columns]
+                st.dataframe(approved[display_cols], use_container_width=True, hide_index=True)
+            else:
+                st.info("暫無已批准記錄。")
+
+            if not rejected.empty:
+                st.markdown(f"### ❌ 已拒絕（{len(rejected)} 筆）")
+                display_cols = [c for c in ['username', 'amount', 'vip_days', 'rewarded_at'] if c in rejected.columns]
+                st.dataframe(rejected[display_cols], use_container_width=True, hide_index=True)
+
+    # ============================================================
+    # ⚙️ Tab 2：打賞設定（修改金額、VIP天數、新增、刪除）
+    # ============================================================
+    with tab2:
+        st.caption("喺呢度新增、修改或刪除打賞選項，前台會即時同步。")
+
+        try:
+            res = requests.get(
+                f"{SUPABASE_URL}/rest/v1/reward_config?order=amount.asc",
+                headers=headers
+            )
+            configs = res.json() if res.status_code == 200 else []
+        except Exception as e:
+            st.error(f"❌ 讀取失敗：{e}")
+            configs = []
+
+        if not configs:
+            st.info("📭 暫無打賞選項，請喺下面新增。")
+            df = pd.DataFrame(columns=['id', 'amount', 'vip_days', 'label', 'enabled'])
+        else:
+            df = pd.DataFrame(configs)
+            for col in ['id', 'amount', 'vip_days', 'label', 'enabled']:
+                if col not in df.columns:
+                    df[col] = None
+
+        st.markdown("### 📝 編輯現有選項")
+        if not df.empty:
+            edited = st.data_editor(
+                df[['id', 'amount', 'vip_days', 'label', 'enabled']],
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "id": st.column_config.NumberColumn("ID", disabled=True),
+                    "amount": st.column_config.NumberColumn("金額 ($)", min_value=1, step=1),
+                    "vip_days": st.column_config.NumberColumn("VIP 天數", min_value=1, step=1),
+                    "label": st.column_config.TextColumn("顯示標籤", max_chars=30),
+                    "enabled": st.column_config.CheckboxColumn("啟用")
+                },
+                key="reward_config_editor"
+            )
+
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("💾 儲存所有修改", type="primary", use_container_width=True):
+                    success = 0
+                    for _, row in edited.iterrows():
+                        try:
+                            res = requests.patch(
+                                f"{SUPABASE_URL}/rest/v1/reward_config?id=eq.{row['id']}",
+                                headers=headers,
+                                json={
+                                    "amount": float(row['amount']),
+                                    "vip_days": int(row['vip_days']),
+                                    "label": str(row['label']),
+                                    "enabled": bool(row['enabled'])
+                                }
+                            )
+                            if res.status_code in [200, 204]:
+                                success += 1
+                        except Exception:
+                            pass
+                    st.success(f"✅ 已更新 {success} 個選項")
+                    st.rerun()
+
+            with c2:
+                if st.button("🔄 重新載入", use_container_width=True):
+                    st.rerun()
+
+            st.markdown("### 🗑️ 刪除選項")
+            delete_id = st.selectbox(
+                "選擇要刪除嘅選項",
+                options=df['id'].tolist(),
+                format_func=lambda x: f"ID {x} - {df[df['id']==x]['label'].values[0]} (${df[df['id']==x]['amount'].values[0]})",
+                key="delete_reward_select"
+            )
+            if st.button("❌ 確認刪除", type="secondary"):
+                try:
+                    requests.delete(
+                        f"{SUPABASE_URL}/rest/v1/reward_config?id=eq.{delete_id}",
                         headers=headers
                     )
-                    if u_res.status_code == 200 and u_res.json():
-                        user = u_res.json()[0]
-                        expiry = user.get('expiry_date') or datetime.now().strftime('%Y-%m-%d')
-                        try:
-                            expiry_dt = datetime.strptime(expiry, '%Y-%m-%d')
-                        except Exception:
-                            expiry_dt = datetime.now()
-                        new_expiry = (expiry_dt + timedelta(days=vip_days)).strftime('%Y-%m-%d')
-
-                        requests.patch(
-                            f"{SUPABASE_URL}/rest/v1/users?username=eq.{username}",
-                            headers=headers,
-                            json={
-                                "user_group": "VIP",
-                                "is_paid": True,
-                                "expiry_date": new_expiry
-                            }
-                        )
-
-                    requests.patch(
-                        f"{SUPABASE_URL}/rest/v1/reward_history?id=eq.{row['id']}",
-                        headers=headers,
-                        json={"status": "approved"}
-                    )
-                    st.success(f"✅ 已批准 {username}，加 {vip_days} 日 VIP")
+                    st.success(f"✅ 已刪除選項 ID {delete_id}")
                     st.rerun()
+                except Exception as e:
+                    st.error(f"❌ 刪除失敗：{e}")
 
-                if c6.button("❌ 拒絕", key=f"reject_{row['id']}", use_container_width=True):
-                    requests.patch(
-                        f"{SUPABASE_URL}/rest/v1/reward_history?id=eq.{row['id']}",
+        st.divider()
+        st.markdown("### ➕ 新增打賞選項")
+        with st.form("add_reward_form"):
+            c1, c2, c3 = st.columns([2, 2, 3])
+            with c1:
+                new_amount = st.number_input("金額 ($)", min_value=1, value=20, step=1)
+            with c2:
+                new_days = st.number_input("VIP 天數", min_value=1, value=3, step=1)
+            with c3:
+                new_label = st.text_input("顯示標籤", value="☕ 一杯咖啡", max_chars=30)
+
+            if st.form_submit_button("➕ 新增選項", type="primary"):
+                try:
+                    payload = {
+                        "amount": float(new_amount),
+                        "vip_days": int(new_days),
+                        "label": new_label,
+                        "enabled": True
+                    }
+                    res = requests.post(
+                        f"{SUPABASE_URL}/rest/v1/reward_config",
                         headers=headers,
-                        json={"status": "rejected"}
+                        json=payload
                     )
-                    st.warning(f"已拒絕 {row.get('username', '')} 嘅打賞")
-                    st.rerun()
+                    if res.status_code in [200, 201, 204]:
+                        st.success(f"✅ 已新增：{new_label} (${new_amount} → {new_days} 日 VIP)")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ 新增失敗：{res.text}")
+                except Exception as e:
+                    st.error(f"❌ 新增失敗：{e}")
 
     st.divider()
     st.markdown(f"### ✅ 已批准（{len(approved)} 筆）")
