@@ -2706,8 +2706,7 @@ def admin_payment_review():
                 st.error(msg)
             st.rerun()
         st.divider()
-        def admin_reward_management():
-    """後台打賞管理：審核用戶打賞、自動加 VIP 天數"""
+def admin_reward_management():
     st.subheader("❤️ 打賞管理")
     st.caption("審核用戶打賞，批准後會自動加 VIP 天數。")
 
@@ -2717,7 +2716,6 @@ def admin_payment_review():
         "Content-Type": "application/json"
     }
 
-    # ===== 1. 讀取所有打賞記錄 =====
     try:
         res = requests.get(
             f"{SUPABASE_URL}/rest/v1/reward_history?order=rewarded_at.desc&limit=50",
@@ -2742,7 +2740,6 @@ def admin_payment_review():
         approved = pd.DataFrame()
         rejected = pd.DataFrame()
 
-    # ===== 2. 待審核 =====
     st.markdown(f"### 📋 待審核（{len(pending)} 筆）")
     if pending.empty:
         st.info("✅ 暫無待審核打賞。")
@@ -2759,7 +2756,6 @@ def admin_payment_review():
                     username = row.get('username')
                     vip_days = int(row.get('vip_days', 0))
 
-                    # 讀取用戶當前狀態
                     u_res = requests.get(
                         f"{SUPABASE_URL}/rest/v1/users?username=eq.{username}",
                         headers=headers
@@ -2800,7 +2796,6 @@ def admin_payment_review():
                     st.warning(f"已拒絕 {row.get('username', '')} 嘅打賞")
                     st.rerun()
 
-    # ===== 3. 已批准記錄 =====
     st.divider()
     st.markdown(f"### ✅ 已批准（{len(approved)} 筆）")
     if not approved.empty:
@@ -2809,7 +2804,6 @@ def admin_payment_review():
     else:
         st.info("暫無已批准記錄。")
 
-    # ===== 4. 已拒絕記錄 =====
     if not rejected.empty:
         st.markdown(f"### ❌ 已拒絕（{len(rejected)} 筆）")
         display_cols = [c for c in ['username', 'amount', 'vip_days', 'rewarded_at'] if c in rejected.columns]
