@@ -4,10 +4,10 @@ from datetime import datetime
 from supabase import create_client, Client
 
 @st.cache_resource
+@st.cache_resource
 def get_supabase() -> Client:
-    # 👇 強制寫死，跳過 Streamlit Secrets 測試
-    url = "https://dofdjvjxmgujnscemuko.supabase.co"
-    key = "sb_publishable_GUU7ZYIZcBtYH6bpnI9u2A_bM5rIi9x"
+    url = "https://fewanagxvezelufmuggq.supabase.co"
+    key = "sb_publishable_Ww_BGSKjqhGCvv5iNl8A0Q_UDkVqdtF"
     return create_client(url, key)
 
 def save_prediction(key, data):
