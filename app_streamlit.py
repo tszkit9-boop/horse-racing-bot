@@ -576,7 +576,7 @@ def _repair_racecard(df):
 
 
 def _build_features(race_df, history_df):
-    """為排位表每匹馬計算特徵（加入馬名對照）"""
+    """為排位表每匹馬計算特徵（加入馬名對照，修復歷史數據對唔上嘅問題）"""
     import numpy as np
     import os
 
@@ -589,25 +589,19 @@ def _build_features(race_df, history_df):
     result = race_df.copy()
 
     # ========================================================
-    # 🛡️ 關鍵新增：加載馬名對照表，將中文馬名轉做真實 horse_id
+    # 🛡️ 終極修復：用「馬名」將排位表嘅馬號，對照成真實馬匹編號
     # ========================================================
-    mapping_file = "horse_name_mapping.csv"
-    if os.path.exists(mapping_file):
-        try:
-            mapping_df = pd.read_csv(mapping_file, encoding='utf-8-sig')
-            if 'horse_name' in mapping_df.columns and 'horse_id' in mapping_df.columns:
-                mapping_dict = dict(zip(
-                    mapping_df['horse_name'].astype(str).str.strip(),
-                    mapping_df['horse_id'].astype(str).str.strip()
-                ))
-                if 'horse_name' in result.columns:
-                    # 根據馬名去搵真實 horse_id
-                    mapped_ids = result['horse_name'].astype(str).str.strip().map(mapping_dict)
-                    # 如果成功對照到，就用真實 horse_id；對唔到就保留原本嘅
-                    result['horse_id'] = mapped_ids.fillna(result['horse_id']).astype(str).str.strip()
-                    print(f"✅ 成功加載馬名對照表，替換了 {mapped_ids.notna().sum()} 匹馬嘅 ID")
-        except Exception as e:
-            print(f"⚠️ 加載馬名對照表失敗：{e}")
+    if 'horse_name' in result.columns and 'horse_name' in history_df.columns and 'horse_id' in history_df.columns:
+        # 清理空格
+        history_df['horse_name'] = history_df['horse_name'].astype(str).str.strip()
+        history_df['horse_id'] = history_df['horse_id'].astype(str).str.strip()
+        result['horse_name'] = result['horse_name'].astype(str).str.strip()
+        
+        # 建立「馬名 -> 真實馬匹編號」對照表
+        name_to_id_map = history_df.drop_duplicates('horse_name').set_index('horse_name')['horse_id'].to_dict()
+        
+        # 將 result 入面嘅 horse_id（1-14號）替換成真實編號（例如 H196）
+        result['horse_id'] = result['horse_name'].map(name_to_id_map).fillna(result['horse_id']).astype(str).str.strip()
     # ========================================================
 
     # 初始化所有特徵
