@@ -2112,7 +2112,7 @@ def admin_manage_predictions():
             users[sel]['virtual_balance'] = cur_bal + add_coin
             save_users(users)
             st.success(f"✅ 已送 ${add_coin:,.0f} 俾 {sel}")
-            st.rerun()
+
 def admin_analytics():
     st.subheader("📊 數據分析")
     users = load_users()
