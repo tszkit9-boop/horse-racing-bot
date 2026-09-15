@@ -3603,7 +3603,9 @@ def main():
         st.success("✅ 預測完成！")
         if st.session_state.get('last_pool'):
             st.info(st.session_state['last_pool'])
-        st.dataframe(st.session_state['last_prediction'], use_container_width=True)
+        st.dataframe(st.session_state['last_prediction'], use_container_width=True)            
+        st.divider()
+            st.write("DEBUG: 已登入，準備顯示對比表")  # 👈 測試用，睇下出唔出到
 
     # ============================================================
     # 🤖 AI 預測表現 & 賽果對比（全寬，喺預測下面）
