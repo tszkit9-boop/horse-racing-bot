@@ -3679,11 +3679,22 @@ def main():
                                 df_result_race = df_result_date[df_result_date['race_no'] == selected_race].copy().sort_values('finish_position').head(4)
                                 df_result_race = df_result_race.rename(columns={'finish_position': '真實名次', 'horse_name': '真實馬'})
 
-                                df_compare = df_pred_race.merge(df_result_race[['真實名次', '真實馬']], left_on='預測名次', right_on='真實名次', how='left')
-                                df_compare['結果'] = df_compare.apply(lambda row: '命中' if row['預測馬'] == row['真實馬'] else '失準', axis=1)
-
-                                display_df = df_compare[['預測名次', '預測馬', '真實名次', '真實馬', '結果']].copy()
-                                display_df.columns = ['名次', '預測馬', '真實名次', '真實馬', '結果']
+                                    # 🔥 修正對比邏輯：只按馬名，唔理名次
+                                    real_top3_names = df_result_race['真實馬'].tolist()
+                                    
+                                    df_pred_race['結果'] = df_pred_race['預測馬'].apply(
+                                        lambda x: '命中' if x in real_top3_names else '失準'
+                                    )
+                                    
+                                    hit_count = (df_pred_race['結果'] == '命中').sum()
+                                    
+                                    display_pred = df_pred_race[['預測名次', '預測馬', '結果']].copy()
+                                    display_pred.columns = ['預測名次', '預測馬', '結果']
+                                    
+                                    display_real = df_result_race[['真實名次', '真實馬']].reset_index(drop=True)
+                                    
+                                    display_df = pd.concat([display_pred, display_real], axis=1)
+                                    display_df.columns = ['預測名次', '預測馬', '結果', '真實名次', '真實馬']
 
                                 st.write(f"📊 {selected_date} 第 {selected_race} 場 預測 vs 賽果")
 
