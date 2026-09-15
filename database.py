@@ -6,8 +6,8 @@ from supabase import create_client, Client
 @st.cache_resource
 def get_supabase() -> Client:
     # 👇 強制寫死，跳過 Streamlit Secrets 測試
-    url = "https://jmjnywsgkkawvgbrqsm.supabase.co"
-    key = "sb_publishable_m1Ul2oLt5BQcA_AVzCCRVQ_Z-JfEXy6"
+    url = "https://dofdjvjxmgujnscemuko.supabase.co"
+    key = "sb_publishable_GUU7ZYIZcBtYH6bpnI9u2A_bM5rIi9x"
     return create_client(url, key)
 
 def save_prediction(key, data):
