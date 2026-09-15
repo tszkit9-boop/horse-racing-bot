@@ -3670,18 +3670,29 @@ def main():
                             st.markdown(f"**🏇 第 {rn} 場**")
                             df = all_results[rn].copy()
                             
-                            rename_map = {
-                                'horse_name': '馬名',
-                                'draw': '檔位',
-                                'win_odds': '賠率',
-                                'jockey': '騎師',
-                                'trainer': '練馬師',
-                                '預測勝率': '勝率'
-                            }
+                            # 🛡️ 智能偵測欄位：支援中英文，保證馬名一定會顯示
+                            rename_map = {}
+                            if '馬名' in df.columns:
+                                rename_map = {'馬名': '馬名'}
+                            elif 'horse_name' in df.columns:
+                                rename_map = {'horse_name': '馬名'}
                             
-                            cols_to_show = [c for c in rename_map.keys() if c in df.columns]
-                            valid_cols = [c for c in cols_to_show if c in df.columns]
+                            if '檔位' in df.columns: rename_map['檔位'] = '檔位'
+                            elif 'draw' in df.columns: rename_map['draw'] = '檔位'
                             
+                            if '賠率' in df.columns: rename_map['賠率'] = '賠率'
+                            elif 'win_odds' in df.columns: rename_map['win_odds'] = '賠率'
+                            
+                            if '騎師' in df.columns: rename_map['騎師'] = '騎師'
+                            elif 'jockey' in df.columns: rename_map['jockey'] = '騎師'
+                            
+                            if '練馬師' in df.columns: rename_map['練馬師'] = '練馬師'
+                            elif 'trainer' in df.columns: rename_map['trainer'] = '練馬師'
+                            
+                            if '預測勝率' in df.columns: rename_map['預測勝率'] = '勝率'
+                            elif '勝率' in df.columns: rename_map['勝率'] = '勝率'
+                            
+                            valid_cols = [c for c in rename_map.keys() if c in df.columns]
                             df_show = df[valid_cols].head(3).copy()
                             df_show.rename(columns=rename_map, inplace=True)
                             
