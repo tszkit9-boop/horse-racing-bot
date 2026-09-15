@@ -3609,14 +3609,17 @@ def main():
     # 🤖 AI 預測表現 & 賽果對比（全寬，喺預測下面）
     # ============================================================
     st.divider()
-    with st.expander("🤖 AI 預測表現 & 賽果對比（點擊展開）", expanded=False):
+with st.expander("📊 AI 預測表現 & 賽果對比 (點擊展開)", expanded=False):
     from database import load_predictions
     ai_data = load_predictions()
-    
+
     if not ai_data:
         st.warning("⚠️ 尚未有任何預測紀錄，請先執行預測")
     else:
         st.info(f"✅ 成功讀取 {len(ai_data)} 個預測紀錄")
+        
+        # 👇 下面係你原本嘅表格顯示邏輯，如果之前有嘅話就保留
+        # 如果之前冇，而家只需要顯示讀取成功嘅訊息就得
         # 下面保留你原本嘅表格顯示邏輯（如果有用到 ai_data 嘅話）
             except Exception as e:
                 st.error(f"❌ 讀取預測紀錄失敗：{e}")
