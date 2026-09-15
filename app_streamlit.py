@@ -3357,7 +3357,8 @@ def main():
                 st.rerun()
 
     st.divider()
-    st.subheader("🎯 賽事預測")    
+      st.subheader("🎯 賽事預測")
+
     # ============================================================
     # 🔧 管理員專用：一鍵預測所有場次
     # ============================================================
@@ -3460,7 +3461,6 @@ def main():
                         status.text("✅ 完成！")
                         st.success(f"✅ 成功 {success_count} 場，失敗 {fail_count} 場")
 
-                        # 🔥 儲存到 session_state（防止 rerun 時消失）
                         st.session_state['batch_all_results'] = all_results
                         st.session_state['batch_date_str'] = date_str
                 except Exception as e:
@@ -3560,29 +3560,31 @@ def main():
                         rn = race_list[idx]
                         with col:
                             st.markdown(f"**🏇 第 {rn} 場**")
-                    df = all_results[rn].copy()
-                    
-                    # 動態建立真正存在嘅欄位
-                    rename_map = {
-                        'horse_name': '馬名',
-                        'draw': '檔位',
-                        'win_odds': '賠率',
-                        'jockey': '騎師',
-                        'trainer': '練馬師',
-                        '預測勝率': '勝率'
-                    }
-                    
-                    cols_to_show = [c for c in rename_map.keys() if c in df.columns]
-                    valid_cols = [c for c in cols_to_show if c in df.columns]
-                    
-                    df_show = df[valid_cols].head(3).copy()
-                    df_show.rename(columns=rename_map, inplace=True)
-                    
-                    # 如果有勝率，就格式化做百分比
-                    if '勝率' in df_show.columns:
-                        df_show['勝率'] = df_show['勝率'].apply(lambda x: f"{x:.1%}")
-                    
-                    st.dataframe(df_show, use_container_width=True, hide_index=True)
+                            df = all_results[rn].copy()
+                            
+                            rename_map = {
+                                'horse_name': '馬名',
+                                'draw': '檔位',
+                                'win_odds': '賠率',
+                                'jockey': '騎師',
+                                'trainer': '練馬師',
+                                '預測勝率': '勝率'
+                            }
+                            
+                            cols_to_show = [c for c in rename_map.keys() if c in df.columns]
+                            valid_cols = [c for c in cols_to_show if c in df.columns]
+                            
+                            df_show = df[valid_cols].head(3).copy()
+                            df_show.rename(columns=rename_map, inplace=True)
+                            
+                            if '勝率' in df_show.columns:
+                                df_show['勝率'] = df_show['勝率'].apply(lambda x: f"{x:.1%}")
+                            
+                            st.dataframe(df_show, use_container_width=True, hide_index=True)
+
+    # ============================================================
+    # 🚀 單場預測區塊
+    # ============================================================
     cd, cr, cbtn = st.columns([2, 2, 1])
     with cd:
         date = st.date_input("📅 日期", value=pd.to_datetime("2026-09-06"), key="pd_date")
@@ -3598,214 +3600,113 @@ def main():
                 st.session_state['last_prediction'] = result
                 st.session_state['last_pool'] = pool
 
-        if 'last_prediction' in st.session_state and st.session_state['last_prediction'] is not None:
-            st.success("✅ 預測完成！")
-            if st.session_state.get('last_pool'):
-                st.info(st.session_state['last_pool'])
-            st.dataframe(st.session_state['last_prediction'], use_container_width=True)
-
-            # 👇👇👇 只有登入後先見到呢個對比表 👇👇👇
-            if st.session_state.get('logged_in', False):
-                st.divider()
-                with st.expander("📊 AI 預測表現 & 賽果對比 (點擊展開)", expanded=False):
-                    try:
-                        from database import load_predictions
-                        ai_data = load_predictions()
-
-                        if not ai_data:
-                            st.warning("⚠️ 尚未有任何預測紀錄，請先執行預測")
-                        else:
-                            st.info(f"✅ 成功讀取 {len(ai_data)} 個預測紀錄")
-                            
-                            result_file = "race_results_clean.csv"
-                            df_results = pd.DataFrame()
-                            if os.path.exists(result_file):
-                                try:
-                                    df_results = pd.read_csv(result_file, encoding='utf-8-sig')
-                                    required_cols = ['race_date', 'race_no', 'horse_name', 'finish_position']
-                                    if all(col in df_results.columns for col in required_cols):
-                                        df_results['horse_name'] = df_results['horse_name'].astype(str).str.strip()
-                                        df_results['finish_position'] = pd.to_numeric(df_results['finish_position'], errors='coerce')
-                                        df_results['race_no'] = pd.to_numeric(df_results['race_no'], errors='coerce')
-                                        df_results = df_results.dropna(subset=['race_no'])
-                                        df_results['race_no'] = df_results['race_no'].astype(int)
-                                        df_results['race_date'] = pd.to_datetime(df_results['race_date'], errors='coerce')
-                                    else:
-                                        st.error("❌ 賽果檔案缺少必要欄位")
-                                        df_results = pd.DataFrame()
-                                except Exception as e:
-                                    st.error(f"❌ 讀取賽果失敗：{e}")
-                                    df_results = pd.DataFrame()
-                            else:
-                                st.warning("⚠️ 找不到賽果檔案 race_results_clean.csv")
-
-                            pred_list = []
-                            for key, value in ai_data.items():
-                                if '_' not in key: continue
-                                parts = key.split('_')
-                                if len(parts) != 2: continue
-                                date_str, race_no_str = parts[0], parts[1]
-                                if not race_no_str.isdigit(): continue
-                                race_no_c = int(race_no_str)
-                                if not isinstance(value, dict): continue
-                                horse_list = value.get('all_horses', [])
-                                if not horse_list or not isinstance(horse_list, list):
-                                    top = value.get('top_horse')
-                                    if top: horse_list = [top]
-                                    else: continue
-                                cleaned = [str(h).strip() for h in horse_list if str(h).strip()]
-                                for idx, horse in enumerate(cleaned[:4], 1):
-                                    pred_list.append({'日期': date_str, '場次': race_no_c, '預測名次': idx, '預測馬': horse})
-
-                            if pred_list and not df_results.empty:
-                                df_pred = pd.DataFrame(pred_list)
-                                df_pred['場次'] = df_pred['場次'].astype(int)
-                                df_pred['預測名次'] = df_pred['預測名次'].astype(int)
-
-                                pred_dates = sorted(df_pred['日期'].unique())
-                                result_dates = df_results['race_date'].dt.strftime('%Y-%m-%d').unique()
-                                available_dates = [d for d in pred_dates if d in result_dates]
-
-                                if available_dates:
-                                    selected_date = st.selectbox("📅 選擇日期", available_dates, format_func=lambda x: x, key="ai_cmp_date")
-                                    df_pred_date = df_pred[df_pred['日期'] == selected_date].copy()
-                                    df_result_date = df_results[df_results['race_date'].dt.strftime('%Y-%m-%d') == selected_date].copy()
-
-                                    pred_races = sorted(df_pred_date['場次'].unique())
-                                    result_races = sorted(df_result_date['race_no'].unique())
-                                    available_races = [r for r in pred_races if r in result_races]
-
-                                    if available_races:
-                                        selected_race = st.selectbox("🏇 選擇場次", available_races, format_func=lambda x: f"第 {x} 場", key="ai_cmp_race")
-                                        df_pred_race = df_pred_date[df_pred_date['場次'] == selected_race].copy()
-                                        df_result_race = df_result_date[df_result_date['race_no'] == selected_race].copy().sort_values('finish_position').head(4)
-                                        df_result_race = df_result_race.rename(columns={'finish_position': '真實名次', 'horse_name': '真實馬'})
-
-                                        df_compare = df_pred_race.merge(df_result_race[['真實名次', '真實馬']], left_on='預測名次', right_on='真實名次', how='left')
-                                        df_compare['結果'] = df_compare.apply(lambda row: '命中' if row['預測馬'] == row['真實馬'] else '失準', axis=1)
-
-                                        display_df = df_compare[['預測名次', '預測馬', '真實名次', '真實馬', '結果']].copy()
-                                        display_df.columns = ['名次', '預測馬', '真實名次', '真實馬', '結果']
-
-                                        st.write(f"📊 {selected_date} 第 {selected_race} 場 預測 vs 賽果")
-
-                                        def highlight_row(row):
-                                            if row['結果'] == '命中': return ['background-color: #d4edda; color: black'] * len(row)
-                                            elif row['結果'] == '失準': return ['background-color: #f8d7da; color: black'] * len(row)
-                                            return ['background-color: white; color: black'] * len(row)
-
-                                        st.dataframe(display_df.style.apply(highlight_row, axis=1), use_container_width=True, hide_index=True)
-                                    else:
-                                        st.info(f"ℹ️ {selected_date} 沒有可比對嘅場次")
-                                else:
-                                    st.info("ℹ️ 沒有日期同時有預測同賽果數據")
-                            else:
-                                st.info("ℹ️ 請確保已有預測紀錄及賽果數據")
-                    except Exception as e:
-                        st.error(f"❌ 讀取預測紀錄失敗：{e}")
+    if 'last_prediction' in st.session_state and st.session_state['last_prediction'] is not None:
+        st.success("✅ 預測完成！")
+        if st.session_state.get('last_pool'):
+            st.info(st.session_state['last_pool'])
+        st.dataframe(st.session_state['last_prediction'], use_container_width=True)
 
     # ============================================================
-    # 🤖 AI 預測表現 & 賽果對比（全寬，喺預測下面）
+    # 📊 AI 預測表現 & 賽果對比（獨立顯示，唔使預測）
     # ============================================================
-        if st.session_state.get('logged_in', False):
-            st.divider()
-            with st.expander("📊 AI 預測表現 & 賽果對比 (點擊展開)", expanded=False):
-                try:
-                    from database import load_predictions
-                    ai_data = load_predictions()
+    if st.session_state.get('logged_in', False):
+        st.divider()
+        with st.expander("📊 AI 預測表現 & 賽果對比 (點擊展開)", expanded=False):
+            try:
+                from database import load_predictions
+                ai_data = load_predictions()
 
-                    if not ai_data:
-                        st.warning("⚠️ 尚未有任何預測紀錄，請先執行預測")
-                    else:
-                        st.info(f"✅ 成功讀取 {len(ai_data)} 個預測紀錄")
-                        
-                        # 👇 讀取賽果數據做對比
-                        result_file = "race_results_clean.csv"
-                        df_results = pd.DataFrame()
-                        if os.path.exists(result_file):
-                            try:
-                                df_results = pd.read_csv(result_file, encoding='utf-8-sig')
-                                required_cols = ['race_date', 'race_no', 'horse_name', 'finish_position']
-                                if all(col in df_results.columns for col in required_cols):
-                                    df_results['horse_name'] = df_results['horse_name'].astype(str).str.strip()
-                                    df_results['finish_position'] = pd.to_numeric(df_results['finish_position'], errors='coerce')
-                                    df_results['race_no'] = pd.to_numeric(df_results['race_no'], errors='coerce')
-                                    df_results = df_results.dropna(subset=['race_no'])
-                                    df_results['race_no'] = df_results['race_no'].astype(int)
-                                    df_results['race_date'] = pd.to_datetime(df_results['race_date'], errors='coerce')
-                                else:
-                                    st.error("❌ 賽果檔案缺少必要欄位")
-                                    df_results = pd.DataFrame()
-                            except Exception as e:
-                                st.error(f"❌ 讀取賽果失敗：{e}")
+                if not ai_data:
+                    st.warning("⚠️ 尚未有任何預測紀錄，請先執行預測")
+                else:
+                    st.info(f"✅ 成功讀取 {len(ai_data)} 個預測紀錄")
+                    
+                    result_file = "race_results_clean.csv"
+                    df_results = pd.DataFrame()
+                    if os.path.exists(result_file):
+                        try:
+                            df_results = pd.read_csv(result_file, encoding='utf-8-sig')
+                            required_cols = ['race_date', 'race_no', 'horse_name', 'finish_position']
+                            if all(col in df_results.columns for col in required_cols):
+                                df_results['horse_name'] = df_results['horse_name'].astype(str).str.strip()
+                                df_results['finish_position'] = pd.to_numeric(df_results['finish_position'], errors='coerce')
+                                df_results['race_no'] = pd.to_numeric(df_results['race_no'], errors='coerce')
+                                df_results = df_results.dropna(subset=['race_no'])
+                                df_results['race_no'] = df_results['race_no'].astype(int)
+                                df_results['race_date'] = pd.to_datetime(df_results['race_date'], errors='coerce')
+                            else:
+                                st.error("❌ 賽果檔案缺少必要欄位")
                                 df_results = pd.DataFrame()
-                        else:
-                            st.warning("⚠️ 找不到賽果檔案 race_results_clean.csv")
+                        except Exception as e:
+                            st.error(f"❌ 讀取賽果失敗：{e}")
+                            df_results = pd.DataFrame()
+                    else:
+                        st.warning("⚠️ 找不到賽果檔案 race_results_clean.csv")
 
-                        pred_list = []
-                        for key, value in ai_data.items():
-                            if '_' not in key: continue
-                            parts = key.split('_')
-                            if len(parts) != 2: continue
-                            date_str, race_no_str = parts[0], parts[1]
-                            if not race_no_str.isdigit(): continue
-                            race_no_c = int(race_no_str)
-                            if not isinstance(value, dict): continue
-                            horse_list = value.get('all_horses', [])
-                            if not horse_list or not isinstance(horse_list, list):
-                                top = value.get('top_horse')
-                                if top: horse_list = [top]
-                                else: continue
-                            cleaned = [str(h).strip() for h in horse_list if str(h).strip()]
-                            for idx, horse in enumerate(cleaned[:4], 1):
-                                pred_list.append({'日期': date_str, '場次': race_no_c, '預測名次': idx, '預測馬': horse})
+                    pred_list = []
+                    for key, value in ai_data.items():
+                        if '_' not in key: continue
+                        parts = key.split('_')
+                        if len(parts) != 2: continue
+                        date_str, race_no_str = parts[0], parts[1]
+                        if not race_no_str.isdigit(): continue
+                        race_no_c = int(race_no_str)
+                        if not isinstance(value, dict): continue
+                        horse_list = value.get('all_horses', [])
+                        if not horse_list or not isinstance(horse_list, list):
+                            top = value.get('top_horse')
+                            if top: horse_list = [top]
+                            else: continue
+                        cleaned = [str(h).strip() for h in horse_list if str(h).strip()]
+                        for idx, horse in enumerate(cleaned[:4], 1):
+                            pred_list.append({'日期': date_str, '場次': race_no_c, '預測名次': idx, '預測馬': horse})
 
-                        if pred_list and not df_results.empty:
-                            df_pred = pd.DataFrame(pred_list)
-                            df_pred['場次'] = df_pred['場次'].astype(int)
-                            df_pred['預測名次'] = df_pred['預測名次'].astype(int)
+                    if pred_list and not df_results.empty:
+                        df_pred = pd.DataFrame(pred_list)
+                        df_pred['場次'] = df_pred['場次'].astype(int)
+                        df_pred['預測名次'] = df_pred['預測名次'].astype(int)
 
-                            pred_dates = sorted(df_pred['日期'].unique())
-                            result_dates = df_results['race_date'].dt.strftime('%Y-%m-%d').unique()
-                            available_dates = [d for d in pred_dates if d in result_dates]
+                        pred_dates = sorted(df_pred['日期'].unique())
+                        result_dates = df_results['race_date'].dt.strftime('%Y-%m-%d').unique()
+                        available_dates = [d for d in pred_dates if d in result_dates]
 
-                            if available_dates:
-                                selected_date = st.selectbox("📅 選擇日期", available_dates, format_func=lambda x: x, key="ai_cmp_date")
-                                df_pred_date = df_pred[df_pred['日期'] == selected_date].copy()
-                                df_result_date = df_results[df_results['race_date'].dt.strftime('%Y-%m-%d') == selected_date].copy()
+                        if available_dates:
+                            selected_date = st.selectbox("📅 選擇日期", available_dates, format_func=lambda x: x, key="ai_cmp_date")
+                            df_pred_date = df_pred[df_pred['日期'] == selected_date].copy()
+                            df_result_date = df_results[df_results['race_date'].dt.strftime('%Y-%m-%d') == selected_date].copy()
 
-                                pred_races = sorted(df_pred_date['場次'].unique())
-                                result_races = sorted(df_result_date['race_no'].unique())
-                                available_races = [r for r in pred_races if r in result_races]
+                            pred_races = sorted(df_pred_date['場次'].unique())
+                            result_races = sorted(df_result_date['race_no'].unique())
+                            available_races = [r for r in pred_races if r in result_races]
 
-                                if available_races:
-                                    selected_race = st.selectbox("🏇 選擇場次", available_races, format_func=lambda x: f"第 {x} 場", key="ai_cmp_race")
-                                    df_pred_race = df_pred_date[df_pred_date['場次'] == selected_race].copy()
-                                    df_result_race = df_result_date[df_result_date['race_no'] == selected_race].copy().sort_values('finish_position').head(4)
-                                    df_result_race = df_result_race.rename(columns={'finish_position': '真實名次', 'horse_name': '真實馬'})
+                            if available_races:
+                                selected_race = st.selectbox("🏇 選擇場次", available_races, format_func=lambda x: f"第 {x} 場", key="ai_cmp_race")
+                                df_pred_race = df_pred_date[df_pred_date['場次'] == selected_race].copy()
+                                df_result_race = df_result_date[df_result_date['race_no'] == selected_race].copy().sort_values('finish_position').head(4)
+                                df_result_race = df_result_race.rename(columns={'finish_position': '真實名次', 'horse_name': '真實馬'})
 
-                                    df_compare = df_pred_race.merge(df_result_race[['真實名次', '真實馬']], left_on='預測名次', right_on='真實名次', how='left')
-                                    df_compare['結果'] = df_compare.apply(lambda row: '命中' if row['預測馬'] == row['真實馬'] else '失準', axis=1)
+                                df_compare = df_pred_race.merge(df_result_race[['真實名次', '真實馬']], left_on='預測名次', right_on='真實名次', how='left')
+                                df_compare['結果'] = df_compare.apply(lambda row: '命中' if row['預測馬'] == row['真實馬'] else '失準', axis=1)
 
-                                    display_df = df_compare[['預測名次', '預測馬', '真實名次', '真實馬', '結果']].copy()
-                                    display_df.columns = ['名次', '預測馬', '真實名次', '真實馬', '結果']
+                                display_df = df_compare[['預測名次', '預測馬', '真實名次', '真實馬', '結果']].copy()
+                                display_df.columns = ['名次', '預測馬', '真實名次', '真實馬', '結果']
 
-                                    st.write(f"📊 {selected_date} 第 {selected_race} 場 預測 vs 賽果")
+                                st.write(f"📊 {selected_date} 第 {selected_race} 場 預測 vs 賽果")
 
-                                    def highlight_row(row):
-                                        if row['結果'] == '命中': return ['background-color: #d4edda; color: black'] * len(row)
-                                        elif row['結果'] == '失準': return ['background-color: #f8d7da; color: black'] * len(row)
-                                        return ['background-color: white; color: black'] * len(row)
+                                def highlight_row(row):
+                                    if row['結果'] == '命中': return ['background-color: #d4edda; color: black'] * len(row)
+                                    elif row['結果'] == '失準': return ['background-color: #f8d7da; color: black'] * len(row)
+                                    return ['background-color: white; color: black'] * len(row)
 
-                                    st.dataframe(display_df.style.apply(highlight_row, axis=1), use_container_width=True, hide_index=True)
-                                else:
-                                    st.info(f"ℹ️ {selected_date} 沒有可比對嘅場次")
+                                st.dataframe(display_df.style.apply(highlight_row, axis=1), use_container_width=True, hide_index=True)
                             else:
-                                st.info("ℹ️ 沒有日期同時有預測同賽果數據")
+                                st.info(f"ℹ️ {selected_date} 沒有可比對嘅場次")
                         else:
-                            st.info("ℹ️ 請確保已有預測紀錄及賽果數據")
-                except Exception as e:
-                    st.error(f"❌ 讀取預測紀錄失敗：{e}")
+                            st.info("ℹ️ 沒有日期同時有預測同賽果數據")
+                    else:
+                        st.info("ℹ️ 請確保已有預測紀錄及賽果數據")
+            except Exception as e:
+                st.error(f"❌ 讀取預測紀錄失敗：{e}")
     # ===== 付款功能 =====
     st.divider()
     st.subheader("💳 付款功能")
