@@ -2351,7 +2351,7 @@ def admin_accuracy_monitor():
     st.subheader("📈 AI 預測準確率監控（頭 3 名）")
 
     from database import load_predictions
-    predictions = load_predictions()
+    ai_data = load_predictions()  # 👈 改為 ai_data，令下面嘅代碼可以正常運作
     
     if not predictions:
         st.warning("⚠️ 尚未有任何預測紀錄，請先執行預測")
