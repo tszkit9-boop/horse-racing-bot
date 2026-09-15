@@ -3222,7 +3222,6 @@ def main():
         if st.button("❓ 常見問題", use_container_width=True, key="faq_btn"):
             st.switch_page("pages/FAQ.py")
     with c4:
-        if st.session_state.get('logged_in', False):
             username = st.session_state.username
             users = load_users()
             user_data = users.get(username, {})
