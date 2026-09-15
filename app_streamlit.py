@@ -3610,13 +3610,14 @@ def main():
     # ============================================================
     st.divider()
     with st.expander("🤖 AI 預測表現 & 賽果對比（點擊展開）", expanded=False):
-        ai_file = "ai_predictions.json"
-        predictions = {}
-        if os.path.exists(ai_file):
-            try:
-                with open(ai_file, 'r', encoding='utf-8') as f:
-                    predictions = json.load(f)
-                st.info(f"✅ 成功讀取 {len(predictions)} 個預測紀錄")
+    from database import load_predictions
+    ai_data = load_predictions()
+    
+    if not ai_data:
+        st.warning("⚠️ 尚未有任何預測紀錄，請先執行預測")
+    else:
+        st.info(f"✅ 成功讀取 {len(ai_data)} 個預測紀錄")
+        # 下面保留你原本嘅表格顯示邏輯（如果有用到 ai_data 嘅話）
             except Exception as e:
                 st.error(f"❌ 讀取預測紀錄失敗：{e}")
                 predictions = {}
