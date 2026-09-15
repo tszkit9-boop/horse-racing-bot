@@ -253,13 +253,47 @@ def save_users(users):
             "bets": json.dumps(data.get("bets", []), ensure_ascii=False)
         }
         try:
-            requests.post(f"{SUPABASE_URL}/rest/v1/users", headers=headers, json=payload)
-        except Exception:
-            pass
+            res = requests.post(f"{SUPABASE_URL}/rest/v1/users", headers=headers, json=payload)
+            if res.status_code not in [200, 201, 204]:
+                st.error(f"❌ 寫入失敗：{res.text}")
+        except Exception as e:
+            st.error(f"❌ 寫入錯誤：{e}")
     return users
 
 def save_users(users):
-    return save_json(USER_DATA_FILE, users)
+    """將所有用戶儲存到 Supabase"""
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates"
+    }
+    for username, data in users.items():
+        payload = {
+            "username": username,
+            "password": data.get("password", ""),
+            "phone": data.get("phone", ""),
+            "invite_code": data.get("invite_code", ""),
+            "invited_by": data.get("invited_by", ""),
+            "referred_users": json.dumps(data.get("referred_users", []), ensure_ascii=False),
+            "invite_count": data.get("invite_count", 0),
+            "invite_rewards": data.get("invite_rewards", 0),
+            "user_group": data.get("group", "free"),
+            "level": data.get("level", "🥉 銅牌會員"),
+            "virtual_balance": data.get("virtual_balance", 0),
+            "lottery_chances": data.get("lottery_chances", 0),
+            "last_lottery_reset": data.get("last_lottery_reset", ""),
+            "created_at": data.get("created_at", ""),
+            "history": json.dumps(data.get("history", []), ensure_ascii=False)
+        }
+        try:
+            res = requests.post(f"{SUPABASE_URL}/rest/v1/users", headers=headers, json=payload)
+            if res.status_code not in [200, 201, 204]:
+                st.error(f"❌ 寫入失敗：{res.text}")
+        except Exception as e:
+            st.error(f"❌ 寫入錯誤：{e}")
+    
+    return True
 
 def authenticate(username, password):
     users = load_users()
