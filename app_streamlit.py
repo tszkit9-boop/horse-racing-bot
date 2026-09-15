@@ -3604,7 +3604,7 @@ def main():
                 st.info(st.session_state['last_pool'])
             st.dataframe(st.session_state['last_prediction'], use_container_width=True)
 
-            # 👇👇👇 完整對比表：只有登入後先會出現 👇👇👇
+            # 👇👇👇 只有登入後先會顯示對比表 👇👇👇
             if st.session_state.get('logged_in', False):
                 st.divider()
                 with st.expander("📊 AI 預測表現 & 賽果對比 (點擊展開)", expanded=False):
@@ -3617,7 +3617,6 @@ def main():
                         else:
                             st.info(f"✅ 成功讀取 {len(ai_data)} 個預測紀錄")
                             
-                            # 讀取賽果數據做對比
                             result_file = "race_results_clean.csv"
                             df_results = pd.DataFrame()
                             if os.path.exists(result_file):
