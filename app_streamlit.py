@@ -3188,7 +3188,6 @@ def admin_page():
         ("⏰ 訂閱管理", admin_subscription),
         ("📤 付款審核", admin_payment_review),      # 👈 刪除前面個 # 號
         ("❤️ 打賞管理", admin_reward_management),   # 👈 加呢行
-        ("⚙️ 打賞設定", admin_reward_config),
         ("📡 監控", admin_monitoring),
         ("📝 內容", admin_content),
         ("🤖 自動維護", admin_auto_maintenance),
