@@ -21,7 +21,7 @@ try:
 except ImportError:
     HAS_PLOTLY = False
 
-# 第 24-29 行：你原本嘅設定（保留）
+# 第 24-29 行：你原本嘅設定(保留)
 st.set_page_config(
     page_title="🏇 賽馬預測系統",
     page_icon="🏇",
@@ -92,7 +92,7 @@ DEFAULT_CONFIG = {
     "enable_invite_reward": True,    
     "invite_rewards": {
         "level1": 5,   # 直接邀請人：+5 次預測
-        "level2": 2,   # 上線（A 邀請 B，B 邀請 C → A 得 2 次）
+        "level2": 2,   # 上線(A 邀請 B，B 邀請 C → A 得 2 次)
         "level3": 1,   # 上上線：+1 次
     },
     # ===== 🎯 彩池設定 =====
@@ -233,7 +233,7 @@ def load_users():
                 }
                 save_users(result)
             else:
-                # 補齊缺失欄位（保留原本邏輯）
+                # 補齊缺失欄位(保留原本邏輯)
                 for uid, u in result.items():
                     defaults = {
                         'plan': None, 'paid_date': None, 'expiry_date': None,
@@ -573,14 +573,14 @@ def generate_pool_recommendations(df, user_group='free'):
 
     def get_win():
         if len(names) >= 1:
-            return f"  {names[0]}（{probs[0]:.1%}）"
+            return f"  {names[0]}({probs[0]:.1%})"
         return ""
 
     def get_place():
         if len(names) >= 2:
-            return f"  {names[0]}（{probs[0]:.1%}）+ {names[1]}（{probs[1]:.1%}）"
+            return f"  {names[0]}({probs[0]:.1%})+ {names[1]}({probs[1]:.1%})"
         elif len(names) >= 1:
-            return f"  {names[0]}（{probs[0]:.1%}）"
+            return f"  {names[0]}({probs[0]:.1%})"
         return ""
 
     def get_quinella():
@@ -619,13 +619,13 @@ def generate_pool_recommendations(df, user_group='free'):
         return ""
 
     def get_double():
-        return "  ⚠️ 需要 2 場賽事數據（孖寶）"
+        return "  ⚠️ 需要 2 場賽事數據(孖寶)"
 
     def get_treble():
-        return "  ⚠️ 需要 3 場賽事數據（三寶）"
+        return "  ⚠️ 需要 3 場賽事數據(三寶)"
 
     def get_six_up():
-        return "  ⚠️ 需要 6 場賽事數據（六環彩）"
+        return "  ⚠️ 需要 6 場賽事數據(六環彩)"
 
     generators = {
         'win': get_win, 'place': get_place, 'quinella': get_quinella,
@@ -693,7 +693,7 @@ def load_ml_models():
 
 def _repair_racecard(df):
     """自動修復混合格式嘅 racecard CSV"""
-    # 讀取原始檔案（唔用 header）
+    # 讀取原始檔案(唔用 header)
     df_raw = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig', header=None, dtype=str)
 
     std_cols = ['horse_id', 'horse_name', 'draw', 'weight', 'jockey',
@@ -716,12 +716,12 @@ def _repair_racecard(df):
         if first_val.lower() in ['馬號', 'race_date', 'nan', '']:
             continue
 
-        # 中文格式：第一列係純數字（馬號）
+        # 中文格式：第一列係純數字(馬號)
         if first_val.isdigit():
             row_df = pd.DataFrame([row.values], columns=cn_cols)
             parts.append(row_df)
 
-        # 英文格式：第一列係日期（YYYY-MM-DD）
+        # 英文格式：第一列係日期(YYYY-MM-DD)
         elif len(first_val) == 10 and first_val[4] == '-' and first_val[7] == '-':
             row_df = pd.DataFrame([row.values], columns=en_cols)
             parts.append(row_df)
@@ -735,7 +735,7 @@ def _repair_racecard(df):
 
 
 def _build_features(race_df, history_df):
-    """為排位表每匹馬計算特徵（加入馬名對照，修復歷史數據對唔上嘅問題）"""
+    """為排位表每匹馬計算特徵(加入馬名對照，修復歷史數據對唔上嘅問題)"""
     import numpy as np
     import os
 
@@ -759,7 +759,7 @@ def _build_features(race_df, history_df):
         # 建立「馬名 -> 真實馬匹編號」對照表
         name_to_id_map = history_df.drop_duplicates('horse_name').set_index('horse_name')['horse_id'].to_dict()
         
-        # 將 result 入面嘅 horse_id（1-14號）替換成真實編號（例如 H196）
+        # 將 result 入面嘅 horse_id(1-14號)替換成真實編號(例如 H196)
         result['horse_id'] = result['horse_name'].map(name_to_id_map).fillna(result['horse_id']).astype(str).str.strip()
     # ========================================================
 
@@ -853,7 +853,7 @@ def _build_features(race_df, history_df):
     return result
 
 def run_prediction(date_str, race_no):
-    """用真正 ML 模型預測（統一 36 特徵版）"""
+    """用真正 ML 模型預測(統一 36 特徵版)"""
     if not os.path.exists("racecard_uploaded.csv"):
         st.error("❌ 找不到 racecard_uploaded.csv")
         return None, None
@@ -949,7 +949,7 @@ def run_prediction(date_str, race_no):
     pred_rank = None
     models_used = []
 
-    # ===== XGBoost（強制用 36 特徵）=====
+    # ===== XGBoost(強制用 36 特徵)=====
     if xgb_model is not None:
         try:
             X_xgb = features_df[features_36].fillna(0).values
@@ -958,7 +958,7 @@ def run_prediction(date_str, race_no):
         except Exception as e:
             st.warning(f"⚠️ XGBoost 失敗：{e}")
 
-    # ===== CatBoost（強制用 36 特徵）=====
+    # ===== CatBoost(強制用 36 特徵)=====
     if cat_model is not None:
         try:
             X_cat = features_df[features_36].fillna(0).values
@@ -967,7 +967,7 @@ def run_prediction(date_str, race_no):
         except Exception as e:
             st.warning(f"⚠️ CatBoost 失敗：{e}")
 
-    # ===== Ranking（強制用 36 特徵）=====
+    # ===== Ranking(強制用 36 特徵)=====
     if rank_model is not None:
         try:
             X_rank = features_df[features_36].fillna(0).values
@@ -979,7 +979,7 @@ def run_prediction(date_str, race_no):
         except Exception as e:
             st.warning(f"⚠️ Ranking 失敗：{e}")
 
-    # ===== 融合（優先從 system_config 讀取權重）=====
+    # ===== 融合(優先從 system_config 讀取權重)=====
     all_preds = [p for p in [pred_xgb, pred_cat, pred_rank] if p is not None]
     if all_preds:
         import json
@@ -1009,7 +1009,7 @@ def run_prediction(date_str, race_no):
         for i, p in enumerate(all_preds):
             pred_proba += weights[i] * p
 
-        st.success(f"✅ 使用模型：{', '.join(models_used)}（權重：XGB {weights[0]:.2f} / Cat {weights[1]:.2f}）")
+        st.success(f"✅ 使用模型：{', '.join(models_used)}(權重：XGB {weights[0]:.2f} / Cat {weights[1]:.2f})")
     else:
         st.warning("⚠️ 冇可用模型，改用賠率估算")
         win_odds = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0).replace(0, 4.0)
@@ -1065,7 +1065,7 @@ def run_prediction(date_str, race_no):
     return result_df, generate_pool_recommendations(result_df, user_group)
 
 def _find_data_col(df, keywords):
-    """搵一個有數據嘅欄位（唔止名要對，仲要有實際值）"""
+    """搵一個有數據嘅欄位(唔止名要對，仲要有實際值)"""
     for c in df.columns:
         cl = str(c).lower().strip()
         if any(k.lower() in cl for k in keywords):
@@ -1108,7 +1108,7 @@ def _rank_from_csv(col_keywords):
         for enc in ['utf-8-sig', 'utf-8', 'big5', 'gbk']:
             try:
                 df = pd.read_csv(fp, encoding=enc, low_memory=False)
-                st.caption(f"📁 讀取：{fp}（{len(df)} 行）")
+                st.caption(f"📁 讀取：{fp}({len(df)} 行)")
                 break
             except Exception:
                 continue
@@ -1166,7 +1166,7 @@ def _rank_from_csv(col_keywords):
 
     if temp.empty:
         st.warning("⚠️ 過濾後數據為空！")
-        with st.expander("🔍 診斷（點擊展開）", expanded=True):
+        with st.expander("🔍 診斷(點擊展開)", expanded=True):
             st.write(f"**使用欄位**：名次=`{pos_col}`，目標=`{target_col}`")
             st.write(f"**名次樣本**：{ps.head(10).tolist()}")
             st.write(f"**目標樣本**：{ts.head(10).tolist()}")
@@ -1183,7 +1183,7 @@ def _rank_from_csv(col_keywords):
 
 def _get_pos_series(df):
     """自动选择名次欄位：优先 Pla，如果冇就用 finish_position"""
-    # 試 Pla（用位置索引，避免隱藏字元）
+    # 試 Pla(用位置索引，避免隱藏字元)
     pla_idx = None
     for i, c in enumerate(df.columns):
         if str(c).strip().lower() == 'pla':
@@ -1222,7 +1222,7 @@ def admin_horse_ranking():
         st.error(f"❌ 讀取失敗：{e}")
         return
 
-    # 🛡️ 智能偵測欄位名（支援中英文）
+    # 🛡️ 智能偵測欄位名(支援中英文)
     name_col = None
     for c in ['horse_name', '馬名', '馬匹名稱', 'Name']:
         if c in df.columns:
@@ -1256,7 +1256,7 @@ def admin_horse_ranking():
     stats = stats.sort_values('勝出', ascending=False).reset_index(drop=True)
     stats = stats[stats['總出賽'] >= 1]
 
-    st.success(f"✅ 共 {len(stats)} 匹馬（有效數據：{len(df)} 條）")
+    st.success(f"✅ 共 {len(stats)} 匹馬(有效數據：{len(df)} 條)")
 
     # 格式化顯示
     stats_display = stats.copy()
@@ -1355,7 +1355,7 @@ def admin_jockey_ranking():
                     max_valid = valid
                     pos_col = c
 
-        # 🛡️ 智能偵測騎師欄位（優先中文，如果冇就用英文）
+        # 🛡️ 智能偵測騎師欄位(優先中文，如果冇就用英文)
         jockey_candidates = ['jockey_cn', '騎師', 'jockey', '騎師名']
         jockey_col = None
         max_valid = 0
@@ -1405,7 +1405,7 @@ def admin_trainer_ranking():
         df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
 
         pos_series, pos_name = _get_pos_series(df)
-        st.caption(f"📊 使用名次欄位：**{pos_name}**（有效數據：{pos_series.notna().sum()}）")
+        st.caption(f"📊 使用名次欄位：**{pos_name}**(有效數據：{pos_series.notna().sum()})")
 
         temp = pd.DataFrame()
         temp['練馬師'] = df['trainer'].astype(str).str.strip()
@@ -1514,7 +1514,7 @@ def admin_lottery_config():
         st.divider()
         st.subheader("✏️ 編輯獎品")
         for i, p in enumerate(prizes):
-            with st.expander(f"{p.get('name', '獎品')}（權重 {p.get('weight', 0)}）"):
+            with st.expander(f"{p.get('name', '獎品')}(權重 {p.get('weight', 0)})"):
                 _w = _safe_int(p.get('weight', 10), 10)
                 _v = _safe_int(p.get('value', 0), 0)
                 ec1, ec2 = st.columns(2)
@@ -1682,7 +1682,7 @@ def show_lottery_interface(username):
     # ===== 🔥 每日自動重置抽獎次數 =====
     today = datetime.now().strftime('%Y-%m-%d')
     if user.get('last_lottery_reset', '') != today:
-        # 每日免費派發 1 次抽獎機會（可自行調整）
+        # 每日免費派發 1 次抽獎機會(可自行調整)
         daily_chances = 1
         user['lottery_chances'] = user.get('lottery_chances', 0) + daily_chances
         user['last_lottery_reset'] = today
@@ -1967,7 +1967,7 @@ def admin_user_management():
             new_is_paid = st.checkbox("付費狀態", value=bool(u.get("is_paid", False)), key="edit_user_paid")
 
         with c2:
-            new_password = st.text_input("新密碼（留空 = 不改）", type="password", key="edit_user_pw")
+            new_password = st.text_input("新密碼(留空 = 不改)", type="password", key="edit_user_pw")
             new_phone = st.text_input("手機號碼", value=u.get("phone", ""), key="edit_user_phone")
             new_exp = st.number_input("經驗值", min_value=0, value=int(u.get("exp", 0)), step=1, key="edit_user_exp")
 
@@ -2150,7 +2150,7 @@ def admin_payment_review():
         st.divider()
 
     st.divider()
-    st.markdown(f"### ✅ 已批准（{len(approved)} 筆）")
+    st.markdown(f"### ✅ 已批准({len(approved)} 筆)")
     if not approved.empty:
         display_cols = [c for c in ['username', 'amount', 'vip_days', 'rewarded_at'] if c in approved.columns]
         st.dataframe(approved[display_cols], use_container_width=True, hide_index=True)
@@ -2158,7 +2158,7 @@ def admin_payment_review():
         st.info("暫無已批准記錄。")
 
     if not rejected.empty:
-        st.markdown(f"### ❌ 已拒絕（{len(rejected)} 筆）")
+        st.markdown(f"### ❌ 已拒絕({len(rejected)} 筆)")
         display_cols = [c for c in ['username', 'amount', 'vip_days', 'rewarded_at'] if c in rejected.columns]
         st.dataframe(rejected[display_cols], use_container_width=True, hide_index=True)
 
@@ -2171,7 +2171,7 @@ def admin_course_analysis():
 
         # 名次
         pos_series, pos_name = _get_pos_series(df)
-        st.caption(f"📊 使用名次欄位：**{pos_name}**（有效數據：{pos_series.notna().sum()}）")
+        st.caption(f"📊 使用名次欄位：**{pos_name}**(有效數據：{pos_series.notna().sum()})")
 
         # 搵場地欄位
         track_col = None
@@ -2351,11 +2351,11 @@ def admin_promo_codes():
             ["percentage", "fixed", "free", "first_order", "min_spend"],
             key="pr_dtype",
             format_func=lambda x: {
-                "percentage": "百分比折扣（如 20% off）",
-                "fixed": "固定金額（如 -$50）",
+                "percentage": "百分比折扣(如 20% off)",
+                "fixed": "固定金額(如 -$50)",
                 "free": "完全免費",
                 "first_order": "首單優惠",
-                "min_spend": "滿減（消費滿 X 減 Y）"
+                "min_spend": "滿減(消費滿 X 減 Y)"
             }.get(x, x)
         )
     with col2:
@@ -2365,7 +2365,7 @@ def admin_promo_codes():
     with col3:
         st.write("")
         st.write("")
-        note = st.text_input("備註（選填）", key="pr_note")
+        note = st.text_input("備註(選填)", key="pr_note")
 
     if st.button("🎟️ 產生優惠碼", type="primary", use_container_width=True, key="pr_gen"):
         new_codes = []
@@ -2489,7 +2489,7 @@ def admin_promo_codes():
             else:
                 st.warning("請先勾選「確認清空」")
 def admin_accuracy_monitor():
-    st.subheader("📈 AI 預測準確率監控（頭 3 名）")
+    st.subheader("📈 AI 預測準確率監控(頭 3 名)")
 
     from database import load_predictions
     ai_data = load_predictions()  # 👈 統一用 ai_data
@@ -2623,7 +2623,7 @@ def admin_accuracy_monitor():
 
     if horse_total > 0:
         st.metric(
-            "🐎 馬匹命中率（預測頭3名中，有幾多匹跑入真實頭3名）",
+            "🐎 馬匹命中率(預測頭3名中，有幾多匹跑入真實頭3名)",
             f"{horse_hit}/{horse_total} = {horse_hit/horse_total:.1%}"
         )
 
@@ -2803,7 +2803,7 @@ def admin_reward_management():
                 approved = pd.DataFrame()
                 rejected = pd.DataFrame()
 
-            st.markdown(f"### 📋 待審核（{len(pending)} 筆）")
+            st.markdown(f"### 📋 待審核({len(pending)} 筆)")
             if pending.empty:
                 st.info("✅ 暫無待審核打賞。")
             else:
@@ -2860,7 +2860,7 @@ def admin_reward_management():
                             st.rerun()
 
             st.divider()
-            st.markdown(f"### ✅ 已批准（{len(approved)} 筆）")
+            st.markdown(f"### ✅ 已批准({len(approved)} 筆)")
             if not approved.empty:
                 display_cols = [c for c in ['username', 'amount', 'vip_days', 'rewarded_at'] if c in approved.columns]
                 st.dataframe(approved[display_cols], use_container_width=True, hide_index=True)
@@ -2868,12 +2868,12 @@ def admin_reward_management():
                 st.info("暫無已批准記錄。")
 
             if not rejected.empty:
-                st.markdown(f"### ❌ 已拒絕（{len(rejected)} 筆）")
+                st.markdown(f"### ❌ 已拒絕({len(rejected)} 筆)")
                 display_cols = [c for c in ['username', 'amount', 'vip_days', 'rewarded_at'] if c in rejected.columns]
                 st.dataframe(rejected[display_cols], use_container_width=True, hide_index=True)
 
     # ============================================================
-    # ⚙️ Tab 2：打賞設定（修改金額、VIP天數、新增、刪除）
+    # ⚙️ Tab 2：打賞設定(修改金額、VIP天數、新增、刪除)
     # ============================================================
     with tab2:
         st.caption("喺呢度新增、修改或刪除打賞選項，前台會即時同步。")
@@ -2991,7 +2991,7 @@ def admin_reward_management():
                     st.error(f"❌ 新增失敗：{e}")
 
     st.divider()
-    st.markdown(f"### ✅ 已批准（{len(approved)} 筆）")
+    st.markdown(f"### ✅ 已批准({len(approved)} 筆)")
     if not approved.empty:
         display_cols = [c for c in ['username', 'amount', 'vip_days', 'rewarded_at'] if c in approved.columns]
         st.dataframe(approved[display_cols], use_container_width=True, hide_index=True)
@@ -2999,7 +2999,7 @@ def admin_reward_management():
         st.info("暫無已批准記錄。")
 
     if not rejected.empty:
-        st.markdown(f"### ❌ 已拒絕（{len(rejected)} 筆）")
+        st.markdown(f"### ❌ 已拒絕({len(rejected)} 筆)")
         display_cols = [c for c in ['username', 'amount', 'vip_days', 'rewarded_at'] if c in rejected.columns]
         st.dataframe(rejected[display_cols], use_container_width=True, hide_index=True)
 def admin_user_activity():
@@ -3207,7 +3207,7 @@ def admin_pool_config():
             group_options = ['free', 'paid', 'VIP']
             group_labels = {
                 'free': '🆓 普通用戶',
-                'paid': '💰 付費用戶（日/月）',
+                'paid': '💰 付費用戶(日/月)',
                 'VIP': '👑 VIP / 季費 / 年費'
             }
             current_group = cfg.get('required_group', 'free')
@@ -3452,15 +3452,15 @@ def login_page():
     else:
         st.subheader("📝 註冊新帳號")
         with st.form("register_form"):
-            new_user = st.text_input("用戶名稱（最少 3 個字）", key="reg_user")
-            phone = st.text_input("手機號碼（可選）", key="reg_phone")
+            new_user = st.text_input("用戶名稱(最少 3 個字)", key="reg_user")
+            phone = st.text_input("手機號碼(可選)", key="reg_phone")
             new_pass = st.text_input("密碼", type="password", key="reg_pass")
             new_pass2 = st.text_input("確認密碼", type="password", key="reg_pass2")
 
             # ===== 邀請碼 =====
             if CONFIG.get("enable_invite_reward", True):
                 invite_code_input = st.text_input(
-                    "邀請碼（如有）",
+                    "邀請碼(如有)",
                     key="reg_invite_code",
                     placeholder="輸入朋友嘅邀請碼，雙方都會獲得獎勵"
                 )
@@ -3548,7 +3548,7 @@ def login_page():
                                 users[new_user]['predictions_limit'] += rewards.get("level1", 5)
                                 users[new_user]['invite_rewards'] += rewards.get("level1", 5)
 
-                                # Level 2：上線（邀請人嘅邀請人）
+                                # Level 2：上線(邀請人嘅邀請人)
                                 level2_user = inviter.get('invited_by')
                                 if level2_user and level2_user in users:
                                     bonus2 = rewards.get("level2", 2)
@@ -3641,7 +3641,7 @@ def main():
                 # 更改密碼
                 with st.expander("🔑 更改密碼", expanded=False):
                     old_pw = st.text_input("舊密碼", type="password", key="pc_old_pw")
-                    new_pw = st.text_input("新密碼（最少 4 字）", type="password", key="pc_new_pw")
+                    new_pw = st.text_input("新密碼(最少 4 字)", type="password", key="pc_new_pw")
                     confirm_pw = st.text_input("確認新密碼", type="password", key="pc_confirm_pw")
                     if st.button("✅ 確認更改", key="pc_change_pw", use_container_width=True):
                         users2 = load_users()
@@ -3698,9 +3698,9 @@ def main():
     st.markdown("---")
     
     # =========================================================================
-    # 👇👇👇 重要：倒數卡片（⏰ 距離下場賽事）一定要放喺呢度！ 👇👇👇
+    # 👇👇👇 重要：倒數卡片(⏰ 距離下場賽事)一定要放喺呢度！ 👇👇👇
     # 你必須將包含「⏰ 距離下場賽事」嘅代碼，原封不動咁貼喺呢度。
-    # 記住：呢度嘅代碼前面「唔可以有 with c1: 或者 with c2: 嘅縮排」，佢一定要係最左邊（或者同上面 c1, c2... 對齊）。
+    # 記住：呢度嘅代碼前面「唔可以有 with c1: 或者 with c2: 嘅縮排」，佢一定要係最左邊(或者同上面 c1, c2... 對齊)。
     # 咁樣佢就會自動佔滿成行，變返做「成條橫額」！
     # =========================================================================
     
@@ -3788,7 +3788,7 @@ def main():
                     if not day_races:
                         st.warning(f"⚠️ {date_str} 冇數據")
                     else:
-                        st.success(f"✅ 準備就緒（共 {len(day_races)} 場）")
+                        st.success(f"✅ 準備就緒(共 {len(day_races)} 場)")
                 except Exception as e:
                     st.error(f"讀取失敗：{e}")
 
@@ -3827,7 +3827,7 @@ def main():
                         all_results = {}
 
                         for i, rn in enumerate(day_races):
-                            status.text(f"⏳ 預測第 {rn} 場中...（{i+1}/{len(day_races)}）")
+                            status.text(f"⏳ 預測第 {rn} 場中...({i+1}/{len(day_races)})")
                             try:
                                 result, pool = run_prediction(date_str, int(rn))
                                 if result is not None and not result.empty:
@@ -3857,7 +3857,7 @@ def main():
 
                 race_list = sorted(all_results.keys())
 
-                st.markdown("#### 🎯 孖寶（連續 2 場）")
+                st.markdown("#### 🎯 孖寶(連續 2 場)")
                 if len(race_list) >= 2:
                     double_start = st.selectbox(
                         "孖寶起始場次", race_list, index=None,
@@ -3878,7 +3878,7 @@ def main():
 
                 st.divider()
 
-                st.markdown("#### 🎯 三寶（連續 3 場）")
+                st.markdown("#### 🎯 三寶(連續 3 場)")
                 if len(race_list) >= 3:
                     treble_start = st.selectbox(
                         "三寶起始場次", race_list, index=None,
@@ -3900,7 +3900,7 @@ def main():
 
                 st.divider()
 
-                st.markdown("#### 🎯 六環彩（連續 6 場）")
+                st.markdown("#### 🎯 六環彩(連續 6 場)")
                 if len(race_list) >= 6:
                     six_up_start = st.selectbox(
                         "六環彩起始場次", race_list, index=None,
@@ -3914,7 +3914,7 @@ def main():
                             horses = [all_results[rn].iloc[0]['horse_name'] for rn in six_up_races]
                             st.success(f"**【六環彩】第 {six_up_races[0]}-{six_up_races[-1]} 場**：{' + '.join(horses)}")
                         else:
-                            st.warning(f"⚠️ 由第 {six_up_start} 場開始，唔夠 6 場數據（只有 {len(six_up_races)} 場）")
+                            st.warning(f"⚠️ 由第 {six_up_start} 場開始，唔夠 6 場數據(只有 {len(six_up_races)} 場)")
                 else:
                     st.warning("⚠️ 唔夠 6 場賽事，冇六環彩")
 
@@ -3965,7 +3965,7 @@ def main():
                             st.dataframe(df_show, use_container_width=True, hide_index=True)
 
     # ============================================================
-    # 🚀 單場預測區塊（按鈕版）
+    # 🚀 單場預測區塊(按鈕版)
     # ============================================================
     cd, cbtn = st.columns([3, 1])
     with cd:
@@ -4009,7 +4009,7 @@ def main():
         st.dataframe(st.session_state['last_prediction'], use_container_width=True)
 
     # ============================================================
-    # 📊 AI 預測表現 & 賽果對比（獨立顯示，唔使預測）
+    # 📊 AI 預測表現 & 賽果對比(獨立顯示，唔使預測)
     # ============================================================
     if st.session_state.get('logged_in', False):
         st.divider()
@@ -4106,17 +4106,17 @@ def main():
                                 df_pred_race = df_pred_race.reset_index(drop=True)
                                 df_result_race = df_result_race.reset_index(drop=True)
                                 
-                                # 準備左邊（預測）
+                                # 準備左邊(預測)
                                 display_pred = df_pred_race[['預測名次', '預測馬', '結果']].copy()
                                 display_pred.columns = ['名次', '預測馬', '結果']
                                 display_pred['名次'] = display_pred['名次'].astype(int)  # 轉做整數
                                 
-                                # 準備右邊（真實）
+                                # 準備右邊(真實)
                                 display_real = df_result_race[['真實名次', '真實馬']].copy()
                                 display_real.columns = ['真實名次', '真實馬']
                                 display_real['真實名次'] = display_real['真實名次'].astype(int)  # 轉做整數
                                 
-                                # 左右合併（因為索引已經重置，所以會完美對齊）
+                                # 左右合併(因為索引已經重置，所以會完美對齊)
                                 display_df = pd.concat([display_pred, display_real], axis=1)
 
                                 st.write(f"📊 {selected_date} 第 {selected_race} 場 預測 vs 賽果")
@@ -4163,7 +4163,7 @@ def main():
             if 'selected_reward' in st.session_state:
                 cfg = st.session_state['selected_reward']
                 st.divider()
-                st.info(f"你選擇咗：**{cfg['label']}**（${cfg['amount']:.0f} → {cfg['vip_days']} 日 VIP）")
+                st.info(f"你選擇咗：**{cfg['label']}**(${cfg['amount']:.0f} → {cfg['vip_days']} 日 VIP)")
                 st.markdown("**付款方式：FPS 轉數快**")
                 st.code("FPS ID: 你的電話號碼或 FPS ID", language=None)
                 st.markdown("付款後，請撳下面個掣，管理員會盡快審核。")
