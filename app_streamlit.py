@@ -1017,7 +1017,7 @@ def run_predictiondate_str race_no)
     return result_df generate_pool_recommendationsresult_df user_group)
 
 def _find_data_coldf keywords)
-    """搵一個有數據嘅欄位唔止名要對仲要有實際值)"""
+    # 搵一個有數據嘅欄位（唔止名要對，仲要有實際值）
     for c in dfcolumns
         cl = strc)lower)strip)
         if anyklower) in cl for k in keywords)
