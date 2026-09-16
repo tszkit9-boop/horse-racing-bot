@@ -1,9 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-scrape_results.py - 爬取馬會賽果（自動判斷日期同馬場，防止重覆場次）
+scrape_results.py - 終極版賽果爬蟲
+特點：
+1. 使用香港時間（UTC+8）
+2. 自動跳過冇賽事嘅日子（最多試 7 日）
+3. 自動判斷馬場（星期三 = HV，其他 = ST）
+4. 防止重複場次
 用法:
-    python scrape_results.py              # 自動爬昨日賽果
+    python scrape_results.py              # 自動爬最近有賽事嘅日子
     python scrape_results.py 2026-09-16 HV  # 手動指定日期同馬場
 """
 
@@ -11,7 +16,7 @@ import os
 import sys
 import time
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -19,6 +24,9 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
+
+# 香港時區
+HK_TZ = timezone(timedelta(hours=8))
 
 
 def get_driver():
@@ -34,19 +42,21 @@ def get_driver():
 
 
 def fetch_single_race(driver, date_str, racecourse, race_no):
+    """爬取單場賽果"""
     url = f"https://bet.hkjc.com/ch/racing/results/{date_str}/{racecourse}/{race_no}"
     print(f"  🌐 載入第 {race_no} 場: {url}")
     driver.get(url)
 
     try:
         WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located((By.CLASS_NAME, "rc-odds-table"))
+            EC.presence_of_element_located((By.TAG_NAME, "table"))
         )
     except Exception:
         return None
 
     time.sleep(1)
     results = []
+
     try:
         rows = driver.find_elements(By.CSS_SELECTOR, "table.rc-odds-table tr")
         for row in rows:
@@ -72,6 +82,7 @@ def fetch_single_race(driver, date_str, racecourse, race_no):
 
 
 def fetch_results(date_str, racecourse):
+    """爬取指定日期同馬場嘅所有場次"""
     driver = get_driver()
     all_data = []
     try:
@@ -91,20 +102,43 @@ def fetch_results(date_str, racecourse):
     return pd.concat(all_data, ignore_index=True) if all_data else None
 
 
+def try_fetch_multiple_days():
+    """自動試最近 7 日，搵到有賽事嘅日子為止"""
+    now_hk = datetime.now(HK_TZ)
+    for days_back in range(1, 8):
+        target = now_hk - timedelta(days=days_back)
+        date_str = target.strftime('%Y-%m-%d')
+        weekday = target.weekday()
+
+        # 星期三 = HV，其他 = ST
+        racecourse = 'HV' if weekday == 2 else 'ST'
+
+        # 淨係試星期二、三、六、日（香港賽馬日）
+        if weekday not in [1, 2, 5, 6]:
+            print(f"⏭️ {date_str} ({['一','二','三','四','五','六','日'][weekday]}) 非賽馬日，跳過")
+            continue
+
+        print(f"\n📅 嘗試爬取 {date_str} ({racecourse})...")
+        df = fetch_results(date_str, racecourse)
+        if df is not None and not df.empty:
+            return df
+        print(f"  ⚠️ {date_str} 冇賽果，試前一日...")
+
+    return None
+
+
 def main():
     if len(sys.argv) >= 3:
         date_str = sys.argv[1]
         racecourse = sys.argv[2].upper()
+        print(f"📅 手動指定：{date_str} ({racecourse})")
+        df_new = fetch_results(date_str, racecourse)
     else:
-        date_str = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
-        weekday = datetime.strptime(date_str, '%Y-%m-%d').weekday()
-        racecourse = 'HV' if weekday == 2 else 'ST'
+        print(f"📅 自動搜尋最近有賽事嘅日子...")
+        df_new = try_fetch_multiple_days()
 
-    print(f"📅 正在爬取 {date_str} ({racecourse}) 賽果...")
-
-    df_new = fetch_results(date_str, racecourse)
     if df_new is None or df_new.empty:
-        print("❌ 無新賽果數據")
+        print("❌ 最近 7 日都冇新賽果數據")
         return
 
     output_file = "race_results_clean.csv"
@@ -114,16 +148,16 @@ def main():
         existing.columns = [str(c).replace('\ufeff', '').strip() for c in existing.columns]
         existing['race_date'] = existing['race_date'].astype(str).str[:10]
 
-        # 🛡️ 先刪除同一日期嘅舊數據，避免重覆
+        # 🛡️ 先刪除同一日期嘅舊數據，避免重複
         existing = existing[~existing['race_date'].isin(df_new['race_date'].unique())]
 
         combined = pd.concat([existing, df_new], ignore_index=True)
         combined.drop_duplicates(subset=['race_date', 'race_no', 'horse_name'], keep='first', inplace=True)
 
-        print(f"📊 合併完成：保留 {len(existing)} 筆舊數據，新增 {len(df_new)} 筆，現有 {len(combined)} 筆")
+        print(f"\n📊 合併完成：保留 {len(existing)} 筆舊數據，新增 {len(df_new)} 筆，現有 {len(combined)} 筆")
     else:
         combined = df_new
-        print(f"📊 新檔案：{len(combined)} 筆")
+        print(f"\n📊 新檔案：{len(combined)} 筆")
 
     combined.to_csv(output_file, index=False, encoding='utf-8-sig')
     print(f"✅ 賽果已儲存至 {output_file}")
