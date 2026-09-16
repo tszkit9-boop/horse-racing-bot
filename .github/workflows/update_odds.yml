@@ -45,7 +45,7 @@ jobs:
           git config --local user.name "GitHub Action"
           # 關鍵修改：先檢查檔案存唔存在，唔存在就唔好 add，避免報錯！
           if [ -f "odds_history.csv" ]; then
-            git add odds_history.csv
+            git add -f odds_history.csv
             git commit -m "Auto update odds history [skip ci]" || echo "No changes to commit"
             git push
           else
