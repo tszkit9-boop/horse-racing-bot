@@ -809,19 +809,19 @@ def run_prediction(date_str, race_no):
     if all_preds:
         import json
         try:
-            with open("system_config.json", "r", encoding="utf-8") as f:
-                sys_config = json.load(f)
-            w_xgb = sys_config.get("xgb_weight", 0.3)
-            w_cat = sys_config.get("cat_weight", 0.5)
-            w_rank = 0.2 # 默認 Rank 權重
-            # 如果 system_config 寫 25/1，就自動轉換為比例
-            if w_xgb > 1 or w_cat > 1:
-                total = w_xgb + w_cat + w_rank
-                w_xgb = w_xgb / total
-                w_cat = w_cat / total
-                w_rank = w_rank / total
+        # ===== 從 Supabase 讀取動態權重 =====
+        try:
+            headers_tune = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+            res_tune = requests.get(f"{SUPABASE_URL}/rest/v1/model_weights?id=eq.1", headers=headers_tune)
+            if res_tune.status_code == 200 and res_tune.json():
+                tune = res_tune.json()[0]
+                w_xgb = float(tune.get('xgb_weight', 0.30))
+                w_cat = float(tune.get('cat_weight', 0.50))
+                w_rank = float(tune.get('rank_weight', 0.20))
+            else:
+                w_xgb, w_cat, w_rank = 0.30, 0.50, 0.20
         except Exception:
-            w_xgb, w_cat, w_rank = 0.3, 0.5, 0.2
+            w_xgb, w_cat, w_rank = 0.30, 0.50, 0.20
 
         weights = []
         if pred_xgb is not None: weights.append(w_xgb)
@@ -2326,6 +2326,83 @@ def admin_promo_codes():
                 st.rerun()
             else:
                 st.warning("請先勾選「確認清空」")
+def admin_model_weights():
+    st.subheader("⚖️ 模型權重設定")
+    st.caption("調整 XGBoost / CatBoost / Ranking 三個模型嘅融合權重，改完即刻生效。")
+
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    try:
+        res = requests.get(f"{SUPABASE_URL}/rest/v1/model_weights?id=eq.1", headers=headers)
+        data = res.json() if res.status_code == 200 else []
+    except Exception as e:
+        st.error(f"讀取失敗：{e}")
+        return
+
+    if not data:
+        st.warning("⚠️ 未有模型權重設定，請先喺 Supabase 建立。")
+        return
+
+    cfg = data[0]
+    current_xgb = float(cfg.get('xgb_weight', 0.30))
+    current_cat = float(cfg.get('cat_weight', 0.50))
+    current_rank = float(cfg.get('rank_weight', 0.20))
+
+    st.markdown("### 📊 目前權重")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("XGBoost", f"{current_xgb:.2f}")
+    c2.metric("CatBoost", f"{current_cat:.2f}")
+    c3.metric("Ranking", f"{current_rank:.2f}")
+
+    st.divider()
+
+    st.markdown("### ✏️ 調整權重")
+    new_xgb = st.slider("XGBoost 權重", 0.0, 1.0, current_xgb, 0.05)
+    new_cat = st.slider("CatBoost 權重", 0.0, 1.0, current_cat, 0.05)
+    new_rank = st.slider("Ranking 權重", 0.0, 1.0, current_rank, 0.05)
+
+    total = new_xgb + new_cat + new_rank
+    if abs(total - 1.0) > 0.01:
+        st.warning(f"⚠️ 三個權重加埋係 {total:.2f}，必須等於 1.0 先可以儲存。")
+    else:
+        st.success(f"✅ 權重總和：{total:.2f}（正確）")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("💾 儲存權重", type="primary", use_container_width=True,
+                     disabled=(abs(total - 1.0) > 0.01)):
+            try:
+                requests.patch(
+                    f"{SUPABASE_URL}/rest/v1/model_weights?id=eq.1",
+                    headers=headers,
+                    json={
+                        "xgb_weight": new_xgb,
+                        "cat_weight": new_cat,
+                        "rank_weight": new_rank,
+                        "updated_at": datetime.now().isoformat()
+                    }
+                )
+                st.success(f"✅ 已更新：XGB {new_xgb:.2f} / Cat {new_cat:.2f} / Rank {new_rank:.2f}")
+                st.rerun()
+            except Exception as e:
+                st.error(f"儲存失敗：{e}")
+
+    with col2:
+        if st.button("🔄 重設為預設", use_container_width=True):
+            try:
+                requests.patch(
+                    f"{SUPABASE_URL}/rest/v1/model_weights?id=eq.1",
+                    headers=headers,
+                    json={"xgb_weight": 0.30, "cat_weight": 0.50, "rank_weight": 0.20}
+                )
+                st.success("✅ 已重設為預設值")
+                st.rerun()
+            except Exception as e:
+                st.error(f"重設失敗：{e}")
 def admin_accuracy_monitor():
     st.subheader("📈 AI 預測準確率監控（頭 3 名）")
 
@@ -3107,6 +3184,7 @@ def admin_page():
         ("📡 監控", admin_monitoring),
         ("📝 內容", admin_content),
         ("🤖 自動維護", admin_auto_maintenance),
+        ("⚖️ 模型權重", admin_model_weights),
         ("🤖 自動化", admin_automation),
         ("🔐 安全", admin_security),
         ("👤 用戶記錄", admin_user_activity),
