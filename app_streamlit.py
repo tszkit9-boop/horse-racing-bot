@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 import pytz
 import warnings
 import requests
+import re
 warnings.filterwarnings('ignore')
 
 try:
@@ -547,7 +548,46 @@ def _build_features(race_df, history_df):
 
     result = race_df.copy()
 
-    # 初始化所有特徵
+    # 初始化所有特徵    
+    # ========================================================
+    # 🛡️ 智能馬名對照：用正規化後嘅馬名去匹配
+    # ========================================================
+    mapping_file = "horse_name_mapping.csv"
+    if os.path.exists(mapping_file):
+        try:
+            mapping_df = pd.read_csv(mapping_file, encoding='utf-8-sig')
+            mapping_df.columns = [str(c).replace('\ufeff', '').strip() for c in mapping_df.columns]
+
+            if 'horse_name' in mapping_df.columns and 'horse_id' in mapping_df.columns:
+                def normalize_name(name):
+                    if pd.isna(name):
+                        return ''
+                    name = str(name).strip()
+                    name = re.sub(r'[\(（].*?[\)）]', '', name)
+                    name = name.replace(' ', '').replace('\u3000', '')
+                    name = re.sub(r'[^\u4e00-\u9fffA-Za-z0-9]', '', name)
+                    return name
+
+                mapping_df['norm_name'] = mapping_df['horse_name'].apply(normalize_name)
+                mapping_df = mapping_df.dropna(subset=['norm_name'])
+                mapping_df = mapping_df[mapping_df['norm_name'] != '']
+
+                mapping_dict = dict(zip(
+                    mapping_df['norm_name'],
+                    mapping_df['horse_id'].astype(str).str.strip()
+                ))
+
+                if 'horse_name' in result.columns:
+                    result['norm_name'] = result['horse_name'].apply(normalize_name)
+                    mapped_ids = result['norm_name'].map(mapping_dict)
+                    result['horse_id'] = mapped_ids.fillna(result['horse_id']).astype(str).str.strip()
+                    result = result.drop(columns=['norm_name'], errors='ignore')
+
+                    matched = mapped_ids.notna().sum()
+                    total = len(result)
+                    print(f"✅ 馬名對照：成功匹配 {matched}/{total} 匹馬")
+        except Exception as e:
+            print(f"⚠️ 加載馬名對照表失敗：{e}")
     feature_cols = [
         'draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
         'jockey_win_rate_50', 'trainer_win_rate_50',
