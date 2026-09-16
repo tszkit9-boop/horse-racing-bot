@@ -3086,7 +3086,7 @@ def admin_page():
         st.rerun()
     st.divider()
 
-        tabs_def = [
+    tabs_def = [
         ("📊 儀表板", admin_dashboard),
         ("👥 用戶管理", admin_user_management),
         ("📥 下載中心", admin_downloads),
@@ -3101,8 +3101,7 @@ def admin_page():
         ("🎟️ 優惠碼", admin_promo_codes),
         ("📈 預測監控", admin_accuracy_monitor),
         ("⏰ 訂閱管理", admin_subscription),
-        #("📤 付款審核", admin_payment_review),
-        ("❤️ 打賞管理", admin_reward_management),  # 👈 加咗呢行
+        ("❤️ 打賞管理", admin_reward_management),
         ("📡 監控", admin_monitoring),
         ("📝 內容", admin_content),
         ("🤖 自動維護", admin_auto_maintenance),
