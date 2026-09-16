@@ -3086,7 +3086,7 @@ def admin_page():
         st.rerun()
     st.divider()
 
-     tabs_def = [
+        tabs_def = [
         ("📊 儀表板", admin_dashboard),
         ("👥 用戶管理", admin_user_management),
         ("📥 下載中心", admin_downloads),
