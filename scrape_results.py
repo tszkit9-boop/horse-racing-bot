@@ -35,7 +35,7 @@ def get_driver():
 
 def fetch_single_race(driver, date_str, racecourse, race_no):
     """爬取單場賽果（馬名、名次）"""
-    url = f"https://bet.hkjc.com/ch/racing/results/{date_str}/{racecourse}/{race_no}"
+    url = f"https://bet.hkjc.com/ch/racing/results/2026-09-16/HV/1"
     print(f"  🌐 載入第 {race_no} 場: {url}")
     driver.get(url)
 
