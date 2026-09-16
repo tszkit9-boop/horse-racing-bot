@@ -21,12 +21,40 @@ try:
 except ImportError:
     HAS_PLOTLY = False
 
+# 第 24-29 行：你原本嘅設定（保留）
 st.set_page_config(
     page_title="🏇 賽馬預測系統",
-    page_icon="🐎",
+    page_icon="🏇",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# 👇 第 30 行開始，喺呢度加我嗰段 CSS
+st.markdown("""
+<style>
+@media (max-width: 768px) {
+    .block-container {
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+        padding-top: 1rem !important;
+    }
+    h1 { font-size: 1.3rem !important; }
+    h2 { font-size: 1.1rem !important; }
+    h3 { font-size: 1rem !important; }
+    p, div, span, label { font-size: 0.9rem !important; }
+    .stButton button {
+        padding: 0.3rem 0.5rem !important;
+        font-size: 0.8rem !important;
+    }
+    .stDataFrame { font-size: 0.75rem !important; }
+    .stSelectbox, .stTextInput, .stNumberInput {
+        font-size: 0.85rem !important;
+    }
+    #MainMenu { visibility: hidden; }
+    footer { visibility: hidden; }
+}
+</style>
+""", unsafe_allow_html=True)
 
 st.markdown("""
 <style>
