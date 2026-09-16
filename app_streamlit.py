@@ -3714,7 +3714,7 @@ def main():
                             df_show.columns = ['馬名', '檔位', '勝率'][:len(cols_to_show)]
                             df_show['勝率'] = df_show['勝率'].apply(lambda x: f"{x:.1%}")
                             st.dataframe(df_show, use_container_width=True, hide_index=True)
-       cd, cbtn = st.columns([3, 1])
+cd, cbtn = st.columns([3, 1])
     with cd:
         date = st.date_input("📅 日期", value=pd.to_datetime("2026-09-06"), key="pd_date")
     with cbtn:
