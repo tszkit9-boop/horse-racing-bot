@@ -28,52 +28,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-# 👇 第 30 行開始喺呢度加我嗰段 CSS
-stmarkdown"""
-<style>
-@media max-width 768px) {
-    block-container {
-        padding-left 03rem important
-        padding-right 03rem important
-        padding-top 1rem important
-    }
-    h1 { font-size 13rem important }
-    h2 { font-size 11rem important }
-    h3 { font-size 1rem important }
-    p div span label { font-size 09rem important }
-    #MainMenu { visibility hidden }
-    footer { visibility hidden }
-
-    /* 👇 場次按鈕一行過平均分配唔滑動 */
-    div[data-testid="stHorizontalBlock"] {
-        display flex important
-        flex-wrap nowrap important
-        gap 2px important
-        overflow visible important
-    }
-    div[data-testid="column"] {
-        flex 1 1 0 important
-        min-width 0 important
-        max-width none important
-        padding 0 important
-    }
-
-    /* 將按鈕縮到最細變成圓形 */
-    stButton button {
-        width 100% important
-        height 36px important
-        min-width 0 important
-        padding 0 important
-        font-size 075rem important
-        font-weight bold important
-        border-radius 50% important
-        display flex important
-        align-items center important
-        justify-content center important
-    }
-}
-</style>
-""" unsafe_allow_html=True)
 <style>
     div[data-testid="stToolbar"] { display none important }
     #MainMenu { display none important }
