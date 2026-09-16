@@ -20,13 +20,15 @@ try:
     HAS_PLOTLY = True
 except ImportError:
     HAS_PLOTLY = False
-
 st.set_page_config(
     page_title="🏇 賽馬預測系統",
     page_icon="🐎",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+SUPABASE_URL = "https://fewanagxvezelufmuggq.supabase.co"
+SUPABASE_KEY = "sb_publishable_Ww_BGSKjqhGCvv5iNl8A0Q_UDkVqdtF"
 
 st.markdown("""
 <style>
