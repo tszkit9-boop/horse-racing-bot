@@ -1222,48 +1222,66 @@ def admin_horse_ranking():
 def admin_jockey_ranking():
     st.subheader("🏇 騎師勝率排行榜")
     try:
+        # 優先嘗試 race_results_clean.csv
         df = pd.read_csv("race_results_clean.csv", encoding='utf-8-sig', low_memory=False)
         df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
-
-        # 智能偵測欄位
+        
+        # 🛡️ 如果冇騎師欄位，自動轉用 ALL_DATA_MERGED.csv
+        if 'jockey' not in df.columns and '騎師' not in df.columns and 'jockey_cn' not in df.columns:
+            st.info("ℹ️ race_results_clean.csv 缺少騎師數據，自動轉用 ALL_DATA_MERGED.csv 統計。")
+            df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig', low_memory=False)
+            df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
+        
+        # 🛡️ 智能偵測名次欄位
         pos_col = None
         for c in ['finish_position', 'Pla.', '名次', '最終名次']:
             if c in df.columns:
                 pos_col = c
                 break
-
+        
+        # 🛡️ 智能偵測騎師欄位（優先中文）
         jockey_col = None
-        for c in ['jockey', '騎師', 'Jockey']:
+        for c in ['jockey_cn', '騎師', 'jockey']:
             if c in df.columns:
                 jockey_col = c
                 break
-
+                
         if pos_col is None or jockey_col is None:
             st.warning("⚠️ 賽果檔案缺少「騎師」或「名次」欄位")
+            st.write(f"可用欄位：{df.columns.tolist()}")
             return
-
+            
         temp = pd.DataFrame()
         temp['騎師'] = df[jockey_col].astype(str).str.strip()
         temp['名次'] = pd.to_numeric(df[pos_col], errors='coerce')
         temp = temp.dropna(subset=['名次'])
         temp = temp[~temp['騎師'].str.lower().isin(['nan', 'none', ''])]
-
+        
         if temp.empty:
             st.warning("⚠️ 過濾後數據為空！")
             return
-
+            
         total = temp['騎師'].value_counts()
         wins = temp[temp['名次'] == 1]['騎師'].value_counts()
         stats = pd.DataFrame({'騎師': total.index, '總出賽': total.values})
         stats['勝出'] = stats['騎師'].map(wins).fillna(0).astype(int)
         stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
         stats = stats.sort_values('勝出', ascending=False).reset_index(drop=True)
-
+        
+        # 如果有 jockey_mapping.json，就用中文名
+        jmap = {}
+        if os.path.exists("jockey_mapping.json"):
+            try:
+                jmap = load_json("jockey_mapping.json")
+            except Exception:
+                pass
+        if jmap:
+            stats['騎師'] = stats['騎師'].map(jmap).fillna(stats['騎師'])
+        
         st.success(f"✅ 共 {len(stats)} 位騎師")
         st.dataframe(stats.head(30), use_container_width=True, hide_index=True)
     except Exception as e:
         st.error(f"讀取失敗：{e}")
-
 
 def admin_trainer_ranking():
     st.subheader("🏇 練馬師勝率排行榜")
