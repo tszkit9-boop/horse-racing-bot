@@ -1095,22 +1095,34 @@ def admin_horse_ranking():
         st.error(f"❌ 讀取失敗：{e}")
         return
 
-    # 強制鎖定中文欄位
-    if '馬名' not in df.columns or '名次' not in df.columns:
+    # 🛡️ 智能偵測欄位名（支援中英文）
+    name_col = None
+    for c in ['horse_name', '馬名', '馬匹名稱', 'Name']:
+        if c in df.columns:
+            name_col = c
+            break
+
+    pos_col = None
+    for c in ['finish_position', '名次', 'Pla.', '最終名次']:
+        if c in df.columns:
+            pos_col = c
+            break
+
+    if name_col is None or pos_col is None:
         st.write(f"可用欄位：{df.columns.tolist()}")
         st.warning("⚠️ 賽果檔案缺少「馬名」或「名次」欄位")
         return
 
     # 清理數據
-    df['馬名'] = df['馬名'].astype(str).str.strip()
-    df['名次'] = pd.to_numeric(df['名次'], errors='coerce')
-    df = df.dropna(subset=['名次', '馬名'])
-    df = df[df['馬名'] != '']
+    df[name_col] = df[name_col].astype(str).str.strip()
+    df[pos_col] = pd.to_numeric(df[pos_col], errors='coerce')
+    df = df.dropna(subset=[pos_col, name_col])
+    df = df[df[name_col] != '']
 
     # 計算每匹馬嘅出賽次數、勝出次數、勝率
-    stats = df.groupby('馬名').agg(
-        總出賽=('名次', 'count'),
-        勝出=('名次', lambda x: (x == 1).sum())
+    stats = df.groupby(name_col).agg(
+        總出賽=(pos_col, 'count'),
+        勝出=(pos_col, lambda x: (x == 1).sum())
     ).reset_index()
 
     stats['勝率'] = stats['勝出'] / stats['總出賽']
