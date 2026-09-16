@@ -22,13 +22,12 @@ except ImportError
     HAS_PLOTLY = False
 
 # 第 24-29 行你原本嘅設定保留)
-stset_page_config
-    page_title="🏇 賽馬預測系統"
-    page_icon="🏇"
-    layout="wide"
+st.set_page_config(
+    page_title="🏇 賽馬預測系統",
+    page_icon="🏇",
+    layout="wide",
     initial_sidebar_state="expanded"
 )
-
 # 👇 第 30 行開始喺呢度加我嗰段 CSS
 stmarkdown"""
 <style>
