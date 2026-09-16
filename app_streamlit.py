@@ -177,7 +177,6 @@ SUPABASE_KEY = "sb_publishable_Ww_BGSKjqhGCvv5iNl8A0Q_UDkVqdtF"
 
 @st.cache_data(ttl=60)  # 👈 加呢行！快取 60 秒
 def load_users():
-    """從 Supabase 讀取所有用戶（保留原本預設值邏輯）"""
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}"
