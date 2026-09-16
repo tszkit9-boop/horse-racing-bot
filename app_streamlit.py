@@ -1647,7 +1647,7 @@ def show_lottery_interfaceusername)
 
     # 顯示抽獎次數
     stmarkdownf"""
-    <div style="background linear-gradient135deg #667eea #764ba2)
+<div style="background: linear-gradient(135deg, #667eea, #764ba2); padding: 1rem; border-radius: 10px;">
                 padding 18px 22px border-radius 14px color white
                 text-align center margin-bottom 16px">
         <div style="font-size 14px opacity 09">🎟️ 你嘅抽獎機會</div>
