@@ -4081,6 +4081,28 @@ def main():
                                 display_real = df_result_race[['真實名次', '真實馬']].reset_index(drop=True)
                                 display_real.columns = ['真實名次', '真實馬']
                                 
+                                # 🔥 修正對比邏輯：只按馬名，唔理名次
+                                real_top3_names = df_result_race['真實馬'].tolist()
+                                
+                                df_pred_race['結果'] = df_pred_race['預測馬'].apply(
+                                    lambda x: '命中' if x in real_top3_names else '失準'
+                                )
+                                
+                                # 🛠️ 關鍵修正：強制重置索引，確保左右對齊！
+                                df_pred_race = df_pred_race.reset_index(drop=True)
+                                df_result_race = df_result_race.reset_index(drop=True)
+                                
+                                # 準備左邊（預測）
+                                display_pred = df_pred_race[['預測名次', '預測馬', '結果']].copy()
+                                display_pred.columns = ['名次', '預測馬', '結果']
+                                display_pred['名次'] = display_pred['名次'].astype(int)  # 轉做整數
+                                
+                                # 準備右邊（真實）
+                                display_real = df_result_race[['真實名次', '真實馬']].copy()
+                                display_real.columns = ['真實名次', '真實馬']
+                                display_real['真實名次'] = display_real['真實名次'].astype(int)  # 轉做整數
+                                
+                                # 左右合併（因為索引已經重置，所以會完美對齊）
                                 display_df = pd.concat([display_pred, display_real], axis=1)
 
                                 st.write(f"📊 {selected_date} 第 {selected_race} 場 預測 vs 賽果")
