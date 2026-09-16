@@ -3898,11 +3898,16 @@ def main():
         st.caption("你嘅支持係我哋繼續開發嘅動力！打賞後會自動增加 VIP 天數。")
 
         headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-        try:
-            res = requests.get(f"{SUPABASE_URL}/rest/v1/reward_config?enabled=eq.true&order=amount.asc", headers=headers)
-            configs = res.json() if res.status_code == 200 else []
-        except Exception:
-            configs = []
+try:
+    res = requests.get(f"{SUPABASE_URL}/rest/v1/reward_config?enabled=eq.true&order=amount.asc", headers=headers)
+    if res.status_code == 200:
+        configs = res.json()
+    else:
+        st.error(f"讀取失敗 (HTTP {res.status_code}): {res.text}")
+        configs = []
+except Exception as e:
+    st.error(f"連線錯誤：{e}")
+    configs = []
 
         if not configs:
             st.info("暫未開放打賞，敬請期待！")
