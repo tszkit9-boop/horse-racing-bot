@@ -740,6 +740,7 @@ def run_prediction(date_str, race_no):
 
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
+    # ===== 歷史數據 =====
     history_df = pd.DataFrame()
     if os.path.exists("ALL_DATA_MERGED.csv"):
         try:
@@ -750,11 +751,14 @@ def run_prediction(date_str, race_no):
         except Exception as e:
             st.warning(f"⚠️ 讀取歷史數據失敗：{e}")
 
+    # ===== 建立特徵 =====
     with st.spinner("🔧 計算特徵中..."):
         features_df = _build_features(filtered, history_df)
 
+    # ===== 載入模型 =====
     xgb_model, cat_model, rank_model = load_ml_models()
 
+    # ===== 36 特徵列表 =====
     features_36 = ['draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
                    'jockey_win_rate_50', 'trainer_win_rate_50',
                    'distance_win_rate', 'distance_avg_rank', 'win_odds',
@@ -804,17 +808,14 @@ def run_prediction(date_str, race_no):
         except Exception as e:
             st.warning(f"⚠️ Ranking 失敗：{e}")
 
-               # ===== 根據場地讀取動態權重 =====
-        try:
-            # 判斷場地：星期三 = HV（跑馬地夜馬），其餘 = ST（沙田）
-            race_date_obj = pd.to_datetime(date_str)
-            if race_date_obj.weekday() == 2:  # 2 = Wednesday
-                venue = 'HV'
-            else:
-                venue = 'ST'
+    # ===== 融合 =====
+    all_preds = [p for p in [pred_xgb, pred_cat, pred_rank] if p is not None]
 
+    if all_preds:
+        # ===== 從 Supabase 讀取動態權重 =====
+        try:
             headers_tune = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-            res_tune = requests.get(f"{SUPABASE_URL}/rest/v1/venue_model_weights?venue=eq.{venue}", headers=headers_tune)
+            res_tune = requests.get(f"{SUPABASE_URL}/rest/v1/model_weights?id=eq.1", headers=headers_tune)
             if res_tune.status_code == 200 and res_tune.json():
                 tune = res_tune.json()[0]
                 w_xgb = float(tune.get('xgb_weight', 0.30))
@@ -826,9 +827,12 @@ def run_prediction(date_str, race_no):
             w_xgb, w_cat, w_rank = 0.30, 0.50, 0.20
 
         weights = []
-        if pred_xgb is not None: weights.append(w_xgb)
-        if pred_cat is not None: weights.append(w_cat)
-        if pred_rank is not None: weights.append(w_rank)
+        if pred_xgb is not None:
+            weights.append(w_xgb)
+        if pred_cat is not None:
+            weights.append(w_cat)
+        if pred_rank is not None:
+            weights.append(w_rank)
 
         weights = np.array(weights) / sum(weights)
 
@@ -843,9 +847,10 @@ def run_prediction(date_str, race_no):
         inv = 1 / win_odds
         pred_proba = (inv / inv.sum()).values
 
+    # 正規化
     pred_proba = pred_proba / pred_proba.sum()
 
-    # 提取馬號
+    # ===== 結果 =====
     id_col = None
     for col in ['horse_id', '馬號', 'horse_no']:
         if col in filtered.columns:
@@ -864,8 +869,11 @@ def run_prediction(date_str, race_no):
             result_df[c] = filtered[c]
 
     result_df = result_df.rename(columns={
-        'horse_name': '馬名', 'draw': '檔位', 'weight': '負磅',
-        'jockey': '騎師', 'trainer': '練馬師'
+        'horse_name': '馬名',
+        'draw': '檔位',
+        'weight': '負磅',
+        'jockey': '騎師',
+        'trainer': '練馬師'
     })
     result_df['預測勝率'] = pred_proba
     result_df['值博指數'] = result_df['預測勝率'] * 10
@@ -874,20 +882,17 @@ def run_prediction(date_str, race_no):
     )
     result_df = result_df.sort_values('預測勝率', ascending=False).reset_index(drop=True)
 
-    # 儲存
-    ai_file = "ai_predictions.json"
-    ai_data = load_json(ai_file) if os.path.exists(ai_file) else {}
+    # ===== 儲存到 Supabase =====
+    from database import save_prediction
     key = f"{date_str}_{race_no}"
-    ai_data[key] = {
+    save_prediction(key, {
         "date": date_str, "race": race_no,
         "top_horse": result_df.iloc[0]['馬名'],
         "top_prob": float(result_df.iloc[0]['預測勝率']),
         "all_horses": result_df['馬名'].tolist(),
         "model_used": models_used,
         "predicted_at": datetime.now().isoformat()
-    }
-    with open(ai_file, 'w', encoding='utf-8') as f:
-        json.dump(ai_data, f, ensure_ascii=False, indent=2)
+    })
 
     user_group = st.session_state.get('role', 'free')
     return result_df, generate_pool_recommendations(result_df, user_group)
