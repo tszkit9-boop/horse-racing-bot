@@ -26,6 +26,7 @@ def fetch_odds(date_str, racecourse):
     driver = make_driver()
     all_records = []
     crawl_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    previous_horses = set()  # 👈 用嚟記錄上一場嘅馬名
 
     try:
         for race_no in range(1, 12):
@@ -50,7 +51,25 @@ def fetch_odds(date_str, racecourse):
                 print(f"  ⚠️ 第 {race_no} 場搵唔到賠率表")
                 continue
 
+            # 👇 先收集今場嘅馬名
+            current_horses = set()
             rows = target_table.find_all('tr')
+            for row in rows[1:]:
+                cells = row.find_all('td')
+                if len(cells) < 8:
+                    continue
+                horse_name = cells[2].text.strip()
+                if horse_name:
+                    current_horses.add(horse_name)
+
+            # 👇 防重複機制：如果今場同上一場完全一樣，就當係「冇呢場」，直接停止
+            if current_horses and current_horses == previous_horses:
+                print(f"  ⏹️ 第 {race_no} 場同上一場重複，相信賽事已經完結，停止爬取。")
+                break
+
+            previous_horses = current_horses
+
+            # 👇 正常寫入數據
             for row in rows[1:]:
                 cells = row.find_all('td')
                 if len(cells) < 8:
