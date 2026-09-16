@@ -2,7 +2,7 @@ def fetch_single_race(driver, date_str, racecourse, race_no):
     """爬取單場賽果（改用官方 LocalResults.aspx 頁面）"""
     # 🛡️ 關鍵修正：改用 racing.hkjc.com 嘅官方賽果頁面
     date_formatted = date_str.replace('-', '/')
-    url = f"https://racing.hkjc.com/zh-hk/local/information/localresults"
+    url = f"https://racing.hkjc.com/racing/information/Chinese/Racing/LocalResults.aspx?RaceDate={date_formatted}&Racecourse={racecourse}&RaceNo={race_no}"
     print(f"  🌐 載入第 {race_no} 場: {url}")
     driver.get(url)
 
