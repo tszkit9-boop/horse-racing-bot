@@ -805,7 +805,7 @@ def _build_featuresrace_df history_df)
     return result
 
 def run_predictiondate_str race_no)
-    """用真正 ML 模型預測統一 36 特徵版)"""
+    # 用真正 ML 模型預測（統一 36 特徵版）
     if not ospathexists"racecard_uploadedcsv")
         sterror"❌ 找不到 racecard_uploadedcsv")
         return None None
