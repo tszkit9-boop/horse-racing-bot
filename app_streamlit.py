@@ -804,11 +804,6 @@ def run_prediction(date_str, race_no):
         except Exception as e:
             st.warning(f"⚠️ Ranking 失敗：{e}")
 
-    # ===== 融合（優先從 system_config 讀取權重）=====
-    all_preds = [p for p in [pred_xgb, pred_cat, pred_rank] if p is not None]
-    if all_preds:
-        import json
-        try:
         # ===== 從 Supabase 讀取動態權重 =====
         try:
             headers_tune = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
