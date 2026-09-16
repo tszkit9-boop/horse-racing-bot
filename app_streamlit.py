@@ -2757,6 +2757,173 @@ def admin_security():
             st.warning(f"讀取日誌時出錯：{e}")
     else:
         st.info("📭 暫無日誌檔案。")
+def admin_reward_management():
+    st.subheader("❤️ 打賞管理")
+
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    tab1, tab2 = st.tabs(["📋 審核打賞", "⚙️ 打賞設定"])
+
+    with tab1:
+        st.caption("審核用戶打賞，批准後會自動加 VIP 天數。")
+        try:
+            res = requests.get(f"{SUPABASE_URL}/rest/v1/reward_history?order=rewarded_at.desc&limit=50", headers=headers)
+            records = res.json() if res.status_code == 200 else []
+        except Exception as e:
+            st.error(f"讀取打賞記錄失敗：{e}")
+            records = []
+
+        if not records:
+            st.info("暫無打賞記錄。")
+        else:
+            df = pd.DataFrame(records)
+            if 'status' in df.columns:
+                pending = df[df['status'] == 'pending']
+                approved = df[df['status'] == 'approved']
+                rejected = df[df['status'] == 'rejected']
+            else:
+                pending = df
+                approved = pd.DataFrame()
+                rejected = pd.DataFrame()
+
+            st.markdown(f"### 待審核（{len(pending)} 筆）")
+            if pending.empty:
+                st.info("暫無待審核打賞。")
+            else:
+                for _, row in pending.iterrows():
+                    with st.container():
+                        c1, c2, c3, c4, c5, c6 = st.columns([2, 1, 1, 2, 1, 1])
+                        c1.write(f"**{row.get('username', '未知')}**")
+                        c2.write(f"${row.get('amount', 0):.0f}")
+                        c3.write(f"+{row.get('vip_days', 0)} 日")
+                        c4.caption(f"{str(row.get('rewarded_at', ''))[:16]}")
+
+                        if c5.button("批准", key=f"approve_{row['id']}", use_container_width=True):
+                            username = row.get('username')
+                            vip_days = int(row.get('vip_days', 0))
+                            u_res = requests.get(f"{SUPABASE_URL}/rest/v1/users?username=eq.{username}", headers=headers)
+                            if u_res.status_code == 200 and u_res.json():
+                                user = u_res.json()[0]
+                                expiry = user.get('expiry_date') or datetime.now().strftime('%Y-%m-%d')
+                                try:
+                                    expiry_dt = datetime.strptime(expiry, '%Y-%m-%d')
+                                except Exception:
+                                    expiry_dt = datetime.now()
+                                new_expiry = (expiry_dt + timedelta(days=vip_days)).strftime('%Y-%m-%d')
+                                requests.patch(f"{SUPABASE_URL}/rest/v1/users?username=eq.{username}", headers=headers,
+                                    json={"user_group": "VIP", "is_paid": True, "expiry_date": new_expiry})
+                            requests.patch(f"{SUPABASE_URL}/rest/v1/reward_history?id=eq.{row['id']}", headers=headers,
+                                json={"status": "approved"})
+                            st.success(f"已批准 {username}，加 {vip_days} 日 VIP")
+                            st.rerun()
+
+                        if c6.button("拒絕", key=f"reject_{row['id']}", use_container_width=True):
+                            requests.patch(f"{SUPABASE_URL}/rest/v1/reward_history?id=eq.{row['id']}", headers=headers,
+                                json={"status": "rejected"})
+                            st.warning(f"已拒絕 {row.get('username', '')} 嘅打賞")
+                            st.rerun()
+
+            st.divider()
+            st.markdown(f"### 已批准（{len(approved)} 筆）")
+            if not approved.empty:
+                display_cols = [c for c in ['username', 'amount', 'vip_days', 'rewarded_at'] if c in approved.columns]
+                st.dataframe(approved[display_cols], use_container_width=True, hide_index=True)
+            else:
+                st.info("暫無已批准記錄。")
+
+            if not rejected.empty:
+                st.markdown(f"### 已拒絕（{len(rejected)} 筆）")
+                display_cols = [c for c in ['username', 'amount', 'vip_days', 'rewarded_at'] if c in rejected.columns]
+                st.dataframe(rejected[display_cols], use_container_width=True, hide_index=True)
+
+    with tab2:
+        st.caption("喺呢度新增、修改或刪除打賞選項，前台會即時同步。")
+        try:
+            res = requests.get(f"{SUPABASE_URL}/rest/v1/reward_config?order=amount.asc", headers=headers)
+            configs = res.json() if res.status_code == 200 else []
+        except Exception as e:
+            st.error(f"讀取失敗：{e}")
+            configs = []
+
+        if not configs:
+            st.info("暫無打賞選項，請喺下面新增。")
+            df = pd.DataFrame(columns=['id', 'amount', 'vip_days', 'label', 'enabled'])
+        else:
+            df = pd.DataFrame(configs)
+            for col in ['id', 'amount', 'vip_days', 'label', 'enabled']:
+                if col not in df.columns:
+                    df[col] = None
+
+        st.markdown("### 編輯現有選項")
+        if not df.empty:
+            edited = st.data_editor(
+                df[['id', 'amount', 'vip_days', 'label', 'enabled']],
+                use_container_width=True, hide_index=True,
+                column_config={
+                    "id": st.column_config.NumberColumn("ID", disabled=True),
+                    "amount": st.column_config.NumberColumn("金額", min_value=1, step=1),
+                    "vip_days": st.column_config.NumberColumn("VIP 天數", min_value=1, step=1),
+                    "label": st.column_config.TextColumn("顯示標籤", max_chars=30),
+                    "enabled": st.column_config.CheckboxColumn("啟用")
+                },
+                key="reward_config_editor"
+            )
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("儲存所有修改", type="primary", use_container_width=True):
+                    success = 0
+                    for _, row in edited.iterrows():
+                        try:
+                            res = requests.patch(f"{SUPABASE_URL}/rest/v1/reward_config?id=eq.{row['id']}", headers=headers,
+                                json={"amount": float(row['amount']), "vip_days": int(row['vip_days']),
+                                      "label": str(row['label']), "enabled": bool(row['enabled'])})
+                            if res.status_code in [200, 204]:
+                                success += 1
+                        except Exception:
+                            pass
+                    st.success(f"已更新 {success} 個選項")
+                    st.rerun()
+            with c2:
+                if st.button("重新載入", use_container_width=True):
+                    st.rerun()
+
+            st.markdown("### 刪除選項")
+            delete_id = st.selectbox("選擇要刪除嘅選項", options=df['id'].tolist(),
+                format_func=lambda x: f"ID {x} - {df[df['id']==x]['label'].values[0]} (${df[df['id']==x]['amount'].values[0]})",
+                key="delete_reward_select")
+            if st.button("確認刪除", type="secondary"):
+                try:
+                    requests.delete(f"{SUPABASE_URL}/rest/v1/reward_config?id=eq.{delete_id}", headers=headers)
+                    st.success(f"已刪除選項 ID {delete_id}")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"刪除失敗：{e}")
+
+        st.divider()
+        st.markdown("### 新增打賞選項")
+        with st.form("add_reward_form"):
+            c1, c2, c3 = st.columns([2, 2, 3])
+            with c1:
+                new_amount = st.number_input("金額", min_value=1, value=20, step=1)
+            with c2:
+                new_days = st.number_input("VIP 天數", min_value=1, value=3, step=1)
+            with c3:
+                new_label = st.text_input("顯示標籤", value="一杯咖啡", max_chars=30)
+            if st.form_submit_button("新增選項", type="primary"):
+                try:
+                    payload = {"amount": float(new_amount), "vip_days": int(new_days), "label": new_label, "enabled": True}
+                    res = requests.post(f"{SUPABASE_URL}/rest/v1/reward_config", headers=headers, json=payload)
+                    if res.status_code in [200, 201, 204]:
+                        st.success(f"已新增：{new_label} (${new_amount} → {new_days} 日 VIP)")
+                        st.rerun()
+                    else:
+                        st.error(f"新增失敗：{res.text}")
+                except Exception as e:
+                    st.error(f"新增失敗：{e}")
 def admin_pool_config():
     st.subheader("🎯 彩池設定")
     st.caption("可以獨立開關每個彩池，同設定最低會員級別。")
@@ -2919,7 +3086,7 @@ def admin_page():
         st.rerun()
     st.divider()
 
-    tabs_def = [
+     tabs_def = [
         ("📊 儀表板", admin_dashboard),
         ("👥 用戶管理", admin_user_management),
         ("📥 下載中心", admin_downloads),
@@ -2934,12 +3101,13 @@ def admin_page():
         ("🎟️ 優惠碼", admin_promo_codes),
         ("📈 預測監控", admin_accuracy_monitor),
         ("⏰ 訂閱管理", admin_subscription),
-       #("📤 付款審核", admin_payment_review),
+        #("📤 付款審核", admin_payment_review),
+        ("❤️ 打賞管理", admin_reward_management),  # 👈 加咗呢行
         ("📡 監控", admin_monitoring),
         ("📝 內容", admin_content),
         ("🤖 自動維護", admin_auto_maintenance),
         ("🤖 自動化", admin_automation),
-        ("🔐 安全", admin_security),        
+        ("🔐 安全", admin_security),
         ("👤 用戶記錄", admin_user_activity),
         ("🎰 抽獎設定", admin_lottery_config),
         ("🛒 商城設定", admin_shop_config),
@@ -3547,13 +3715,30 @@ def main():
                             df_show.columns = ['馬名', '檔位', '勝率'][:len(cols_to_show)]
                             df_show['勝率'] = df_show['勝率'].apply(lambda x: f"{x:.1%}")
                             st.dataframe(df_show, use_container_width=True, hide_index=True)
-    cd, cr, cbtn = st.columns([2, 2, 1])
+       cd, cbtn = st.columns([3, 1])
     with cd:
         date = st.date_input("📅 日期", value=pd.to_datetime("2026-09-06"), key="pd_date")
-    with cr:
-        race_no = st.selectbox("🏇 場次", list(range(1, 12)), index=0, key="pd_race")
     with cbtn:
+        st.write("")
         run_predict = st.button("🚀 執行預測", type="primary", use_container_width=True, key="pd_btn")
+
+    st.markdown("**🏇 選擇場次：**")
+    if 'selected_race' not in st.session_state:
+        st.session_state.selected_race = 1
+
+    race_cols = st.columns(11)
+    for i in range(11):
+        race_num = i + 1
+        with race_cols[i]:
+            if st.session_state.selected_race == race_num:
+                if st.button(f"{race_num}", key=f"race_btn_{race_num}", use_container_width=True, type="primary"):
+                    st.session_state.selected_race = race_num
+            else:
+                if st.button(f"{race_num}", key=f"race_btn_{race_num}", use_container_width=True):
+                    st.session_state.selected_race = race_num
+
+    race_no = st.session_state.selected_race
+    st.caption(f"已選擇：第 {race_no} 場")
 
     if run_predict:
         with st.spinner("預測中..."):
@@ -3705,19 +3890,58 @@ def main():
                 st.info("ℹ️ 沒有日期同時有預測同賽果數據")
         else:
             st.info("ℹ️ 請確保已有預測紀錄及賽果數據")    
-    # ===== 付款功能 =====
+    # ===== 打賞功能 =====
     st.divider()
-    st.subheader("💳 付款功能")
+    st.subheader("❤️ 打賞支持")
     if st.session_state.get('logged_in', False):
-        if st.button("💳 前往付款", use_container_width=True, key="go_payment_btn"):
-            st.session_state.show_payment = True
-        if st.session_state.get('show_payment', False):
-            show_paywall()
-            if st.button("⬅️ 返回", key="back_pay_btn"):
-                st.session_state.show_payment = False
-                st.rerun()
+        st.caption("你嘅支持係我哋繼續開發嘅動力！打賞後會自動增加 VIP 天數。")
+        
+        headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+        try:
+            res = requests.get(f"{SUPABASE_URL}/rest/v1/reward_config?enabled=eq.true&order=amount.asc", headers=headers)
+            configs = res.json() if res.status_code == 200 else []
+        except Exception:
+            configs = []
+        
+        if not configs:
+            st.info("暫未開放打賞，敬請期待！")
+        else:
+            cols = st.columns(len(configs))
+            for i, cfg in enumerate(configs):
+                with cols[i]:
+                    st.markdown(f"### {cfg.get('label', '打賞')}")
+                    st.markdown(f"**${cfg['amount']:.0f}**")
+                    st.caption(f"送 {cfg['vip_days']} 日 VIP")
+                    if st.button(f"打賞 ${cfg['amount']:.0f}", key=f"reward_{cfg['id']}", use_container_width=True):
+                        st.session_state['selected_reward'] = cfg
+            
+            if 'selected_reward' in st.session_state:
+                cfg = st.session_state['selected_reward']
+                st.divider()
+                st.info(f"你選擇咗：**{cfg['label']}**（${cfg['amount']:.0f} → {cfg['vip_days']} 日 VIP）")
+                st.markdown("**付款方式：FPS 轉數快**")
+                st.code("FPS ID: 你的電話號碼或 FPS ID", language=None)
+                st.markdown("付款後，請撳下面個掣，管理員會盡快審核。")
+                
+                if st.button("✅ 我已經付款", type="primary"):
+                    headers_post = {
+                        "apikey": SUPABASE_KEY,
+                        "Authorization": f"Bearer {SUPABASE_KEY}",
+                        "Content-Type": "application/json"
+                    }
+                    payload = {
+                        "username": st.session_state.get('username', 'unknown'),
+                        "amount": cfg['amount'],
+                        "vip_days": cfg['vip_days'],
+                        "rewarded_at": datetime.now().isoformat(),
+                        "status": "pending"
+                    }
+                    requests.post(f"{SUPABASE_URL}/rest/v1/reward_history", headers=headers_post, json=payload)
+                    st.success("✅ 已提交！管理員審核後會自動加 VIP 天數。")
+                    if 'selected_reward' in st.session_state:
+                        del st.session_state['selected_reward']
     else:
-        st.info("請先登入以使用付款功能")
+        st.info("請先登入以使用打賞功能")
 
     st.divider()
     st.warning("⚠️ 免責聲明：本系統預測僅供參考，不構成投注建議。賽馬活動涉及風險，用戶應量力而為。用戶必須年滿18歲。")
