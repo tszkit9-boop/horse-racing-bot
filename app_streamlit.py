@@ -550,15 +550,15 @@ def _build_features(race_df, history_df):
 
     # 初始化所有特徵    
     # ========================================================
-    # 🛡️ 智能馬名對照：用正規化後嘅馬名去匹配
+    # 🛡️ 智能馬名對照：用中文馬名去匹配 horse_id
     # ========================================================
-    mapping_file = "horse_name_mapping.csv"
+    mapping_file = "horse_name_mapping_cn.csv"
     if os.path.exists(mapping_file):
         try:
             mapping_df = pd.read_csv(mapping_file, encoding='utf-8-sig')
             mapping_df.columns = [str(c).replace('\ufeff', '').strip() for c in mapping_df.columns]
 
-            if 'horse_name' in mapping_df.columns and 'horse_id' in mapping_df.columns:
+            if 'horse_name_cn' in mapping_df.columns and 'horse_id' in mapping_df.columns:
                 def normalize_name(name):
                     if pd.isna(name):
                         return ''
@@ -568,7 +568,27 @@ def _build_features(race_df, history_df):
                     name = re.sub(r'[^\u4e00-\u9fffA-Za-z0-9]', '', name)
                     return name
 
-                mapping_df['norm_name'] = mapping_df['horse_name'].apply(normalize_name)
+                # 用中文名做 key
+                mapping_df['norm_name'] = mapping_df['horse_name_cn'].apply(normalize_name)
+                mapping_df = mapping_df.dropna(subset=['norm_name'])
+                mapping_df = mapping_df[mapping_df['norm_name'] != '']
+
+                mapping_dict = dict(zip(
+                    mapping_df['norm_name'],
+                    mapping_df['horse_id'].astype(str).str.strip()
+                ))
+
+                if 'horse_name' in result.columns:
+                    result['norm_name'] = result['horse_name'].apply(normalize_name)
+                    mapped_ids = result['norm_name'].map(mapping_dict)
+                    result['horse_id'] = mapped_ids.fillna(result['horse_id']).astype(str).str.strip()
+                    result = result.drop(columns=['norm_name'], errors='ignore')
+
+                    matched = mapped_ids.notna().sum()
+                    total = len(result)
+                    st.success(f"✅ 馬名對照：成功匹配 {matched}/{total} 匹馬")
+        except Exception as e:
+            st.warning(f"⚠️ 加載馬名對照表失敗：{e}")
                 mapping_df = mapping_df.dropna(subset=['norm_name'])
                 mapping_df = mapping_df[mapping_df['norm_name'] != '']
 
