@@ -585,7 +585,7 @@ def _build_features(race_df, history_df):
 
                     matched = mapped_ids.notna().sum()
                     total = len(result)
-                    print(f"✅ 馬名對照：成功匹配 {matched}/{total} 匹馬")
+                    st.success(f"✅ 馬名對照：成功匹配 {matched}/{total} 匹馬")
         except Exception as e:
             print(f"⚠️ 加載馬名對照表失敗：{e}")
     feature_cols = [
