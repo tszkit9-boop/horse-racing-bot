@@ -1868,6 +1868,50 @@ def admin_user_management():
                 st.rerun()
             else:
                 st.error("❌ 儲存失敗，請檢查 Supabase 權限")
+def admin_downloads():
+    st.subheader("📥 下載中心")
+    st.caption("喺呢度下載系統嘅重要檔案備份。")
+
+    import os
+    from datetime import datetime
+
+    download_files = [
+        ("users.json", "用戶資料"),
+        ("ai_predictions.json", "AI 預測記錄"),
+        ("race_results_clean.csv", "賽果數據"),
+        ("racecard_uploaded.csv", "排位表"),
+        ("odds_history.csv", "賠率歷史"),
+        ("finance.json", "財務記錄"),
+        ("promo_codes.json", "優惠碼"),
+        ("payment_proofs.json", "付款記錄"),
+        ("admin_log.json", "管理員日誌"),
+        ("user_activity_log.json", "用戶活動日誌"),
+        ("content.json", "公告內容"),
+        ("automation.json", "自動化設定"),
+        ("lottery_config.json", "抽獎設定"),
+        ("lottery_records.json", "抽獎記錄"),
+        ("shop_config.json", "商城設定"),
+        ("shop_purchases.json", "商城購買記錄"),
+        ("predictions.db", "SQLite 資料庫"),
+    ]
+
+    for file_name, description in download_files:
+        if os.path.exists(file_name):
+            size = os.path.getsize(file_name)
+            mtime = datetime.fromtimestamp(os.path.getmtime(file_name)).strftime('%Y-%m-%d %H:%M:%S')
+            c1, c2, c3 = st.columns([3, 2, 1])
+            c1.write(f"**{file_name}**")
+            c1.caption(description)
+            c2.caption(f"大小：{size/1024:.1f} KB　|　最後更新：{mtime}")
+            with open(file_name, "rb") as f:
+                c3.download_button(
+                    label="📥 下載",
+                    data=f,
+                    file_name=file_name,
+                    key=f"download_{file_name}"
+                )
+        else:
+            st.caption(f"⚠️ {file_name} 唔存在")
 
     st.divider()
 
