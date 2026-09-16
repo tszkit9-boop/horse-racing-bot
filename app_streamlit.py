@@ -804,10 +804,17 @@ def run_prediction(date_str, race_no):
         except Exception as e:
             st.warning(f"⚠️ Ranking 失敗：{e}")
 
-        # ===== 從 Supabase 讀取動態權重 =====
+               # ===== 根據場地讀取動態權重 =====
         try:
+            # 判斷場地：星期三 = HV（跑馬地夜馬），其餘 = ST（沙田）
+            race_date_obj = pd.to_datetime(date_str)
+            if race_date_obj.weekday() == 2:  # 2 = Wednesday
+                venue = 'HV'
+            else:
+                venue = 'ST'
+
             headers_tune = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-            res_tune = requests.get(f"{SUPABASE_URL}/rest/v1/model_weights?id=eq.1", headers=headers_tune)
+            res_tune = requests.get(f"{SUPABASE_URL}/rest/v1/venue_model_weights?venue=eq.{venue}", headers=headers_tune)
             if res_tune.status_code == 200 and res_tune.json():
                 tune = res_tune.json()[0]
                 w_xgb = float(tune.get('xgb_weight', 0.30))
@@ -2323,7 +2330,7 @@ def admin_promo_codes():
                 st.warning("請先勾選「確認清空」")
 def admin_model_weights():
     st.subheader("⚖️ 模型權重設定")
-    st.caption("調整 XGBoost / CatBoost / Ranking 三個模型嘅融合權重，改完即刻生效。")
+    st.caption("分開調整沙田 (ST) 同跑馬地 (HV) 嘅模型融合權重，改完即刻生效。")
 
     headers = {
         "apikey": SUPABASE_KEY,
@@ -2331,73 +2338,82 @@ def admin_model_weights():
         "Content-Type": "application/json"
     }
 
+    # 讀取現有權重
     try:
-        res = requests.get(f"{SUPABASE_URL}/rest/v1/model_weights?id=eq.1", headers=headers)
-        data = res.json() if res.status_code == 200 else []
+        res = requests.get(f"{SUPABASE_URL}/rest/v1/venue_model_weights?order=venue.asc", headers=headers)
+        configs = res.json() if res.status_code == 200 else []
     except Exception as e:
         st.error(f"讀取失敗：{e}")
         return
 
-    if not data:
-        st.warning("⚠️ 未有模型權重設定，請先喺 Supabase 建立。")
+    if not configs:
+        st.warning("⚠️ 未有場地權重設定，請先喺 Supabase 建立。")
         return
 
-    cfg = data[0]
-    current_xgb = float(cfg.get('xgb_weight', 0.30))
-    current_cat = float(cfg.get('cat_weight', 0.50))
-    current_rank = float(cfg.get('rank_weight', 0.20))
+    # 轉為 dict 方便讀取
+    cfg_map = {c['venue']: c for c in configs}
 
-    st.markdown("### 📊 目前權重")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("XGBoost", f"{current_xgb:.2f}")
-    c2.metric("CatBoost", f"{current_cat:.2f}")
-    c3.metric("Ranking", f"{current_rank:.2f}")
+    # ===== 分開兩個 Tab 顯示 =====
+    tab_st, tab_hv = st.tabs(["🏇 沙田 (ST)", "🏇 跑馬地 (HV)"])
 
-    st.divider()
+    for venue, tab in [('ST', tab_st), ('HV', tab_hv)]:
+        with tab:
+            cfg = cfg_map.get(venue, {})
+            current_xgb = float(cfg.get('xgb_weight', 0.30))
+            current_cat = float(cfg.get('cat_weight', 0.50))
+            current_rank = float(cfg.get('rank_weight', 0.20))
 
-    st.markdown("### ✏️ 調整權重")
-    new_xgb = st.slider("XGBoost 權重", 0.0, 1.0, current_xgb, 0.05)
-    new_cat = st.slider("CatBoost 權重", 0.0, 1.0, current_cat, 0.05)
-    new_rank = st.slider("Ranking 權重", 0.0, 1.0, current_rank, 0.05)
+            st.markdown(f"### 📊 {venue} 目前權重")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("XGBoost", f"{current_xgb:.2f}")
+            c2.metric("CatBoost", f"{current_cat:.2f}")
+            c3.metric("Ranking", f"{current_rank:.2f}")
 
-    total = new_xgb + new_cat + new_rank
-    if abs(total - 1.0) > 0.01:
-        st.warning(f"⚠️ 三個權重加埋係 {total:.2f}，必須等於 1.0 先可以儲存。")
-    else:
-        st.success(f"✅ 權重總和：{total:.2f}（正確）")
+            st.divider()
 
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("💾 儲存權重", type="primary", use_container_width=True,
-                     disabled=(abs(total - 1.0) > 0.01)):
-            try:
-                requests.patch(
-                    f"{SUPABASE_URL}/rest/v1/model_weights?id=eq.1",
-                    headers=headers,
-                    json={
-                        "xgb_weight": new_xgb,
-                        "cat_weight": new_cat,
-                        "rank_weight": new_rank,
-                        "updated_at": datetime.now().isoformat()
-                    }
-                )
-                st.success(f"✅ 已更新：XGB {new_xgb:.2f} / Cat {new_cat:.2f} / Rank {new_rank:.2f}")
-                st.rerun()
-            except Exception as e:
-                st.error(f"儲存失敗：{e}")
+            st.markdown(f"### ✏️ 調整 {venue} 權重")
+            new_xgb = st.slider(f"XGBoost 權重 ({venue})", 0.0, 1.0, current_xgb, 0.05, key=f"slider_xgb_{venue}")
+            new_cat = st.slider(f"CatBoost 權重 ({venue})", 0.0, 1.0, current_cat, 0.05, key=f"slider_cat_{venue}")
+            new_rank = st.slider(f"Ranking 權重 ({venue})", 0.0, 1.0, current_rank, 0.05, key=f"slider_rank_{venue}")
 
-    with col2:
-        if st.button("🔄 重設為預設", use_container_width=True):
-            try:
-                requests.patch(
-                    f"{SUPABASE_URL}/rest/v1/model_weights?id=eq.1",
-                    headers=headers,
-                    json={"xgb_weight": 0.30, "cat_weight": 0.50, "rank_weight": 0.20}
-                )
-                st.success("✅ 已重設為預設值")
-                st.rerun()
-            except Exception as e:
-                st.error(f"重設失敗：{e}")
+            total = new_xgb + new_cat + new_rank
+            if abs(total - 1.0) > 0.01:
+                st.warning(f"⚠️ 三個權重加埋係 {total:.2f}，必須等於 1.0 先可以儲存。")
+            else:
+                st.success(f"✅ 權重總和：{total:.2f}（正確）")
+
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button(f"💾 儲存 {venue} 權重", type="primary", use_container_width=True,
+                             disabled=(abs(total - 1.0) > 0.01), key=f"save_{venue}"):
+                    try:
+                        requests.patch(
+                            f"{SUPABASE_URL}/rest/v1/venue_model_weights?venue=eq.{venue}",
+                            headers=headers,
+                            json={
+                                "xgb_weight": new_xgb,
+                                "cat_weight": new_cat,
+                                "rank_weight": new_rank,
+                                "updated_at": datetime.now().isoformat()
+                            }
+                        )
+                        st.success(f"✅ 已更新 {venue}：XGB {new_xgb:.2f} / Cat {new_cat:.2f} / Rank {new_rank:.2f}")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"儲存失敗：{e}")
+
+            with col2:
+                if st.button(f"🔄 重設 {venue} 為預設", use_container_width=True, key=f"reset_{venue}"):
+                    try:
+                        requests.patch(
+                            f"{SUPABASE_URL}/rest/v1/venue_model_weights?venue=eq.{venue}",
+                            headers=headers,
+                            json={"xgb_weight": 0.30, "cat_weight": 0.50, "rank_weight": 0.20}
+                        )
+                        st.success(f"✅ 已重設 {venue} 為預設值")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"重設失敗：{e}")
 def admin_accuracy_monitor():
     st.subheader("📈 AI 預測準確率監控（頭 3 名）")
 
