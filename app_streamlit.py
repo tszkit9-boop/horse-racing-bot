@@ -3963,20 +3963,39 @@ def main():
     # ============================================================
     # 🚀 單場預測區塊
     # ============================================================
-    cd, cr, cbtn = st.columns([2, 2, 1])
+cd, cbtn = st.columns([3, 1])
     with cd:
         date = st.date_input("📅 日期", value=pd.to_datetime("2026-09-06"), key="pd_date")
-    with cr:
-        race_no = st.selectbox("🏇 場次", list(range(1, 12)), index=0, key="pd_race")
     with cbtn:
+        st.write("")
         run_predict = st.button("🚀 執行預測", type="primary", use_container_width=True, key="pd_btn")
+
+    # 👇 場次按鈕
+    st.markdown("**🏇 選擇場次：**")
+    if 'selected_race' not in st.session_state:
+        st.session_state.selected_race = 1
+
+    race_cols = st.columns(11)
+    for i in range(11):
+        race_num = i + 1
+        with race_cols[i]:
+            # 用唔同顏色顯示當前選中嘅場次
+            if st.session_state.selected_race == race_num:
+                if st.button(f"**{race_num}**", key=f"race_btn_{race_num}", use_container_width=True, type="primary"):
+                    st.session_state.selected_race = race_num
+            else:
+                if st.button(f"{race_num}", key=f"race_btn_{race_num}", use_container_width=True):
+                    st.session_state.selected_race = race_num
+
+    race_no = st.session_state.selected_race
+    st.caption(f"已選擇：第 {race_no} 場")
 
     if run_predict:
         with st.spinner("預測中..."):
             result, pool = run_prediction(date.strftime("%Y-%m-%d"), race_no)
             if result is not None and not result.empty:
                 st.session_state['last_prediction'] = result
-                st.session_state['last_pool'] = pool
+                st.sessionst_pool'] = pool
 
     if 'last_prediction' in st.session_state and st.session_state['last_prediction'] is not None:
         st.success("✅ 預測完成！")
