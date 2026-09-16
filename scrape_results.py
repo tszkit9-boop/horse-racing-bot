@@ -1,17 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-scrape_results.py - 終極版賽果爬蟲
-特點：
-1. 使用香港時間（UTC+8）
-2. 自動跳過冇賽事嘅日子（最多試 7 日）
-3. 自動判斷馬場（星期三 = HV，其他 = ST）
-4. 防止重複場次
-5. 使用官方 LocalResults.aspx 頁面
-6. 多重選擇器 + 除錯輸出
-用法:
-    python scrape_results.py              # 自動爬最近有賽事嘅日子
-    python scrape_results.py 2026-09-16 HV  # 手動指定日期同馬場
+scrape_results.py - 終極版賽果爬蟲（自動 Push + 數據去重）
 """
 
 import os
@@ -44,7 +34,7 @@ def get_driver():
 
 
 def fetch_single_race(driver, date_str, racecourse, race_no):
-    """爬取單場賽果（多重選擇器 + 除錯）"""
+    """爬取單場賽果（多重選擇器 + 去重 + 限制 14 匹）"""
     date_formatted = date_str.replace('-', '/')
     url = f"https://racing.hkjc.com/racing/information/Chinese/Racing/LocalResults.aspx?RaceDate={date_formatted}&Racecourse={racecourse}&RaceNo={race_no}"
     print(f"  🌐 載入第 {race_no} 場: {url}")
@@ -99,6 +89,15 @@ def fetch_single_race(driver, date_str, racecourse, race_no):
         except Exception:
             continue
 
+    # 🛡️ 關鍵修正：去重 + 限制最多 14 匹馬
+    seen_horses = set()
+    cleaned_results = []
+    for r in results:
+        if r['horse_name'] not in seen_horses:
+            seen_horses.add(r['horse_name'])
+            cleaned_results.append(r)
+    results = cleaned_results[:14]  # 只保留頭 14 匹
+
     if results:
         print(f"  ✅ 第 {race_no} 場：{len(results)} 匹")
     else:
@@ -136,6 +135,7 @@ def try_fetch_multiple_days():
 
         racecourse = 'HV' if weekday == 2 else 'ST'
 
+        # 只試星期二、三、六、日（香港賽馬日）
         if weekday not in [1, 2, 5, 6]:
             print(f"⏭️ {date_str} 非賽馬日，跳過")
             continue
@@ -170,6 +170,7 @@ def main():
         existing.columns = [str(c).replace('\ufeff', '').strip() for c in existing.columns]
         existing['race_date'] = existing['race_date'].astype(str).str[:10]
 
+        # 🛡️ 先刪除同一日期嘅舊數據，避免重複
         existing = existing[~existing['race_date'].isin(df_new['race_date'].unique())]
 
         combined = pd.concat([existing, df_new], ignore_index=True)
