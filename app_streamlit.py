@@ -3843,13 +3843,10 @@ def main():
 
                 race_list = sorted(all_results.keys())
 
-                # ===== 1. 孖寶 =====
                 st.markdown("#### 🎯 孖寶（連續 2 場）")
                 if len(race_list) >= 2:
                     double_start = st.selectbox(
-                        "孖寶起始場次",
-                        race_list,
-                        index=None,
+                        "孖寶起始場次", race_list, index=None,
                         placeholder="請選擇孖寶起始場次...",
                         key="double_start_selector"
                     )
@@ -3867,13 +3864,10 @@ def main():
 
                 st.divider()
 
-                # ===== 2. 三寶 =====
                 st.markdown("#### 🎯 三寶（連續 3 場）")
                 if len(race_list) >= 3:
                     treble_start = st.selectbox(
-                        "三寶起始場次",
-                        race_list,
-                        index=None,
+                        "三寶起始場次", race_list, index=None,
                         placeholder="請選擇三寶起始場次...",
                         key="treble_start_selector"
                     )
@@ -3892,13 +3886,10 @@ def main():
 
                 st.divider()
 
-                # ===== 3. 六環彩 =====
                 st.markdown("#### 🎯 六環彩（連續 6 場）")
                 if len(race_list) >= 6:
                     six_up_start = st.selectbox(
-                        "六環彩起始場次",
-                        race_list,
-                        index=None,
+                        "六環彩起始場次", race_list, index=None,
                         placeholder="請選擇六環彩起始場次...",
                         key="six_up_start_selector"
                     )
@@ -3915,7 +3906,6 @@ def main():
 
                 st.divider()
 
-                # ===== 4. 各場預測結果 =====
                 st.subheader("📊 各場預測結果")
                 cols_per_row = 3
                 for i in range(0, len(race_list), cols_per_row):
@@ -3928,64 +3918,65 @@ def main():
                         with col:
                             st.markdown(f"**🏇 第 {rn} 場**")
                             df = all_results[rn].copy()
-                            
-                            # 🛡️ 智能偵測欄位：支援中英文，保證馬名一定會顯示
                             rename_map = {}
                             if '馬名' in df.columns:
-                                rename_map = {'馬名': '馬名'}
+                                rename_map['馬名'] = '馬名'
                             elif 'horse_name' in df.columns:
-                                rename_map = {'horse_name': '馬名'}
-                            
-                            if '檔位' in df.columns: rename_map['檔位'] = '檔位'
-                            elif 'draw' in df.columns: rename_map['draw'] = '檔位'
-                            
-                            if '賠率' in df.columns: rename_map['賠率'] = '賠率'
-                            elif 'win_odds' in df.columns: rename_map['win_odds'] = '賠率'
-                            
-                            if '騎師' in df.columns: rename_map['騎師'] = '騎師'
-                            elif 'jockey' in df.columns: rename_map['jockey'] = '騎師'
-                            
-                            if '練馬師' in df.columns: rename_map['練馬師'] = '練馬師'
-                            elif 'trainer' in df.columns: rename_map['trainer'] = '練馬師'
-                            
-                            if '預測勝率' in df.columns: rename_map['預測勝率'] = '勝率'
-                            elif '勝率' in df.columns: rename_map['勝率'] = '勝率'
-                            
+                                rename_map['horse_name'] = '馬名'
+                            if '檔位' in df.columns:
+                                rename_map['檔位'] = '檔位'
+                            elif 'draw' in df.columns:
+                                rename_map['draw'] = '檔位'
+                            if '賠率' in df.columns:
+                                rename_map['賠率'] = '賠率'
+                            elif 'win_odds' in df.columns:
+                                rename_map['win_odds'] = '賠率'
+                            if '騎師' in df.columns:
+                                rename_map['騎師'] = '騎師'
+                            elif 'jockey' in df.columns:
+                                rename_map['jockey'] = '騎師'
+                            if '練馬師' in df.columns:
+                                rename_map['練馬師'] = '練馬師'
+                            elif 'trainer' in df.columns:
+                                rename_map['trainer'] = '練馬師'
+                            if '預測勝率' in df.columns:
+                                rename_map['預測勝率'] = '勝率'
+                            elif '勝率' in df.columns:
+                                rename_map['勝率'] = '勝率'
                             valid_cols = [c for c in rename_map.keys() if c in df.columns]
                             df_show = df[valid_cols].head(3).copy()
                             df_show.rename(columns=rename_map, inplace=True)
-                            
                             if '勝率' in df_show.columns:
                                 df_show['勝率'] = df_show['勝率'].apply(lambda x: f"{x:.1%}")
-                            
                             st.dataframe(df_show, use_container_width=True, hide_index=True)
 
     # ============================================================
-    # 🚀 單場預測區塊
+    # 🚀 單場預測區塊（按鈕版）
     # ============================================================
-cd, cbtn = st.columns([3, 1])
+    cd, cbtn = st.columns([3, 1])
     with cd:
         date = st.date_input("📅 日期", value=pd.to_datetime("2026-09-06"), key="pd_date")
     with cbtn:
         st.write("")
         run_predict = st.button("🚀 執行預測", type="primary", use_container_width=True, key="pd_btn")
 
-    # 👇 場次按鈕
     st.markdown("**🏇 選擇場次：**")
     if 'selected_race' not in st.session_state:
         st.session_state.selected_race = 1
 
-    race_cols = st.columns(11)
+    race_cols = st.columns(6)
     for i in range(11):
         race_num = i + 1
-        with race_cols[i]:
-            # 用唔同顏色顯示當前選中嘅場次
+        col_idx = i % 6
+        with race_cols[col_idx]:
             if st.session_state.selected_race == race_num:
                 if st.button(f"**{race_num}**", key=f"race_btn_{race_num}", use_container_width=True, type="primary"):
                     st.session_state.selected_race = race_num
             else:
                 if st.button(f"{race_num}", key=f"race_btn_{race_num}", use_container_width=True):
                     st.session_state.selected_race = race_num
+        if col_idx == 5 and i < 10:
+            race_cols = st.columns(6)
 
     race_no = st.session_state.selected_race
     st.caption(f"已選擇：第 {race_no} 場")
@@ -3995,7 +3986,7 @@ cd, cbtn = st.columns([3, 1])
             result, pool = run_prediction(date.strftime("%Y-%m-%d"), race_no)
             if result is not None and not result.empty:
                 st.session_state['last_prediction'] = result
-                st.sessionst_pool'] = pool
+                st.session_state['last_pool'] = pool
 
     if 'last_prediction' in st.session_state and st.session_state['last_prediction'] is not None:
         st.success("✅ 預測完成！")
@@ -4082,20 +4073,24 @@ cd, cbtn = st.columns([3, 1])
                                 df_result_race = df_result_date[df_result_date['race_no'] == selected_race].copy().sort_values('finish_position').head(4)
                                 df_result_race = df_result_race.rename(columns={'finish_position': '真實名次', 'horse_name': '真實馬'})
 
-                                           # 🔥 修正對比邏輯：只按馬名，唔理名次
                                 real_top3_names = df_result_race['真實馬'].tolist()
-                                
-                                df_pred_race['結果'] = df_pred_race['預測馬'].apply(
-                                    lambda x: '命中' if x in real_top3_names else '失準'
-                                )
+                                df_pred_race['結果'] = df_pred_race['預測馬'].apply(lambda x: '命中' if x in real_top3_names else '失準')
                                 
                                 display_pred = df_pred_race[['預測名次', '預測馬', '結果']].copy()
                                 display_pred.columns = ['名次', '預測馬', '結果']
-                                
                                 display_real = df_result_race[['真實名次', '真實馬']].reset_index(drop=True)
                                 display_real.columns = ['真實名次', '真實馬']
                                 
                                 display_df = pd.concat([display_pred, display_real], axis=1)
+
+                                st.write(f"📊 {selected_date} 第 {selected_race} 場 預測 vs 賽果")
+
+                                def highlight_row(row):
+                                    if row['結果'] == '命中': return ['background-color: #d4edda; color: black'] * len(row)
+                                    elif row['結果'] == '失準': return ['background-color: #f8d7da; color: black'] * len(row)
+                                    return ['background-color: white; color: black'] * len(row)
+
+                                st.dataframe(display_df.style.apply(highlight_row, axis=1), use_container_width=True, hide_index=True)
                             else:
                                 st.info(f"ℹ️ {selected_date} 沒有可比對嘅場次")
                         else:
