@@ -541,7 +541,7 @@ def reject_payment_request(username, request_id, admin_username):
     return False, "找不到該申請"
 
 def generate_pool_recommendations(df, user_group='free'):
-    """生成彩池推薦（按會員級別 + 每個彩池只出一個組合）"""
+    """生成彩池推薦 (按會員級別 + 每個彩池只出一個組合)"""
     if df.empty:
         return "⚠️ 無數據"
 
