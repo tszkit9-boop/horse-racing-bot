@@ -3889,19 +3889,19 @@ def main():
                 st.info("ℹ️ 沒有日期同時有預測同賽果數據")
         else:
             st.info("ℹ️ 請確保已有預測紀錄及賽果數據")    
-    # ===== 打賞功能 =====
+    # ===== 打賞支持 =====
     st.divider()
     st.subheader("❤️ 打賞支持")
     if st.session_state.get('logged_in', False):
         st.caption("你嘅支持係我哋繼續開發嘅動力！打賞後會自動增加 VIP 天數。")
-        
+
         headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
         try:
             res = requests.get(f"{SUPABASE_URL}/rest/v1/reward_config?enabled=eq.true&order=amount.asc", headers=headers)
             configs = res.json() if res.status_code == 200 else []
         except Exception:
             configs = []
-        
+
         if not configs:
             st.info("暫未開放打賞，敬請期待！")
         else:
@@ -3913,7 +3913,7 @@ def main():
                     st.caption(f"送 {cfg['vip_days']} 日 VIP")
                     if st.button(f"打賞 ${cfg['amount']:.0f}", key=f"reward_{cfg['id']}", use_container_width=True):
                         st.session_state['selected_reward'] = cfg
-            
+
             if 'selected_reward' in st.session_state:
                 cfg = st.session_state['selected_reward']
                 st.divider()
@@ -3921,7 +3921,7 @@ def main():
                 st.markdown("**付款方式：FPS 轉數快**")
                 st.code("FPS ID: 你的電話號碼或 FPS ID", language=None)
                 st.markdown("付款後，請撳下面個掣，管理員會盡快審核。")
-                
+
                 if st.button("✅ 我已經付款", type="primary"):
                     headers_post = {
                         "apikey": SUPABASE_KEY,
