@@ -12,6 +12,7 @@ import time
 from datetime import datetime, timedelta
 import pytz
 import warnings
+import requests
 warnings.filterwarnings('ignore')
 
 try:
@@ -3891,13 +3892,7 @@ def main():
                 st.info("ℹ️ 沒有日期同時有預測同賽果數據")
         else:
             st.info("ℹ️ 請確保已有預測紀錄及賽果數據")    
-    # ===== 打賞支持 =====
-    st.divider()
-    st.subheader("❤️ 打賞支持")
-    if st.session_state.get('logged_in', False):
-        st.caption("你嘅支持係我哋繼續開發嘅動力！打賞後會自動增加 VIP 天數。")
 
-        headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     # ===== 打賞支持 =====
     st.divider()
     st.subheader("❤️ 打賞支持")
