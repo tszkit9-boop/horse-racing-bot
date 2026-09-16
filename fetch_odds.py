@@ -26,7 +26,8 @@ def fetch_odds(date_str, racecourse):
     driver = make_driver()
     all_records = []
     crawl_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    previous_horses = set()  # 👈 用嚟記錄上一場嘅馬名
+    previous_horses = set()   # 用嚟記錄上一場嘅馬名
+    first_race_horses = set() # 用嚟記錄第一場嘅馬名（防重複）
 
     try:
         for race_no in range(1, 12):
@@ -51,7 +52,7 @@ def fetch_odds(date_str, racecourse):
                 print(f"  ⚠️ 第 {race_no} 場搵唔到賠率表")
                 continue
 
-            # 👇 先收集今場嘅馬名
+            # 先收集今場嘅馬名
             current_horses = set()
             rows = target_table.find_all('tr')
             for row in rows[1:]:
@@ -62,14 +63,17 @@ def fetch_odds(date_str, racecourse):
                 if horse_name:
                     current_horses.add(horse_name)
 
-            # 👇 防重複機制：如果今場同上一場完全一樣，就當係「冇呢場」，直接停止
-            if current_horses and current_horses == previous_horses:
-                print(f"  ⏹️ 第 {race_no} 場同上一場重複，相信賽事已經完結，停止爬取。")
+            # 🛡️ 防重複機制：如果今場同上一場一樣，或者同第一場一樣，就停止，唔寫入數據！
+            if not current_horses or current_horses == previous_horses or (race_no > 1 and current_horses == first_race_horses):
+                print(f"  ⏹️ 第 {race_no} 場同上一場重複（相信賽事已經完結），停止爬取，唔寫入數據。")
                 break
+
+            if race_no == 1:
+                first_race_horses = current_horses
 
             previous_horses = current_horses
 
-            # 👇 正常寫入數據
+            # 正常寫入數據（只會喺真正有呢場嗰陣執行）
             for row in rows[1:]:
                 cells = row.find_all('td')
                 if len(cells) < 8:
