@@ -42,24 +42,27 @@ st.markdown("""
     h2 { font-size: 1.1rem !important; }
     h3 { font-size: 1rem !important; }
     p, div, span, label { font-size: 0.9rem !important; }
-    
-    /* 原本嘅按鈕設定 */
     .stButton button {
         padding: 0.3rem 0.5rem !important;
         font-size: 0.8rem !important;
     }
-    
-    /* 👇 新增：縮短場次按鈕之間嘅空白 */
-    div[data-testid="stButton"] {
-        margin-bottom: -10px !important;
-    }
-    
     .stDataFrame { font-size: 0.75rem !important; }
     .stSelectbox, .stTextInput, .stNumberInput {
         font-size: 0.85rem !important;
     }
     #MainMenu { visibility: hidden; }
     footer { visibility: hidden; }
+
+    /* 👇 強制場次按鈕每行顯示 4 個，唔好變成一條長龍 */
+    div[data-testid="stHorizontalBlock"] {
+        flex-wrap: wrap !important;
+    }
+    div[data-testid="column"] {
+        min-width: 22% !important;
+        max-width: 22% !important;
+        flex: 1 1 22% !important;
+        margin-right: 2% !important;
+    }
 }
 </style>
 """, unsafe_allow_html=True)
