@@ -42,10 +42,18 @@ st.markdown("""
     h2 { font-size: 1.1rem !important; }
     h3 { font-size: 1rem !important; }
     p, div, span, label { font-size: 0.9rem !important; }
+    
+    /* 原本嘅按鈕設定 */
     .stButton button {
         padding: 0.3rem 0.5rem !important;
         font-size: 0.8rem !important;
     }
+    
+    /* 👇 新增：縮短場次按鈕之間嘅空白 */
+    div[data-testid="stButton"] {
+        margin-bottom: -10px !important;
+    }
+    
     .stDataFrame { font-size: 0.75rem !important; }
     .stSelectbox, .stTextInput, .stNumberInput {
         font-size: 0.85rem !important;
