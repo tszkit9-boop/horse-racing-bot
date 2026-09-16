@@ -2327,15 +2327,14 @@ def admin_promo_codes():
             else:
                 st.warning("請先勾選「確認清空」")
 def admin_accuracy_monitor():
+    st.subheader("📈 AI 預測準確率監控（頭 3 名）")
+
     from database import load_predictions
     ai_data = load_predictions()
 
     if not ai_data:
         st.warning("⚠️ 未有 AI 預測記錄")
         return
-
-    with open(ai_file, 'r', encoding='utf-8') as f:
-        ai_data = json.load(f)
 
     st.info(f"📊 總共 {len(ai_data)} 個預測記錄")
 
