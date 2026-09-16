@@ -1791,20 +1791,83 @@ def admin_dashboard():
 
 def admin_user_management():
     st.subheader("👥 用戶管理")
-    user_file = "users.json"
 
-    if not os.path.exists(user_file):
-        st.error("❌ users.json 不存在")
-        return
+    users = load_users()
 
-    try:
-        with open(user_file, 'r', encoding='utf-8') as f:
-            users = json.load(f)
-    except Exception as e:
-        st.error(f"❌ 讀取失敗：{e}")
+    if not users:
+        st.error("❌ 讀取用戶失敗，請檢查 Supabase 連線")
         return
 
     st.info(f"✅ 成功載入 {len(users)} 個用戶")
+
+    # ===== 顯示用戶列表 =====
+    df_users = pd.DataFrame([
+        {
+            "用戶名": u,
+            "群組": d.get("group", "free"),
+            "等級": d.get("level", "🥉 銅牌會員"),
+            "虛擬幣": d.get("virtual_balance", 0),
+            "付費": "✅" if d.get("is_paid") else "❌"
+        }
+        for u, d in users.items()
+    ])
+    st.dataframe(df_users, use_container_width=True, hide_index=True)
+
+    st.divider()
+
+    # ===== 編輯用戶 =====
+    st.subheader("✏️ 編輯用戶")
+    selected_user = st.selectbox("選擇要編輯嘅用戶", list(users.keys()), key="edit_user_select")
+
+    if selected_user:
+        u = users[selected_user]
+
+        c1, c2 = st.columns(2)
+        with c1:
+            group_options = ["free", "paid", "VIP", "super_admin"]
+            current_group = u.get("group", "free")
+            if current_group not in group_options:
+                current_group = "free"
+            new_group = st.selectbox("群組", group_options, index=group_options.index(current_group), key="edit_user_group")
+
+            level_options = ["🥉 銅牌會員", "🥈 銀牌會員", "🥇 金牌會員", "💎 鑽石會員", "👑 傳說會員", "👑 超級管理員"]
+            current_level = u.get("level", "🥉 銅牌會員")
+            if current_level not in level_options:
+                current_level = "🥉 銅牌會員"
+            new_level = st.selectbox("等級", level_options, index=level_options.index(current_level), key="edit_user_level")
+
+            new_is_paid = st.checkbox("付費狀態", value=bool(u.get("is_paid", False)), key="edit_user_paid")
+
+        with c2:
+            new_password = st.text_input("新密碼（留空 = 不改）", type="password", key="edit_user_pw")
+            new_phone = st.text_input("手機號碼", value=u.get("phone", ""), key="edit_user_phone")
+            new_exp = st.number_input("經驗值", min_value=0, value=int(u.get("exp", 0)), step=1, key="edit_user_exp")
+
+        new_note = st.text_area("備註", value=u.get("note", ""), key="edit_user_note")
+
+        if st.button("💾 儲存變更", type="primary", key="save_user_btn"):
+            users[selected_user]["group"] = new_group
+            users[selected_user]["level"] = new_level
+            users[selected_user]["is_paid"] = new_is_paid
+            users[selected_user]["phone"] = new_phone
+            users[selected_user]["note"] = new_note
+            users[selected_user]["exp"] = int(new_exp)
+
+            if new_password:
+                users[selected_user]["password"] = new_password
+
+            # 根據群組自動調整預測次數限制
+            if new_group in ["super_admin", "VIP", "paid"]:
+                users[selected_user]["predictions_limit"] = -1
+            else:
+                users[selected_user]["predictions_limit"] = 2
+
+            success = save_users(users)
+            if success:
+                st.success(f"✅ 已儲存 {selected_user} 嘅變更")
+                st.rerun()
+            else:
+                st.error("❌ 儲存失敗，請檢查 Supabase 權限")
 
     # ===== 1. 用戶列表 =====
     if users:
