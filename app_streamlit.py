@@ -1623,48 +1623,35 @@ def show_lottery_interface(username):
             })
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
-def show_shop_interface(username):
-    st.subheader("🛒 虛擬商城")
-    if not username:
-        st.info("請先登入")
-        return
+-- 先確保 shop_config 表存在
+CREATE TABLE IF NOT EXISTS shop_config (
+    id SERIAL PRIMARY KEY,
+    name TEXT,
+    type TEXT,
+    price REAL,
+    stock INTEGER,
+    description TEXT
+);
 
-    users = load_users()
-    user = users.get(username, {})
-    balance = user.get('virtual_balance', 0)
-    st.metric("💎 你嘅虛擬幣結餘", f"${balance:,.0f}")
+-- 允許讀寫權限
+CREATE POLICY "Allow anon read shop_config" ON shop_config FOR SELECT TO anon USING (true);
+CREATE POLICY "Allow anon insert shop_config" ON shop_config FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "Allow anon update shop_config" ON shop_config FOR UPDATE TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Allow anon delete shop_config" ON shop_config FOR DELETE TO anon USING (true);
 
-    config = load_shop_config()
-    items = config.get("items", [])
-    if not items:
-        st.info("暫無商品")
-        return
-
-    for i, item in enumerate(items):
-        col1, col2, col3 = st.columns([3, 2, 1])
-        with col1:
-            st.markdown(f"**{item.get('name', '商品')}**")
-            st.caption(item.get('description', ''))
-        with col2:
-            st.write(f"💰 ${item.get('price', 0)}")
-            st.caption(f"庫存：{item.get('stock', 0)}")
-        with col3:
-            if st.button("🛒 購買", key=f"buy_{i}"):
-                price = _safe_int(item.get('price', 0), 0)
-                stock = _safe_int(item.get('stock', 0), 0)
-                if stock <= 0:
-                    st.error("❌ 已售罄")
-                elif balance < price:
-                    st.error("❌ 餘額不足")
-                else:
-                    users[username]['virtual_balance'] = balance - price
-                    items[i]['stock'] = stock - 1
-                    config['items'] = items
-                    save_shop_config(config)
-                    save_users(users)
-                    st.success(f"✅ 已購買 {item.get('name')}！")
-                    st.rerun()
-        st.divider()
+-- 一次過新增所有商品
+INSERT INTO shop_config (name, type, price, stock, description) VALUES
+('額外 5 次預測', 'predictions', 500, 100, '增加 5 次預測機會'),
+('額外 10 次預測', 'predictions', 900, 100, '增加 10 次預測機會'),
+('額外 50 次預測', 'predictions', 4000, 50, '增加 50 次預測機會（超值優惠）'),
+('VIP 7 天', 'vip_days', 3000, 50, '7 天 VIP 權限'),
+('VIP 30 天', 'vip_days', 10000, 50, '30 天 VIP 權限'),
+('VIP 90 天', 'vip_days', 25000, 20, '90 天 VIP 權限（限時優惠）'),
+('額外 5 次抽獎', 'lottery_draws', 500, 100, '增加 5 次抽獎機會'),
+('VIP 專屬稱號：賭神', 'title', 5000, 10, '顯示專屬稱號「賭神」'),
+('VIP 專屬稱號：馬場大亨', 'title', 5000, 10, '顯示專屬稱號「馬場大亨」'),
+('神秘盲盒', 'mystery_box', 1000, 20, '隨機獲得獎品'),
+('高級神秘盲盒', 'mystery_box', 5000, 20, '隨機獲得稀有獎品');
 def admin_dashboard():
     st.subheader("📊 系統儀表板")
     users = load_users()
