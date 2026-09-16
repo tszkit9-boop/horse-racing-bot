@@ -1221,13 +1221,86 @@ def admin_horse_ranking():
     st.dataframe(stats_display, use_container_width=True, hide_index=True, height=600)
 def admin_jockey_ranking():
     st.subheader("🏇 騎師勝率排行榜")
+
+    # 🛡️ 騎師中英文對照表
+    JOCKEY_MAP = {
+        "Z Purton": "潘頓",
+        "H Bowman": "布文",
+        "A Atzeni": "艾兆禮",
+        "L Ferraris": "霍宏聲",
+        "B Avdulla": "艾道拿",
+        "K Teetan": "田泰安",
+        "K C Leung": "梁家俊",
+        "M F Poon": "潘明輝",
+        "M Chadwick": "蔡明紹",
+        "H Bentley": "班德禮",
+        "J Moreira": "莫雷拉",
+        "C Y Ho": "何澤堯",
+        "A Badel": "巴度",
+        "B Shinn": "寶遜",
+        "L Hewitson": "希威森",
+        "Y L Chung": "鍾易禮",
+        "A Hamelin": "賀銘年",
+        "E C W Wong": "黃智弘",
+        "H T Mo": "巫顯東",
+        "M L Yeung": "楊明綸",
+        "C L Chau": "周俊樂",
+        "M Barzalona": "巴米高",
+        "K De Melo": "簡能",
+        "J Orman": "奧爾民",
+        "R Kingscote": "金誠剛",
+        "H Y Yuen": "袁幸堯",
+        "P N Wong": "黃寶妮",
+        "M Newnham": "廖康銘",
+        "D Eustace": "游達榮",
+        "B Crawford": "桂福特",
+        "D J Whyte": "韋達",
+        "D J Hall": "賀賢",
+        "A S Cruz": "告東尼",
+        "C S Shum": "沈集成",
+        "C Fownes": "方嘉柏",
+        "J Size": "蔡約翰",
+        "F C Lor": "羅富全",
+        "K W Lui": "呂健威",
+        "P F Yiu": "姚本輝",
+        "W Y So": "蘇偉賢",
+        "K L Man": "文家良",
+        "T P Yung": "容天鵬",
+        "Y S Tsui": "徐雨石",
+        "C W Chang": "鄭俊偉",
+        "C H Yip": "葉楚航",
+        "M Newnham": "廖康銘",
+        "J Richards": "黎昭昇",
+        "D A Hayes": "大衛希斯",
+        "P C Ng": "伍鵬志",
+        "K H Ting": "丁冠豪",
+        "D Whyte": "韋達",
+        "G Mosse": "巫斯義",
+        "T Marquand": "馬昆",
+        "A K Chan": "陳嘉熙",
+        "S De Sousa": "蘇兆輝",
+        "N Callan": "高力",
+        "R Moore": "莫雅",
+        "P Beggy": "貝治",
+        "A Kirby": "柯比",
+        "J McDonald": "麥道朗",
+        "H Doyle": "杜苑欣",
+        "R Ryan": "羅理雅",
+        "W Buick": "布宜學",
+        "O Murphy": "莫菲",
+        "T Berry": "貝利",
+        "C Soumillon": "蘇銘倫",
+        "J Doyle": "杜滿樂",
+        "F Minarik": "米奈克",
+        "T Marquand": "馬昆",
+    }
+
     try:
-        # 優先讀 ALL_DATA_MERGED.csv（因為有騎師數據）
         df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig', low_memory=False)
         df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
 
-        # 🛡️ 智能偵測名次欄位（選非空值最多嘅）
-        pos_candidates = ['finish_position', 'Pla.', '名次', '最終名次', 'Pla', 'Finish_Position']
+        # 🛡️ 智能偵測名次欄位
+        pos_candidates = ['finish_position', 'Pla.', '名次', '最終名次']
         pos_col = None
         max_valid = 0
         for c in pos_candidates:
@@ -1237,8 +1310,8 @@ def admin_jockey_ranking():
                     max_valid = valid
                     pos_col = c
 
-        # 🛡️ 智能偵測騎師欄位（選非空值最多嘅）
-        jockey_candidates = ['jockey', 'jockey_cn', '騎師', '騎師名', 'Jockey', 'Jockey_cn']
+        # 🛡️ 智能偵測騎師欄位（優先中文，如果冇就用英文）
+        jockey_candidates = ['jockey_cn', '騎師', 'jockey', '騎師名']
         jockey_col = None
         max_valid = 0
         for c in jockey_candidates:
@@ -1252,8 +1325,6 @@ def admin_jockey_ranking():
             st.warning("⚠️ 賽果檔案缺少「騎師」或「名次」欄位")
             st.write(f"可用欄位：{df.columns.tolist()}")
             return
-
-        st.caption(f"📊 使用欄位：騎師 = `{jockey_col}`　|　名次 = `{pos_col}`")
 
         temp = pd.DataFrame()
         temp['騎師'] = df[jockey_col].astype(str).str.strip()
@@ -1270,6 +1341,10 @@ def admin_jockey_ranking():
         stats = pd.DataFrame({'騎師': total.index, '總出賽': total.values})
         stats['勝出'] = stats['騎師'].map(wins).fillna(0).astype(int)
         stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
+
+        # 🛡️ 將英文名轉做中文名
+        stats['騎師'] = stats['騎師'].apply(lambda x: JOCKEY_MAP.get(x, x))
+
         stats = stats.sort_values('勝出', ascending=False).reset_index(drop=True)
 
         st.success(f"✅ 共 {len(stats)} 位騎師")
