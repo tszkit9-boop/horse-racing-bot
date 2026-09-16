@@ -42,31 +42,47 @@ st.markdown("""
     h2 { font-size: 1.1rem !important; }
     h3 { font-size: 1rem !important; }
     p, div, span, label { font-size: 0.9rem !important; }
-    .stButton button {
-        padding: 0.3rem 0.5rem !important;
-        font-size: 0.8rem !important;
-    }
-    .stDataFrame { font-size: 0.75rem !important; }
-    .stSelectbox, .stTextInput, .stNumberInput {
-        font-size: 0.85rem !important;
-    }
     #MainMenu { visibility: hidden; }
     footer { visibility: hidden; }
 
-    /* 👇 強制場次按鈕每行顯示 4 個，唔好變成一條長龍 */
+    /* 👇 場次按鈕專屬設定：橫向一條過，可以左右滑動 */
     div[data-testid="stHorizontalBlock"] {
-        flex-wrap: wrap !important;
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+        white-space: nowrap !important;
+        gap: 0.4rem !important;
+        padding-bottom: 0.8rem !important;
+        /* 隱藏橫向滾動條，令外觀更靚 */
+        -ms-overflow-style: none !important;
+        scrollbar-width: none !important;
     }
+    div[data-testid="stHorizontalBlock"]::-webkit-scrollbar {
+        display: none !important;
+    }
+    
+    /* 每粒按鈕嘅闊度 */
     div[data-testid="column"] {
-        min-width: 22% !important;
-        max-width: 22% !important;
-        flex: 1 1 22% !important;
-        margin-right: 2% !important;
+        min-width: 40px !important;
+        max-width: 45px !important;
+        flex: 0 0 auto !important;
+    }
+
+    /* 將按鈕變成圓形，似馬會風格 */
+    .stButton button {
+        width: 40px !important;
+        height: 40px !important;
+        border-radius: 50% !important;   /* 圓形 */
+        padding: 0 !important;
+        font-size: 0.85rem !important;
+        font-weight: bold !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        margin: 0 auto !important;
     }
 }
 </style>
 """, unsafe_allow_html=True)
-
 st.markdown("""
 <style>
     div[data-testid="stToolbar"] { display: none !important; }
