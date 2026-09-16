@@ -12,7 +12,7 @@ import time
 from datetime import datetime timedelta
 import pytz
 import warnings
-warningsfilterwarnings'ignore')
+warnings.filterwarnings('ignore')
 
 try
     import plotlyexpress as px
