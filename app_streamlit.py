@@ -1896,12 +1896,13 @@ def admin_downloads():
     ]
 
     for file_name, description in download_files:
+        c1, c2, c3 = st.columns([3, 2, 1])
+        c1.write(f"**{file_name}**")
+        c1.caption(description)
+
         if os.path.exists(file_name):
             size = os.path.getsize(file_name)
             mtime = datetime.fromtimestamp(os.path.getmtime(file_name)).strftime('%Y-%m-%d %H:%M:%S')
-            c1, c2, c3 = st.columns([3, 2, 1])
-            c1.write(f"**{file_name}**")
-            c1.caption(description)
             c2.caption(f"大小：{size/1024:.1f} KB　|　最後更新：{mtime}")
             with open(file_name, "rb") as f:
                 c3.download_button(
@@ -1911,30 +1912,32 @@ def admin_downloads():
                     key=f"download_{file_name}"
                 )
         else:
-            st.caption(f"⚠️ {file_name} 唔存在")
+            c2.caption("暫無備份")
+            c3.caption("—")
 
     st.divider()
 
-    # ===== ai_predictions.json =====
+    # ===== AI 預測記錄 =====
     st.markdown("### 🤖 AI 預測記錄")
-    if os.path.exists("ai_predictions.json"):
-        size = os.path.getsize("ai_predictions.json") / 1024
-        st.caption(f"📁 ai_predictions.json（{size:.1f} KB）")
     try:
-            with open("ai_predictions.json", "rb") as f:
-                data = f.read()
-            st.download_button(
-                label="📥 下載 ai_predictions.json",
-                data=data,
-                file_name="ai_predictions.json",
-                mime="application/json",
-                use_container_width=True,
-                key="dl_ai_pred"
-            )
+        from database import load_predictions
+        ai_data = load_predictions()
+        if not ai_data:
+            st.info("📭 暫無預測記錄")
+        else:
+            st.info(f"✅ 成功讀取 {len(ai_data)} 個預測記錄")
+            df_ai = pd.DataFrame([
+                {
+                    "日期": v.get("date"),
+                    "場次": v.get("race"),
+                    "頭馬": v.get("top_horse"),
+                    "預測時間": str(v.get("predicted_at", ""))[:16]
+                }
+                for v in ai_data.values()
+            ])
+            st.dataframe(df_ai, use_container_width=True, hide_index=True)
     except Exception as e:
         st.error(f"❌ 讀取失敗：{e}")
-    else:
-        st.info("ℹ️ 未有 ai_predictions.json")
 
 def admin_manage_predictions():
     st.subheader("📊 管理用戶次數")
