@@ -687,7 +687,7 @@ def _repair_racecarddf)
 
 
 def _build_featuresrace_df history_df)
-    """為排位表每匹馬計算特徵加入馬名對照修復歷史數據對唔上嘅問題)"""
+    # 為排位表每匹馬計算特徵
     import numpy as np
     import os
 
