@@ -34,8 +34,8 @@ st.markdown("""
 <style>
 @media (max-width: 768px) {
     .block-container {
-        padding-left: 0.5rem !important;
-        padding-right: 0.5rem !important;
+        padding-left: 0.3rem !important;
+        padding-right: 0.3rem !important;
         padding-top: 1rem !important;
     }
     h1 { font-size: 1.3rem !important; }
@@ -45,45 +45,36 @@ st.markdown("""
     #MainMenu { visibility: hidden; }
     footer { visibility: hidden; }
 
-    /* 👇 場次按鈕專屬設定：橫向一條過，可以左右滑動 */
+    /* 👇 場次按鈕：一行過，平均分配，唔滑動 */
     div[data-testid="stHorizontalBlock"] {
+        display: flex !important;
         flex-wrap: nowrap !important;
-        overflow-x: auto !important;
-        white-space: nowrap !important;
-        gap: 0.4rem !important;
-        padding-bottom: 0.8rem !important;
-        /* 隱藏橫向滾動條，令外觀更靚 */
-        -ms-overflow-style: none !important;
-        scrollbar-width: none !important;
+        gap: 2px !important;
+        overflow: visible !important;
     }
-    div[data-testid="stHorizontalBlock"]::-webkit-scrollbar {
-        display: none !important;
-    }
-    
-    /* 每粒按鈕嘅闊度 */
     div[data-testid="column"] {
-        min-width: 40px !important;
-        max-width: 45px !important;
-        flex: 0 0 auto !important;
+        flex: 1 1 0 !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        padding: 0 !important;
     }
 
-    /* 將按鈕變成圓形，似馬會風格 */
+    /* 將按鈕縮到最細，變成圓形 */
     .stButton button {
-        width: 40px !important;
-        height: 40px !important;
-        border-radius: 50% !important;   /* 圓形 */
+        width: 100% !important;
+        height: 36px !important;
+        min-width: 0 !important;
         padding: 0 !important;
-        font-size: 0.85rem !important;
+        font-size: 0.75rem !important;
         font-weight: bold !important;
+        border-radius: 50% !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
-        margin: 0 auto !important;
     }
 }
 </style>
 """, unsafe_allow_html=True)
-st.markdown("""
 <style>
     div[data-testid="stToolbar"] { display: none !important; }
     #MainMenu { display: none !important; }
