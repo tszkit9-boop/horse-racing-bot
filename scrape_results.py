@@ -1,17 +1,16 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-scrape_results.py - 爬取馬會賽果（永久保留、追加模式、防止重覆場次）
-用法: 
-    python scrape_results.py              # 爬取昨天賽果
-    python scrape_results.py 2026-09-16   # 爬取指定日期賽果
+fetch_results.py - 爬取馬會賽果（防止重覆場次）
+用法:
+    python fetch_results.py 2026-09-16 HV
 """
 
 import os
-import time
 import sys
+import time
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -34,8 +33,8 @@ def get_driver():
 
 
 def fetch_single_race(driver, date_str, racecourse, race_no):
-    """爬取單場賽果（馬名、名次）"""
-    url = f"https://bet.hkjc.com/ch/racing/results/2026-09-16/HV/1"
+    """爬取單場賽果"""
+    url = f"https://bet.hkjc.com/ch/racing/results/{date_str}/{racecourse}/{race_no}"
     print(f"  🌐 載入第 {race_no} 場: {url}")
     driver.get(url)
 
@@ -73,65 +72,50 @@ def fetch_single_race(driver, date_str, racecourse, race_no):
     return pd.DataFrame(results) if results else None
 
 
-def fetch_results(date_str, racecourse='ST'):
-    """爬取指定日期所有場次賽果"""
+def main():
+    if len(sys.argv) < 3:
+        print("用法: python fetch_results.py YYYY-MM-DD ST/HV")
+        sys.exit(1)
+
+    date_str = sys.argv[1]
+    racecourse = sys.argv[2].upper()
+
+    print(f"📅 目標日期: {date_str}, 馬場: {racecourse}")
+
     driver = get_driver()
     all_data = []
+
     try:
         for race_no in range(1, 13):
             df = fetch_single_race(driver, date_str, racecourse, race_no)
             if df is not None and not df.empty:
                 all_data.append(df)
-                print(f"  ✅ 第 {race_no} 場：{len(df)} 匹")
+                print(f"  ✅ 第 {race_no} 場擷取 {len(df)} 筆")
             else:
                 print(f"  ⚠️ 第 {race_no} 場無數據")
-                if race_no > 2 and len(all_data) == 0:
-                    break
             time.sleep(0.5)
     finally:
         driver.quit()
 
-    if all_data:
-        return pd.concat(all_data, ignore_index=True)
-    return None
-
-
-def main():
-    if len(sys.argv) >= 2:
-        date_str = sys.argv[1]
-    else:
-        date_str = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
-
-    # 粗略判斷馬場：星期三 = 跑馬地 (HV)，其他 = 沙田 (ST)
-    weekday = datetime.strptime(date_str, '%Y-%m-%d').weekday()
-    racecourse = 'HV' if weekday == 2 else 'ST'
-
-    print(f"📅 正在爬取 {date_str} ({racecourse}) 賽果...")
-
-    df_new = fetch_results(date_str, racecourse)
-    if df_new is None or df_new.empty:
+    if not all_data:
         print("❌ 無新賽果數據")
         return
+
+    df_new = pd.concat(all_data, ignore_index=True)
 
     output_file = "race_results_clean.csv"
 
     if os.path.exists(output_file):
         existing = pd.read_csv(output_file, encoding='utf-8-sig')
         existing.columns = [str(c).replace('\ufeff', '').strip() for c in existing.columns]
-        
-        # 確保日期格式一致（只取 YYYY-MM-DD）
         existing['race_date'] = existing['race_date'].astype(str).str[:10]
 
         # 🛡️ 關鍵修正：先刪除 existing 中與新數據相同日期嘅所有行
-        # 咁樣做，可以確保同一天嘅賽果會「完全被新數據取代」，而唔係疊加！
-        if not existing.empty:
-            existing = existing[~existing['race_date'].isin(df_new['race_date'].unique())]
+        existing = existing[~existing['race_date'].isin(df_new['race_date'].unique())]
 
         combined = pd.concat([existing, df_new], ignore_index=True)
-        
-        # 🛡️ 二次防護：確保同一日、同一場、同一匹馬唔會重複
         combined.drop_duplicates(subset=['race_date', 'race_no', 'horse_name'], keep='first', inplace=True)
-        
+
         print(f"📊 合併完成：保留 {len(existing)} 筆舊數據（已排除重複日期），新增 {len(df_new)} 筆，現有 {len(combined)} 筆")
     else:
         combined = df_new
