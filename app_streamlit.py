@@ -1079,74 +1079,51 @@ def _get_pos_series(df):
 
 def admin_horse_ranking():
     st.subheader("🏇 馬匹勝率排行榜")
+
+    import os
+    import pandas as pd
+
+    result_file = "race_results_clean.csv"
+    if not os.path.exists(result_file):
+        st.warning("⚠️ 找不到 race_results_clean.csv")
+        return
+
     try:
-        df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig', low_memory=False)
+        df = pd.read_csv(result_file, encoding='utf-8-sig')
         df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
-        df = df.reset_index(drop=True)
-
-        pos_series, pos_name = _get_pos_series(df)
-        st.caption(f"📊 使用名次欄位：**{pos_name}**（有效數據：{pos_series.notna().sum()}）")
-
-        # 用 horse_id 做 key
-        temp = df[['horse_id']].copy()
-        temp.columns = ['horse_id']
-        temp['名次'] = pos_series.values
-        temp['英文名'] = df['horse_name'].astype(str).str.strip()
-
-        temp['horse_id'] = temp['horse_id'].astype(str).str.strip()
-        temp = temp.dropna(subset=['名次'])
-        temp = temp[~temp['horse_id'].str.lower().isin(['nan', 'none', ''])]
-
-        if temp.empty:
-            st.warning("⚠️ 過濾後數據為空！")
-            return
-
-        # 讀 horse_name_mapping.csv（horse_id → 馬名）
-        id_to_cn = {}
-        if os.path.exists("horse_name_mapping.csv"):
-            try:
-                map_df = pd.read_csv("horse_name_mapping.csv", encoding='utf-8-sig')
-                map_df.columns = [str(c).replace('\ufeff', '').strip() for c in map_df.columns]
-                st.write(f"**對照表欄位**：{map_df.columns.tolist()}")
-
-                if 'horse_id' in map_df.columns and '馬名' in map_df.columns:
-                    map_df = map_df[['horse_id', '馬名']].dropna()
-                    map_df['horse_id'] = map_df['horse_id'].astype(str).str.strip()
-                    id_to_cn = dict(zip(map_df['horse_id'], map_df['馬名']))
-                    st.success(f"✅ 已載入 {len(id_to_cn)} 條 horse_id → 中文名對照")
-                else:
-                    st.warning(f"⚠️ 對照表冇 horse_id 或 馬名 欄位")
-            except Exception as e:
-                st.warning(f"⚠️ 讀取對照表失敗：{e}")
-        else:
-            st.info("ℹ️ 冇 horse_name_mapping.csv")
-
-        # 統計（用 horse_id 分組）
-        total = temp['horse_id'].value_counts()
-        wins = temp[temp['名次'] == 1]['horse_id'].value_counts()
-
-        stats = pd.DataFrame({'horse_id': total.index, '總出賽': total.values})
-        stats['勝出'] = stats['horse_id'].map(wins).fillna(0).astype(int)
-        stats['勝率'] = (stats['勝出'] / stats['總出賽']).apply(lambda x: f"{x:.1%}")
-
-        # 加上英文名同中文名
-        id_to_en = dict(zip(temp['horse_id'], temp['英文名']))
-        stats['英文名'] = stats['horse_id'].map(id_to_en)
-
-        if id_to_cn:
-            stats['馬匹'] = stats['horse_id'].map(id_to_cn).fillna(stats['英文名'])
-        else:
-            stats['馬匹'] = stats['英文名']
-
-        stats = stats[['馬匹', '總出賽', '勝出', '勝率']]
-        stats = stats.sort_values('勝出', ascending=False).reset_index(drop=True)
-
-        st.success(f"✅ 共 {len(stats)} 匹馬")
-        st.dataframe(stats.head(30), use_container_width=True)
     except Exception as e:
-        st.error(f"讀取失敗：{e}")
-        import traceback
-        st.code(traceback.format_exc())
+        st.error(f"❌ 讀取失敗：{e}")
+        return
+
+    # 強制鎖定中文欄位
+    if '馬名' not in df.columns or '名次' not in df.columns:
+        st.write(f"可用欄位：{df.columns.tolist()}")
+        st.warning("⚠️ 賽果檔案缺少「馬名」或「名次」欄位")
+        return
+
+    # 清理數據
+    df['馬名'] = df['馬名'].astype(str).str.strip()
+    df['名次'] = pd.to_numeric(df['名次'], errors='coerce')
+    df = df.dropna(subset=['名次', '馬名'])
+    df = df[df['馬名'] != '']
+
+    # 計算每匹馬嘅出賽次數、勝出次數、勝率
+    stats = df.groupby('馬名').agg(
+        總出賽=('名次', 'count'),
+        勝出=('名次', lambda x: (x == 1).sum())
+    ).reset_index()
+
+    stats['勝率'] = stats['勝出'] / stats['總出賽']
+    stats = stats.sort_values('勝出', ascending=False).reset_index(drop=True)
+    stats = stats[stats['總出賽'] >= 1]
+
+    st.success(f"✅ 共 {len(stats)} 匹馬（有效數據：{len(df)} 條）")
+
+    # 格式化顯示
+    stats['勝率'] = stats['勝率'].apply(lambda x: f"{x:.1%}")
+    stats.columns = ['馬名', '總出賽', '勝出', '勝率']
+
+    st.dataframe(stats, use_container_width=True, hide_index=True, height=600)
 def admin_jockey_ranking():
     st.subheader("🏇 騎師勝率排行榜")
     try:
