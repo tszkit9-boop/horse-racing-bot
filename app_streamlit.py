@@ -1457,6 +1457,193 @@ def show_paywall():
                 st.success(msg)
                 st.info(f"方案：{get_plan_name(plan_choice)}，金額：${final_price}")
                 st.info("📩 提交後請 Telegram 通知管理員")
+def do_checkin(username):
+    """執行簽到，返回 (成功?, 訊息, 金幣, 連續日數, 有冇VIP)"""
+    import pytz
+    from datetime import datetime, timedelta
+
+    hk_tz = pytz.timezone('Asia/Hong_Kong')
+    now_hk = datetime.now(hk_tz)
+    today = now_hk.strftime('%Y-%m-%d')
+    yesterday = (now_hk - timedelta(days=1)).strftime('%Y-%m-%d')
+
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    try:
+        res = requests.get(
+            f"{SUPABASE_URL}/rest/v1/checkin_history?username=eq.{username}&checkin_date=eq.{today}&limit=1",
+            headers=headers, timeout=10
+        )
+        existing = res.json() if res.status_code == 200 else []
+    except Exception as e:
+        return False, f"連線錯誤：{e}", 0, 0, False
+
+    if existing:
+        return False, "今日已簽到，聽日再嚟！", 0, 0, False
+
+    try:
+        res = requests.get(
+            f"{SUPABASE_URL}/rest/v1/checkin_history?username=eq.{username}&order=checkin_date.desc&limit=1",
+            headers=headers, timeout=10
+        )
+        last_records = res.json() if res.status_code == 200 else []
+    except Exception as e:
+        return False, f"連線錯誤：{e}", 0, 0, False
+
+    if last_records:
+        last_date = str(last_records[0].get('checkin_date', ''))
+        last_streak = int(last_records[0].get('streak_day', 0))
+        if last_date == yesterday:
+            streak = last_streak + 1
+            if streak > 7:
+                streak = 1
+        else:
+            streak = 1
+    else:
+        streak = 1
+
+    coin_map = {1: 500, 2: 800, 3: 1100, 4: 1400, 5: 1700, 6: 2000, 7: 2500}
+    coins = coin_map.get(streak, 500)
+    is_vip_reward = (streak == 7)
+
+    payload = {
+        "username": username,
+        "checkin_date": today,
+        "streak_day": streak,
+        "coins_earned": coins
+    }
+    try:
+        res = requests.post(
+            f"{SUPABASE_URL}/rest/v1/checkin_history",
+            headers=headers, json=payload, timeout=10
+        )
+        if res.status_code not in (200, 201, 204):
+            return False, f"寫入失敗：{res.text}", 0, 0, False
+    except Exception as e:
+        return False, f"連線錯誤：{e}", 0, 0, False
+
+    try:
+        res = requests.get(
+            f"{SUPABASE_URL}/rest/v1/users?username=eq.{username}&limit=1",
+            headers=headers, timeout=10
+        )
+        user_data = res.json() if res.status_code == 200 else []
+        old_balance = float(user_data[0].get('virtual_balance', 0) or 0) if user_data else 0.0
+    except Exception:
+        user_data = []
+        old_balance = 0.0
+
+    new_balance = old_balance + coins
+    update_payload = {"virtual_balance": new_balance}
+
+    if is_vip_reward:
+        update_payload["user_group"] = "VIP"
+        try:
+            expiry = user_data[0].get('expiry_date') if user_data else None
+            if expiry and str(expiry).strip() and str(expiry) != 'EMPTY':
+                expiry_dt = datetime.strptime(str(expiry)[:10], '%Y-%m-%d')
+                new_expiry = (expiry_dt + timedelta(days=1)).strftime('%Y-%m-%d')
+            else:
+                new_expiry = (now_hk + timedelta(days=1)).strftime('%Y-%m-%d')
+            update_payload["expiry_date"] = new_expiry
+        except Exception:
+            update_payload["expiry_date"] = (now_hk + timedelta(days=1)).strftime('%Y-%m-%d')
+
+    try:
+        requests.patch(
+            f"{SUPABASE_URL}/rest/v1/users?username=eq.{username}",
+            headers=headers, json=update_payload, timeout=10
+        )
+    except Exception as e:
+        return False, f"更新用戶失敗：{e}", coins, streak, is_vip_reward
+
+    return True, f"簽到成功！連續第 {streak} 日", coins, streak, is_vip_reward
+
+
+def show_checkin_button(username):
+    """主頁顯示簽到掣"""
+    import pytz
+    from datetime import datetime, timedelta
+
+    hk_tz = pytz.timezone('Asia/Hong_Kong')
+    now_hk = datetime.now(hk_tz)
+    today = now_hk.strftime('%Y-%m-%d')
+    yesterday = (now_hk - timedelta(days=1)).strftime('%Y-%m-%d')
+
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}"
+    }
+
+    try:
+        res = requests.get(
+            f"{SUPABASE_URL}/rest/v1/checkin_history?username=eq.{username}&checkin_date=eq.{today}&limit=1",
+            headers=headers, timeout=10
+        )
+        today_records = res.json() if res.status_code == 200 else []
+    except Exception:
+        today_records = []
+
+    try:
+        res = requests.get(
+            f"{SUPABASE_URL}/rest/v1/checkin_history?username=eq.{username}&order=checkin_date.desc&limit=7",
+            headers=headers, timeout=10
+        )
+        history = res.json() if res.status_code == 200 else []
+    except Exception:
+        history = []
+
+    streak = 0
+    if history:
+        last = history[0]
+        last_date = str(last.get('checkin_date', ''))
+        last_streak = int(last.get('streak_day', 0))
+        if last_date == today or last_date == yesterday:
+            streak = last_streak
+        else:
+            streak = 0
+
+    st.markdown("### 📅 每日簽到")
+    st.caption(f"連續簽到：**{streak}** / 7 日")
+
+    if today_records:
+        st.success(f"✅ 今日已簽到（連續第 {streak} 日）")
+        st.info("聽日再嚟簽到，獎勵會更多！")
+    else:
+        next_day = streak + 1 if streak < 7 else 1
+        coin_map = {1: 500, 2: 800, 3: 1100, 4: 1400, 5: 1700, 6: 2000, 7: 2500}
+        next_coins = coin_map.get(next_day, 500)
+        msg = f"下次簽到係連續第 {next_day} 日，可獲得 **{next_coins}** 金幣"
+        if next_day == 7:
+            msg += " + **VIP 1 日**"
+        st.info(msg)
+
+        if st.button("✅ 今日簽到", type="primary", use_container_width=True, key="checkin_btn"):
+            ok, message, coins, new_streak, got_vip = do_checkin(username)
+            if ok:
+                success_msg = f"✅ {message}，獲得 {coins} 金幣"
+                if got_vip:
+                    success_msg += " + VIP 1 日！"
+                st.success(success_msg)
+                import time
+                time.sleep(1.5)
+                st.rerun()
+            else:
+                st.warning(f"⚠️ {message}")
+
+    if history:
+        with st.expander("📜 過去簽到紀錄", expanded=False):
+            for rec in history:
+                d = str(rec.get('checkin_date', ''))
+                sd = rec.get('streak_day', '?')
+                ce = rec.get('coins_earned', '?')
+                st.write(f"📅 {d} — 連續第 {sd} 日 — +{ce} 金幣")
+
+
 def show_lottery_interface(username):
     st.subheader("🎰 每日抽獎")
     if not username:
@@ -1659,6 +1846,7 @@ def show_lottery_interface(username):
                 "中獎機率": f"{p.get('weight', 0)}"
             })
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
 
 def show_shop_interface(username):
     st.subheader("🛒 虛擬商城")
@@ -3476,20 +3664,6 @@ def main():
         return
 
 
-    c1, c2, c3, c4, c5 = st.columns([4, 1, 1, 1, 1])
-    with c1:
-        st.title("🏇 賽馬預測系統")
-        st.markdown("AI 驅動・即時預測・彩池推薦")
-        st.caption(f"{datetime.now().strftime('%Y年%m月%d日')}")
-    with c2:
-        if CONFIG["enable_admin"] and st.session_state.get("role") == "super_admin":
-            if st.button("🔐 後台", use_container_width=True, key="go_admin"):
-                st.session_state.show_admin = True
-                st.rerun()
-    with c3:
-        # 👇 新加嘅「常見問題」按鈕，同後台平排
-        if st.button("❓ 常見問題", use_container_width=True, key="faq_btn"):
-            st.switch_page("pages/FAQ.py")
     with c4:
         if st.session_state.get('logged_in', False):
             username = st.session_state.username
@@ -3576,6 +3750,14 @@ def main():
                                     lambda x: '✅' if x is True else ('❌' if x is False else '⏳')
                                 )
                             st.dataframe(df_show, use_container_width=True, hide_index=True)
+
+    # 👇 c4 完結，縮進 4 格
+    if st.session_state.get('logged_in', False):
+        _checkin_user = st.session_state.get('username')
+        if _checkin_user:
+            st.divider()
+            show_checkin_button(_checkin_user)
+
     with c5:
         if st.session_state.get('logged_in', False):
             if st.button("🚪 登出", use_container_width=True, key="logout_main"):
