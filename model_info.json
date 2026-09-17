@@ -1,10 +1,17 @@
 {
-  "trained_at": "2026-09-17T19:06:40.322176",
-  "xgb_accuracy": 0.9168942645337496,
-  "cat_accuracy": 0.9168942645337496,
-  "rank_trained": true,
-  "train_samples": 10252,
-  "test_samples": 2563,
+  "trained_at": "2026-09-17T19:14:52.533795",
+  "xgb_auc": 0.547017980002462,
+  "xgb_logloss": 0.6755374073982239,
+  "xgb_top1": 0.24444444444444444,
+  "xgb_top3": 0.4111111111111111,
+  "cat_auc": 0.5571107866336567,
+  "cat_logloss": 0.6777423396367802,
+  "cat_top1": 0.23333333333333334,
+  "cat_top3": 0.3888888888888889,
+  "rank_trained": false,
+  "train_samples": 10062,
+  "test_samples": 2753,
+  "test_races": 90,
   "features_used": [
     "draw",
     "weight",
@@ -42,6 +49,5 @@
     "injury_90d",
     "total_injuries",
     "injury_severity"
-  ],
-  "merge_key": "horse_id"
+  ]
 }
