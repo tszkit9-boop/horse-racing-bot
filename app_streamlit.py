@@ -1964,12 +1964,12 @@ def admin_downloads():
 
     st.divider()
 
-    # ===== ai_predictions.json =====
+# ===== ai_predictions.json =====
     st.markdown("### 🤖 AI 預測記錄")
     if os.path.exists("ai_predictions.json"):
         size = os.path.getsize("ai_predictions.json") / 1024
         st.caption(f"📁 ai_predictions.json（{size:.1f} KB）")
-    try:
+        try:
             with open("ai_predictions.json", "rb") as f:
                 data = f.read()
             st.download_button(
@@ -1980,8 +1980,8 @@ def admin_downloads():
                 use_container_width=True,
                 key="dl_ai_pred"
             )
-    except Exception as e:
-        st.error(f"❌ 讀取失敗：{e}")
+        except Exception as e:
+            st.error(f"❌ 讀取失敗：{e}")
     else:
         st.info("ℹ️ 未有 ai_predictions.json")
 
