@@ -3780,6 +3780,17 @@ def login_page():
             if st.form_submit_button("登入"):
                 user = authenticate(u, p)
                 if user:
+                    # 🛡️ 強制加密：如果 Supabase 入面仲係明文，即刻轉 hash
+                    try:
+                        users_check = load_users()
+                        if u in users_check:
+                            stored = users_check[u].get('password', '')
+                            if not (str(stored).startswith('$2') and len(str(stored)) == 60):
+                                users_check[u]['password'] = hash_password(p)
+                                update_single_user(u, users_check[u])
+                    except Exception as e:
+                        print(f"強制加密失敗: {e}")
+
                     st.session_state.logged_in = True
                     st.session_state.username = u
                     log_user_activity(u, "登入", "登入成功")
