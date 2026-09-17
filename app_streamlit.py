@@ -3822,7 +3822,7 @@ def main():
 
         st.info(f"✅ 成功讀取 {len(records)} 個預測紀錄")
 
-# ===== 讀取賽果 =====
+        # ===== 讀取賽果 =====
         result_file = "race_results_clean.csv"
         df_results = pd.DataFrame()
         if os.path.exists(result_file):
@@ -3912,6 +3912,7 @@ def main():
                         format_func=lambda x: f"第 {x} 場", key="ai_cmp_race")
 
                     df_pred_race = df_pred_date[df_pred_date['場次'] == selected_race].copy()
+
                     # 🛡️ 攞真實頭 3 名
                     df_result_race = df_result_date[
                         df_result_date['race_no'] == selected_race
@@ -3933,9 +3934,12 @@ def main():
                     df_compare['結果'] = df_compare['真實名次'].apply(
                         lambda x: '命中' if pd.notna(x) else '失準'
                     )
+
+                    # 🛡️ 清理顯示格式
                     df_compare['真實名次'] = df_compare['真實名次'].apply(
-                        lambda x: int(x) if pd.notna(x) else None
+                        lambda x: int(x) if pd.notna(x) else ''
                     )
+                    df_compare['真實馬'] = df_compare['真實馬'].fillna('')
 
                     display_df = df_compare[['預測名次', '預測馬', '真實名次', '真實馬', '結果']].copy()
                     display_df.columns = ['名次', '預測馬', '真實名次', '真實馬', '結果']
