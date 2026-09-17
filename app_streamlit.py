@@ -3920,6 +3920,24 @@ def login_page():
                         st.rerun()
 
 def main():
+    # 🛡️ 啟動時自動遷移：將所有明文密碼轉做 hash
+    if not st.session_state.get('_pw_migrated', False):
+        st.session_state._pw_migrated = True
+        try:
+            _users = load_users()
+            _migrated = 0
+            for _uid, _u in _users.items():
+                _pw = str(_u.get('password', '')).strip()
+                if _pw and not (_pw.startswith('$2') and len(_pw) == 60):
+                    _new_hash = hash_password(_pw)
+                    _u['password'] = _new_hash
+                    update_single_user(_uid, _u)
+                    _migrated += 1
+            if _migrated > 0:
+                print(f"✅ 自動遷移 {_migrated} 個用戶密碼")
+        except Exception as _e:
+            print(f"❌ 遷移失敗: {_e}")
+
     defaults = {
         'logged_in': False, 'username': None, 'role': 'free',
         'show_admin': False, 'show_lottery': False, 'show_shop': False
