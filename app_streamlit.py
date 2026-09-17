@@ -3822,7 +3822,7 @@ def main():
 
         st.info(f"✅ 成功讀取 {len(records)} 個預測紀錄")
 
-        # ===== 讀取賽果 =====
+# ===== 讀取賽果 =====
         result_file = "race_results_clean.csv"
         df_results = pd.DataFrame()
         if os.path.exists(result_file):
@@ -3834,6 +3834,10 @@ def main():
                     df_results = pd.DataFrame()
                 else:
                     df_results['horse_name'] = df_results['horse_name'].astype(str).str.strip()
+                    # 🛡️ 清走馬名後面嘅 (H168) 呢類括號
+                    df_results['horse_name'] = df_results['horse_name'].str.replace(
+                        r'\s*\([A-Z]\d+\)\s*$', '', regex=True
+                    ).str.strip()
                     df_results['finish_position'] = pd.to_numeric(df_results['finish_position'], errors='coerce')
                     df_results['race_no'] = pd.to_numeric(df_results['race_no'], errors='coerce')
                     df_results = df_results.dropna(subset=['race_no'])
