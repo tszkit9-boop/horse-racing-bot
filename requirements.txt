@@ -28,3 +28,4 @@ python-dotenv
 # supabase
 # psycopg2-binary
 supabase
+bcrypt
