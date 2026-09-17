@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-scrape_results.py - 終極版賽果爬蟲（自動 Push + 數據去重）
+scrape_results.py - 終極版賽果爬蟲（自動 Push + 數據去重 + 拆 horse_id）
 """
 
 import os
 import sys
+import re
 import time
 import pandas as pd
 from datetime import datetime, timedelta, timezone
@@ -34,7 +35,7 @@ def get_driver():
 
 
 def fetch_single_race(driver, date_str, racecourse, race_no):
-    """爬取單場賽果（多重選擇器 + 去重 + 限制 14 匹）"""
+    """爬取單場賽果（多重選擇器 + 去重 + 限制 14 匹 + 拆 horse_id）"""
     date_formatted = date_str.replace('-', '/')
     url = f"https://racing.hkjc.com/racing/information/Chinese/Racing/LocalResults.aspx?RaceDate={date_formatted}&Racecourse={racecourse}&RaceNo={race_no}"
     print(f"  🌐 載入第 {race_no} 場: {url}")
@@ -78,12 +79,21 @@ def fetch_single_race(driver, date_str, racecourse, race_no):
             pos_text = cells[0].text.strip()
             if not pos_text or not pos_text.isdigit():
                 continue
-            horse_name = cells[2].text.strip()
-            if horse_name:
+            raw_name = cells[2].text.strip()
+            if raw_name:
+                # 🛡️ 拆 "藤王駒 (K143)" → horse_name="藤王駒", horse_id="K143"
+                m = re.match(r'^(.+?)\s*\(([A-Z]\d+)\)\s*$', raw_name)
+                if m:
+                    horse_name = m.group(1).strip()
+                    horse_id = m.group(2).strip()
+                else:
+                    horse_name = raw_name
+                    horse_id = ''
                 results.append({
                     'race_date': date_str,
                     'race_no': race_no,
                     'horse_name': horse_name,
+                    'horse_id': horse_id,
                     'finish_position': int(pos_text)
                 })
         except Exception:
@@ -125,6 +135,27 @@ def fetch_results(date_str, racecourse):
     return pd.concat(all_data, ignore_index=True) if all_data else None
 
 
+def fetch_date_range(start_date, end_date):
+    """🆕 爬指定日期範圍內所有賽馬日（只試星期二、三、六、日）"""
+    all_data = []
+    current = start_date
+    while current <= end_date:
+        weekday = current.weekday()
+        # 只試星期二、三、六、日（香港賽馬日）
+        if weekday in [1, 2, 5, 6]:
+            date_str = current.strftime('%Y-%m-%d')
+            racecourse = 'HV' if weekday == 2 else 'ST'
+            print(f"\n📅 爬取 {date_str} ({racecourse})...")
+            df = fetch_results(date_str, racecourse)
+            if df is not None and not df.empty:
+                all_data.append(df)
+            else:
+                print(f"  ⚠️ {date_str} 冇賽果")
+        current += timedelta(days=1)
+
+    return pd.concat(all_data, ignore_index=True) if all_data else None
+
+
 def try_fetch_multiple_days():
     """自動試最近 7 日，搵到有賽事嘅日子為止"""
     now_hk = datetime.now(HK_TZ)
@@ -149,32 +180,29 @@ def try_fetch_multiple_days():
     return None
 
 
-def main():
-    if len(sys.argv) >= 3:
-        date_str = sys.argv[1]
-        racecourse = sys.argv[2].upper()
-        print(f"📅 手動指定：{date_str} ({racecourse})")
-        df_new = fetch_results(date_str, racecourse)
-    else:
-        print(f"📅 自動搜尋最近有賽事嘅日子...")
-        df_new = try_fetch_multiple_days()
-
-    if df_new is None or df_new.empty:
-        print("❌ 最近 7 日都冇新賽果數據")
-        return
-
-    output_file = "race_results_clean.csv"
-
+def merge_and_save(df_new, output_file="race_results_clean.csv"):
+    """合併新舊數據並儲存"""
     if os.path.exists(output_file):
         existing = pd.read_csv(output_file, encoding='utf-8-sig')
         existing.columns = [str(c).replace('\ufeff', '').strip() for c in existing.columns]
         existing['race_date'] = existing['race_date'].astype(str).str[:10]
+
+        # 🛡️ 確保舊數據有 horse_id 欄
+        if 'horse_id' not in existing.columns:
+            existing['horse_id'] = ''
 
         # 🛡️ 先刪除同一日期嘅舊數據，避免重複
         existing = existing[~existing['race_date'].isin(df_new['race_date'].unique())]
 
         combined = pd.concat([existing, df_new], ignore_index=True)
         combined.drop_duplicates(subset=['race_date', 'race_no', 'horse_name'], keep='first', inplace=True)
+
+        # 🛡️ 統一欄位順序
+        cols = ['race_date', 'race_no', 'horse_name', 'horse_id', 'finish_position']
+        for c in combined.columns:
+            if c not in cols:
+                cols.append(c)
+        combined = combined[[c for c in cols if c in combined.columns]]
 
         print(f"\n📊 合併完成：保留 {len(existing)} 筆舊數據，新增 {len(df_new)} 筆，現有 {len(combined)} 筆")
     else:
@@ -183,6 +211,37 @@ def main():
 
     combined.to_csv(output_file, index=False, encoding='utf-8-sig')
     print(f"✅ 賽果已儲存至 {output_file}")
+
+
+def main():
+    # 🆕 模式 1：爬日期範圍  python scrape_results.py --range 2026-01-01 2026-09-13
+    if len(sys.argv) >= 4 and sys.argv[1] == '--range':
+        try:
+            start = datetime.strptime(sys.argv[2], '%Y-%m-%d')
+            end = datetime.strptime(sys.argv[3], '%Y-%m-%d')
+        except ValueError:
+            print("❌ 日期格式錯誤，請用 YYYY-MM-DD")
+            return
+        print(f"📅 爬取範圍：{start.date()} 至 {end.date()}")
+        df_new = fetch_date_range(start, end)
+
+    # 模式 2：手動指定一日  python scrape_results.py 2026-09-16 ST
+    elif len(sys.argv) >= 3:
+        date_str = sys.argv[1]
+        racecourse = sys.argv[2].upper()
+        print(f"📅 手動指定：{date_str} ({racecourse})")
+        df_new = fetch_results(date_str, racecourse)
+
+    # 模式 3：自動搜尋最近 7 日（原本行為）
+    else:
+        print(f"📅 自動搜尋最近有賽事嘅日子...")
+        df_new = try_fetch_multiple_days()
+
+    if df_new is None or df_new.empty:
+        print("❌ 冇新賽果數據")
+        return
+
+    merge_and_save(df_new)
 
 
 if __name__ == '__main__':
