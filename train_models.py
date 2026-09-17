@@ -30,6 +30,7 @@ print(f"  原始數據：{len(df)} 筆")
 # ============================================================
 print("🔧 標準化欄位...")
 
+# 名次
 for col in ['Pla.', 'finish_position', '名次']:
     if col in df.columns:
         cleaned = pd.to_numeric(df[col].astype(str).str.extract(r'(\d+)')[0], errors='coerce')
@@ -38,16 +39,20 @@ for col in ['Pla.', 'finish_position', '名次']:
             print(f"  ✅ 名次：'{col}'")
             break
 
+# 日期
 df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce')
 df = df.dropna(subset=['race_date'])
 df['race_date_str'] = df['race_date'].dt.strftime('%Y%m%d')
 
+# 場次
 if 'race_no' in df.columns:
     df['race_no'] = df['race_no'].astype(str).str.replace(r'[^0-9]', '', regex=True)
     df['race_no'] = pd.to_numeric(df['race_no'], errors='coerce').fillna(0).astype(int)
 
+# horse_id
 df['horse_id'] = df['horse_id'].astype(str).str.strip()
 
+# 清洗
 df = df.dropna(subset=['real_pos'])
 df = df[df['horse_id'].str.len() > 0]
 df = df[df['race_no'] > 0]
@@ -58,7 +63,7 @@ df['target'] = (df['finish_position'] == 1).astype(int)
 print(f"  清洗後：{len(df)} 筆，頭馬：{df['target'].mean():.2%}")
 
 # ============================================================
-# 3️⃣ 基本特徵
+# 3️⃣ 基本特徵（賽前已知）
 # ============================================================
 def safe_num(s):
     return pd.to_numeric(s, errors='coerce').fillna(0)
@@ -70,18 +75,20 @@ df['weight'] = safe_num(df.get('Act.Wt.', df.get('weight', 0)))
 df['distance'] = safe_num(df.get('Dist.', df.get('distance', 0)))
 df['finish_speed'] = safe_num(df.get('FSpeed', 0))
 
+# 清理 race_course / going / jockey / trainer / Sire
 for c in ['race_course', 'going', 'jockey', 'trainer', 'Sire']:
     if c in df.columns:
         df[c] = df[c].astype(str).str.strip()
     else:
         df[c] = ''
 
+# 賠率排名（每場）
 df['odds_rank_in_race'] = df.groupby(['race_date_str', 'race_no'])['win_odds'].rank(
     method='min', ascending=True
 ).fillna(0)
 
 # ============================================================
-# 4️⃣ 按場次分組拆分
+# 4️⃣ 按場次分組拆分（防 leakage）
 # ============================================================
 print("📂 按場次分組拆分...")
 
@@ -108,27 +115,39 @@ print(f"  測試：{df_test['_group'].nunique()} 場，{len(df_test)} 筆")
 # ============================================================
 print("🔧 計算勝率特徵...")
 
+# 騎師 / 練馬師勝率
 jockey_rate = df_train.groupby('jockey')['target'].mean().to_dict()
 trainer_rate = df_train.groupby('trainer')['target'].mean().to_dict()
+
+# 騎練組合勝率
 jt_rate = df_train.groupby(['jockey', 'trainer'])['target'].mean().to_dict()
+
+# 馬匹+騎師組合
 jh_rate = df_train.groupby(['jockey', 'horse_id'])['target'].mean().to_dict()
 
+# 馬匹+路程勝率
 dist_stats = df_train.groupby(['horse_id', 'distance'])['target'].agg(['mean', 'count']).reset_index()
 dist_rate = dist_stats.set_index(['horse_id', 'distance'])['mean'].to_dict()
+
+# 馬匹+路程平均名次
 dist_rank = df_train.groupby(['horse_id', 'distance'])['finish_position'].mean().to_dict()
 
+# 馬匹+場地勝率
 course_rate = df_train.groupby(['horse_id', 'race_course'])['target'].mean().to_dict()
 course_rank = df_train.groupby(['horse_id', 'race_course'])['finish_position'].mean().to_dict()
 
+# 馬匹+going勝率
 going_rate = df_train.groupby(['horse_id', 'going'])['target'].mean().to_dict()
 
+# Sire 勝率
 sire_rate = df_train.groupby('Sire')['target'].mean().to_dict()
 sire_course_rate = df_train.groupby(['Sire', 'race_course'])['target'].mean().to_dict()
 
+# 抽檔勝率
 draw_rate = df_train.groupby('draw')['target'].mean().to_dict()
 
 # ============================================================
-# 6️⃣ 歷史特徵
+# 6️⃣ 歷史特徵（時序，用 shift 防泄漏）
 # ============================================================
 print("🔧 計算歷史特徵...")
 
@@ -141,32 +160,33 @@ for d in [df_train, df_test]:
     d['weight_change'] = d.groupby('horse_id')['weight'].diff().fillna(0)
     d['rtg_change'] = d.groupby('horse_id')['Rtg.'].diff().fillna(0)
 
+    # 出賽相隔日數
     d['race_date_numeric'] = d['race_date'].astype(np.int64) // 10**9
     d['days_since_last_run'] = (d.groupby('horse_id')['race_date_numeric'].diff() / 86400).fillna(999).clip(0, 999)
 
+    # 近 14 日出賽次數
     d['races_last14days'] = d.groupby('horse_id')['race_date'].transform(
         lambda x: x.expanding().count() - 1
     ).fillna(0).clip(0, 10)
 
-# 騎師近 5 / 10 場勝率
-df_train_sorted = df_train.sort_values('race_date').copy()
-df_train_sorted['jockey_win_rate_5'] = df_train_sorted.groupby('jockey')['target'].transform(
+# 騎師近 5 / 10 場勝率（時序）
+jockey_recent5 = df_train.sort_values('race_date').groupby('jockey')['target'].transform(
     lambda x: x.shift(1).rolling(5, min_periods=1).mean()
-).fillna(0)
-df_train_sorted['jockey_win_rate_10'] = df_train_sorted.groupby('jockey')['target'].transform(
+)
+jockey_recent10 = df_train.sort_values('race_date').groupby('jockey')['target'].transform(
     lambda x: x.shift(1).rolling(10, min_periods=1).mean()
-).fillna(0)
+)
+df_train['jockey_win_rate_5'] = jockey_recent5.fillna(0)
+df_train['jockey_win_rate_10'] = jockey_recent10.fillna(0)
 
-jockey_avg5 = df_train_sorted.groupby('jockey')['jockey_win_rate_5'].mean().to_dict()
-jockey_avg10 = df_train_sorted.groupby('jockey')['jockey_win_rate_10'].mean().to_dict()
-
-df_train['jockey_win_rate_5'] = df_train['jockey'].map(jockey_avg5).fillna(0)
-df_train['jockey_win_rate_10'] = df_train['jockey'].map(jockey_avg10).fillna(0)
+# 測試集用訓練集嘅平均值
+jockey_avg5 = df_train.groupby('jockey')['jockey_win_rate_5'].mean().to_dict()
+jockey_avg10 = df_train.groupby('jockey')['jockey_win_rate_10'].mean().to_dict()
 df_test['jockey_win_rate_5'] = df_test['jockey'].map(jockey_avg5).fillna(0)
 df_test['jockey_win_rate_10'] = df_test['jockey'].map(jockey_avg10).fillna(0)
 
 # ============================================================
-# 7️⃣ Map 勝率特徵
+# 7️⃣ Map 所有勝率特徵
 # ============================================================
 print("🔧 Map 勝率特徵...")
 
@@ -201,7 +221,7 @@ for d in [df_train, df_test]:
     d['draw_win_rate'] = d['draw'].map(draw_rate).fillna(0)
 
 # ============================================================
-# 8️⃣ 最終特徵列表
+# 8️⃣ 最終特徵列表（36 個）
 # ============================================================
 features_all = [
     'draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
@@ -231,6 +251,7 @@ X_test = df_test[features_all].astype(np.float32)
 y_test = df_test['target'].astype(int)
 test_groups = df_test['_group'].values
 
+# 檢查有幾多特徵真正有值
 non_zero_features = [f for f in features_all if df_train[f].abs().sum() > 0]
 print(f"  ✅ 有效特徵數：{len(non_zero_features)} / {len(features_all)}")
 
