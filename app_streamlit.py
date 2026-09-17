@@ -3662,8 +3662,19 @@ def main():
     if st.session_state.show_admin and CONFIG["enable_admin"]:
         admin_page()
         return
-
-
+    c1, c2, c3, c4, c5 = st.columns([4, 1, 1, 1, 1])
+    with c1:
+        st.title("🏇 賽馬預測系統")
+        st.markdown("AI 驅動・即時預測・彩池推薦")
+        st.caption(f"{datetime.now().strftime('%Y年%m月%d日')}")
+    with c2:
+        if CONFIG["enable_admin"] and st.session_state.get("role") == "super_admin":
+            if st.button("🔐 後台", use_container_width=True, key="go_admin"):
+                st.session_state.show_admin = True
+                st.rerun()
+    with c3:
+        if st.button("❓ 常見問題", use_container_width=True, key="faq_btn"):
+            st.switch_page("pages/FAQ.py")
     with c4:
         if st.session_state.get('logged_in', False):
             username = st.session_state.username
