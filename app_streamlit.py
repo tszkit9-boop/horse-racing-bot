@@ -185,12 +185,56 @@ def load_users():
 def save_users(users):
     return save_json(USER_DATA_FILE, users)
 
+import bcrypt
+
+
+def hash_password(plain_password):
+    """將明文密碼轉為 bcrypt hash"""
+    if not plain_password:
+        return ''
+    try:
+        salt = bcrypt.gensalt(rounds=12)
+        hashed = bcrypt.hashpw(str(plain_password).encode('utf-8'), salt)
+        return hashed.decode('utf-8')
+    except Exception:
+        return str(plain_password)
+
+
+def verify_password(plain_password, stored_password):
+    """驗證密碼，返回 (是否正確, 是否舊明文格式)"""
+    if not plain_password or not stored_password:
+        return False, False
+    stored = str(stored_password)
+    if stored.startswith('$2') and len(stored) == 60:
+        try:
+            ok = bcrypt.checkpw(str(plain_password).encode('utf-8'), stored.encode('utf-8'))
+            return ok, False
+        except Exception:
+            return False, False
+    else:
+        return (str(plain_password) == stored), True
+
+
 def authenticate(username, password):
     users = load_users()
-    if username in users and users[username].get('password') == password:
-        return users[username]
-    return None
+    if username not in users:
+        return None
 
+    stored_pw = users[username].get('password', '')
+    is_correct, is_old_format = verify_password(password, stored_pw)
+
+    if not is_correct:
+        return None
+
+    # 🛡️ 自動遷移：如果係舊明文密碼，即刻轉做 hash 存返
+    if is_old_format:
+        try:
+            users[username]['password'] = hash_password(password)
+            save_users(users)
+        except Exception:
+            pass
+
+    return users[username]
 def log_admin_action(admin, action):
     logs = load_json(LOG_FILE)
     if 'logs' not in logs:
@@ -3575,7 +3619,7 @@ def login_page():
                     else:
                         # ===== 建立新用戶 =====
                         users[new_user] = {
-                            'password': new_pass,
+                            'password': hash_password(new_pass),
                             'phone': phone,
                             'is_paid': False,
                             'paid_date': None,
@@ -3713,6 +3757,7 @@ def main():
                 st.divider()
 
                 # 更改密碼
+                # 更改密碼
                 with st.expander("🔑 更改密碼", expanded=False):
                     old_pw = st.text_input("舊密碼", type="password", key="pc_old_pw")
                     new_pw = st.text_input("新密碼（最少 4 字）", type="password", key="pc_new_pw")
@@ -3721,18 +3766,20 @@ def main():
                         users2 = load_users()
                         if username not in users2:
                             st.error("❌ 用戶不存在")
-                        elif users2[username].get('password') != old_pw:
-                            st.error("❌ 舊密碼不正確")
-                        elif len(new_pw) < 4:
-                            st.error("❌ 新密碼最少 4 個字")
-                        elif new_pw != confirm_pw:
-                            st.error("❌ 兩次密碼不一致")
                         else:
-                            users2[username]['password'] = new_pw
-                            if save_users(users2):
-                                st.success("✅ 密碼已更改！")
+                            is_correct, _ = verify_password(old_pw, users2[username].get('password', ''))
+                            if not is_correct:
+                                st.error("❌ 舊密碼不正確")
+                            elif len(new_pw) < 4:
+                                st.error("❌ 新密碼最少 4 個字")
+                            elif new_pw != confirm_pw:
+                                st.error("❌ 兩次密碼不一致")
                             else:
-                                st.error("❌ 儲存失敗")
+                                users2[username]['password'] = hash_password(new_pw)
+                                if save_users(users2):
+                                    st.success("✅ 密碼已更改！")
+                                else:
+                                    st.error("❌ 儲存失敗")
 
                 # 預測記錄
                 with st.expander("📜 預測記錄", expanded=False):
