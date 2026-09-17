@@ -3912,24 +3912,29 @@ def main():
                         format_func=lambda x: f"第 {x} 場", key="ai_cmp_race")
 
                     df_pred_race = df_pred_date[df_pred_date['場次'] == selected_race].copy()
+                    # 🛡️ 攞真實頭 3 名
                     df_result_race = df_result_date[
                         df_result_date['race_no'] == selected_race
                     ].copy()
-                    df_result_race = df_result_race.sort_values('finish_position').head(4)
-                    df_result_race = df_result_race.rename(columns={
-                        'finish_position': '真實名次',
-                        'horse_name': '真實馬'
-                    })
+                    df_result_race = df_result_race.sort_values('finish_position').head(3)
 
-                    df_compare = df_pred_race.merge(
-                        df_result_race[['真實名次', '真實馬']],
-                        left_on='預測名次',
-                        right_on='真實名次',
-                        how='left'
+                    top3_names = df_result_race['horse_name'].tolist()
+                    real_map = dict(zip(
+                        df_result_race['horse_name'],
+                        df_result_race['finish_position']
+                    ))
+
+                    # 🛡️ 新邏輯：只要預測馬喺真實頭 3 名出現就算命中（不理順序）
+                    df_compare = df_pred_race.copy()
+                    df_compare['真實名次'] = df_compare['預測馬'].map(real_map)
+                    df_compare['真實馬'] = df_compare['預測馬'].where(
+                        df_compare['預測馬'].isin(top3_names), ''
                     )
-                    df_compare['結果'] = df_compare.apply(
-                        lambda row: '命中' if row['預測馬'] == row['真實馬'] else '失準',
-                        axis=1
+                    df_compare['結果'] = df_compare['真實名次'].apply(
+                        lambda x: '命中' if pd.notna(x) else '失準'
+                    )
+                    df_compare['真實名次'] = df_compare['真實名次'].apply(
+                        lambda x: int(x) if pd.notna(x) else None
                     )
 
                     display_df = df_compare[['預測名次', '預測馬', '真實名次', '真實馬', '結果']].copy()
