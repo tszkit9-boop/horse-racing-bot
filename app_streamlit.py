@@ -548,7 +548,6 @@ def _build_features(race_df, history_df):
 
     result = race_df.copy()
 
-    # 初始化所有特徵    
     # ========================================================
     # 🛡️ 智能馬名對照：用中文馬名去匹配 horse_id
     # ========================================================
@@ -589,25 +588,7 @@ def _build_features(race_df, history_df):
                     st.success(f"✅ 馬名對照：成功匹配 {matched}/{total} 匹馬")
         except Exception as e:
             st.warning(f"⚠️ 加載馬名對照表失敗：{e}")
-                mapping_df = mapping_df.dropna(subset=['norm_name'])
-                mapping_df = mapping_df[mapping_df['norm_name'] != '']
 
-                mapping_dict = dict(zip(
-                    mapping_df['norm_name'],
-                    mapping_df['horse_id'].astype(str).str.strip()
-                ))
-
-                if 'horse_name' in result.columns:
-                    result['norm_name'] = result['horse_name'].apply(normalize_name)
-                    mapped_ids = result['norm_name'].map(mapping_dict)
-                    result['horse_id'] = mapped_ids.fillna(result['horse_id']).astype(str).str.strip()
-                    result = result.drop(columns=['norm_name'], errors='ignore')
-
-                    matched = mapped_ids.notna().sum()
-                    total = len(result)
-                    st.success(f"✅ 馬名對照：成功匹配 {matched}/{total} 匹馬")
-        except Exception as e:
-            print(f"⚠️ 加載馬名對照表失敗：{e}")
     feature_cols = [
         'draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
         'jockey_win_rate_50', 'trainer_win_rate_50',
