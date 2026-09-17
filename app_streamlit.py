@@ -125,114 +125,40 @@ PAYMENT_PROOFS_FILE = 'payment_proofs.json'
 LOTTERY_FILE = 'lottery_config.json'
 SHOP_FILE = 'shop_config.json'
 
-def safe_json_load(value, default):
-    """安全解析 JSON 字串"""
-    if value is None:
-        return default
-    if isinstance(value, (list, dict)):
-        return value
-    try:
-        parsed = json.loads(str(value))
-        return parsed if parsed is not None else default
-    except Exception:
-        return default
-
-
 def load_users():
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}"
-    }
-    users = {}
-    try:
-        res = requests.get(
-            f"{SUPABASE_URL}/rest/v1/users?select=*",
-            headers=headers, timeout=15
-        )
-        rows = res.json() if res.status_code == 200 else []
-    except Exception:
-        rows = []
-
-    for row in rows:
-        uname = str(row.get('username', '')).strip()
-        if not uname:
-            continue
-
-        history = safe_json_load(row.get('history'), [])
-        bets = safe_json_load(row.get('bets'), [])
-        badges = safe_json_load(row.get('badges'), [])
-        referred_users = safe_json_load(row.get('referred_users'), [])
-
-        users[uname] = {
-            'username': uname,
-            'password': row.get('password', ''),
-            'phone': row.get('phone', '') or '',
-            'is_paid': bool(row.get('is_paid', False)),
-            'paid_date': row.get('paid_date'),
-            'expiry_date': row.get('expiry_date'),
-            'free_usage': int(row.get('free_usage', 0) or 0),
-            'total_usage': int(row.get('total_usage', 0) or 0),
-            'created_at': row.get('created_at', '') or '',
-            'note': row.get('note', '') or '',
-            'group': row.get('user_group') or row.get('group') or 'free',
-            'plan': row.get('plan'),
-            'predictions_limit': int(row.get('predictions_limit', 2) or 0),
-            'history': history,
-            'terms_agreed': row.get('terms_agreed'),
-            'invite_code': row.get('invite_code', '') or '',
-            'invited_by': row.get('invited_by'),
-            'invite_rewards': int(row.get('invite_rewards', 0) or 0),
-            'invite_count': int(row.get('invite_count', 0) or 0),
-            'referred_users': referred_users,
-            'level': row.get('level', '🥉 銅牌會員') or '🥉 銅牌會員',
-            'exp': int(row.get('exp', 0) or 0),
-            'badges': badges,
-            'virtual_balance': float(row.get('virtual_balance', 1000) or 0),
-            'last_claim_date': row.get('last_claim_date', '') or '',
-            'bets': bets,
-            'last_lottery_date': row.get('last_lottery_date', '') or '',
-            'lottery_chances': int(row.get('lottery_chances', 0) or 0),
-            'last_lottery_reset': row.get('last_lottery_reset', '') or '',
-        }
-
-    # ===== 冇 admin 就建立默認 admin =====
-    if "admin" not in users:
-        users["admin"] = {
-            "username": "admin",
-            "password": CONFIG.get("admin_password", "z54060437K"),
-            "group": "super_admin",
-            "is_paid": True,
-            "predictions_limit": -1,
-            "free_usage": 0,
-            "total_usage": 0,
-            "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            "history": [],
-            "badges": [],
-            "level": "👑 超級管理員",
-            "exp": 0,
-            "virtual_balance": 10000,
-            "last_claim_date": "",
-            "last_lottery_date": "",
-            "invite_code": "ADMIN001",
-            "invite_count": 0,
-            "invite_rewards": 0,
-            "phone": "",
-            "note": "系統超級管理員",
-            "plan": None,
-            "paid_date": None,
-            "expiry_date": None,
-            "terms_agreed": datetime.now().isoformat(),
-            "bets": [],
-            "referred_users": [],
-            "invited_by": None,
-            "lottery_chances": 0,
-            "last_lottery_reset": "",
+    users = load_json(USER_DATA_FILE)
+    if not users or "admin" not in users:
+        users = {
+            "admin": {
+                "username": "admin",
+                "password": CONFIG.get("admin_password", "z54060437K"),
+                "group": "super_admin",
+                "is_paid": True,
+                "predictions_limit": -1,
+                "free_usage": 0,
+                "total_usage": 0,
+                "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                "history": [],
+                "badges": [],
+                "level": "👑 超級管理員",
+                "exp": 0,
+                "virtual_balance": 10000,
+                "last_claim_date": "",
+                "last_lottery_date": "",
+                "invite_code": "ADMIN001",
+                "invite_count": 0,
+                "invite_rewards": 0,
+                "phone": "",
+                "note": "系統超級管理員",
+                "plan": None,
+                "paid_date": None,
+                "expiry_date": None,
+                "terms_agreed": datetime.now().isoformat(),
+                "bets": [],
+            }
         }
         save_users(users)
-
-    # ===== 補齊默認欄位 =====
     else:
-        changed = False
         for uid, u in users.items():
             defaults = {
                 'plan': None, 'paid_date': None, 'expiry_date': None,
@@ -241,218 +167,30 @@ def load_users():
                 'invite_rewards': 0, 'invite_count': 0,
                 'level': '🥉 銅牌會員', 'exp': 0, 'badges': [],
                 'virtual_balance': 1000, 'last_claim_date': '',
-                'bets': [], 'last_lottery_date': '', 'referred_users': [],
-                'lottery_chances': 0, 'last_lottery_reset': '',
-                'is_paid': False,
+                'bets': [], 'last_lottery_date': ''
             }
             for k, v in defaults.items():
                 if k not in u:
                     u[k] = v
-                    changed = True
-            if not u.get('invite_code'):
+            if 'invite_code' not in u:
                 u['invite_code'] = uid.upper() + str(random.randint(100, 999))
-                changed = True
             if 'predictions_limit' not in u:
                 if u.get('group') in ['super_admin', 'VIP', 'paid']:
                     u['predictions_limit'] = -1
                 else:
                     u['predictions_limit'] = CONFIG.get("free_limit", 2)
-                changed = True
-        if changed:
-            save_users(users)
-
+        save_users(users)
     return users
 
-
 def save_users(users):
-    """寫入 Supabase users 表"""
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "resolution=merge-duplicates"
-    }
-
-    rows = []
-    for uname, u in users.items():
-        row = {
-            'username': uname,
-            'password': u.get('password', ''),
-            'phone': u.get('phone', '') or '',
-            'is_paid': bool(u.get('is_paid', False)),
-            'paid_date': u.get('paid_date'),
-            'expiry_date': u.get('expiry_date'),
-            'free_usage': int(u.get('free_usage', 0) or 0),
-            'total_usage': int(u.get('total_usage', 0) or 0),
-            'created_at': u.get('created_at', '') or '',
-            'note': u.get('note', '') or '',
-            'group': u.get('group', 'free'),
-            'user_group': u.get('group', 'free'),
-            'plan': u.get('plan'),
-            'predictions_limit': int(u.get('predictions_limit', 2) or 0),
-            'history': json.dumps(u.get('history', []), ensure_ascii=False),
-            'terms_agreed': u.get('terms_agreed'),
-            'invite_code': u.get('invite_code', '') or '',
-            'invited_by': u.get('invited_by'),
-            'invite_rewards': int(u.get('invite_rewards', 0) or 0),
-            'invite_count': int(u.get('invite_count', 0) or 0),
-            'referred_users': json.dumps(u.get('referred_users', []), ensure_ascii=False),
-            'level': u.get('level', '🥉 銅牌會員') or '🥉 銅牌會員',
-            'exp': int(u.get('exp', 0) or 0),
-            'badges': json.dumps(u.get('badges', []), ensure_ascii=False),
-            'virtual_balance': float(u.get('virtual_balance', 1000) or 0),
-            'last_claim_date': u.get('last_claim_date', '') or '',
-            'bets': json.dumps(u.get('bets', []), ensure_ascii=False),
-            'last_lottery_date': u.get('last_lottery_date', '') or '',
-            'lottery_chances': int(u.get('lottery_chances', 0) or 0),
-            'last_lottery_reset': u.get('last_lottery_reset', '') or '',
-        }
-        rows.append(row)
-
-    try:
-        res = requests.post(
-            f"{SUPABASE_URL}/rest/v1/users",
-            headers=headers, json=rows, timeout=15
-        )
-        if res.status_code in (200, 201, 204):
-            return True
-        else:
-            print(f"save_users failed: {res.status_code} - {res.text}")
-            return False
-    except Exception as e:
-        print(f"save_users exception: {e}")
-        return False
-
-
-def update_single_user(username, user_data):
-    """更新單個用戶到 Supabase（用 PATCH，更可靠）"""
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json"
-    }
-
-    row = {
-        'password': user_data.get('password', ''),
-        'phone': user_data.get('phone', '') or '',
-        'is_paid': bool(user_data.get('is_paid', False)),
-        'paid_date': user_data.get('paid_date'),
-        'expiry_date': user_data.get('expiry_date'),
-        'free_usage': int(user_data.get('free_usage', 0) or 0),
-        'total_usage': int(user_data.get('total_usage', 0) or 0),
-        'note': user_data.get('note', '') or '',
-        'group': user_data.get('group', 'free'),
-        'user_group': user_data.get('group', 'free'),
-        'plan': user_data.get('plan'),
-        'predictions_limit': int(user_data.get('predictions_limit', 2) or 0),
-        'history': json.dumps(user_data.get('history', []), ensure_ascii=False),
-        'invite_code': user_data.get('invite_code', '') or '',
-        'invited_by': user_data.get('invited_by'),
-        'invite_rewards': int(user_data.get('invite_rewards', 0) or 0),
-        'invite_count': int(user_data.get('invite_count', 0) or 0),
-        'referred_users': json.dumps(user_data.get('referred_users', []), ensure_ascii=False),
-        'level': user_data.get('level', '🥉 銅牌會員') or '🥉 銅牌會員',
-        'exp': int(user_data.get('exp', 0) or 0),
-        'badges': json.dumps(user_data.get('badges', []), ensure_ascii=False),
-        'virtual_balance': float(user_data.get('virtual_balance', 1000) or 0),
-        'last_claim_date': user_data.get('last_claim_date', '') or '',
-        'bets': json.dumps(user_data.get('bets', []), ensure_ascii=False),
-        'last_lottery_date': user_data.get('last_lottery_date', '') or '',
-        'lottery_chances': int(user_data.get('lottery_chances', 0) or 0),
-        'last_lottery_reset': user_data.get('last_lottery_reset', '') or '',
-    }
-
-    try:
-        res = requests.patch(
-            f"{SUPABASE_URL}/rest/v1/users?username=eq.{username}",
-            headers=headers, json=row, timeout=15
-        )
-        if res.status_code in (200, 204):
-            return True
-        else:
-            print(f"update_single_user failed: {res.status_code} - {res.text}")
-            return False
-    except Exception as e:
-        print(f"update_single_user exception: {e}")
-        return False    
-
-
-def hash_password(plain_password):
-    """將明文密碼轉為 bcrypt hash"""
-    if not plain_password:
-        return ''
-    try:
-        salt = bcrypt.gensalt(rounds=12)
-        hashed = bcrypt.hashpw(str(plain_password).encode('utf-8'), salt)
-        return hashed.decode('utf-8')
-    except Exception:
-        return str(plain_password)
-
-
-def verify_password(plain_password, stored_password):
-    """驗證密碼，返回 (是否正確, 是否舊明文格式)"""
-    if not plain_password or not stored_password:
-        return False, False
-    stored = str(stored_password)
-    if stored.startswith('$2') and len(stored) == 60:
-        try:
-            ok = bcrypt.checkpw(str(plain_password).encode('utf-8'), stored.encode('utf-8'))
-            return ok, False
-        except Exception:
-            return False, False
-    else:
-        return (str(plain_password) == stored), True
-
+    return save_json(USER_DATA_FILE, users)
 
 def authenticate(username, password):
     users = load_users()
+    if username in users and users[username].get('password') == password:
+        return users[username]
+    return None
 
-    # 🔵 寫入 log 檔
-    try:
-        with open("debug_login.txt", "a", encoding="utf-8") as f:
-            f.write(f"[{datetime.now()}] authenticate 被呼叫: {username}\n")
-    except Exception:
-        pass
-
-    if username not in users:
-        try:
-            with open("debug_login.txt", "a", encoding="utf-8") as f:
-                f.write(f"[{datetime.now()}] 用戶唔存在: {username}\n")
-        except Exception:
-            pass
-        return None
-
-    stored_pw = users[username].get('password', '')
-    is_correct, is_old_format = verify_password(password, stored_pw)
-
-    try:
-        with open("debug_login.txt", "a", encoding="utf-8") as f:
-            f.write(f"[{datetime.now()}] is_correct={is_correct}, is_old={is_old_format}, stored前30={str(stored_pw)[:30]}\n")
-    except Exception:
-        pass
-
-    if not is_correct:
-        return None
-
-    # 🛡️ 自動遷移
-    if is_old_format:
-        try:
-            new_hash = hash_password(password)
-            users[username]['password'] = new_hash
-            result = update_single_user(username, users[username])
-            try:
-                with open("debug_login.txt", "a", encoding="utf-8") as f:
-                    f.write(f"[{datetime.now()}] 遷移結果: {result}\n")
-            except Exception:
-                pass
-        except Exception as e:
-            try:
-                with open("debug_login.txt", "a", encoding="utf-8") as f:
-                    f.write(f"[{datetime.now()}] 遷移失敗: {e}\n")
-            except Exception:
-                pass
-
-    return users[username]
 def log_admin_action(admin, action):
     logs = load_json(LOG_FILE)
     if 'logs' not in logs:
@@ -530,19 +268,21 @@ def load_lottery_config():
             {"name": "謝謝參與", "type": "nothing", "value": 0, "weight": 30, "description": "下次再嚟"}
         ]
     }
-
-    # 嘗試讀取本地檔案（如果有）
-    try:
-        if os.path.exists("lottery_config.json"):
+    
+    if os.path.exists("lottery_config.json"):
+        try:
             with open("lottery_config.json", "r", encoding='utf-8') as f:
                 config = json.load(f)
             if config.get("prizes"):
                 return config
-    except Exception:
-        pass
-
-    # 讀唔到就用預設值（唔嘗試寫入，避免 Streamlit Cloud 權限問題）
+        except Exception:
+            pass
+            
+    # 如果檔案唔存在、讀取失敗或者係空嘅，就寫入預設值
+    with open("lottery_config.json", "w", encoding='utf-8') as f:
+        json.dump(default_config, f, ensure_ascii=False, indent=2)
     return default_config
+    return save_json(LOTTERY_FILE, c)
 
 def load_shop_config():
     """從 Supabase 讀取商城商品"""
@@ -3778,17 +3518,6 @@ def login_page():
             if st.form_submit_button("登入"):
                 user = authenticate(u, p)
                 if user:
-                    # 🛡️ 強制加密：如果 Supabase 入面仲係明文，即刻轉 hash
-                    try:
-                        users_check = load_users()
-                        if u in users_check:
-                            stored = users_check[u].get('password', '')
-                            if not (str(stored).startswith('$2') and len(str(stored)) == 60):
-                                users_check[u]['password'] = hash_password(p)
-                                update_single_user(u, users_check[u])
-                    except Exception as e:
-                        print(f"強制加密失敗: {e}")
-
                     st.session_state.logged_in = True
                     st.session_state.username = u
                     log_user_activity(u, "登入", "登入成功")
@@ -3846,7 +3575,7 @@ def login_page():
                     else:
                         # ===== 建立新用戶 =====
                         users[new_user] = {
-                            'password': hash_password(new_pass),
+                            'password': new_pass,
                             'phone': phone,
                             'is_paid': False,
                             'paid_date': None,
@@ -3918,24 +3647,6 @@ def login_page():
                         st.rerun()
 
 def main():
-    # 🛡️ 啟動時自動遷移：將所有明文密碼轉做 hash
-    if not st.session_state.get('_pw_migrated', False):
-        st.session_state._pw_migrated = True
-        try:
-            _users = load_users()
-            _migrated = 0
-            for _uid, _u in _users.items():
-                _pw = str(_u.get('password', '')).strip()
-                if _pw and not (_pw.startswith('$2') and len(_pw) == 60):
-                    _new_hash = hash_password(_pw)
-                    _u['password'] = _new_hash
-                    update_single_user(_uid, _u)
-                    _migrated += 1
-            if _migrated > 0:
-                print(f"✅ 自動遷移 {_migrated} 個用戶密碼")
-        except Exception as _e:
-            print(f"❌ 遷移失敗: {_e}")
-
     defaults = {
         'logged_in': False, 'username': None, 'role': 'free',
         'show_admin': False, 'show_lottery': False, 'show_shop': False
@@ -4010,20 +3721,18 @@ def main():
                         users2 = load_users()
                         if username not in users2:
                             st.error("❌ 用戶不存在")
+                        elif users2[username].get('password') != old_pw:
+                            st.error("❌ 舊密碼不正確")
+                        elif len(new_pw) < 4:
+                            st.error("❌ 新密碼最少 4 個字")
+                        elif new_pw != confirm_pw:
+                            st.error("❌ 兩次密碼不一致")
                         else:
-                            is_correct, _ = verify_password(old_pw, users2[username].get('password', ''))
-                            if not is_correct:
-                                st.error("❌ 舊密碼不正確")
-                            elif len(new_pw) < 4:
-                                st.error("❌ 新密碼最少 4 個字")
-                            elif new_pw != confirm_pw:
-                                st.error("❌ 兩次密碼不一致")
+                            users2[username]['password'] = new_pw
+                            if save_users(users2):
+                                st.success("✅ 密碼已更改！")
                             else:
-                                users2[username]['password'] = hash_password(new_pw)
-                                if save_users(users2):
-                                    st.success("✅ 密碼已更改！")
-                                else:
-                                    st.error("❌ 儲存失敗")
+                                st.error("❌ 儲存失敗")
 
                 # 預測記錄
                 with st.expander("📜 預測記錄", expanded=False):
