@@ -1,0 +1,33 @@
+name: 生成馬名對照表
+
+on:
+  workflow_dispatch:   # 只支援手動觸發
+
+jobs:
+  generate-mapping:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 檢出程式碼
+        uses: actions/checkout@v4
+
+      - name: 設定 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安裝依賴
+        run: pip install pandas
+
+      - name: 執行映射生成
+        run: python generate_mapping.py
+
+      - name: 提交變更
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add horse_name_mapping_cn.csv
+          git commit -m "Generate horse name mapping [skip ci]" || echo "No changes to commit"
+          git push
