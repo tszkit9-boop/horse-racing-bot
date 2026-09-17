@@ -419,9 +419,9 @@ def authenticate(username, password):
     if is_old_format:
         try:
             users[username]['password'] = hash_password(password)
-            save_users(users)
-        except Exception:
-            pass
+            update_single_user(username, users[username])
+        except Exception as e:
+            print(f"遷移失敗: {e}")
 
     return users[username]
 def log_admin_action(admin, action):
