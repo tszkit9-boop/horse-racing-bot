@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-train_models.py - 安全特徵版（只保留賽前已知資訊）
+train_models.py - 用 36 特徵（與 app 一致），危險特徵設 0
 """
 
 import pandas as pd
@@ -55,28 +55,25 @@ df['target'] = (df['finish_position'] == 1).astype(int)
 print(f"  清洗後：{len(df)} 筆，頭馬：{df['target'].mean():.2%}")
 
 # ============================================================
-# 3️⃣ 只提取「賽前已知」特徵
+# 3️⃣ 特徵（與 app 一致：36 個）
 # ============================================================
 def safe_num(s, default=0):
     return pd.to_numeric(s, errors='coerce').fillna(default)
 
-# ✅ 賽前已知
+# 基本
 df['draw'] = safe_num(df.get('draw', 0))
 df['Rtg.'] = safe_num(df.get('Rtg.', 0))
 df['win_odds'] = safe_num(df.get('Win Odds', df.get('win_odds', 0)))
 df['weight'] = safe_num(df.get('Act.Wt.', 0))
 df['distance'] = safe_num(df.get('Dist.', 0))
+df['finish_speed'] = safe_num(df.get('FSpeed', 0))
+df['lbw'] = safe_num(df.get('LBW', 0))
 df['age'] = safe_num(df.get('Age', 0))
-df['age_norm'] = df['age'].apply(lambda x: x if 2 <= x <= 15 else 5)
 
-# ✅ 場地（賽前已知）
 rc = df.get('RC/Track/Course', pd.Series(dtype=str)).astype(str)
 df['is_turf'] = rc.str.contains('Turf', case=False, na=False).astype(int)
 df['is_st'] = rc.str.contains('ST', case=False, na=False).astype(int)
 df['is_hv'] = rc.str.contains('HV', case=False, na=False).astype(int)
-
-# ✅ 賠率倒數
-df['odds_inverse'] = 1.0 / (df['win_odds'] + 1)
 
 for c in ['race_course', 'going', 'jockey', 'trainer']:
     df[c] = df.get(c, pd.Series(dtype=str)).astype(str).str.strip()
@@ -107,7 +104,7 @@ print(f"  訓練：{df_train['_group'].nunique()} 場，{len(df_train)} 筆")
 print(f"  測試：{df_test['_group'].nunique()} 場，{len(df_test)} 筆")
 
 # ============================================================
-# 5️⃣ 勝率特徵（只用訓練集）
+# 5️⃣ 勝率特徵
 # ============================================================
 print("🔧 計算勝率特徵...")
 
@@ -128,7 +125,7 @@ going_rate = df_train.groupby(['horse_id', 'going'])['target'].mean().to_dict()
 draw_rate = df_train.groupby('draw')['target'].mean().to_dict()
 
 # ============================================================
-# 6️⃣ 歷史特徵（只用「過去」數據）
+# 6️⃣ 歷史特徵
 # ============================================================
 print("🔧 計算歷史特徵...")
 
@@ -148,7 +145,6 @@ for d in [df_train, df_test]:
         lambda x: x.expanding().count() - 1
     ).fillna(0).clip(0, 10)
 
-# 騎師近 5 / 10 場
 df_train_sorted = df_train.sort_values('race_date').copy()
 df_train_sorted['jockey_win_rate_5'] = df_train_sorted.groupby('jockey')['target'].transform(
     lambda x: x.shift(1).rolling(5, min_periods=1).mean()
@@ -183,32 +179,39 @@ for d in [df_train, df_test]:
     d['draw_win_rate'] = d['draw'].map(draw_rate).fillna(0)
 
 # ============================================================
-# 8️⃣ 最終特徵列表（只保留安全特徵）
+# 8️⃣ 最終特徵（36 個，與 app 一致）
 # ============================================================
 features_all = [
-    # 賽前已知
-    'draw', 'weight', 'distance', 'Rtg.', 'win_odds',
-    'odds_inverse', 'odds_rank_in_race',
-    'age', 'age_norm',
-    'is_turf', 'is_st', 'is_hv',
-    # 歷史（只用過去）
-    'avg_rank_last3', 'weight_change', 'rtg_change',
-    'days_since_last_run', 'races_last14days',
-    # 勝率
+    'draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
     'jockey_win_rate_50', 'trainer_win_rate_50',
-    'jockey_trainer_win_rate', 'jockey_horse_win_rate',
-    'distance_win_rate', 'distance_avg_rank',
+    'distance_win_rate', 'distance_avg_rank', 'win_odds',
+    'weight_change', 'jockey_trainer_win_rate',
     'course_win_rate', 'course_avg_rank',
-    'going_win_rate',
-    'jockey_win_rate_5', 'jockey_win_rate_10',
-    'draw_win_rate',
+    'days_since_last_run', 'odds_rank_in_race',
+    'rtg_change', 'jockey_horse_win_rate',
+    'races_last14days', 'going_win_rate',
+    'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
+    'early_pace', 'finish_speed', 'last_trial_rank',
+    'last_trial_time', 'jockey_win_rate_5', 'jockey_win_rate_10',
+    'draw_win_rate', 'days_since_injury', 'injury_30d',
+    'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity'
 ]
 
+# 冇嘅特徵設 0（包括危險特徵）
 for d in [df_train, df_test]:
     for f in features_all:
         if f not in d.columns:
             d[f] = 0
         d[f] = pd.to_numeric(d[f], errors='coerce').fillna(0)
+
+# 🛡️ 危險特徵強制歸 0（避免洩漏）
+dangerous = ['early_pace', 'finish_speed', 'last_trial_rank', 'last_trial_time',
+             'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
+             'days_since_injury', 'injury_30d', 'injury_60d', 'injury_90d',
+             'total_injuries', 'injury_severity']
+for d in [df_train, df_test]:
+    for f in dangerous:
+        d[f] = 0
 
 X_train = df_train[features_all].astype(np.float32)
 y_train = df_train['target'].astype(int)
@@ -218,6 +221,7 @@ test_groups = df_test['_group'].values
 
 non_zero = [f for f in features_all if df_train[f].abs().sum() > 0]
 print(f"  ✅ 有效特徵：{len(non_zero)} / {len(features_all)}")
+print(f"  🛡️ 危險特徵已歸 0：{len(dangerous)} 個")
 
 # ============================================================
 # 9️⃣ 評估
