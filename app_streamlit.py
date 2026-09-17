@@ -3798,21 +3798,31 @@ def main():
     # ============================================================
     # 🤖 AI 預測表現 & 賽果對比（全寬，喺預測下面）
     # ============================================================
-    st.divider()
+   st.divider()
     with st.expander("🤖 AI 預測表現 & 賽果對比（點擊展開）", expanded=False):
-        ai_file = "ai_predictions.json"
-        predictions = {}
-        if os.path.exists(ai_file):
-            try:
-                with open(ai_file, 'r', encoding='utf-8') as f:
-                    predictions = json.load(f)
-                st.info(f"✅ 成功讀取 {len(predictions)} 個預測紀錄")
-            except Exception as e:
-                st.error(f"❌ 讀取預測紀錄失敗：{e}")
-                predictions = {}
-        else:
-            st.warning("⚠️ 尚未有任何預測紀錄，請先執行預測")
+        # ===== 從 Supabase 讀取預測紀錄 =====
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}"
+        }
+        try:
+            res = requests.get(
+                f"{SUPABASE_URL}/rest/v1/predictions?order=date.desc",
+                headers=headers,
+                timeout=10
+            )
+            records = res.json() if res.status_code == 200 else []
+        except Exception as e:
+            st.error(f"❌ 讀取預測紀錄失敗：{e}")
+            records = []
 
+        if not records:
+            st.warning("⚠️ 尚未有任何預測紀錄，請先執行預測")
+            st.stop()
+
+        st.info(f"✅ 成功讀取 {len(records)} 個預測紀錄")
+
+        # ===== 讀取賽果 =====
         result_file = "race_results_clean.csv"
         df_results = pd.DataFrame()
         if os.path.exists(result_file):
@@ -3835,36 +3845,42 @@ def main():
         else:
             st.warning("⚠️ 找不到賽果檔案 race_results_clean.csv")
 
+        # ===== 將 Supabase 紀錄轉為 pred_list =====
         pred_list = []
-        if predictions:
-            for key, value in predictions.items():
-                if '_' not in key:
-                    continue
-                parts = key.split('_')
-                if len(parts) != 2:
-                    continue
-                date_str, race_no_str = parts[0], parts[1]
-                if not race_no_str.isdigit():
-                    continue
-                race_no_c = int(race_no_str)
-                if not isinstance(value, dict):
-                    continue
-                horse_list = value.get('all_horses', [])
-                if not horse_list or not isinstance(horse_list, list):
-                    top = value.get('top_horse')
-                    if top:
-                        horse_list = [top]
-                    else:
-                        continue
-                cleaned = [str(h).strip() for h in horse_list if str(h).strip()]
-                for idx, horse in enumerate(cleaned[:4], 1):
-                    pred_list.append({
-                        '日期': date_str,
-                        '場次': race_no_c,
-                        '預測名次': idx,
-                        '預測馬': horse
-                    })
+        for rec in records:
+            date_str = str(rec.get('date', '')).strip()
+            race_no_c = rec.get('race')
+            if not date_str or race_no_c is None:
+                continue
+            try:
+                race_no_c = int(race_no_c)
+            except Exception:
+                continue
 
+            horse_list = []
+            raw_all = rec.get('all_horses')
+            if raw_all:
+                try:
+                    parsed = json.loads(raw_all) if isinstance(raw_all, str) else raw_all
+                    if isinstance(parsed, list):
+                        horse_list = [str(h).strip() for h in parsed if str(h).strip()]
+                except Exception:
+                    pass
+
+            if not horse_list:
+                top = rec.get('top_horse')
+                if top:
+                    horse_list = [str(top).strip()]
+
+            for idx, horse in enumerate(horse_list[:4], 1):
+                pred_list.append({
+                    '日期': date_str,
+                    '場次': race_no_c,
+                    '預測名次': idx,
+                    '預測馬': horse
+                })
+
+        # ===== 比對 =====
         if pred_list and not df_results.empty:
             df_pred = pd.DataFrame(pred_list)
             df_pred['場次'] = df_pred['場次'].astype(int)
@@ -3931,7 +3947,7 @@ def main():
             else:
                 st.info("ℹ️ 沒有日期同時有預測同賽果數據")
         else:
-            st.info("ℹ️ 請確保已有預測紀錄及賽果數據")    
+            st.info("ℹ️ 請確保已有預測紀錄及賽果數據")
 # ===== 打賞支持 =====
     st.divider()
     st.subheader("❤️ 打賞支持")
