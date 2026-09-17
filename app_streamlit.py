@@ -2801,7 +2801,7 @@ def admin_user_activity():
 def admin_monitoring():
     st.subheader("📡 系統監控")
     files = ['ALL_DATA_MERGED.csv', 'HKCJ_FULL_YEAR_DATA.csv', 'users.json',
-             'system_config.json', 'accuracy.json', 'lottery_config.json', 'shop_config.json']
+             'system_config.json', 'accuracy.json', 'lottery_config.json']
     for f in files:
         if os.path.exists(f):
             st.success(f"✅ {f} ({os.path.getsize(f)/1024:.1f} KB)")
