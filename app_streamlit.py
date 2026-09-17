@@ -406,31 +406,51 @@ def verify_password(plain_password, stored_password):
 
 def authenticate(username, password):
     users = load_users()
-    print(f"🔵 DEBUG authenticate 被呼叫: username={username}")
+
+    # 🔵 寫入 log 檔
+    try:
+        with open("debug_login.txt", "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now()}] authenticate 被呼叫: {username}\n")
+    except Exception:
+        pass
 
     if username not in users:
-        print(f"🔴 DEBUG 用戶唔存在: {username}")
+        try:
+            with open("debug_login.txt", "a", encoding="utf-8") as f:
+                f.write(f"[{datetime.now()}] 用戶唔存在: {username}\n")
+        except Exception:
+            pass
         return None
 
     stored_pw = users[username].get('password', '')
     is_correct, is_old_format = verify_password(password, stored_pw)
 
-    print(f"🟡 DEBUG stored_pw前30字={str(stored_pw)[:30]}, is_correct={is_correct}, is_old={is_old_format}")
+    try:
+        with open("debug_login.txt", "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now()}] is_correct={is_correct}, is_old={is_old_format}, stored前30={str(stored_pw)[:30]}\n")
+    except Exception:
+        pass
 
     if not is_correct:
-        print(f"🔴 DEBUG 密碼驗證失敗")
         return None
 
-    # 🛡️ 自動遷移：如果係舊明文密碼，即刻轉做 hash 存返
+    # 🛡️ 自動遷移
     if is_old_format:
         try:
             new_hash = hash_password(password)
-            print(f"🟢 DEBUG 準備遷移: {str(stored_pw)[:20]} → {new_hash[:30]}")
             users[username]['password'] = new_hash
             result = update_single_user(username, users[username])
-            print(f"🟣 DEBUG update 結果: {result}")
+            try:
+                with open("debug_login.txt", "a", encoding="utf-8") as f:
+                    f.write(f"[{datetime.now()}] 遷移結果: {result}\n")
+            except Exception:
+                pass
         except Exception as e:
-            print(f"🔴 DEBUG 遷移失敗: {e}")
+            try:
+                with open("debug_login.txt", "a", encoding="utf-8") as f:
+                    f.write(f"[{datetime.now()}] 遷移失敗: {e}\n")
+            except Exception:
+                pass
 
     return users[username]
 def log_admin_action(admin, action):
