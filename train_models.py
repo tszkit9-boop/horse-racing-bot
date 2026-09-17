@@ -1,7 +1,10 @@
-#!/usr/bin/env python# 
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-train_models.py - 修復版 (正確評估指標 + 處理不平衡)
+train_models.py - 完整修復版
+- 加 DEBUG 診斷
+- 按 horse_id 分組拆分
+- 正確評估（AUC + Top-1 + Top-3）
 用法: python train_models.py
 """
 
@@ -81,7 +84,7 @@ racecard_df = standardize_columns(racecard_df)
 results_df = standardize_columns(results_df)
 
 # ============================================================
-# 4️⃣ 合併數據
+# 4️⃣ 合併數據（含 DEBUG）
 # ============================================================
 print("🔗 合併數據...")
 
@@ -115,6 +118,63 @@ for col in ['finish_position', 'real_finish_position', 'real_pos', '__REAL_POS_T
 results_df = results_df.dropna(subset=['real_pos']).copy()
 results_df_unique = results_df.drop_duplicates(subset=['race_date_str', 'race_no', 'horse_id'], keep='first')
 
+# ============================================================
+# 🔍 DEBUG 數據診斷
+# ============================================================
+print("\n" + "=" * 60)
+print("🔍 DEBUG 數據診斷")
+print("=" * 60)
+
+print(f"\n📋 racecard_df 欄位 ({len(racecard_df.columns)} 個)：")
+print(f"  {list(racecard_df.columns)}")
+
+print(f"\n📋 results_df_unique 欄位 ({len(results_df_unique.columns)} 個)：")
+print(f"  {list(results_df_unique.columns)}")
+
+print(f"\n📊 racecard_df 樣本（前 3 行）：")
+for col in ['race_date_str', 'race_no', 'horse_id', '馬號']:
+    if col in racecard_df.columns:
+        vals = racecard_df[col].head(3).tolist()
+        print(f"  {col} = {vals}")
+    else:
+        print(f"  {col} = ❌ 欄位唔存在")
+
+print(f"\n📊 results_df_unique 樣本（前 3 行）：")
+for col in ['race_date_str', 'race_no', 'horse_id', 'real_pos']:
+    if col in results_df_unique.columns:
+        vals = results_df_unique[col].head(3).tolist()
+        print(f"  {col} = {vals}")
+    else:
+        print(f"  {col} = ❌ 欄位唔存在")
+
+print(f"\n🔍 唯一值比較：")
+if 'race_date_str' in racecard_df.columns and 'race_date_str' in results_df_unique.columns:
+    rc_dates = set(racecard_df['race_date_str'].dropna().unique())
+    rs_dates = set(results_df_unique['race_date_str'].dropna().unique())
+    overlap = rc_dates & rs_dates
+    print(f"  race_date_str：racecard {len(rc_dates)} 個，results {len(rs_dates)} 個，重疊 {len(overlap)} 個")
+    print(f"    racecard 樣本：{list(rc_dates)[:3]}")
+    print(f"    results 樣本：{list(rs_dates)[:3]}")
+
+if 'horse_id' in racecard_df.columns and 'horse_id' in results_df_unique.columns:
+    rc_hid = set(racecard_df['horse_id'].dropna().unique())
+    rs_hid = set(results_df_unique['horse_id'].dropna().unique())
+    overlap = rc_hid & rs_hid
+    print(f"  horse_id：racecard {len(rc_hid)} 個，results {len(rs_hid)} 個，重疊 {len(overlap)} 個")
+    print(f"    racecard 樣本：{list(rc_hid)[:5]}")
+    print(f"    results 樣本：{list(rs_hid)[:5]}")
+
+if 'race_no' in racecard_df.columns and 'race_no' in results_df_unique.columns:
+    rc_rn = set(racecard_df['race_no'].dropna().unique())
+    rs_rn = set(results_df_unique['race_no'].dropna().unique())
+    overlap = rc_rn & rs_rn
+    print(f"  race_no：racecard {len(rc_rn)} 個，results {len(rs_rn)} 個，重疊 {len(overlap)} 個")
+
+print("=" * 60 + "\n")
+
+# ============================================================
+# 合併
+# ============================================================
 merged = pd.DataFrame()
 
 if all(c in racecard_df.columns for c in ['race_date_str', 'race_no', 'horse_id']) and \
@@ -151,7 +211,7 @@ print(f"  最終合併數據：{len(merged)} 筆")
 print(f"  頭馬比例：{merged['target'].mean():.2%}")
 
 # ============================================================
-# 5️⃣ 特徵工程
+# 5️⃣ 特徵工程（36 特徵）
 # ============================================================
 print("🔧 特徵工程（36 特徵）...")
 
@@ -177,26 +237,11 @@ for f in features_36:
     else:
         merged[f] = merged[f].fillna(0)
 
-X = merged[features_36].copy()
-y = merged['target'].copy()
-
-for col in X.columns:
-    if X[col].dtype == 'object':
-        le = LabelEncoder()
-        X[col] = le.fit_transform(X[col].astype(str))
-    X[col] = pd.to_numeric(X[col], errors='coerce').fillna(0)
-
-X = X.astype(np.float32)
-y = y.astype(int)
-
-print(f"  特徵矩陣：{X.shape}")
-
 # ============================================================
-# 6️⃣ 按 horse_id 分組拆分（防 leakage）
+# 6️⃣ 按 horse_id 分組拆分
 # ============================================================
 print("📂 按 horse_id 分組拆分...")
 
-# 過濾：只保留有 horse_id 嘅行
 merged_valid = merged[merged['horse_id'].notna()].copy()
 merged_valid = merged_valid[merged_valid['horse_id'].astype(str).str.strip() != ''].copy()
 
@@ -216,7 +261,6 @@ X_valid = X_valid.astype(np.float32)
 y_valid = merged_valid['target'].astype(int)
 groups = merged_valid['horse_id'].astype(str).values
 
-# 按 horse_id 分組拆分（80% 訓練 / 20% 測試）
 gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
 train_idx, test_idx = next(gss.split(X_valid, y_valid, groups=groups))
 
@@ -225,7 +269,6 @@ X_test = X_valid.iloc[test_idx]
 y_train = y_valid.iloc[train_idx]
 y_test = y_valid.iloc[test_idx]
 
-# 評估用嘅分組：優先 race_date_str + race_no，否則用 horse_id
 test_df = merged_valid.iloc[test_idx].copy()
 try:
     race_key = test_df['race_date_str'].astype(str) + "_" + test_df['race_no'].astype(str)
@@ -246,12 +289,6 @@ print(f"  測試集組數：{len(set(test_groups))}")
 # 7️⃣ 評估函數（Top-1 / Top-3 命中率）
 # ============================================================
 def evaluate_topk(model, X_test, y_test, test_groups, model_name="Model"):
-    """
-    正確嘅賽馬評估：
-    - 按場次分組，每場用 predict_proba 排名
-    - Top-1 命中：預測最高分嘅馬係真實頭馬
-    - Top-3 命中：真實頭馬喺預測頭 3 名之內
-    """
     try:
         proba = model.predict_proba(X_test)[:, 1]
     except Exception:
@@ -269,13 +306,13 @@ def evaluate_topk(model, X_test, y_test, test_groups, model_name="Model"):
 
     for g, sub in df_eval.groupby('group'):
         if sub['y_true'].sum() == 0:
-            continue  # 呢場冇頭馬數據，跳過
+            continue
         total_races += 1
         ranked = sub.sort_values('proba', ascending=False).reset_index(drop=True)
         winner_idx = ranked[ranked['y_true'] == 1].index
         if len(winner_idx) == 0:
             continue
-        winner_pos = winner_idx[0] + 1  # 1-based
+        winner_pos = winner_idx[0] + 1
         if winner_pos == 1:
             top1_hit += 1
         if winner_pos <= 3:
@@ -287,13 +324,11 @@ def evaluate_topk(model, X_test, y_test, test_groups, model_name="Model"):
     top1_acc = top1_hit / total_races
     top3_acc = top3_hit / total_races
 
-    # AUC
     try:
         auc = roc_auc_score(y_test, proba)
     except Exception:
         auc = 0.0
 
-    # Log Loss
     try:
         ll = log_loss(y_test, proba)
     except Exception:
@@ -308,11 +343,10 @@ def evaluate_topk(model, X_test, y_test, test_groups, model_name="Model"):
     return auc, ll, top1_acc, top3_acc, total_races
 
 # ============================================================
-# 8️⃣ 訓練 XGBoost（加 scale_pos_weight）
+# 8️⃣ 訓練 XGBoost
 # ============================================================
 print("\n🚀 訓練 XGBoost 模型...")
 
-# 計算 scale_pos_weight 處理不平衡
 neg_count = (y_train == 0).sum()
 pos_count = (y_train == 1).sum()
 scale_pos = neg_count / pos_count if pos_count > 0 else 1
@@ -334,7 +368,7 @@ xgb_auc, xgb_ll, xgb_top1, xgb_top3, xgb_races = evaluate_topk(
 )
 
 # ============================================================
-# 9️⃣ 訓練 CatBoost（加 auto_class_weights）
+# 9️⃣ 訓練 CatBoost
 # ============================================================
 print("\n🚀 訓練 CatBoost 模型...")
 cat_model = CatBoostClassifier(
@@ -357,7 +391,6 @@ cat_auc, cat_ll, cat_top1, cat_top3, cat_races = evaluate_topk(
 print("\n🚀 訓練 Ranking 模型...")
 rank_model = None
 try:
-    # 按場次分組訓練
     merged_sorted = merged_valid.sort_values(by=['race_date_str', 'race_no']).reset_index(drop=True)
     group_sizes = merged_sorted.groupby(['race_date_str', 'race_no']).size().tolist()
 
