@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-train_models.py - 完整版 (加入智能清洗，修復合併失敗問題)
+train_models.py - 修復版 (正確評估指標 + 處理不平衡)
 用法: python train_models.py
 """
 
@@ -12,8 +12,9 @@ import warnings
 import json
 warnings.filterwarnings('ignore')
 from datetime import datetime
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GroupShuffleSplit
 from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import roc_auc_score, log_loss
 import xgboost as xgb
 from xgboost import XGBRanker
 from catboost import CatBoostClassifier
@@ -30,37 +31,27 @@ racecard_df = pd.read_csv("HKCJ_FULL_YEAR_DATA.csv", encoding='utf-8-sig')
 print(f"  排位表：{len(racecard_df)} 筆")
 
 # ============================================================
-# 2️⃣ 智能清洗數據（修復合併失敗的核心）
+# 2️⃣ 智能清洗數據
 # ============================================================
 print("🧹 智能清洗數據...")
 
 def clean_data(df, is_racecard=False):
     df = df.loc[:, ~df.columns.duplicated(keep='first')]
-    
-    # 統一日期格式
     if 'race_date' in df.columns:
         df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce').dt.strftime('%Y-%m-%d')
-    
-    # 統一場次格式（移除 "Race " 前綴）
     if 'race_no' in df.columns:
         df['race_no'] = df['race_no'].astype(str).str.replace(r'[^0-9]', '', regex=True)
         df['race_no'] = pd.to_numeric(df['race_no'], errors='coerce').fillna(0).astype(int)
-    
-    # 統一馬匹編號格式（去空格、去特殊符號）
     for id_col in ['horse_id', '馬號']:
         if id_col in df.columns:
             df[id_col] = df[id_col].astype(str).str.strip().str.replace(r'[^0-9a-zA-Z]', '', regex=True)
-    
-    # 如果係排位表，將 `比賽日期` 轉做 `race_date`
     if is_racecard and '比賽日期' in df.columns and 'race_date' not in df.columns:
         df['race_date'] = pd.to_datetime(df['比賽日期'], errors='coerce').dt.strftime('%Y-%m-%d')
-    
     return df
 
 results_df = clean_data(results_df, is_racecard=False)
 racecard_df = clean_data(racecard_df, is_racecard=True)
 
-# 檢查清洗後嘅數據
 print(f"  清洗後賽果記錄：{len(results_df)} 筆")
 print(f"  清洗後排位表記錄：{len(racecard_df)} 筆")
 
@@ -90,7 +81,7 @@ racecard_df = standardize_columns(racecard_df)
 results_df = standardize_columns(results_df)
 
 # ============================================================
-# 4️⃣ 合併數據（終極防衝突版）
+# 4️⃣ 合併數據
 # ============================================================
 print("🔗 合併數據...")
 
@@ -102,7 +93,6 @@ def standardize_date_for_merge(df):
 racecard_df = standardize_date_for_merge(racecard_df)
 results_df = standardize_date_for_merge(results_df)
 
-# 🛡️ 智能尋找有效嘅名次欄位
 pos_candidates = ['finish_position', 'Pla.', '名次', '最終名次', 'result_position', 'Finish_Rank']
 found_pos = False
 for col in pos_candidates:
@@ -111,27 +101,22 @@ for col in pos_candidates:
         if cleaned.notna().any():
             results_df['real_pos'] = cleaned
             found_pos = True
-            print(f"  ✅ 成功使用 '{col}' 作名次來源，樣本：{cleaned.dropna().head(5).tolist()}")
+            print(f"  ✅ 成功使用 '{col}' 作名次來源")
             break
 
 if not found_pos:
-    print("❌ 嚴重錯誤：賽果數據中找不到任何有效嘅名次欄位！")
+    print("❌ 嚴重錯誤：找不到有效名次欄位")
     exit(1)
 
-# 🛡️ 關鍵修正 1：清空左表（排位表）中任何可能干擾嘅殘留欄位
 for col in ['finish_position', 'real_finish_position', 'real_pos', '__REAL_POS_TEMP__']:
     if col in racecard_df.columns:
         racecard_df = racecard_df.drop(columns=[col])
 
-# 🛡️ 關鍵修正 2：去重之前，先刪除冇名次嘅行，確保真實數據唔會被空值蓋過！
 results_df = results_df.dropna(subset=['real_pos']).copy()
-
-# 🛡️ 關鍵修正 3：對右表（賽果）進行去重
 results_df_unique = results_df.drop_duplicates(subset=['race_date_str', 'race_no', 'horse_id'], keep='first')
 
 merged = pd.DataFrame()
 
-# 嘗試用完整 Key 合併
 if all(c in racecard_df.columns for c in ['race_date_str', 'race_no', 'horse_id']) and \
    all(c in results_df_unique.columns for c in ['race_date_str', 'race_no', 'horse_id', 'real_pos']):
     merged = racecard_df.merge(
@@ -141,10 +126,9 @@ if all(c in racecard_df.columns for c in ['race_date_str', 'race_no', 'horse_id'
     )
     print(f"  第一層合併（完整 Key）：{len(merged)} 筆")
 
-# 如果失敗，降級只用 horse_id 合併
 if merged.empty:
-    print("  ⚠️ 完整 Key 對唔上，降級嘗試只用 horse_id 合併...")
-    if 'horse_id' in racecard_df.columns and 'horse_id' in results_df_unique.columns and 'real_pos' in results_df_unique.columns:
+    print("  ⚠️ 降級只用 horse_id 合併...")
+    if 'horse_id' in racecard_df.columns and 'horse_id' in results_df_unique.columns:
         merged = racecard_df.merge(
             results_df_unique[['horse_id', 'real_pos']],
             on='horse_id',
@@ -153,26 +137,21 @@ if merged.empty:
         print(f"  第二層合併（僅 horse_id）：{len(merged)} 筆")
 
 if merged.empty:
-    print("❌ 嚴重錯誤：無法合併任何數據！")
+    print("❌ 無法合併數據")
     exit(1)
 
-# 建立標準嘅 finish_position
 merged['finish_position'] = merged['real_pos'].fillna(99)
-
-# 🔍 診斷：睇下 finish_position 係咪真係有數
-print(f"  🔍 診斷 - 合併後名次樣本：{merged['finish_position'].head(10).tolist()}")
-
 merged['target'] = (merged['finish_position'] == 1).astype(int)
 
 if merged['target'].nunique() < 2:
-    print("❌ 嚴重錯誤：頭馬比例只有一個值，無法訓練！")
+    print("❌ 頭馬比例只有一個值")
     exit(1)
 
 print(f"  最終合併數據：{len(merged)} 筆")
 print(f"  頭馬比例：{merged['target'].mean():.2%}")
 
 # ============================================================
-# 5️⃣ 特徵工程（36 特徵）
+# 5️⃣ 特徵工程
 # ============================================================
 print("🔧 特徵工程（36 特徵）...")
 
@@ -213,82 +192,190 @@ y = y.astype(int)
 print(f"  特徵矩陣：{X.shape}")
 
 # ============================================================
-# 6️⃣ 分割訓練/測試集
+# 6️⃣ 按場次分組拆分（唔會拆散同一場）
 # ============================================================
-try:
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
-    )
-except ValueError:
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
+print("📂 按場次分組拆分...")
+
+# 建立 group key（每場賽事為一組）
+merged['_group_key'] = merged['race_date_str'].astype(str) + "_" + merged['race_no'].astype(str)
+
+# 過濾：只保留有 4 匹馬以上嘅場次（太少馬嘅場次無意義）
+group_counts = merged.groupby('_group_key').size()
+valid_groups = group_counts[group_counts >= 4].index
+merged_valid = merged[merged['_group_key'].isin(valid_groups)].copy()
+
+print(f"  有效場次：{len(valid_groups)} 場，馬匹：{len(merged_valid)} 筆")
+
+X_valid = merged_valid[features_36].copy()
+for col in X_valid.columns:
+    if X_valid[col].dtype == 'object':
+        le = LabelEncoder()
+        X_valid[col] = le.fit_transform(X_valid[col].astype(str))
+    X_valid[col] = pd.to_numeric(X_valid[col], errors='coerce').fillna(0)
+X_valid = X_valid.astype(np.float32)
+y_valid = merged_valid['target'].astype(int)
+groups = merged_valid['_group_key'].values
+
+# 按場次拆分（80% 訓練 / 20% 測試）
+gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+train_idx, test_idx = next(gss.split(X_valid, y_valid, groups=groups))
+
+X_train = X_valid.iloc[train_idx]
+X_test = X_valid.iloc[test_idx]
+y_train = y_valid.iloc[train_idx]
+y_test = y_valid.iloc[test_idx]
+test_groups = merged_valid.iloc[test_idx]['_group_key'].values
 
 print(f"  訓練集：{len(X_train)} 筆，測試集：{len(X_test)} 筆")
+print(f"  測試集場次數：{len(set(test_groups))}")
 
 # ============================================================
-# 7️⃣ 訓練 XGBoost
+# 7️⃣ 評估函數（Top-1 / Top-3 命中率）
 # ============================================================
-print("🚀 訓練 XGBoost 模型...")
+def evaluate_topk(model, X_test, y_test, test_groups, model_name="Model"):
+    """
+    正確嘅賽馬評估：
+    - 按場次分組，每場用 predict_proba 排名
+    - Top-1 命中：預測最高分嘅馬係真實頭馬
+    - Top-3 命中：真實頭馬喺預測頭 3 名之內
+    """
+    try:
+        proba = model.predict_proba(X_test)[:, 1]
+    except Exception:
+        proba = model.predict(X_test)
+
+    df_eval = pd.DataFrame({
+        'group': test_groups,
+        'y_true': y_test.values,
+        'proba': proba
+    })
+
+    top1_hit = 0
+    top3_hit = 0
+    total_races = 0
+
+    for g, sub in df_eval.groupby('group'):
+        if sub['y_true'].sum() == 0:
+            continue  # 呢場冇頭馬數據，跳過
+        total_races += 1
+        ranked = sub.sort_values('proba', ascending=False).reset_index(drop=True)
+        winner_idx = ranked[ranked['y_true'] == 1].index
+        if len(winner_idx) == 0:
+            continue
+        winner_pos = winner_idx[0] + 1  # 1-based
+        if winner_pos == 1:
+            top1_hit += 1
+        if winner_pos <= 3:
+            top3_hit += 1
+
+    if total_races == 0:
+        return 0.0, 0.0, 0.0, 0.0, 0
+
+    top1_acc = top1_hit / total_races
+    top3_acc = top3_hit / total_races
+
+    # AUC
+    try:
+        auc = roc_auc_score(y_test, proba)
+    except Exception:
+        auc = 0.0
+
+    # Log Loss
+    try:
+        ll = log_loss(y_test, proba)
+    except Exception:
+        ll = 0.0
+
+    print(f"  📊 {model_name} 評估結果：")
+    print(f"     ├─ AUC：{auc:.4f}（0.5 = 隨機，1.0 = 完美）")
+    print(f"     ├─ Log Loss：{ll:.4f}（越低越好）")
+    print(f"     ├─ Top-1 命中率：{top1_acc:.2%}（{top1_hit}/{total_races} 場）")
+    print(f"     └─ Top-3 命中率：{top3_acc:.2%}（{top3_hit}/{total_races} 場）")
+
+    return auc, ll, top1_acc, top3_acc, total_races
+
+# ============================================================
+# 8️⃣ 訓練 XGBoost（加 scale_pos_weight）
+# ============================================================
+print("\n🚀 訓練 XGBoost 模型...")
+
+# 計算 scale_pos_weight 處理不平衡
+neg_count = (y_train == 0).sum()
+pos_count = (y_train == 1).sum()
+scale_pos = neg_count / pos_count if pos_count > 0 else 1
+print(f"  scale_pos_weight = {scale_pos:.2f}")
+
 xgb_model = xgb.XGBClassifier(
-    n_estimators=100,
-    learning_rate=0.1,
+    n_estimators=200,
+    learning_rate=0.05,
     max_depth=5,
+    scale_pos_weight=scale_pos,
     random_state=42,
     use_label_encoder=False,
     eval_metric='logloss'
 )
 xgb_model.fit(X_train, y_train)
-xgb_acc = xgb_model.score(X_test, y_test)
-print(f"  XGBoost 測試準確度：{xgb_acc:.2%}")
+
+xgb_auc, xgb_ll, xgb_top1, xgb_top3, xgb_races = evaluate_topk(
+    xgb_model, X_test, y_test, test_groups, "XGBoost"
+)
 
 # ============================================================
-# 8️⃣ 訓練 CatBoost
+# 9️⃣ 訓練 CatBoost（加 auto_class_weights）
 # ============================================================
-print("🚀 訓練 CatBoost 模型...")
+print("\n🚀 訓練 CatBoost 模型...")
 cat_model = CatBoostClassifier(
-    iterations=100,
-    learning_rate=0.1,
+    iterations=200,
+    learning_rate=0.05,
     depth=5,
+    auto_class_weights='Balanced',
     random_seed=42,
     verbose=False
 )
 cat_model.fit(X_train, y_train)
-cat_acc = cat_model.score(X_test, y_test)
-print(f"  CatBoost 測試準確度：{cat_acc:.2%}")
+
+cat_auc, cat_ll, cat_top1, cat_top3, cat_races = evaluate_topk(
+    cat_model, X_test, y_test, test_groups, "CatBoost"
+)
 
 # ============================================================
-# 9️⃣ 訓練 Ranking 模型
+# 🔟 訓練 Ranking 模型
 # ============================================================
-print("🚀 訓練 Ranking 模型...")
+print("\n🚀 訓練 Ranking 模型...")
 rank_model = None
 try:
-    merged_sorted = merged.sort_values(by=['race_date', 'race_no']).reset_index(drop=True)
-    group_sizes = merged_sorted.groupby(['race_date', 'race_no']).size().tolist()
-    
-    X_rank_df = merged_sorted[features_36].replace('-', 0).apply(pd.to_numeric, errors='coerce').fillna(0)
+    # 按場次分組訓練
+    merged_sorted = merged_valid.sort_values(by=['race_date_str', 'race_no']).reset_index(drop=True)
+    group_sizes = merged_sorted.groupby(['race_date_str', 'race_no']).size().tolist()
+
+    X_rank_df = merged_sorted[features_36].copy()
+    for col in X_rank_df.columns:
+        if X_rank_df[col].dtype == 'object':
+            le = LabelEncoder()
+            X_rank_df[col] = le.fit_transform(X_rank_df[col].astype(str))
+        X_rank_df[col] = pd.to_numeric(X_rank_df[col], errors='coerce').fillna(0)
     X_rank = X_rank_df.values.astype(np.float32)
     y_rank = merged_sorted['target'].values.astype(int)
 
     if sum(group_sizes) == len(X_rank):
         rank_model = XGBRanker(
-            n_estimators=100,
-            learning_rate=0.1,
+            n_estimators=200,
+            learning_rate=0.05,
             max_depth=5,
             objective='rank:pairwise',
             random_state=42
         )
         rank_model.fit(X_rank, y_rank, group=group_sizes)
-        print("  Ranking 模型訓練完成！")
+        print("  ✅ Ranking 模型訓練完成！")
     else:
-        print("  ⚠️ 分組大小與數據長度不符，跳過 Ranking 訓練。")
+        print("  ⚠️ 分組大小不符，跳過 Ranking")
 except Exception as e:
-    print(f"  ⚠️ Ranking 模型訓練失敗：{e}")
+    print(f"  ⚠️ Ranking 訓練失敗：{e}")
 
 # ============================================================
-# 🔟 儲存模型
+# 1️⃣1️⃣ 儲存模型
 # ============================================================
-print("💾 儲存模型...")
+print("\n💾 儲存模型...")
 with open('hk_racing_model.pkl', 'wb') as f:
     pickle.dump(xgb_model, f)
 
@@ -301,16 +388,25 @@ if rank_model is not None:
 
 info = {
     "trained_at": datetime.now().isoformat(),
-    "xgb_accuracy": xgb_acc,
-    "cat_accuracy": cat_acc,
+    "xgb_auc": float(xgb_auc),
+    "xgb_logloss": float(xgb_ll),
+    "xgb_top1": float(xgb_top1),
+    "xgb_top3": float(xgb_top3),
+    "cat_auc": float(cat_auc),
+    "cat_logloss": float(cat_ll),
+    "cat_top1": float(cat_top1),
+    "cat_top3": float(cat_top3),
     "rank_trained": rank_model is not None,
     "train_samples": len(X_train),
     "test_samples": len(X_test),
-    "features_used": features_36,
-    "merge_key": "horse_id"
+    "test_races": xgb_races,
+    "features_used": features_36
 }
 with open("model_info.json", "w", encoding='utf-8') as f:
     json.dump(info, f, ensure_ascii=False, indent=2)
 
-print("📝 訓練資訊已儲存到 model_info.json")
+print("\n📝 訓練資訊已儲存到 model_info.json")
+print(f"\n🎯 最終結果：")
+print(f"   XGBoost  - AUC: {xgb_auc:.4f}, Top-1: {xgb_top1:.2%}, Top-3: {xgb_top3:.2%}")
+print(f"   CatBoost - AUC: {cat_auc:.4f}, Top-1: {cat_top1:.2%}, Top-3: {cat_top3:.2%}")
 print("🎉 自動訓練完成！")
