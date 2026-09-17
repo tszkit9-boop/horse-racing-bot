@@ -2143,26 +2143,108 @@ def admin_course_analysis():
 
 def admin_monthly_report():
     st.subheader("📅 每月命中率報告")
-    acc = load_accuracy()
-    records = acc.get('records', [])
-    valid = [r for r in records if r.get('is_hit') is not None]
-    if not valid:
+
+    # ===== 從 Supabase 讀取預測紀錄 =====
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}"
+    }
+    try:
+        res = requests.get(
+            f"{SUPABASE_URL}/rest/v1/predictions?order=date.desc",
+            headers=headers,
+            timeout=10
+        )
+        records = res.json() if res.status_code == 200 else []
+    except Exception as e:
+        st.error(f"❌ 讀取預測紀錄失敗：{e}")
+        records = []
+
+    if not records:
         st.info("暫無足夠數據")
         return
-    df = pd.DataFrame(valid)
-    if 'date' not in df.columns:
-        st.info("缺少日期")
+
+    # ===== 讀取賽果 =====
+    result_file = "race_results_clean.csv"
+    if not os.path.exists(result_file):
+        st.info("暫無足夠數據")
         return
+
+    try:
+        df_results = pd.read_csv(result_file, encoding='utf-8-sig')
+        df_results['horse_name'] = df_results['horse_name'].astype(str).str.strip()
+        df_results['horse_name'] = df_results['horse_name'].str.replace(
+            r'\s*\([A-Z]\d+\)\s*$', '', regex=True
+        ).str.strip()
+        df_results['finish_position'] = pd.to_numeric(df_results['finish_position'], errors='coerce')
+        df_results['race_no'] = pd.to_numeric(df_results['race_no'], errors='coerce')
+        df_results = df_results.dropna(subset=['race_no', 'finish_position'])
+        df_results['race_no'] = df_results['race_no'].astype(int)
+        df_results['race_date'] = pd.to_datetime(df_results['race_date'], errors='coerce')
+    except Exception as e:
+        st.error(f"❌ 讀取賽果失敗：{e}")
+        return
+
+    # ===== 建立賽果 lookup：(date, race) -> 真實頭 3 名 =====
+    results_map = {}
+    df_results['date_str'] = df_results['race_date'].dt.strftime('%Y-%m-%d')
+    for (date_str, race_no), group in df_results.groupby(['date_str', 'race_no']):
+        top3 = group.sort_values('finish_position').head(3)['horse_name'].tolist()
+        results_map[(date_str, int(race_no))] = top3
+
+    # ===== 逐條預測計算命中 =====
+    rows = []
+    for rec in records:
+        date_str = str(rec.get('date', '')).strip()
+        race_no = rec.get('race')
+        if not date_str or race_no is None:
+            continue
+        try:
+            race_no = int(race_no)
+        except Exception:
+            continue
+
+        horse_list = []
+        raw_all = rec.get('all_horses')
+        if raw_all:
+            try:
+                parsed = json.loads(raw_all) if isinstance(raw_all, str) else raw_all
+                if isinstance(parsed, list):
+                    horse_list = [str(h).strip() for h in parsed if str(h).strip()]
+            except Exception:
+                pass
+        if not horse_list:
+            top = rec.get('top_horse')
+            if top:
+                horse_list = [str(top).strip()]
+
+        key = (date_str, race_no)
+        if key not in results_map:
+            continue
+
+        top3_real = results_map[key]
+        hit_count = sum(1 for h in horse_list[:4] if h in top3_real)
+        is_hit = hit_count > 0
+
+        rows.append({'date': date_str, 'is_hit': is_hit})
+
+    if not rows:
+        st.info("暫無足夠數據")
+        return
+
+    df = pd.DataFrame(rows)
     df['date'] = pd.to_datetime(df['date'], errors='coerce')
     df = df.dropna(subset=['date'])
     df['month'] = df['date'].dt.to_period('M').astype(str)
+
     monthly = df.groupby('month').agg(
         total=('is_hit', 'count'),
-        hit=('is_hit', lambda x: (x == True).sum())
+        hit=('is_hit', 'sum')
     ).reset_index()
-    monthly['hit_rate'] = monthly['hit'] / monthly['total']
-    st.dataframe(monthly, use_container_width=True)
+    monthly['hit_rate'] = (monthly['hit'] / monthly['total'] * 100).round(1).astype(str) + '%'
+    monthly.columns = ['月份', '預測場次', '命中場次', '命中率']
 
+    st.dataframe(monthly, use_container_width=True, hide_index=True)
 def admin_finance():
     st.subheader("💰 財務管理")
     f = load_finance()
