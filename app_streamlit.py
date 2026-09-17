@@ -324,6 +324,59 @@ def save_users(users):
         return False
 
 
+def update_single_user(username, user_data):
+    """更新單個用戶到 Supabase（用 PATCH，更可靠）"""
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    row = {
+        'password': user_data.get('password', ''),
+        'phone': user_data.get('phone', '') or '',
+        'is_paid': bool(user_data.get('is_paid', False)),
+        'paid_date': user_data.get('paid_date'),
+        'expiry_date': user_data.get('expiry_date'),
+        'free_usage': int(user_data.get('free_usage', 0) or 0),
+        'total_usage': int(user_data.get('total_usage', 0) or 0),
+        'note': user_data.get('note', '') or '',
+        'group': user_data.get('group', 'free'),
+        'user_group': user_data.get('group', 'free'),
+        'plan': user_data.get('plan'),
+        'predictions_limit': int(user_data.get('predictions_limit', 2) or 0),
+        'history': json.dumps(user_data.get('history', []), ensure_ascii=False),
+        'invite_code': user_data.get('invite_code', '') or '',
+        'invited_by': user_data.get('invited_by'),
+        'invite_rewards': int(user_data.get('invite_rewards', 0) or 0),
+        'invite_count': int(user_data.get('invite_count', 0) or 0),
+        'referred_users': json.dumps(user_data.get('referred_users', []), ensure_ascii=False),
+        'level': user_data.get('level', '🥉 銅牌會員') or '🥉 銅牌會員',
+        'exp': int(user_data.get('exp', 0) or 0),
+        'badges': json.dumps(user_data.get('badges', []), ensure_ascii=False),
+        'virtual_balance': float(user_data.get('virtual_balance', 1000) or 0),
+        'last_claim_date': user_data.get('last_claim_date', '') or '',
+        'bets': json.dumps(user_data.get('bets', []), ensure_ascii=False),
+        'last_lottery_date': user_data.get('last_lottery_date', '') or '',
+        'lottery_chances': int(user_data.get('lottery_chances', 0) or 0),
+        'last_lottery_reset': user_data.get('last_lottery_reset', '') or '',
+    }
+
+    try:
+        res = requests.patch(
+            f"{SUPABASE_URL}/rest/v1/users?username=eq.{username}",
+            headers=headers, json=row, timeout=15
+        )
+        if res.status_code in (200, 204):
+            return True
+        else:
+            print(f"update_single_user failed: {res.status_code} - {res.text}")
+            return False
+    except Exception as e:
+        print(f"update_single_user exception: {e}")
+        return False    
+
+
 def hash_password(plain_password):
     """將明文密碼轉為 bcrypt hash"""
     if not plain_password:
