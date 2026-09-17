@@ -406,22 +406,31 @@ def verify_password(plain_password, stored_password):
 
 def authenticate(username, password):
     users = load_users()
+    print(f"🔵 DEBUG authenticate 被呼叫: username={username}")
+
     if username not in users:
+        print(f"🔴 DEBUG 用戶唔存在: {username}")
         return None
 
     stored_pw = users[username].get('password', '')
     is_correct, is_old_format = verify_password(password, stored_pw)
 
+    print(f"🟡 DEBUG stored_pw前30字={str(stored_pw)[:30]}, is_correct={is_correct}, is_old={is_old_format}")
+
     if not is_correct:
+        print(f"🔴 DEBUG 密碼驗證失敗")
         return None
 
     # 🛡️ 自動遷移：如果係舊明文密碼，即刻轉做 hash 存返
     if is_old_format:
         try:
-            users[username]['password'] = hash_password(password)
-            update_single_user(username, users[username])
+            new_hash = hash_password(password)
+            print(f"🟢 DEBUG 準備遷移: {str(stored_pw)[:20]} → {new_hash[:30]}")
+            users[username]['password'] = new_hash
+            result = update_single_user(username, users[username])
+            print(f"🟣 DEBUG update 結果: {result}")
         except Exception as e:
-            print(f"遷移失敗: {e}")
+            print(f"🔴 DEBUG 遷移失敗: {e}")
 
     return users[username]
 def log_admin_action(admin, action):
