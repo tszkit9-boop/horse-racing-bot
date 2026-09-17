@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-train_models.py - 終極特徵版（55 特徵）
+train_models.py - 安全特徵版（只保留賽前已知資訊）
 """
 
 import pandas as pd
@@ -9,7 +9,6 @@ import numpy as np
 import pickle
 import warnings
 import json
-import re
 warnings.filterwarnings('ignore')
 from datetime import datetime
 from sklearn.model_selection import GroupShuffleSplit
@@ -48,8 +47,6 @@ df['horse_id'] = df['horse_id'].astype(str).str.strip()
 df = df.dropna(subset=['real_pos'])
 df = df[df['horse_id'].str.len() > 0]
 df = df[df['race_no'] > 0]
-
-# 🛡️ 過濾：只保留短格式 horse_id
 df = df[df['horse_id'].str.match(r'^[A-Z]\d{3}$', na=False)]
 
 df['finish_position'] = df['real_pos']
@@ -58,103 +55,30 @@ df['target'] = (df['finish_position'] == 1).astype(int)
 print(f"  清洗後：{len(df)} 筆，頭馬：{df['target'].mean():.2%}")
 
 # ============================================================
-# 3️⃣ 提取所有特徵
+# 3️⃣ 只提取「賽前已知」特徵
 # ============================================================
 def safe_num(s, default=0):
     return pd.to_numeric(s, errors='coerce').fillna(default)
 
+# ✅ 賽前已知
 df['draw'] = safe_num(df.get('draw', 0))
 df['Rtg.'] = safe_num(df.get('Rtg.', 0))
 df['win_odds'] = safe_num(df.get('Win Odds', df.get('win_odds', 0)))
 df['weight'] = safe_num(df.get('Act.Wt.', 0))
 df['distance'] = safe_num(df.get('Dist.', 0))
-df['finish_speed'] = safe_num(df.get('FSpeed', 0))
-
-df['lbw'] = safe_num(df.get('LBW', 0))
 df['age'] = safe_num(df.get('Age', 0))
 df['age_norm'] = df['age'].apply(lambda x: x if 2 <= x <= 15 else 5)
-df['best_time'] = safe_num(df.get('Best_Time', 0))
-df['rating_diff'] = safe_num(df.get('Last_Run_Rating_Diff', 0))
-df['wgt_diff'] = safe_num(df.get('Last_Run_Declared_Wgt_Diff', 0))
-df['probable_overwgt'] = safe_num(df.get('Probable_OverWgt', 0))
-df['season_stakes'] = safe_num(df.get('Season_Stakes', 0))
-df['wgt_for_age'] = safe_num(df.get('Wgt_For_Age_Allowance', 0))
 
-df['sire_hist_rate'] = safe_num(df.get('父系歷史勝率', 0))
-df['sire_course_rate_pre'] = safe_num(df.get('父系同程勝率', 0))
-
-df['qimen_score'] = safe_num(df.get('奇門分數', 0))
-df['ziwei_score'] = safe_num(df.get('紫微分數', 0))
-df['tieban_score'] = safe_num(df.get('鐵板分數', 0))
-
-def extract_early_pace(s):
-    if pd.isna(s):
-        return 0
-    parts = str(s).strip().split()
-    if len(parts) >= 1:
-        try:
-            return int(parts[0])
-        except Exception:
-            return 0
-    return 0
-
-def extract_last_pos(s):
-    if pd.isna(s):
-        return 0
-    parts = str(s).strip().split()
-    if len(parts) >= 1:
-        try:
-            return int(parts[-1])
-        except Exception:
-            return 0
-    return 0
-
-def extract_mid_pos(s):
-    if pd.isna(s):
-        return 0
-    parts = str(s).strip().split()
-    if len(parts) >= 2:
-        try:
-            return int(parts[len(parts)//2])
-        except Exception:
-            return 0
-    return 0
-
-df['early_pace'] = df.get('RunningPosition', pd.Series(dtype=str)).apply(extract_early_pace)
-df['mid_pace'] = df.get('RunningPosition', pd.Series(dtype=str)).apply(extract_mid_pos)
-df['last_pos_in_run'] = df.get('RunningPosition', pd.Series(dtype=str)).apply(extract_last_pos)
-
-def parse_last6(s, mode='avg'):
-    if pd.isna(s):
-        return 99
-    nums = re.findall(r'\d+', str(s))
-    if nums:
-        try:
-            vals = [int(n) for n in nums[:6] if 0 < int(n) < 20]
-            if not vals:
-                return 99
-            if mode == 'avg':
-                return sum(vals) / len(vals)
-            elif mode == 'best':
-                return min(vals)
-            elif mode == 'worst':
-                return max(vals)
-        except Exception:
-            return 99
-    return 99
-
-df['last6_avg'] = df.get('Last_6_Runs', pd.Series(dtype=str)).apply(lambda x: parse_last6(x, 'avg'))
-df['last6_best'] = df.get('Last_6_Runs', pd.Series(dtype=str)).apply(lambda x: parse_last6(x, 'best'))
-df['last6_worst'] = df.get('Last_6_Runs', pd.Series(dtype=str)).apply(lambda x: parse_last6(x, 'worst'))
-
-df['odds_inverse'] = 1.0 / (df['win_odds'] + 1)
-
+# ✅ 場地（賽前已知）
 rc = df.get('RC/Track/Course', pd.Series(dtype=str)).astype(str)
 df['is_turf'] = rc.str.contains('Turf', case=False, na=False).astype(int)
 df['is_st'] = rc.str.contains('ST', case=False, na=False).astype(int)
 df['is_hv'] = rc.str.contains('HV', case=False, na=False).astype(int)
 
-for c in ['race_course', 'going', 'jockey', 'trainer', 'Sire']:
+# ✅ 賠率倒數
+df['odds_inverse'] = 1.0 / (df['win_odds'] + 1)
+
+for c in ['race_course', 'going', 'jockey', 'trainer']:
     df[c] = df.get(c, pd.Series(dtype=str)).astype(str).str.strip()
 
 df['odds_rank_in_race'] = df.groupby(['race_date_str', 'race_no'])['win_odds'].rank(method='min', ascending=True).fillna(0)
@@ -183,7 +107,7 @@ print(f"  訓練：{df_train['_group'].nunique()} 場，{len(df_train)} 筆")
 print(f"  測試：{df_test['_group'].nunique()} 場，{len(df_test)} 筆")
 
 # ============================================================
-# 5️⃣ 勝率特徵
+# 5️⃣ 勝率特徵（只用訓練集）
 # ============================================================
 print("🔧 計算勝率特徵...")
 
@@ -201,13 +125,10 @@ course_rank = df_train.groupby(['horse_id', 'race_course'])['finish_position'].m
 
 going_rate = df_train.groupby(['horse_id', 'going'])['target'].mean().to_dict()
 
-sire_rate = df_train.groupby('Sire')['target'].mean().to_dict()
-sire_course_rate = df_train.groupby(['Sire', 'race_course'])['target'].mean().to_dict()
-
 draw_rate = df_train.groupby('draw')['target'].mean().to_dict()
 
 # ============================================================
-# 6️⃣ 歷史特徵
+# 6️⃣ 歷史特徵（只用「過去」數據）
 # ============================================================
 print("🔧 計算歷史特徵...")
 
@@ -227,18 +148,7 @@ for d in [df_train, df_test]:
         lambda x: x.expanding().count() - 1
     ).fillna(0).clip(0, 10)
 
-    d['avg_lbw_last3'] = d.groupby('horse_id')['lbw'].transform(
-        lambda x: x.shift(1).rolling(3, min_periods=1).mean()
-    ).fillna(99)
-
-    d['avg_early_pace_last3'] = d.groupby('horse_id')['early_pace'].transform(
-        lambda x: x.shift(1).rolling(3, min_periods=1).mean()
-    ).fillna(0)
-
-    d['avg_fspeed_last3'] = d.groupby('horse_id')['finish_speed'].transform(
-        lambda x: x.shift(1).rolling(3, min_periods=1).mean()
-    ).fillna(0)
-
+# 騎師近 5 / 10 場
 df_train_sorted = df_train.sort_values('race_date').copy()
 df_train_sorted['jockey_win_rate_5'] = df_train_sorted.groupby('jockey')['target'].transform(
     lambda x: x.shift(1).rolling(5, min_periods=1).mean()
@@ -270,36 +180,28 @@ for d in [df_train, df_test]:
     d['course_win_rate'] = d.apply(lambda r: course_rate.get((r['horse_id'], r['race_course']), 0), axis=1)
     d['course_avg_rank'] = d.apply(lambda r: course_rank.get((r['horse_id'], r['race_course']), 99), axis=1)
     d['going_win_rate'] = d.apply(lambda r: going_rate.get((r['horse_id'], r['going']), 0), axis=1)
-    d['sire_win_rate'] = d['Sire'].map(sire_rate).fillna(0)
-    d['sire_course_win_rate'] = d.apply(lambda r: sire_course_rate.get((r['Sire'], r['race_course']), 0), axis=1)
     d['draw_win_rate'] = d['draw'].map(draw_rate).fillna(0)
 
 # ============================================================
-# 8️⃣ 最終特徵列表
+# 8️⃣ 最終特徵列表（只保留安全特徵）
 # ============================================================
 features_all = [
+    # 賽前已知
     'draw', 'weight', 'distance', 'Rtg.', 'win_odds',
     'odds_inverse', 'odds_rank_in_race',
+    'age', 'age_norm',
+    'is_turf', 'is_st', 'is_hv',
+    # 歷史（只用過去）
     'avg_rank_last3', 'weight_change', 'rtg_change',
     'days_since_last_run', 'races_last14days',
-    'lbw', 'avg_lbw_last3',
-    'age', 'age_norm', 'best_time',
-    'rating_diff', 'wgt_diff', 'probable_overwgt',
-    'wgt_for_age', 'season_stakes',
-    'early_pace', 'mid_pace', 'last_pos_in_run',
-    'avg_early_pace_last3', 'avg_fspeed_last3',
-    'finish_speed',
-    'last6_avg', 'last6_best', 'last6_worst',
+    # 勝率
     'jockey_win_rate_50', 'trainer_win_rate_50',
     'jockey_trainer_win_rate', 'jockey_horse_win_rate',
     'distance_win_rate', 'distance_avg_rank',
     'course_win_rate', 'course_avg_rank',
-    'going_win_rate', 'sire_win_rate', 'sire_course_win_rate',
+    'going_win_rate',
     'jockey_win_rate_5', 'jockey_win_rate_10',
     'draw_win_rate',
-    'sire_hist_rate', 'sire_course_rate_pre',
-    'is_turf', 'is_st', 'is_hv',
-    'qimen_score', 'ziwei_score', 'tieban_score',
 ]
 
 for d in [df_train, df_test]:
@@ -376,10 +278,9 @@ spw = neg / pos if pos > 0 else 1
 print(f"  scale_pos_weight = {spw:.2f}")
 
 xgb_model = xgb.XGBClassifier(
-    n_estimators=400, learning_rate=0.04, max_depth=6,
+    n_estimators=300, learning_rate=0.05, max_depth=5,
     scale_pos_weight=spw, random_state=42,
-    use_label_encoder=False, eval_metric='logloss',
-    colsample_bytree=0.8, subsample=0.8
+    use_label_encoder=False, eval_metric='logloss'
 )
 xgb_model.fit(X_train, y_train)
 xgb_auc, xgb_ll, xgb_top1, xgb_top3, xgb_races = evaluate_topk(
@@ -388,7 +289,7 @@ xgb_auc, xgb_ll, xgb_top1, xgb_top3, xgb_races = evaluate_topk(
 
 print("\n🚀 訓練 CatBoost...")
 cat_model = CatBoostClassifier(
-    iterations=400, learning_rate=0.04, depth=6,
+    iterations=300, learning_rate=0.05, depth=5,
     auto_class_weights='Balanced', random_seed=42, verbose=False
 )
 cat_model.fit(X_train, y_train)
@@ -405,7 +306,7 @@ try:
     y_r = df_r['target'].values.astype(int)
     if sum(gs) == len(X_r):
         rank_model = XGBRanker(
-            n_estimators=400, learning_rate=0.04, max_depth=6,
+            n_estimators=300, learning_rate=0.05, max_depth=5,
             objective='rank:pairwise', random_state=42
         )
         rank_model.fit(X_r, y_r, group=gs)
