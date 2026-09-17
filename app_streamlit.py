@@ -125,40 +125,114 @@ PAYMENT_PROOFS_FILE = 'payment_proofs.json'
 LOTTERY_FILE = 'lottery_config.json'
 SHOP_FILE = 'shop_config.json'
 
+def safe_json_load(value, default):
+    """安全解析 JSON 字串"""
+    if value is None:
+        return default
+    if isinstance(value, (list, dict)):
+        return value
+    try:
+        parsed = json.loads(str(value))
+        return parsed if parsed is not None else default
+    except Exception:
+        return default
+
+
 def load_users():
-    users = load_json(USER_DATA_FILE)
-    if not users or "admin" not in users:
-        users = {
-            "admin": {
-                "username": "admin",
-                "password": CONFIG.get("admin_password", "z54060437K"),
-                "group": "super_admin",
-                "is_paid": True,
-                "predictions_limit": -1,
-                "free_usage": 0,
-                "total_usage": 0,
-                "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                "history": [],
-                "badges": [],
-                "level": "👑 超級管理員",
-                "exp": 0,
-                "virtual_balance": 10000,
-                "last_claim_date": "",
-                "last_lottery_date": "",
-                "invite_code": "ADMIN001",
-                "invite_count": 0,
-                "invite_rewards": 0,
-                "phone": "",
-                "note": "系統超級管理員",
-                "plan": None,
-                "paid_date": None,
-                "expiry_date": None,
-                "terms_agreed": datetime.now().isoformat(),
-                "bets": [],
-            }
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}"
+    }
+    users = {}
+    try:
+        res = requests.get(
+            f"{SUPABASE_URL}/rest/v1/users?select=*",
+            headers=headers, timeout=15
+        )
+        rows = res.json() if res.status_code == 200 else []
+    except Exception:
+        rows = []
+
+    for row in rows:
+        uname = str(row.get('username', '')).strip()
+        if not uname:
+            continue
+
+        history = safe_json_load(row.get('history'), [])
+        bets = safe_json_load(row.get('bets'), [])
+        badges = safe_json_load(row.get('badges'), [])
+        referred_users = safe_json_load(row.get('referred_users'), [])
+
+        users[uname] = {
+            'username': uname,
+            'password': row.get('password', ''),
+            'phone': row.get('phone', '') or '',
+            'is_paid': bool(row.get('is_paid', False)),
+            'paid_date': row.get('paid_date'),
+            'expiry_date': row.get('expiry_date'),
+            'free_usage': int(row.get('free_usage', 0) or 0),
+            'total_usage': int(row.get('total_usage', 0) or 0),
+            'created_at': row.get('created_at', '') or '',
+            'note': row.get('note', '') or '',
+            'group': row.get('user_group') or row.get('group') or 'free',
+            'plan': row.get('plan'),
+            'predictions_limit': int(row.get('predictions_limit', 2) or 0),
+            'history': history,
+            'terms_agreed': row.get('terms_agreed'),
+            'invite_code': row.get('invite_code', '') or '',
+            'invited_by': row.get('invited_by'),
+            'invite_rewards': int(row.get('invite_rewards', 0) or 0),
+            'invite_count': int(row.get('invite_count', 0) or 0),
+            'referred_users': referred_users,
+            'level': row.get('level', '🥉 銅牌會員') or '🥉 銅牌會員',
+            'exp': int(row.get('exp', 0) or 0),
+            'badges': badges,
+            'virtual_balance': float(row.get('virtual_balance', 1000) or 0),
+            'last_claim_date': row.get('last_claim_date', '') or '',
+            'bets': bets,
+            'last_lottery_date': row.get('last_lottery_date', '') or '',
+            'lottery_chances': int(row.get('lottery_chances', 0) or 0),
+            'last_lottery_reset': row.get('last_lottery_reset', '') or '',
+        }
+
+    # ===== 冇 admin 就建立默認 admin =====
+    if "admin" not in users:
+        users["admin"] = {
+            "username": "admin",
+            "password": CONFIG.get("admin_password", "z54060437K"),
+            "group": "super_admin",
+            "is_paid": True,
+            "predictions_limit": -1,
+            "free_usage": 0,
+            "total_usage": 0,
+            "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "history": [],
+            "badges": [],
+            "level": "👑 超級管理員",
+            "exp": 0,
+            "virtual_balance": 10000,
+            "last_claim_date": "",
+            "last_lottery_date": "",
+            "invite_code": "ADMIN001",
+            "invite_count": 0,
+            "invite_rewards": 0,
+            "phone": "",
+            "note": "系統超級管理員",
+            "plan": None,
+            "paid_date": None,
+            "expiry_date": None,
+            "terms_agreed": datetime.now().isoformat(),
+            "bets": [],
+            "referred_users": [],
+            "invited_by": None,
+            "lottery_chances": 0,
+            "last_lottery_reset": "",
         }
         save_users(users)
+
+    # ===== 補齊默認欄位 =====
     else:
+        changed = False
         for uid, u in users.items():
             defaults = {
                 'plan': None, 'paid_date': None, 'expiry_date': None,
@@ -167,25 +241,87 @@ def load_users():
                 'invite_rewards': 0, 'invite_count': 0,
                 'level': '🥉 銅牌會員', 'exp': 0, 'badges': [],
                 'virtual_balance': 1000, 'last_claim_date': '',
-                'bets': [], 'last_lottery_date': ''
+                'bets': [], 'last_lottery_date': '', 'referred_users': [],
+                'lottery_chances': 0, 'last_lottery_reset': '',
+                'is_paid': False,
             }
             for k, v in defaults.items():
                 if k not in u:
                     u[k] = v
-            if 'invite_code' not in u:
+                    changed = True
+            if not u.get('invite_code'):
                 u['invite_code'] = uid.upper() + str(random.randint(100, 999))
+                changed = True
             if 'predictions_limit' not in u:
                 if u.get('group') in ['super_admin', 'VIP', 'paid']:
                     u['predictions_limit'] = -1
                 else:
                     u['predictions_limit'] = CONFIG.get("free_limit", 2)
-        save_users(users)
+                changed = True
+        if changed:
+            save_users(users)
+
     return users
 
-def save_users(users):
-    return save_json(USER_DATA_FILE, users)
 
-import bcrypt
+def save_users(users):
+    """寫入 Supabase users 表"""
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates"
+    }
+
+    rows = []
+    for uname, u in users.items():
+        row = {
+            'username': uname,
+            'password': u.get('password', ''),
+            'phone': u.get('phone', '') or '',
+            'is_paid': bool(u.get('is_paid', False)),
+            'paid_date': u.get('paid_date'),
+            'expiry_date': u.get('expiry_date'),
+            'free_usage': int(u.get('free_usage', 0) or 0),
+            'total_usage': int(u.get('total_usage', 0) or 0),
+            'created_at': u.get('created_at', '') or '',
+            'note': u.get('note', '') or '',
+            'group': u.get('group', 'free'),
+            'user_group': u.get('group', 'free'),
+            'plan': u.get('plan'),
+            'predictions_limit': int(u.get('predictions_limit', 2) or 0),
+            'history': json.dumps(u.get('history', []), ensure_ascii=False),
+            'terms_agreed': u.get('terms_agreed'),
+            'invite_code': u.get('invite_code', '') or '',
+            'invited_by': u.get('invited_by'),
+            'invite_rewards': int(u.get('invite_rewards', 0) or 0),
+            'invite_count': int(u.get('invite_count', 0) or 0),
+            'referred_users': json.dumps(u.get('referred_users', []), ensure_ascii=False),
+            'level': u.get('level', '🥉 銅牌會員') or '🥉 銅牌會員',
+            'exp': int(u.get('exp', 0) or 0),
+            'badges': json.dumps(u.get('badges', []), ensure_ascii=False),
+            'virtual_balance': float(u.get('virtual_balance', 1000) or 0),
+            'last_claim_date': u.get('last_claim_date', '') or '',
+            'bets': json.dumps(u.get('bets', []), ensure_ascii=False),
+            'last_lottery_date': u.get('last_lottery_date', '') or '',
+            'lottery_chances': int(u.get('lottery_chances', 0) or 0),
+            'last_lottery_reset': u.get('last_lottery_reset', '') or '',
+        }
+        rows.append(row)
+
+    try:
+        res = requests.post(
+            f"{SUPABASE_URL}/rest/v1/users",
+            headers=headers, json=rows, timeout=15
+        )
+        if res.status_code in (200, 201, 204):
+            return True
+        else:
+            print(f"save_users failed: {res.status_code} - {res.text}")
+            return False
+    except Exception as e:
+        print(f"save_users exception: {e}")
+        return False
 
 
 def hash_password(plain_password):
