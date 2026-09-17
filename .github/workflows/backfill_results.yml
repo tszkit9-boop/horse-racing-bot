@@ -1,0 +1,48 @@
+name: 一鍵爬取指定日期範圍賽果
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: '開始日期 (YYYY-MM-DD)'
+        required: true
+        default: '2026-01-01'
+      end_date:
+        description: '結束日期 (YYYY-MM-DD)'
+        required: true
+        default: '2026-09-13'
+
+jobs:
+  backfill-results:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 檢出程式碼
+        uses: actions/checkout@v4
+
+      - name: 設定 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安裝 Chrome
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y chromium-browser
+
+      - name: 安裝依賴
+        run: |
+          pip install pandas selenium webdriver-manager
+
+      - name: 執行範圍爬蟲
+        run: python scrape_results.py --range ${{ inputs.start_date }} ${{ inputs.end_date }}
+
+      - name: 提交變更
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add race_results_clean.csv
+          git commit -m "Backfill race results ${{ inputs.start_date }} to ${{ inputs.end_date }} [skip ci]" || echo "No changes to commit"
+          git push
