@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python# 
 # -*- coding: utf-8 -*-
 """
 train_models.py - 修復版 (正確評估指標 + 處理不平衡)
@@ -192,19 +192,19 @@ y = y.astype(int)
 print(f"  特徵矩陣：{X.shape}")
 
 # ============================================================
-# 6️⃣ 按場次分組拆分（唔會拆散同一場）
+# 6️⃣ 按 horse_id 分組拆分（防 leakage）
 # ============================================================
-print("📂 按場次分組拆分...")
+print("📂 按 horse_id 分組拆分...")
 
-# 建立 group key（每場賽事為一組）
-merged['_group_key'] = merged['race_date_str'].astype(str) + "_" + merged['race_no'].astype(str)
+# 過濾：只保留有 horse_id 嘅行
+merged_valid = merged[merged['horse_id'].notna()].copy()
+merged_valid = merged_valid[merged_valid['horse_id'].astype(str).str.strip() != ''].copy()
 
-# 過濾：只保留有 4 匹馬以上嘅場次（太少馬嘅場次無意義）
-group_counts = merged.groupby('_group_key').size()
-valid_groups = group_counts[group_counts >= 4].index
-merged_valid = merged[merged['_group_key'].isin(valid_groups)].copy()
+print(f"  有效數據：{len(merged_valid)} 筆")
 
-print(f"  有效場次：{len(valid_groups)} 場，馬匹：{len(merged_valid)} 筆")
+if len(merged_valid) < 100:
+    print("❌ 數據太少，無法訓練")
+    exit(1)
 
 X_valid = merged_valid[features_36].copy()
 for col in X_valid.columns:
@@ -214,9 +214,9 @@ for col in X_valid.columns:
     X_valid[col] = pd.to_numeric(X_valid[col], errors='coerce').fillna(0)
 X_valid = X_valid.astype(np.float32)
 y_valid = merged_valid['target'].astype(int)
-groups = merged_valid['_group_key'].values
+groups = merged_valid['horse_id'].astype(str).values
 
-# 按場次拆分（80% 訓練 / 20% 測試）
+# 按 horse_id 分組拆分（80% 訓練 / 20% 測試）
 gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
 train_idx, test_idx = next(gss.split(X_valid, y_valid, groups=groups))
 
@@ -224,10 +224,23 @@ X_train = X_valid.iloc[train_idx]
 X_test = X_valid.iloc[test_idx]
 y_train = y_valid.iloc[train_idx]
 y_test = y_valid.iloc[test_idx]
-test_groups = merged_valid.iloc[test_idx]['_group_key'].values
+
+# 評估用嘅分組：優先 race_date_str + race_no，否則用 horse_id
+test_df = merged_valid.iloc[test_idx].copy()
+try:
+    race_key = test_df['race_date_str'].astype(str) + "_" + test_df['race_no'].astype(str)
+    if race_key.nunique() >= 2 and (race_key != 'nan_nan').sum() > 10:
+        test_groups = race_key.values
+        print(f"  ✅ 評估用 race_date + race_no 分組（{race_key.nunique()} 場）")
+    else:
+        test_groups = test_df['horse_id'].astype(str).values
+        print(f"  ⚠️ race_date/race_no 無效，評估用 horse_id 分組")
+except Exception:
+    test_groups = test_df['horse_id'].astype(str).values
+    print(f"  ⚠️ 評估 fallback 到 horse_id 分組")
 
 print(f"  訓練集：{len(X_train)} 筆，測試集：{len(X_test)} 筆")
-print(f"  測試集場次數：{len(set(test_groups))}")
+print(f"  測試集組數：{len(set(test_groups))}")
 
 # ============================================================
 # 7️⃣ 評估函數（Top-1 / Top-3 命中率）
