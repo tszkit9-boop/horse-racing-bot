@@ -1,5 +1,5 @@
 {
-  "trained_at": "2026-09-17T19:04:27.465174",
+  "trained_at": "2026-09-17T19:06:40.322176",
   "xgb_accuracy": 0.9168942645337496,
   "cat_accuracy": 0.9168942645337496,
   "rank_trained": true,
