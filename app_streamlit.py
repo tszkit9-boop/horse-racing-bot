@@ -3757,7 +3757,6 @@ def main():
                 st.divider()
 
                 # 更改密碼
-                # 更改密碼
                 with st.expander("🔑 更改密碼", expanded=False):
                     old_pw = st.text_input("舊密碼", type="password", key="pc_old_pw")
                     new_pw = st.text_input("新密碼（最少 4 字）", type="password", key="pc_new_pw")
