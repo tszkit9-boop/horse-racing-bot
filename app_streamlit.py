@@ -530,21 +530,19 @@ def load_lottery_config():
             {"name": "謝謝參與", "type": "nothing", "value": 0, "weight": 30, "description": "下次再嚟"}
         ]
     }
-    
-    if os.path.exists("lottery_config.json"):
-        try:
+
+    # 嘗試讀取本地檔案（如果有）
+    try:
+        if os.path.exists("lottery_config.json"):
             with open("lottery_config.json", "r", encoding='utf-8') as f:
                 config = json.load(f)
             if config.get("prizes"):
                 return config
-        except Exception:
-            pass
-            
-    # 如果檔案唔存在、讀取失敗或者係空嘅，就寫入預設值
-    with open("lottery_config.json", "w", encoding='utf-8') as f:
-        json.dump(default_config, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+    # 讀唔到就用預設值（唔嘗試寫入，避免 Streamlit Cloud 權限問題）
     return default_config
-    return save_json(LOTTERY_FILE, c)
 
 def load_shop_config():
     """從 Supabase 讀取商城商品"""
