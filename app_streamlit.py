@@ -178,7 +178,7 @@ def load_users():
                 if u.get('group') in ['super_admin', 'VIP', 'paid']:
                     u['predictions_limit'] = -1
                 else:
-                    u['predictions_limit'] = CONFIG.get("free_limit", 2)
+                    u['predictions_limit'] = CONFIG.get("free_limit", 10)
         save_users(users)
     return users
 
@@ -3619,7 +3619,7 @@ def login_page():
                             'note': '',
                             'group': 'free',
                             'plan': None,
-                            'predictions_limit': CONFIG.get("free_limit", 2),
+                            'predictions_limit': CONFIG.get("free_limit", 10),
                             'history': [],
                             'terms_agreed': datetime.now().isoformat(),
                             'invite_code': new_user.upper() + str(random.randint(100, 999)),
