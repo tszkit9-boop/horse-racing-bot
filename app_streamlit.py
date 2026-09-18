@@ -40,6 +40,7 @@ st.markdown("""
     header { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
+CONFIG_FILE = 'system_config.json'
 DEFAULT_CONFIG = {
     "enable_registration": True,
     "enable_payment": True,
@@ -62,21 +63,6 @@ DEFAULT_CONFIG = {
         "level3": 1
     },
     "pool_config": {
-        "win": "free",
-        "place": "free",
-        "quinella": "free",
-        "quinella_place": "free",
-        "tierce": "paid",
-        "trio": "paid",
-        "quartet": "VIP",
-        "exacta": "VIP",
-        "first4": "VIP",
-        "double": "VIP",
-        "treble": "VIP",
-        "six_up": "VIP"
-    }
-}
-    # ===== 🎯 彩池設定 =====
         "win": {"enabled": True, "required_group": "free", "label": "獨贏"},
         "place": {"enabled": True, "required_group": "free", "label": "位置"},
         "quinella": {"enabled": True, "required_group": "free", "label": "連贏"},
@@ -88,8 +74,8 @@ DEFAULT_CONFIG = {
         "first4": {"enabled": True, "required_group": "VIP", "label": "四連環"},
         "double": {"enabled": True, "required_group": "VIP", "label": "孖寶"},
         "treble": {"enabled": True, "required_group": "VIP", "label": "三寶"},
-        "six_up": {"enabled": True, "required_group": "VIP", "label": "六環彩"},
-    },
+        "six_up": {"enabled": True, "required_group": "VIP", "label": "六環彩"}
+    }
 }
 
 def load_json(fp, default=None):
