@@ -1650,7 +1650,7 @@ def show_lottery_interface(username):
         st.info("請先登入")
         return
 
-    # 倒數計時
+    # ===== 倒數計時 =====
     try:
         hk_tz = pytz.timezone("Asia/Hong_Kong")
         now = datetime.now(hk_tz)
@@ -1672,19 +1672,30 @@ def show_lottery_interface(username):
 
     # ===== 🔥 每日自動重置抽獎次數 =====
     today = datetime.now().strftime('%Y-%m-%d')
-    if user.get('last_lottery_reset', '') != today:
-        # 每日免費派發 1 次抽獎機會（可自行調整）
-        daily_chances = 1
-        user['lottery_chances'] = user.get('lottery_chances', 0) + daily_chances
-        user['last_lottery_reset'] = today
-        users[username] = user
-        save_users(users)
-        st.success(f"🎁 每日重置！你獲得 {daily_chances} 次抽獎機會！")
-        st.rerun()
+    reset_key = f"_lottery_reset_done_{username}_{today}"
 
+    if user.get('last_lottery_reset', '') != today:
+        if not st.session_state.get(reset_key, False):
+            st.session_state[reset_key] = True
+            daily_chances = 1
+            user['lottery_chances'] = user.get('lottery_chances', 0) + daily_chances
+            user['last_lottery_reset'] = today
+            users[username] = user
+            try:
+                if 'update_single_user' in globals():
+                    update_single_user(username, user)
+                else:
+                    save_users(users)
+            except Exception as e:
+                print(f"每日重置寫入失敗: {e}")
+            st.success(f"🎁 每日重置！你獲得 {daily_chances} 次抽獎機會！")
+
+    # 重新讀取最新狀態
+    users = load_users()
+    user = users.get(username, {})
     lottery_chances = user.get('lottery_chances', 0)
 
-    # 顯示抽獎次數
+    # ===== 顯示抽獎次數 =====
     st.markdown(f"""
     <div style="background: linear-gradient(135deg, #667eea, #764ba2);
                 padding: 18px 22px; border-radius: 14px; color: white;
@@ -1705,7 +1716,7 @@ def show_lottery_interface(username):
     if 'lottery_result' not in st.session_state:
         st.session_state.lottery_result = None
 
-    # ===== 抽獎動畫區域 =====
+    # ===== 動畫區域 =====
     animation_placeholder = st.empty()
 
     if st.session_state.lottery_rolling:
@@ -1716,7 +1727,7 @@ def show_lottery_interface(username):
             <div style="background: linear-gradient(135deg, #ffecd2, #fcb69f);
                         padding: 40px; border-radius: 16px; text-align: center;
                         border: 3px dashed #ff6b6b;">
-                <div style="font-size: 80px; animation: spin 0.3s linear infinite;">{icon}</div>
+                <div style="font-size: 80px;">{icon}</div>
                 <div style="font-size: 20px; font-weight: bold; color: #d63447; margin-top: 10px;">
                     抽獎中...
                 </div>
@@ -1724,14 +1735,13 @@ def show_lottery_interface(username):
             """, unsafe_allow_html=True)
             time.sleep(0.15)
 
-    # 顯示中獎結果
+    # ===== 顯示中獎結果 =====
     if st.session_state.lottery_result is not None:
         result = st.session_state.lottery_result
         st.markdown(f"""
         <div style="background: linear-gradient(135deg, #f9d423, #ff4e50);
                     padding: 30px; border-radius: 16px; text-align: center;
-                    color: white; box-shadow: 0 8px 25px rgba(255,78,80,0.4);
-                    animation: pop 0.5s ease-out;">
+                    color: white; box-shadow: 0 8px 25px rgba(255,78,80,0.4);">
             <div style="font-size: 70px;">{result['icon']}</div>
             <div style="font-size: 24px; font-weight: 800; margin-top: 10px;">
                 🎉 恭喜中獎！
@@ -1744,17 +1754,6 @@ def show_lottery_interface(username):
                 {result['desc']}
             </div>
         </div>
-        <style>
-            @keyframes pop {{
-                0% {{ transform: scale(0.5); opacity: 0; }}
-                70% {{ transform: scale(1.05); }}
-                100% {{ transform: scale(1); opacity: 1; }}
-            }}
-            @keyframes spin {{
-                0% {{ transform: rotate(0deg); }}
-                100% {{ transform: rotate(360deg); }}
-            }}
-        </style>
         """, unsafe_allow_html=True)
 
         st.balloons()
