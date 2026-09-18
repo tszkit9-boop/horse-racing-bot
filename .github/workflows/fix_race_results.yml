@@ -1,0 +1,26 @@
+name: 補齊賽果 horse_id
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: pip install pandas
+      - name: Run fix
+        run: python fix_race_results.py
+      - name: Commit changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add race_results_clean.csv
+          git commit -m "Fix race results horse_id [skip ci]" || echo "No changes"
+          git push
