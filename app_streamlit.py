@@ -40,19 +40,40 @@ st.markdown("""
     header { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
-CONFIG_FILE = 'system_config.json'
 DEFAULT_CONFIG = {
-    "enable_registration": True, "enable_payment": True, "enable_admin": True,
-    "enable_lottery": True, "enable_shop": True,
-    "currency": "HKD", "free_limit": 10, "admin_password": "z54060437K",
-    "price_day": 18, "price_month": 128, "price_quarter": 328,
-    "daily_virtual_coin": 1000, "virtual_coin_enabled": True,
+    "enable_registration": True,
+    "enable_payment": True,
+    "enable_admin": True,
+    "enable_lottery": True,
+    "enable_shop": True,
+    "currency": "HKD",
+    "free_limit": 10,
+    "admin_password": "z54060437K",
+    "price_day": 18,
+    "price_month": 128,
+    "price_quarter": 328,
+    "daily_virtual_coin": 1000,
+    "virtual_coin_enabled": True,
     "session_timeout_minutes": 60,
     "enable_invite_reward": True,
     "invite_rewards": {
         "level1": 5,
         "level2": 2,
         "level3": 1
+    },
+    "pool_config": {
+        "win": "free",
+        "place": "free",
+        "quinella": "free",
+        "quinella_place": "free",
+        "tierce": "paid",
+        "trio": "paid",
+        "quartet": "VIP",
+        "exacta": "VIP",
+        "first4": "VIP",
+        "double": "VIP",
+        "treble": "VIP",
+        "six_up": "VIP"
     }
 }
     # ===== 🎯 彩池設定 =====
