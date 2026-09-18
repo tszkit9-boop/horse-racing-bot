@@ -55,7 +55,7 @@ DEFAULT_CONFIG = {
     "price_quarter": 328,
     "daily_virtual_coin": 1000,
     "virtual_coin_enabled": True,
-    "session_timeout_minutes": 60,
+    "session_timeout_minutes": 1,
     "enable_invite_reward": True,
     "invite_rewards": {
         "level1": 5,
