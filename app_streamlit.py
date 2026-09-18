@@ -44,15 +44,17 @@ CONFIG_FILE = 'system_config.json'
 DEFAULT_CONFIG = {
     "enable_registration": True, "enable_payment": True, "enable_admin": True,
     "enable_lottery": True, "enable_shop": True,
-    "currency": "HKD", "free_limit": 2, "admin_password": "z54060437K",
+    "currency": "HKD", "free_limit": 10, "admin_password": "z54060437K",
     "price_day": 18, "price_month": 128, "price_quarter": 328,
     "daily_virtual_coin": 1000, "virtual_coin_enabled": True,
-    "enable_invite_reward": True,    
+    "session_timeout_minutes": 60,
+    "enable_invite_reward": True,
     "invite_rewards": {
-        "level1": 5,   # 直接邀請人：+5 次預測
-        "level2": 2,   # 上線（A 邀請 B，B 邀請 C → A 得 2 次）
-        "level3": 1,   # 上上線：+1 次
-    },
+        "level1": 5,
+        "level2": 2,
+        "level3": 1
+    }
+}
     # ===== 🎯 彩池設定 =====
     "pool_config": {
         "win": {"enabled": True, "required_group": "free", "label": "獨贏"},
@@ -3531,9 +3533,43 @@ def display_race_calendar():
         """, unsafe_allow_html=True)
     except Exception as e:
         st.error(f"⚠️ 倒數計時器失敗：{e}")
+def check_session_timeout():
+    """檢查 session 是否超時"""
+    if not st.session_state.get('logged_in', False):
+        return
+
+    timeout_minutes = CONFIG.get("session_timeout_minutes", 60)
+    now = datetime.now()
+    last = st.session_state.get('_last_activity')
+
+    if last is None:
+        st.session_state._last_activity = now
+        return
+
+    try:
+        last_dt = datetime.fromisoformat(last) if isinstance(last, str) else last
+        elapsed = (now - last_dt).total_seconds() / 60
+    except Exception:
+        st.session_state._last_activity = now
+        return
+
+    if elapsed > timeout_minutes:
+        for k in ['logged_in', 'username', 'role', '_last_activity']:
+            if k in st.session_state:
+                del st.session_state[k]
+        st.session_state._timeout_message = f"⏰ 你已閒置超過 {timeout_minutes} 分鐘，已自動登出"
+        st.rerun()
+
+    st.session_state._last_activity = now
 
 def login_page():
     st.title("🔐 登入 / 註冊")
+
+    # 🛡️ 顯示超時訊息
+    if st.session_state.get('_timeout_message'):
+        st.warning(st.session_state._timeout_message)
+        del st.session_state._timeout_message
+
     c1, c2 = st.columns(2)
     with c1:
         if st.button("🔑 登入", use_container_width=True, key="pg_login"):
@@ -3553,6 +3589,7 @@ def login_page():
                 if user:
                     st.session_state.logged_in = True
                     st.session_state.username = u
+                    st.session_state._last_activity = datetime.now()
                     log_user_activity(u, "登入", "登入成功")
                     st.session_state.role = user.get('group', 'free')
                     st.rerun()
@@ -3608,7 +3645,7 @@ def login_page():
                     else:
                         # ===== 建立新用戶 =====
                         users[new_user] = {
-                            'password': new_pass,
+                            'password': hash_password(new_pass),
                             'phone': phone,
                             'is_paid': False,
                             'paid_date': None,
@@ -3626,7 +3663,7 @@ def login_page():
                             'invited_by': invited_by,
                             'invite_rewards': 0,
                             'invite_count': 0,
-                            'referred_users': [],  # 直接下線列表
+                            'referred_users': [],
                             'level': '🥉 銅牌會員',
                             'exp': 0,
                             'badges': [],
@@ -3679,7 +3716,8 @@ def login_page():
                         st.session_state.page_mode = "login"
                         st.rerun()
 
-def main():
+def main():    
+    check_session_timeout()
     defaults = {
         'logged_in': False, 'username': None, 'role': 'free',
         'show_admin': False, 'show_lottery': False, 'show_shop': False
