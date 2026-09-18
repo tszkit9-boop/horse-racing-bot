@@ -55,7 +55,7 @@ DEFAULT_CONFIG = {
     "price_quarter": 328,
     "daily_virtual_coin": 1000,
     "virtual_coin_enabled": True,
-    "session_timeout_minutes": 1,
+    "session_timeout_minutes": 60,
     "enable_invite_reward": True,
     "invite_rewards": {
         "level1": 5,
@@ -3723,7 +3723,13 @@ def login_page():
                         st.rerun()
 
 def main():    
+    # 🛡️ 已登入用戶每 60 秒自動 rerun，檢查 session 超時
+    if st.session_state.get('logged_in', False):
+        from streamlit_autorefresh import st_autorefresh
+        st_autorefresh(interval=60000, key="timeout_check")
+
     check_session_timeout()
+
     defaults = {
         'logged_in': False, 'username': None, 'role': 'free',
         'show_admin': False, 'show_lottery': False, 'show_shop': False
