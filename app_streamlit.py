@@ -1695,47 +1695,13 @@ def show_lottery_interface(username):
     user = users.get(username, {})
     lottery_chances = user.get('lottery_chances', 0)
 
-    # ===== 顯示抽獎次數 =====
-    st.markdown(f"""
-    <div style="background: linear-gradient(135deg, #667eea, #764ba2);
-                padding: 18px 22px; border-radius: 14px; color: white;
-                text-align: center; margin-bottom: 16px;">
-        <div style="font-size: 14px; opacity: 0.9;">🎟️ 你嘅抽獎機會</div>
-        <div style="font-size: 48px; font-weight: 800; line-height: 1.2;">{lottery_chances}</div>
-        <div style="font-size: 12px; opacity: 0.8;">次</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    if lottery_chances <= 0:
-        st.warning("⚠️ 你冇抽獎次數啦！請聽日再嚟，或者聯絡管理員增加。")
-        return
-
     # 初始化 session state
     if 'lottery_rolling' not in st.session_state:
         st.session_state.lottery_rolling = False
     if 'lottery_result' not in st.session_state:
         st.session_state.lottery_result = None
 
-    # ===== 動畫區域 =====
-    animation_placeholder = st.empty()
-
-    if st.session_state.lottery_rolling:
-        icons = ["🎁", "🎰", "💎", "🏆", "🎊", "⭐", "🍀", "🎯"]
-        for i in range(12):
-            icon = icons[i % len(icons)]
-            animation_placeholder.markdown(f"""
-            <div style="background: linear-gradient(135deg, #ffecd2, #fcb69f);
-                        padding: 40px; border-radius: 16px; text-align: center;
-                        border: 3px dashed #ff6b6b;">
-                <div style="font-size: 80px;">{icon}</div>
-                <div style="font-size: 20px; font-weight: bold; color: #d63447; margin-top: 10px;">
-                    抽獎中...
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            time.sleep(0.15)
-
-    # ===== 顯示中獎結果 =====
+    # ===== 🎯 優先顯示中獎結果（即使次數變 0）=====
     if st.session_state.lottery_result is not None:
         result = st.session_state.lottery_result
         st.markdown(f"""
@@ -1762,19 +1728,52 @@ def show_lottery_interface(username):
         if st.button("🔄 再抽一次", use_container_width=True, key="roll_again"):
             st.session_state.lottery_result = None
             st.rerun()
+        return  # 顯示完結果就 return
+
+    # ===== 顯示抽獎次數 =====
+    st.markdown(f"""
+    <div style="background: linear-gradient(135deg, #667eea, #764ba2);
+                padding: 18px 22px; border-radius: 14px; color: white;
+                text-align: center; margin-bottom: 16px;">
+        <div style="font-size: 14px; opacity: 0.9;">🎟️ 你嘅抽獎機會</div>
+        <div style="font-size: 48px; font-weight: 800; line-height: 1.2;">{lottery_chances}</div>
+        <div style="font-size: 12px; opacity: 0.8;">次</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if lottery_chances <= 0:
+        st.warning("⚠️ 你冇抽獎次數啦！請聽日再嚟，或者聯絡管理員增加。")
+        return
+
+    # ===== 動畫區域 =====
+    animation_placeholder = st.empty()
+
+    if st.session_state.lottery_rolling:
+        icons = ["🎁", "🎰", "💎", "🏆", "🎊", "⭐", "🍀", "🎯"]
+        for i in range(12):
+            icon = icons[i % len(icons)]
+            animation_placeholder.markdown(f"""
+            <div style="background: linear-gradient(135deg, #ffecd2, #fcb69f);
+                        padding: 40px; border-radius: 16px; text-align: center;
+                        border: 3px dashed #ff6b6b;">
+                <div style="font-size: 80px;">{icon}</div>
+                <div style="font-size: 20px; font-weight: bold; color: #d63447; margin-top: 10px;">
+                    抽獎中...
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            time.sleep(0.15)
 
     # ===== 抽獎按鈕 =====
-    elif not st.session_state.lottery_rolling:
+    if not st.session_state.lottery_rolling:
         if st.button("🎲 開始抽獎！", type="primary", use_container_width=True, key="start_lottery"):
             st.session_state.lottery_rolling = True
             st.rerun()
 
     # ===== 執行抽獎邏輯 =====
     if st.session_state.lottery_rolling:
-        # 扣一次抽獎次數
         users[username]['lottery_chances'] = lottery_chances - 1
 
-        # 抽獎
         weights = [_safe_int(p.get('weight', 1), 1) for p in prizes]
         if sum(weights) <= 0:
             weights = [1] * len(prizes)
