@@ -5,7 +5,7 @@ numpy
 pytz
 plotly
 Pillow
-
+streamlit-autorefresh
 # ===== AI / 機器學習 =====
 scikit-learn
 xgboost
