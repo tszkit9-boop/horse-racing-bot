@@ -1318,6 +1318,41 @@ def admin_lottery_config():
                         save_lottery_config(config)
                         st.success("✅ 已刪除")
                         st.rerun()
+def save_shop_config(c):
+    """寫入商城商品到 Supabase"""
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json"
+    }
+    items = c.get("items", [])
+    try:
+        # 先刪走所有舊商品
+        requests.delete(
+            f"{SUPABASE_URL}/rest/v1/shop_config?id=gt.0",
+            headers=headers, timeout=15
+        )
+        # 再插入新商品
+        if items:
+            clean_items = []
+            for item in items:
+                clean_item = {k: v for k, v in item.items() if k != 'id'}
+                clean_items.append(clean_item)
+            res = requests.post(
+                f"{SUPABASE_URL}/rest/v1/shop_config",
+                headers=headers, json=clean_items, timeout=15
+            )
+            if res.status_code in (200, 201, 204):
+                return True
+            else:
+                print(f"save_shop_config failed: {res.status_code} - {res.text}")
+                return False
+        return True
+    except Exception as e:
+        print(f"保存商城失敗: {e}")
+        return False
+
+
 def admin_shop_config():
     st.subheader("🛒 商城設定")
     config = load_shop_config()
