@@ -77,7 +77,6 @@ DEFAULT_CONFIG = {
     }
 }
     # ===== 🎯 彩池設定 =====
-    "pool_config": {
         "win": {"enabled": True, "required_group": "free", "label": "獨贏"},
         "place": {"enabled": True, "required_group": "free", "label": "位置"},
         "quinella": {"enabled": True, "required_group": "free", "label": "連贏"},
