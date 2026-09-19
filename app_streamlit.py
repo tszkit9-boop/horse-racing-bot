@@ -3137,6 +3137,46 @@ def admin_content():
             save_json(CONTENT_FILE, content)
             st.success("✅ 已發佈")
             st.rerun()
+def cleanup_activity_log(days=30):
+    """清理超過 N 日嘅用戶活動日誌"""
+    log_file = "user_activity_log.json"
+    if not os.path.exists(log_file):
+        return 0
+
+    try:
+        with open(log_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception:
+        return 0
+
+    records = data.get("records", [])
+    if not records:
+        return 0
+
+    from datetime import datetime, timedelta
+    cutoff = datetime.now() - timedelta(days=days)
+
+    kept = []
+    removed = 0
+    for r in records:
+        try:
+            t = datetime.strptime(r.get("time", ""), "%Y-%m-%d %H:%M:%S")
+            if t >= cutoff:
+                kept.append(r)
+            else:
+                removed += 1
+        except Exception:
+            kept.append(r)
+
+    if removed > 0:
+        data["records"] = kept
+        try:
+            with open(log_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    return removed
 
 def admin_auto_maintenance():
     st.subheader("🤖 自動維護")
@@ -3156,7 +3196,14 @@ def admin_auto_maintenance():
                     pass
         if exp:
             save_users(users)
-        st.success(f"✅ 維護完成，處理 {len(exp)} 位過期用戶")
+
+        # 🆕 清理活動日誌
+        removed_logs = cleanup_activity_log(days=30)
+
+        # 顯示結果
+        st.success(f"✅ 維護完成")
+        st.write(f"   - 過期 VIP：{len(exp)} 位降級")
+        st.write(f"   - 舊活動日誌：{removed_logs} 條清理")
 
 def admin_automation():
     st.subheader("🤖 自動化工具")
