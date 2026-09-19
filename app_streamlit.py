@@ -3815,6 +3815,172 @@ def login_page():
                         st.success(f"✅ 註冊成功！你獲得 {CONFIG.get('invite_rewards', {}).get('level1', 5)} 次額外預測獎勵！")
                         st.session_state.page_mode = "login"
                         st.rerun()
+def show_chat_room():
+    """聊天室內容（配合 popover 用）"""
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    current_user = st.session_state.get('username', 'unknown')
+    is_admin = st.session_state.get('role') == 'super_admin'
+
+    # ===== 檢查封鎖 =====
+    banned = False
+    ban_reason = ""
+    try:
+        r = requests.get(
+            f"{SUPABASE_URL}/rest/v1/chat_bans?username=eq.{current_user}",
+            headers=headers, timeout=10
+        )
+        bans = r.json() if r.status_code == 200 else []
+        if bans:
+            ban = bans[0]
+            until = ban.get('banned_until')
+            if until:
+                import pytz
+                until_dt = pd.to_datetime(until)
+                if until_dt.tzinfo is None:
+                    until_dt = until_dt.tz_localize('UTC')
+                now = pd.Timestamp.now(tz='UTC')
+                if until_dt > now:
+                    banned = True
+                    ban_reason = ban.get('reason', '')
+    except Exception:
+        pass
+
+    # ===== 讀取消息 =====
+    try:
+        res = requests.get(
+            f"{SUPABASE_URL}/rest/v1/chat_messages?deleted=eq.false&order=created_at.desc&limit=30",
+            headers=headers, timeout=10
+        )
+        messages = res.json() if res.status_code == 200 else []
+    except Exception as e:
+        st.error(f"讀取失敗：{e}")
+        messages = []
+
+    # ===== 顯示消息 =====
+    if not messages:
+        st.info("暫無消息，快啲嚟講第一句！")
+    else:
+        users_cache = load_users()
+        for msg in reversed(messages):
+            user = msg.get('username', '未知')
+            text = msg.get('message', '')
+            msg_id = msg.get('id')
+            time_str = str(msg.get('created_at', ''))[11:16]
+
+            is_admin_msg = users_cache.get(user, {}).get('group') == 'super_admin'
+            crown = " 👑" if is_admin_msg else ""
+            is_me = (user == current_user)
+
+            bg = "#dcf8c6" if is_me else "#f1f1f1"
+            align = "right" if is_me else "left"
+
+            col1, col2 = st.columns([9, 1])
+            with col1:
+                st.markdown(
+                    f"<div style='text-align:{align}; background:{bg}; "
+                    f"padding:6px 10px; border-radius:8px; margin:3px 0; font-size:13px;'>"
+                    f"<b>{user}{crown}</b> <small style='color:#888;'>{time_str}</small><br>{text}</div>",
+                    unsafe_allow_html=True
+                )
+            with col2:
+                if is_admin:
+                    if st.button("🗑️", key=f"del_{msg_id}", help="刪除"):
+                        try:
+                            requests.patch(
+                                f"{SUPABASE_URL}/rest/v1/chat_messages?id=eq.{msg_id}",
+                                headers=headers,
+                                json={"deleted": True},
+                                timeout=10
+                            )
+                            st.rerun()
+                        except Exception:
+                            pass
+
+            # 管理員封鎖
+            if is_admin and not is_me:
+                with st.expander(f"⚙️ 管理 {user}", expanded=False):
+                    bc1, bc2 = st.columns(2)
+                    with bc1:
+                        ban_min = st.number_input(
+                            "禁言（分鐘）", min_value=1, max_value=10080,
+                            value=60, key=f"bm_{msg_id}"
+                        )
+                    with bc2:
+                        st.write("")
+                        st.write("")
+                        if st.button("🚫 封鎖", key=f"ban_{msg_id}_{user}"):
+                            from datetime import datetime, timedelta
+                            import pytz
+                            hk_tz = pytz.timezone('Asia/Hong_Kong')
+                            until = (datetime.now(hk_tz) + timedelta(minutes=ban_min)).isoformat()
+                            try:
+                                requests.delete(
+                                    f"{SUPABASE_URL}/rest/v1/chat_bans?username=eq.{user}",
+                                    headers=headers, timeout=10
+                                )
+                                requests.post(
+                                    f"{SUPABASE_URL}/rest/v1/chat_bans",
+                                    headers=headers,
+                                    json={
+                                        "username": user,
+                                        "banned_until": until,
+                                        "reason": "違規發言",
+                                        "banned_by": current_user
+                                    },
+                                    timeout=10
+                                )
+                                st.success(f"✅ 已封鎖 {user}")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"失敗：{e}")
+
+                    if st.button("✅ 解封", key=f"unban_{msg_id}_{user}"):
+                        try:
+                            requests.delete(
+                                f"{SUPABASE_URL}/rest/v1/chat_bans?username=eq.{user}",
+                                headers=headers, timeout=10
+                            )
+                            st.success(f"✅ 已解封 {user}")
+                            st.rerun()
+                        except Exception:
+                            pass
+
+    st.divider()
+
+    # ===== 發送消息 =====
+    if banned:
+        st.error(f"🚫 你已被禁言。原因：{ban_reason}")
+    else:
+        with st.form("chat_form", clear_on_submit=True):
+            c1, c2 = st.columns([4, 1])
+            with c1:
+                msg = st.text_input(
+                    "msg", key="chat_input",
+                    label_visibility="collapsed",
+                    placeholder="輸入消息..."
+                )
+            with c2:
+                sent = st.form_submit_button("📤", use_container_width=True)
+
+            if sent and msg and msg.strip():
+                try:
+                    requests.post(
+                        f"{SUPABASE_URL}/rest/v1/chat_messages",
+                        headers=headers,
+                        json={"username": current_user, "message": msg.strip()[:200]},
+                        timeout=10
+                    )
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"失敗：{e}")
+
+    if st.button("🔄 刷新", key="chat_refresh", use_container_width=True):
+        st.rerun()
 
 def main():    
     # 🛡️ 已登入用戶每 60 秒自動 rerun，檢查 session 超時
@@ -3944,7 +4110,14 @@ def main():
         _checkin_user = st.session_state.get('username')
         if _checkin_user:
             st.divider()
-            show_checkin_button(_checkin_user)
+            show_checkin_button(_checkin_user)    
+            # 🛡️ 聊天室（Popover）
+    if st.session_state.get('logged_in', False):
+        st.divider()
+        chat_col1, chat_col2 = st.columns([1, 4])
+        with chat_col1:
+            with st.popover("💬 聊天室", use_container_width=True):
+                show_chat_room()
 
     with c5:
         if st.session_state.get('logged_in', False):
