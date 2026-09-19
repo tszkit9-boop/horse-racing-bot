@@ -3817,6 +3817,14 @@ def login_page():
                         st.rerun()
 def show_chat_room():
     """聊天室內容（配合 popover 用）"""
+
+    # 🛡️ 每 5 秒自動刷新
+    try:
+        from streamlit_autorefresh import st_autorefresh
+        st_autorefresh(interval=3000, key="chat_autorefresh")
+    except Exception:
+        pass
+
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -3825,6 +3833,7 @@ def show_chat_room():
 
     current_user = st.session_state.get('username', 'unknown')
     is_admin = st.session_state.get('role') == 'super_admin'
+    ...
 
     # ===== 檢查封鎖 =====
     banned = False
@@ -3956,28 +3965,41 @@ def show_chat_room():
     if banned:
         st.error(f"🚫 你已被禁言。原因：{ban_reason}")
     else:
-        with st.form("chat_form", clear_on_submit=True):
-            c1, c2 = st.columns([4, 1])
-            with c1:
-                msg = st.text_input(
-                    "msg", key="chat_input",
-                    label_visibility="collapsed",
-                    placeholder="輸入消息..."
+        # 🛡️ 用 callback 發送，唔會影響輸入框
+        def send_chat_message():
+            msg = st.session_state.get('chat_input', '')
+            if not msg or not msg.strip():
+                return
+            try:
+                requests.post(
+                    f"{SUPABASE_URL}/rest/v1/chat_messages",
+                    headers=headers,
+                    json={"username": current_user, "message": msg.strip()[:200]},
+                    timeout=10
                 )
-            with c2:
-                sent = st.form_submit_button("📤", use_container_width=True)
+                st.session_state.chat_input = ''
+            except Exception as e:
+                st.session_state.chat_error = str(e)
 
-            if sent and msg and msg.strip():
-                try:
-                    requests.post(
-                        f"{SUPABASE_URL}/rest/v1/chat_messages",
-                        headers=headers,
-                        json={"username": current_user, "message": msg.strip()[:200]},
-                        timeout=10
-                    )
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"失敗：{e}")
+        c1, c2 = st.columns([4, 1])
+        with c1:
+            st.text_input(
+                "msg",
+                key="chat_input",
+                label_visibility="collapsed",
+                placeholder="輸入消息..."
+            )
+        with c2:
+            st.button(
+                "📤",
+                use_container_width=True,
+                key="chat_send",
+                on_click=send_chat_message
+            )
+
+        if st.session_state.get('chat_error'):
+            st.error(f"失敗：{st.session_state.chat_error}")
+            del st.session_state.chat_error
 
     if st.button("🔄 刷新", key="chat_refresh", use_container_width=True):
         st.rerun()
