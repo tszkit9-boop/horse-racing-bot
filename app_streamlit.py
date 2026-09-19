@@ -4111,9 +4111,22 @@ def main():
         if _checkin_user:
             st.divider()
             show_checkin_button(_checkin_user)    
-            # 🛡️ 聊天室（Popover）
+    # 🛡️ 聊天室（Popover - 加大版）
     if st.session_state.get('logged_in', False):
         st.divider()
+
+        # 🎨 CSS：加大 popover 寬度
+        st.markdown("""
+        <style>
+        div[data-testid="stPopoverBody"] {
+            min-width: 600px !important;
+            max-width: 90vw !important;
+            max-height: 80vh !important;
+            overflow-y: auto !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
         chat_col1, chat_col2 = st.columns([1, 4])
         with chat_col1:
             with st.popover("💬 聊天室", use_container_width=True):
