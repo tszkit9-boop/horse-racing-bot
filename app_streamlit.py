@@ -3178,6 +3178,49 @@ def cleanup_activity_log(days=30):
 
     return removed
 
+
+def cleanup_expired_promos():
+    """清理過期優惠碼"""
+    promo_file = "promo_codes.json"
+    if not os.path.exists(promo_file):
+        return 0
+
+    try:
+        with open(promo_file, 'r', encoding='utf-8') as f:
+            promos = json.load(f)
+    except Exception:
+        return 0
+
+    if not promos:
+        return 0
+
+    from datetime import datetime
+    today = datetime.now()
+    kept = {}
+    removed = 0
+
+    for code, info in promos.items():
+        try:
+            expiry_str = info.get("expiry", "")
+            if expiry_str:
+                expiry = pd.to_datetime(expiry_str)
+                if expiry < today:
+                    removed += 1
+                    continue
+            kept[code] = info
+        except Exception:
+            kept[code] = info
+
+    if removed > 0:
+        try:
+            with open(promo_file, 'w', encoding='utf-8') as f:
+                json.dump(kept, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    return removed
+
+
 def admin_auto_maintenance():
     st.subheader("🤖 自動維護")
     if st.button("🚀 執行維護", type="primary", use_container_width=True, key="run_maint"):
@@ -3197,13 +3240,17 @@ def admin_auto_maintenance():
         if exp:
             save_users(users)
 
-        # 🆕 清理活動日誌
+        # 清理活動日誌
         removed_logs = cleanup_activity_log(days=30)
+
+        # 清理過期優惠碼
+        removed_promos = cleanup_expired_promos()
 
         # 顯示結果
         st.success(f"✅ 維護完成")
         st.write(f"   - 過期 VIP：{len(exp)} 位降級")
         st.write(f"   - 舊活動日誌：{removed_logs} 條清理")
+        st.write(f"   - 過期優惠碼：{removed_promos} 個清理")
 
 def admin_automation():
     st.subheader("🤖 自動化工具")
