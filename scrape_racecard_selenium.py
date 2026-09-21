@@ -53,7 +53,7 @@ def get_venue(driver, date_str):
 
 
 def fetch_single_race(driver, date_str, venue, race_no):
-    """爬取單一場次排位表"""
+    """爬取單一場次排位表（Debug 版）"""
     date_fmt = date_str.replace('-', '/')
     url = f"https://racing.hkjc.com/racing/information/Chinese/Racing/RaceCard.aspx?RaceDate={date_fmt}&Racecourse={venue}&RaceNo={race_no}"
     print(f"  🌐 載入: {url}")
@@ -65,7 +65,7 @@ def fetch_single_race(driver, date_str, venue, race_no):
     if "賽事尚未公佈" in body_text or "無此賽事" in body_text or "找不到" in body_text:
         return None
 
-    # 嘗試搵表格
+    # 搵表格
     rows = []
     try:
         WebDriverWait(driver, 10).until(
@@ -78,7 +78,6 @@ def fetch_single_race(driver, date_str, venue, race_no):
         pass
 
     if not rows:
-        # Fallback: 試其他 selector
         try:
             rows = driver.find_elements(By.CSS_SELECTOR, "table tr")
         except Exception:
@@ -87,6 +86,14 @@ def fetch_single_race(driver, date_str, venue, race_no):
     if not rows or len(rows) < 3:
         return None
 
+    # 🆕 Debug：印出第一行嘅 td 內容
+    print(f"  🔍 DEBUG：表格有 {len(rows)} 行")
+    for i, row in enumerate(rows[:5]):  # 印頭 5 行
+        cells = row.find_elements(By.TAG_NAME, "td")
+        if cells:
+            contents = [c.text.strip() for c in cells]
+            print(f"    行 {i}: {contents}")
+
     results = []
     for row in rows:
         try:
@@ -94,7 +101,6 @@ def fetch_single_race(driver, date_str, venue, race_no):
             if len(cells) < 6:
                 continue
 
-            # 試下解析：通常格式係 馬號 | 馬名 | 騎師 | 練馬師 | 檔位 | 負磅 | 賠率
             no_text = cells[0].text.strip()
             if not no_text or not no_text.isdigit():
                 continue
