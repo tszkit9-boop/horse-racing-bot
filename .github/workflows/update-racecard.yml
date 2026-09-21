@@ -1,57 +1,151 @@
-name: 自動更新排位表
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""scrape_racecard_selenium.py - 爬取馬會排位表（只抓正選馬，自動判斷場地）"""
 
-on:
-  schedule:
-    - cron: '0 0 * * *'
-  workflow_dispatch:
-    inputs:
-      date:
-        description: '日期 (YYYY-MM-DD)'
-        required: false
-        default: ''
-        type: string
+import os
+import time
+import re
+import argparse
+import pandas as pd
+from datetime import datetime
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 
-jobs:
-  update-racecard:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: 檢出程式碼
-        uses: actions/checkout@v4
 
-      - name: 設定 Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+def get_driver():
+    chrome_options = Options()
+    chrome_options.add_argument('--headless')
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument('--disable-gpu')
+    chrome_options.add_argument('--window-size=1920,1080')
+    chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+    service = Service(ChromeDriverManager().install())
+    return webdriver.Chrome(service=service, options=chrome_options)
 
-      - name: 安裝 Chrome
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y wget unzip
-          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
-          sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list'
-          sudo apt-get update
-          sudo apt-get install -y google-chrome-stable
 
-      - name: 安裝依賴
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
+def get_venue(date_str):
+    """根據日期推算場地 (ST / HV)"""
+    dt = datetime.strptime(date_str, '%Y-%m-%d')
+    weekday = dt.weekday()  # 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun
+    if weekday == 2:
+        return 'HV'
+    elif weekday in [5, 6]:
+        return 'ST'
+    return 'ST'
 
-      - name: 執行爬蟲
-        run: |
-          if [ -z "${{ github.event.inputs.date }}" ]; then
-            TODAY=$(date +'%Y-%m-%d')
-          else
-            TODAY="${{ github.event.inputs.date }}"
-          fi
-          python scrape_racecard_selenium.py --date $TODAY
 
-      - name: 提交變更
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -f racecard_*.csv || true
-          git commit -m "自動更新排位表 $(date +'%Y-%m-%d')" || echo "冇變更"
-          git push
+def fetch_single_race(driver, date_str, venue, race_no):
+    """爬取單一場次排位表（只抓正選馬）"""
+    date_fmt = date_str.replace('-', '/')
+    url = f"https://racing.hkjc.com/racing/information/Chinese/Racing/RaceCard.aspx?RaceDate={date_fmt}&Racecourse={venue}&RaceNo={race_no}"
+    print(f"  🌐 載入: {url}")
+    driver.get(url)
+    time.sleep(2)
+
+    body_text = driver.find_element(By.TAG_NAME, "body").text
+    if "賽事尚未公佈" in body_text or "無此賽事" in body_text or "找不到" in body_text:
+        return None
+
+    rows = []
+    try:
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "table.table_bd")))
+        tables = driver.find_elements(By.CSS_SELECTOR, "table.table_bd")
+        if tables:
+            rows = tables[0].find_elements(By.TAG_NAME, "tr")
+    except Exception:
+        pass
+
+    if not rows:
+        try:
+            rows = driver.find_elements(By.CSS_SELECTOR, "table tr")
+        except Exception:
+            pass
+
+    if not rows or len(rows) < 3:
+        return None
+
+    results = []
+    for row in rows:
+        try:
+            cells = row.find_elements(By.TAG_NAME, "td")
+            # 🛡️ 只處理 27 格（正選馬），跳過 10 格（後備馬）
+            if not cells or len(cells) != 27:
+                continue
+            contents = [c.text.strip() for c in cells]
+            no = contents[0]
+            if not no.isdigit():
+                continue
+            name = contents[3]
+            if not name or len(name) < 2:
+                continue
+            results.append({
+                '馬號': no,
+                '馬名': name,
+                '騎師': contents[6],
+                '練馬師': contents[9],
+                '檔位': contents[8],
+                '負磅': contents[5],
+                '賠率': '',
+                '場次': race_no,
+                '比賽日期': date_str
+            })
+        except Exception:
+            continue
+    return pd.DataFrame(results) if results else None
+
+
+def fetch_all_races(date_str, max_race=15):
+    print(f"📅 開始爬取 {date_str} 嘅排位表（只抓正選馬）")
+    driver = get_driver()
+    all_dfs = []
+    try:
+        venue = get_venue(date_str)
+        print(f"📋 場地：{venue}")
+        for race_no in range(1, max_race + 1):
+            print(f"\n⏳ 正在檢查第 {race_no} 場...")
+            df = fetch_single_race(driver, date_str, venue, race_no)
+            if df is None or df.empty:
+                print(f"  ⏹️ 第 {race_no} 場無數據，停止")
+                break
+            print(f"  ✅ 第 {race_no} 場有 {len(df)} 匹正選馬")
+            all_dfs.append(df)
+            time.sleep(0.5)
+    finally:
+        driver.quit()
+    if not all_dfs:
+        return None, venue
+    df = pd.concat(all_dfs, ignore_index=True)
+    df = df.drop_duplicates(subset=['場次', '馬號'], keep='first')
+    return df, venue
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--date', required=True, help='YYYY-MM-DD')
+    parser.add_argument('--max-race', type=int, default=15)
+    args = parser.parse_args()
+    try:
+        datetime.strptime(args.date, '%Y-%m-%d')
+    except Exception:
+        print("❌ 日期格式錯誤")
+        return
+    df, venue = fetch_all_races(args.date, max_race=args.max_race)
+    if df is None or df.empty:
+        print("❌ 冇任何數據")
+        return
+    output_file = f"racecard_{args.date}_{venue}.csv"
+    df.to_csv(output_file, index=False, encoding='utf-8-sig')
+    df.to_csv("racecard_uploaded.csv", index=False, encoding='utf-8-sig')
+    actual_races = df['場次'].nunique()
+    print(f"\n✅ 已儲存至 {output_file} 同 racecard_uploaded.csv")
+    print(f"📊 總共成功爬取 {actual_races} 場，合共 {len(df)} 匹正選馬")
+
+
+if __name__ == '__main__':
+    main()
