@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-scrape_racecard_selenium.py - 爬取馬會排位表（含賠率）
-安全 Debug 版：唔會覆蓋 racecard_uploaded.csv
+scrape_racecard_selenium.py - 爬取馬會排位表（修復版）
 用法:
   python scrape_racecard_selenium.py --date 2026-09-23
 """
@@ -54,7 +53,7 @@ def get_venue(driver, date_str):
 
 
 def fetch_single_race(driver, date_str, venue, race_no):
-    """爬取單一場次排位表（Debug 版）"""
+    """爬取單一場次排位表"""
     date_fmt = date_str.replace('-', '/')
     url = f"https://racing.hkjc.com/racing/information/Chinese/Racing/RaceCard.aspx?RaceDate={date_fmt}&Racecourse={venue}&RaceNo={race_no}"
     print(f"  🌐 載入: {url}")
@@ -85,19 +84,60 @@ def fetch_single_race(driver, date_str, venue, race_no):
     if not rows or len(rows) < 3:
         return None
 
-    # 🆕 Debug：印出所有非空行嘅詳細內容
-    print(f"  🔍 DEBUG：表格有 {len(rows)} 行，以下係非空行：")
-    for i, row in enumerate(rows):
-        cells = row.find_elements(By.TAG_NAME, "td")
-        if not cells:
-            continue
-        contents = [c.text.strip() for c in cells]
-        if any(contents):
-            print(f"    行 {i} ({len(cells)}格): {contents}")
+    results = []
+    for row in rows:
+        try:
+            cells = row.find_elements(By.TAG_NAME, "td")
+            if not cells:
+                continue
 
-    # 🛡️ Debug 期間唔解析，直接返回 None
-    print(f"  ⚠️ Debug 模式：唔解析數據")
-    return None
+            contents = [c.text.strip() for c in cells]
+
+            # ===== 格式 A：27 格（主要馬匹）=====
+            if len(cells) == 27:
+                no = contents[0]
+                if not no.isdigit():
+                    continue
+                name = contents[3]
+                if not name:
+                    continue
+
+                results.append({
+                    '馬號': no,
+                    '馬名': name,
+                    '騎師': contents[6],
+                    '練馬師': contents[9],
+                    '檔位': contents[8],
+                    '負磅': contents[5],
+                    '賠率': '',
+                    '場次': race_no,
+                    '比賽日期': date_str
+                })
+
+            # ===== 格式 B：10 格（後備馬）=====
+            elif len(cells) == 10:
+                no = contents[0]
+                if not no.isdigit():
+                    continue
+                name = contents[1]
+                if not name or len(name) < 2:
+                    continue
+
+                results.append({
+                    '馬號': no,
+                    '馬名': name,
+                    '騎師': '',
+                    '練馬師': contents[7],
+                    '檔位': '',
+                    '負磅': contents[3],
+                    '賠率': '',
+                    '場次': race_no,
+                    '比賽日期': date_str
+                })
+        except Exception:
+            continue
+
+    return pd.DataFrame(results) if results else None
 
 
 def fetch_all_races(date_str, max_race=15):
@@ -146,11 +186,11 @@ def main():
 
     output_file = f"racecard_{args.date}_{venue}.csv"
     df.to_csv(output_file, index=False, encoding='utf-8-sig')
-    print(f"\n✅ 已儲存至 {output_file}")
+    df.to_csv("racecard_uploaded.csv", index=False, encoding='utf-8-sig')
 
-    # 🛡️ Debug 期間唔覆蓋 racecard_uploaded.csv
-    # df.to_csv("racecard_uploaded.csv", index=False, encoding='utf-8-sig')
-    print("⚠️ Debug 模式：唔覆蓋 racecard_uploaded.csv")
+    actual_races = df['場次'].nunique()
+    print(f"\n✅ 已儲存至 {output_file} 同 racecard_uploaded.csv")
+    print(f"📊 總共成功爬取 {actual_races} 場，合共 {len(df)} 匹馬")
 
 
 if __name__ == '__main__':
