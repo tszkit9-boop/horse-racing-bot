@@ -2,52 +2,37 @@ name: Update Odds History
 
 on:
   schedule:
-    # 逢星期二、三、六、日 (香港時間 12:00 - 23:30，每 5分鐘)
-    # 對應 UTC 時間 4:00 - 15:30
-    - cron: '*/5 4-15 * * 2,3,6,0'
-    
-  workflow_dispatch: # 允許手動觸發
+    # 星期三 17:30 - 23:00（香港時間）
+    - cron: '30,35,40,45,50,55 9 * * 3'
+    - cron: '*/5 10-14 * * 3'
+    - cron: '0 15 * * 3'
+    # 星期日 11:30 - 18:00（香港時間）
+    - cron: '30,35,40,45,50,55 3 * * 0'
+    - cron: '*/5 4-9 * * 0'
+    - cron: '0 10 * * 0'
+  workflow_dispatch:
 
 jobs:
-  fetch_odds:
+  fetch-odds:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
       - name: 檢出程式碼
         uses: actions/checkout@v4
-
       - name: 設定 Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - name: 安裝依賴
         run: |
-          pip install selenium beautifulsoup4 pandas
-
-      - name: 執行賠率爬蟲（自動判斷 ST / HV）
-        run: |
-          DAY=$(date +%u)
-          # 判斷馬場 (如果係夜馬通常係 HV，日馬通常係 ST，呢度做個粗略判斷)
-          if [ "$DAY" -eq 3 ] || [ "$DAY" -eq 2 ]; then
-            COURSE="HV"
-          else
-            COURSE="ST"
-          fi
-          echo "今日係星期 $DAY，馬場設定為 $COURSE"
-          python fetch_odds.py $(date +'%Y-%m-%d') $COURSE
-
-      - name: 提交並推送賠率數據
+          pip install selenium beautifulsoup4 pandas webdriver-manager
+      - name: 執行賠率爬蟲
+        run: python scrape_odds.py
+      - name: 提交變更
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          # 關鍵修改：先檢查檔案存唔存在，唔存在就唔好 add，避免報錯！
-          if [ -f "odds_history.csv" ]; then
-            git add -f odds_history.csv
-            git commit -m "Auto update odds history [skip ci]" || echo "No changes to commit"
-            git push
-          else
-            echo "⚠️ 冇生成 odds_history.csv，跳過提交步驟。"
-          fi
+          git add odds_history.csv
+          git commit -m "Update odds $(date +'%Y-%m-%d %H:%M') [skip ci]" || echo "No changes to commit"
+          git push
