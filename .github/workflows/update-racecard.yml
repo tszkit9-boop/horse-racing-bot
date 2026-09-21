@@ -167,7 +167,6 @@ jobs:
               output_file = f"racecard_{args.date}_{venue}.csv"
               df.to_csv(output_file, index=False, encoding='utf-8-sig')
 
-              # ===== 追加到 racecard_uploaded.csv（唔覆蓋）=====
               uploaded_file = "racecard_uploaded.csv"
               if os.path.exists(uploaded_file):
                   try:
