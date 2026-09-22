@@ -28,7 +28,7 @@ jobs:
       - name: 安裝依賴 (包含 Chrome 與 Linux 圖形庫)
         run: |
           sudo apt-get update
-          sudo apt-get install -y google-chrome-stable libnss3 libgbm1 libasound2 libxss1 libappindicator3-1
+          sudo apt-get install -y google-chrome-stable libnss3 libgbm1 libasound2t64 libxss1 libappindicator3-1
           pip install selenium beautifulsoup4 pandas
 
       - name: 執行賠率爬蟲
