@@ -25,10 +25,17 @@ jobs:
       - name: 檢出程式碼
         uses: actions/checkout@v4
 
-      - name: 安裝依賴 (改用 Chromium 徹底解決版本衝突)
+      - name: 安裝依賴 (解決所有環境衝突)
         run: |
           sudo apt-get update
-          sudo apt-get install -y chromium-browser chromium-chromedriver
+          # 安裝 Chrome 與必要的圖形庫 (加入 || 兼容不同 Ubuntu 版本)
+          sudo apt-get install -y google-chrome-stable libnss3 libgbm1 libxss1
+          sudo apt-get install -y libasound2t64 || sudo apt-get install -y libasound2
+          
+          # 關鍵：刪除 GitHub 預裝的舊版 chromedriver，強制 Selenium 下載匹配的驅動
+          sudo rm -f /usr/bin/chromedriver
+          sudo rm -f /usr/local/bin/chromedriver
+          
           pip install selenium beautifulsoup4 pandas
 
       - name: 執行賠率爬蟲
