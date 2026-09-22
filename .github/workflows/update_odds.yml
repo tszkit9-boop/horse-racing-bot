@@ -25,10 +25,10 @@ jobs:
       - name: 檢出程式碼
         uses: actions/checkout@v4
 
-      - name: 安裝依賴 (包含 Chrome 與 Linux 圖形庫)
+      - name: 安裝依賴 (改用 Chromium 徹底解決版本衝突)
         run: |
           sudo apt-get update
-          sudo apt-get install -y google-chrome-stable libnss3 libgbm1 libasound2t64 libxss1 libappindicator3-1
+          sudo apt-get install -y chromium-browser chromium-chromedriver
           pip install selenium beautifulsoup4 pandas
 
       - name: 執行賠率爬蟲
