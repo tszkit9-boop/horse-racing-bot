@@ -3,11 +3,9 @@ import time
 import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 
 URL = "https://bet.hkjc.com/racing/pages/odds_wp.aspx?lang=zh-HK"
@@ -22,11 +20,8 @@ def setup_driver():
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     
-    chrome_options.binary_location = "/usr/bin/google-chrome"
-    
-    # 👇 關鍵：使用 webdriver-manager 下載匹配嘅 Driver，並用 Service 強制指定，完全無視系統 PATH 嗰個舊版
-    service = Service(executable_path=ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=chrome_options)
+    # 👇 關鍵：唔再用 webdriver-manager，直接讓 Selenium 4.6+ 自動下載匹配嘅 Driver
+    driver = webdriver.Chrome(options=chrome_options)
     return driver
 
 def scrape_odds():
