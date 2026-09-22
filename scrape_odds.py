@@ -18,11 +18,11 @@ def setup_driver():
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--remote-debugging-port=9222") # 防止 Chrome 崩潰
-    chrome_options.add_argument("--disable-blink-features=AutomationControlled") # 隱藏自動化特徵
+    chrome_options.add_argument("--remote-debugging-port=9222") 
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     
-    # 彻底放弃 webdriver-manager，Selenium 4.6+ 会自动下载匹配的 Driver
+    # 彻底放弃 webdriver-manager，Selenium 会自动下载匹配的 Driver
     driver = webdriver.Chrome(options=chrome_options)
     return driver
 
