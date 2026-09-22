@@ -34,7 +34,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y google-chrome-stable
-          pip install selenium beautifulsoup4 pandas webdriver-manager
+          pip install selenium beautifulsoup4 pandas
 
       - name: 執行賠率爬蟲
         run: python scrape_odds.py
