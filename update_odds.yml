@@ -36,7 +36,10 @@ jobs:
           python-version: '3.11'
       - name: 安裝依賴
         run: |
-          pip install selenium beautifulsoup4 pandas webdriver-manager
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
+          sudo rm -f /usr/bin/chromedriver   # 👈 關鍵：刪走系統舊版 Driver，避免版本衝突
+          pip install selenium beautifulsoup4 pandas
       - name: 執行賠率爬蟲
         run: python scrape_odds.py
       - name: 提交變更
