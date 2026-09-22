@@ -25,20 +25,16 @@ jobs:
       - name: 檢出程式碼
         uses: actions/checkout@v4
 
-      - name: 設定 Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
       - name: 安裝依賴
         run: |
           sudo apt-get update
           sudo apt-get install -y google-chrome-stable
-          python -m pip install --upgrade pip
-          python -m pip install selenium beautifulsoup4 pandas
+          python3 -m venv venv
+          venv/bin/python -m pip install --upgrade pip
+          venv/bin/python -m pip install selenium beautifulsoup4 pandas webdriver-manager
 
       - name: 執行賠率爬蟲
-        run: python scrape_odds.py
+        run: venv/bin/python scrape_odds.py
 
       - name: 提交變更
         run: |
