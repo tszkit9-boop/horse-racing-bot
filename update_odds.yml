@@ -34,10 +34,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y google-chrome-stable
-          sudo apt-get remove -y chromium-chromedriver || true
-          sudo rm -f /usr/bin/chromedriver
-          sudo rm -f /usr/local/bin/chromedriver
-          pip install selenium beautifulsoup4 pandas
+          python -m pip install --upgrade pip
+          python -m pip install selenium beautifulsoup4 pandas webdriver-manager
 
       - name: 執行賠率爬蟲
         run: python scrape_odds.py
