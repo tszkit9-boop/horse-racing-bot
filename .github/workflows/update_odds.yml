@@ -2,15 +2,15 @@ name: Update Odds History
 
 on:
   schedule:
-    # 星期二 15:30（香港時間）
+    # 星期二 15:30（香港时间）
     - cron: '30 7 * * 2'
-    # 星期六 14:00（香港時間）
+    # 星期六 14:00（香港时间）
     - cron: '0 6 * * 6'
-    # 星期三 17:30 - 23:00（香港時間）
+    # 星期三 17:30 - 23:00（香港时间）
     - cron: '30,35,40,45,50,55 9 * * 3'
     - cron: '*/5 10-14 * * 3'
     - cron: '0 15 * * 3'
-    # 星期日 11:30 - 18:00（香港時間）
+    # 星期日 11:30 - 18:00（香港时间）
     - cron: '30,35,40,45,50,55 3 * * 0'
     - cron: '*/5 4-9 * * 0'
     - cron: '0 10 * * 0'
@@ -25,16 +25,14 @@ jobs:
       - name: 檢出程式碼
         uses: actions/checkout@v4
 
-      - name: 安裝依賴
+      - name: 安裝依賴 (包含 Chrome 與 Linux 圖形庫)
         run: |
           sudo apt-get update
-          sudo apt-get install -y google-chrome-stable
-          python3 -m venv venv
-          venv/bin/python -m pip install --upgrade pip
-          venv/bin/python -m pip install selenium beautifulsoup4 pandas webdriver-manager
+          sudo apt-get install -y google-chrome-stable libnss3 libgbm1 libasound2 libxss1 libappindicator3-1
+          pip install selenium beautifulsoup4 pandas
 
       - name: 執行賠率爬蟲
-        run: venv/bin/python scrape_odds.py
+        run: python scrape_odds.py
 
       - name: 提交變更
         run: |
