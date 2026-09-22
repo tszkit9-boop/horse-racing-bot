@@ -18,11 +18,14 @@ def setup_driver():
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--remote-debugging-port=9222") 
+    chrome_options.add_argument("--remote-debugging-port=9222")
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     
-    # 彻底放弃 webdriver-manager，Selenium 会自动下载匹配的 Driver
+    # 明确指定 Chrome 路径 (因为我们在 YAML 中装了 google-chrome-stable)
+    chrome_options.binary_location = "/opt/google/chrome/chrome"
+    
+    # 直接启动，Selenium 会自动去下载匹配的驱动（因为我们已经把系统旧驱动删了）
     driver = webdriver.Chrome(options=chrome_options)
     return driver
 
