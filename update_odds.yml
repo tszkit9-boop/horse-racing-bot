@@ -1,0 +1,48 @@
+name: Update Odds History
+
+on:
+  schedule:
+    # ===== 星期二 15:30（香港時間） =====
+    - cron: '30 7 * * 2'
+    
+    # ===== 星期三 18:00 - 23:00（香港時間） =====
+    # 18:00 - 22:55 每 5 分鐘
+    - cron: '*/5 10-14 * * 3'
+    # 23:00 最後一次
+    - cron: '0 15 * * 3'
+    
+    # ===== 星期六 14:00（香港時間） =====
+    - cron: '0 6 * * 6'
+    
+    # ===== 星期日 11:30 - 17:55（香港時間） =====
+    # 11:30 - 11:55 每 5 分鐘
+    - cron: '30,35,40,45,50,55 3 * * 0'
+    # 12:00 - 17:55 每 5 分鐘
+    - cron: '*/5 4-9 * * 0'
+    
+  workflow_dispatch:
+
+jobs:
+  fetch-odds:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 檢出程式碼
+        uses: actions/checkout@v4
+      - name: 設定 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 安裝依賴
+        run: |
+          pip install selenium beautifulsoup4 pandas webdriver-manager
+      - name: 執行賠率爬蟲
+        run: python scrape_odds.py
+      - name: 提交變更
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add odds_history.csv
+          git commit -m "Update odds $(date +'%Y-%m-%d %H:%M') [skip ci]" || echo "No changes to commit"
+          git push
