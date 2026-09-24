@@ -575,7 +575,6 @@ def _build_features(race_df, history_df):
                     name = re.sub(r'[^\u4e00-\u9fffA-Za-z0-9]', '', name)
                     return name
 
-                # 用中文名做 key
                 mapping_df['norm_name'] = mapping_df['horse_name_cn'].apply(normalize_name)
                 mapping_df = mapping_df.dropna(subset=['norm_name'])
                 mapping_df = mapping_df[mapping_df['norm_name'] != '']
@@ -597,6 +596,46 @@ def _build_features(race_df, history_df):
         except Exception as e:
             st.warning(f"⚠️ 加載馬名對照表失敗：{e}")
 
+    # ========================================================
+    # 🆕 載入額外特徵 (extra_features.csv)
+    # ========================================================
+    extra_file = "extra_features.csv"
+    extra_cols = ['injury_flag', 'trial_rank', 'running_pos_score', 'recent_form_score']
+    
+    if os.path.exists(extra_file):
+        try:
+            extra_df = pd.read_csv(extra_file, encoding='utf-8-sig')
+            extra_df.columns = [str(c).replace('\ufeff', '').strip() for c in extra_df.columns]
+
+            if 'horse_id' in extra_df.columns and 'horse_id' in result.columns:
+                extra_df['horse_id'] = extra_df['horse_id'].astype(str).str.strip()
+
+                # 如果有重複記錄（同一匹馬多日），只保留最新嗰條
+                if 'race_date' in extra_df.columns:
+                    extra_df['race_date'] = pd.to_datetime(extra_df['race_date'], errors='coerce')
+                    extra_df = extra_df.sort_values('race_date').drop_duplicates(subset=['horse_id'], keep='last')
+
+                # 只保留實際存在嘅欄位
+                available_cols = [c for c in extra_cols if c in extra_df.columns]
+
+                if available_cols:
+                    result = result.merge(
+                        extra_df[['horse_id'] + available_cols],
+                        on='horse_id',
+                        how='left'
+                    )
+                    matched = result[available_cols[0]].notna().sum()
+                    st.success(f"✅ 額外特徵：成功合併 {matched}/{len(result)} 匹馬（{len(available_cols)} 個新特徵）")
+                else:
+                    st.warning("⚠️ extra_features.csv 入面冇任何新特徵欄位")
+            else:
+                st.warning("⚠️ extra_features.csv 缺少 horse_id 欄位")
+        except Exception as e:
+            st.warning(f"⚠️ 載入額外特徵失敗：{e}")
+
+    # ========================================================
+    # 🆕 40 個特徵列表（36 原有 + 4 新增）
+    # ========================================================
     feature_cols = [
         'draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
         'jockey_win_rate_50', 'trainer_win_rate_50',
@@ -611,7 +650,9 @@ def _build_features(race_df, history_df):
         'last_trial_rank', 'last_trial_time',
         'jockey_win_rate_5', 'jockey_win_rate_10', 'draw_win_rate',
         'days_since_injury', 'injury_30d', 'injury_60d', 'injury_90d',
-        'total_injuries', 'injury_severity'
+        'total_injuries', 'injury_severity',
+        # 🆕 新增 4 個特徵
+        'injury_flag', 'trial_rank', 'running_pos_score', 'recent_form_score'
     ]
     for c in feature_cols:
         if c not in result.columns:
@@ -635,21 +676,18 @@ def _build_features(race_df, history_df):
 
     # 歷史統計
     if not history_df.empty:
-        # 騎師勝率
         if 'jockey' in history_df.columns and 'jockey' in result.columns:
             jockey_stats = history_df.groupby('jockey').apply(
                 lambda g: (g['finish_position'] == 1).sum() / max(len(g), 1)
             ).to_dict()
             result['jockey_win_rate_50'] = result['jockey'].map(jockey_stats).fillna(0)
 
-        # 練馬師勝率
         if 'trainer' in history_df.columns and 'trainer' in result.columns:
             trainer_stats = history_df.groupby('trainer').apply(
                 lambda g: (g['finish_position'] == 1).sum() / max(len(g), 1)
             ).to_dict()
             result['trainer_win_rate_50'] = result['trainer'].map(trainer_stats).fillna(0)
 
-        # 馬匹近3場平均名次
         if 'horse_id' in history_df.columns and 'horse_id' in result.columns:
             def _avg3(g):
                 g = g.sort_values('race_date').tail(3)
@@ -657,7 +695,6 @@ def _build_features(race_df, history_df):
             avg3 = history_df.groupby('horse_id').apply(_avg3).to_dict()
             result['avg_rank_last3'] = result['horse_id'].map(avg3).fillna(99)
 
-            # 馬匹同路程勝率
             if 'distance' in history_df.columns and 'distance' in result.columns:
                 def _dist_win(row):
                     sub = history_df[(history_df['horse_id'] == row['horse_id']) &
@@ -665,7 +702,6 @@ def _build_features(race_df, history_df):
                     return 0 if len(sub) == 0 else (sub['finish_position'] == 1).sum() / len(sub)
                 result['distance_win_rate'] = result.apply(_dist_win, axis=1)
 
-            # 騎練組合勝率
             if 'jockey' in history_df.columns and 'trainer' in history_df.columns:
                 def _jt_win(row):
                     sub = history_df[(history_df['jockey'] == row['jockey']) &
@@ -673,7 +709,6 @@ def _build_features(race_df, history_df):
                     return 0 if len(sub) == 0 else (sub['finish_position'] == 1).sum() / len(sub)
                 result['jockey_trainer_win_rate'] = result.apply(_jt_win, axis=1)
 
-            # 出賽相隔日數
             last_run = history_df.groupby('horse_id')['race_date'].max().to_dict()
             result['days_since_last_run'] = result['horse_id'].map(
                 lambda h: (datetime.now() - last_run[h]).days if h in last_run else 999
@@ -807,20 +842,21 @@ def run_prediction(date_str, race_no):
     # ===== 載入模型 =====
     xgb_model, cat_model, rank_model = load_ml_models()
 
-    # ===== 36 特徵列表 =====
-    features_36 = ['draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
-                   'jockey_win_rate_50', 'trainer_win_rate_50',
-                   'distance_win_rate', 'distance_avg_rank', 'win_odds',
-                   'weight_change', 'jockey_trainer_win_rate',
-                   'course_win_rate', 'course_avg_rank',
-                   'days_since_last_run', 'odds_rank_in_race',
-                   'rtg_change', 'jockey_horse_win_rate',
-                   'races_last14days', 'going_win_rate',
-                   'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
-                   'early_pace', 'finish_speed', 'last_trial_rank',
-                   'last_trial_time', 'jockey_win_rate_5', 'jockey_win_rate_10',
-                   'draw_win_rate', 'days_since_injury', 'injury_30d',
-                   'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity']
+    # ===== 40 特徵列表 =====
+features_40 = ['draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
+               'jockey_win_rate_50', 'trainer_win_rate_50',
+               'distance_win_rate', 'distance_avg_rank', 'win_odds',
+               'weight_change', 'jockey_trainer_win_rate',
+               'course_win_rate', 'course_avg_rank',
+               'days_since_last_run', 'odds_rank_in_race',
+               'rtg_change', 'jockey_horse_win_rate',
+               'races_last14days', 'going_win_rate',
+               'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
+               'early_pace', 'finish_speed', 'last_trial_rank',
+               'last_trial_time', 'jockey_win_rate_5', 'jockey_win_rate_10',
+               'draw_win_rate', 'days_since_injury', 'injury_30d',
+               'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity',
+               'injury_flag', 'trial_rank', 'running_pos_score', 'recent_form_score']
 
     pred_xgb = None
     pred_cat = None
