@@ -551,6 +551,16 @@ def _build_features(race_df, history_df):
     history_df = history_df.copy()
     history_df['race_date'] = pd.to_datetime(history_df['race_date'], errors='coerce')
     history_df = history_df.dropna(subset=['race_date'])
+    
+    # 🛡️ 智能修復：自動檢查並生成 finish_position
+    if 'finish_position' not in history_df.columns:
+        if 'Pla.' in history_df.columns:
+            history_df['finish_position'] = pd.to_numeric(history_df['Pla.'].astype(str).str.extract(r'(\d+)')[0], errors='coerce')
+        elif 'real_pos' in history_df.columns:
+            history_df['finish_position'] = pd.to_numeric(history_df['real_pos'], errors='coerce')
+        elif '名次' in history_df.columns:
+            history_df['finish_position'] = pd.to_numeric(history_df['名次'].astype(str).str.extract(r'(\d+)')[0], errors='coerce')
+    
     history_df['finish_position'] = pd.to_numeric(history_df['finish_position'], errors='coerce')
     history_df = history_df.dropna(subset=['finish_position'])
 
