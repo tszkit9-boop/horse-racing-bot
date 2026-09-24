@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-train_models.py - 用 36 特徵（與 app 一致），危險特徵設 0
+train_models.py - 用 40 特徵（36 原有 + 4 新增），危險特徵設 0
 """
 
 import pandas as pd
@@ -9,6 +9,7 @@ import numpy as np
 import pickle
 import warnings
 import json
+import os
 warnings.filterwarnings('ignore')
 from datetime import datetime
 from sklearn.model_selection import GroupShuffleSplit
@@ -55,7 +56,52 @@ df['target'] = (df['finish_position'] == 1).astype(int)
 print(f"  清洗後：{len(df)} 筆，頭馬：{df['target'].mean():.2%}")
 
 # ============================================================
-# 3️⃣ 特徵（與 app 一致：36 個）
+# 2.5️⃣ 🆕 合併 extra_features.csv
+# ============================================================
+print("🔧 合併額外特徵...")
+extra_file = "extra_features.csv"
+extra_cols = ['injury_flag', 'trial_rank', 'running_pos_score', 'recent_form_score']
+
+if os.path.exists(extra_file):
+    try:
+        extra_df = pd.read_csv(extra_file, encoding='utf-8-sig')
+        extra_df.columns = [str(c).replace('\ufeff', '').strip() for c in extra_df.columns]
+
+        if 'horse_id' in extra_df.columns:
+            extra_df['horse_id'] = extra_df['horse_id'].astype(str).str.strip()
+
+            # 處理日期：extra_features 用 YYYY-MM-DD，主數據用 YYYYMMDD
+            if 'race_date' in extra_df.columns:
+                extra_df['race_date'] = pd.to_datetime(extra_df['race_date'], errors='coerce')
+                extra_df['race_date_str'] = extra_df['race_date'].dt.strftime('%Y%m%d')
+                # 只保留需要的欄位
+                merge_cols = ['horse_id', 'race_date_str'] + [c for c in extra_cols if c in extra_df.columns]
+                extra_df = extra_df[merge_cols].drop_duplicates(subset=['horse_id', 'race_date_str'], keep='last')
+                # 合併
+                df = df.merge(extra_df, on=['horse_id', 'race_date_str'], how='left')
+                print(f"  ✅ 成功合併 {len(extra_df)} 條額外特徵記錄")
+            else:
+                # 如果冇 race_date，只按 horse_id 合併
+                merge_cols = ['horse_id'] + [c for c in extra_cols if c in extra_df.columns]
+                extra_df = extra_df[merge_cols].drop_duplicates(subset=['horse_id'], keep='last')
+                df = df.merge(extra_df, on='horse_id', how='left')
+                print(f"  ✅ 成功合併 {len(extra_df)} 條額外特徵記錄（按 horse_id）")
+        else:
+            print("  ⚠️ extra_features.csv 缺少 horse_id 欄位，跳過。")
+    except Exception as e:
+        print(f"  ⚠️ 合併額外特徵失敗：{e}")
+else:
+    print(f"  ⚠️ 搵唔到 {extra_file}，跳過。")
+
+# 填補缺失值
+for c in extra_cols:
+    if c in df.columns:
+        df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+    else:
+        df[c] = 0.0
+
+# ============================================================
+# 3️⃣ 特徵（與 app 一致：40 個）
 # ============================================================
 def safe_num(s, default=0):
     return pd.to_numeric(s, errors='coerce').fillna(default)
@@ -121,7 +167,6 @@ course_rate = df_train.groupby(['horse_id', 'race_course'])['target'].mean().to_
 course_rank = df_train.groupby(['horse_id', 'race_course'])['finish_position'].mean().to_dict()
 
 going_rate = df_train.groupby(['horse_id', 'going'])['target'].mean().to_dict()
-
 draw_rate = df_train.groupby('draw')['target'].mean().to_dict()
 
 # ============================================================
@@ -179,7 +224,7 @@ for d in [df_train, df_test]:
     d['draw_win_rate'] = d['draw'].map(draw_rate).fillna(0)
 
 # ============================================================
-# 8️⃣ 最終特徵（36 個，與 app 一致）
+# 8️⃣ 最終特徵（40 個，與 app 一致）
 # ============================================================
 features_all = [
     'draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
@@ -194,10 +239,12 @@ features_all = [
     'early_pace', 'finish_speed', 'last_trial_rank',
     'last_trial_time', 'jockey_win_rate_5', 'jockey_win_rate_10',
     'draw_win_rate', 'days_since_injury', 'injury_30d',
-    'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity'
+    'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity',
+    # 🆕 新增 4 個特徵
+    'injury_flag', 'trial_rank', 'running_pos_score', 'recent_form_score'
 ]
 
-# 冇嘅特徵設 0（包括危險特徵）
+# 冇嘅特徵設 0
 for d in [df_train, df_test]:
     for f in features_all:
         if f not in d.columns:
@@ -205,6 +252,7 @@ for d in [df_train, df_test]:
         d[f] = pd.to_numeric(d[f], errors='coerce').fillna(0)
 
 # 🛡️ 危險特徵強制歸 0（避免洩漏）
+# ⚠️ 注意：新加嘅 4 個特徵唔喺 dangerous 名單，佢哋係真實外部數據
 dangerous = ['early_pace', 'finish_speed', 'last_trial_rank', 'last_trial_time',
              'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
              'days_since_injury', 'injury_30d', 'injury_60d', 'injury_90d',
@@ -222,6 +270,7 @@ test_groups = df_test['_group'].values
 non_zero = [f for f in features_all if df_train[f].abs().sum() > 0]
 print(f"  ✅ 有效特徵：{len(non_zero)} / {len(features_all)}")
 print(f"  🛡️ 危險特徵已歸 0：{len(dangerous)} 個")
+print(f"  🆕 新特徵：injury_flag, trial_rank, running_pos_score, recent_form_score")
 
 # ============================================================
 # 9️⃣ 評估
@@ -342,7 +391,8 @@ info = {
     "test_samples": len(X_test),
     "test_races": xgb_races,
     "features_used": features_all,
-    "non_zero_features": len(non_zero)
+    "non_zero_features": len(non_zero),
+    "n_features": len(features_all)
 }
 with open("model_info.json", "w", encoding='utf-8') as f:
     json.dump(info, f, ensure_ascii=False, indent=2)
@@ -350,4 +400,5 @@ with open("model_info.json", "w", encoding='utf-8') as f:
 print(f"\n🎯 最終結果：")
 print(f"   XGBoost  - AUC: {xgb_auc:.4f}, Top-1: {xgb_top1:.2%}, Top-3: {xgb_top3:.2%}")
 print(f"   CatBoost - AUC: {cat_auc:.4f}, Top-1: {cat_top1:.2%}, Top-3: {cat_top3:.2%}")
+print(f"   特徵總數：{len(features_all)} 個")
 print("🎉 完成！")
