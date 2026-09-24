@@ -843,53 +843,53 @@ def run_prediction(date_str, race_no):
     xgb_model, cat_model, rank_model = load_ml_models()
 
     # ===== 40 特徵列表 =====
-features_40 = ['draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
-               'jockey_win_rate_50', 'trainer_win_rate_50',
-               'distance_win_rate', 'distance_avg_rank', 'win_odds',
-               'weight_change', 'jockey_trainer_win_rate',
-               'course_win_rate', 'course_avg_rank',
-               'days_since_last_run', 'odds_rank_in_race',
-               'rtg_change', 'jockey_horse_win_rate',
-               'races_last14days', 'going_win_rate',
-               'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
-               'early_pace', 'finish_speed', 'last_trial_rank',
-               'last_trial_time', 'jockey_win_rate_5', 'jockey_win_rate_10',
-               'draw_win_rate', 'days_since_injury', 'injury_30d',
-               'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity',
-               'injury_flag', 'trial_rank', 'running_pos_score', 'recent_form_score']
+    features_40 = ['draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
+                   'jockey_win_rate_50', 'trainer_win_rate_50',
+                   'distance_win_rate', 'distance_avg_rank', 'win_odds',
+                   'weight_change', 'jockey_trainer_win_rate',
+                   'course_win_rate', 'course_avg_rank',
+                   'days_since_last_run', 'odds_rank_in_race',
+                   'rtg_change', 'jockey_horse_win_rate',
+                   'races_last14days', 'going_win_rate',
+                   'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
+                   'early_pace', 'finish_speed', 'last_trial_rank',
+                   'last_trial_time', 'jockey_win_rate_5', 'jockey_win_rate_10',
+                   'draw_win_rate', 'days_since_injury', 'injury_30d',
+                   'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity',
+                   'injury_flag', 'trial_rank', 'running_pos_score', 'recent_form_score']
 
     pred_xgb = None
     pred_cat = None
     pred_rank = None
     models_used = []
 
-    # ===== XGBoost（強制用 36 特徵）=====
+    # ===== XGBoost（強制用 40 特徵）=====
     if xgb_model is not None:
         try:
-            X_xgb = features_df[features_36].fillna(0).values
+            X_xgb = features_df[features_40].fillna(0).values
             pred_xgb = xgb_model.predict_proba(X_xgb)[:, 1]
-            models_used.append("XGBoost(36特徵)")
+            models_used.append("XGBoost(40特徵)")
         except Exception as e:
             st.warning(f"⚠️ XGBoost 失敗：{e}")
 
-    # ===== CatBoost（強制用 36 特徵）=====
+    # ===== CatBoost（強制用 40 特徵）=====
     if cat_model is not None:
         try:
-            X_cat = features_df[features_36].fillna(0).values
+            X_cat = features_df[features_40].fillna(0).values
             pred_cat = cat_model.predict_proba(X_cat)[:, 1]
-            models_used.append("CatBoost(36特徵)")
+            models_used.append("CatBoost(40特徵)")
         except Exception as e:
             st.warning(f"⚠️ CatBoost 失敗：{e}")
 
-    # ===== Ranking（強制用 36 特徵）=====
+    # ===== Ranking（強制用 40 特徵）=====
     if rank_model is not None:
         try:
-            X_rank = features_df[features_36].fillna(0).values
+            X_rank = features_df[features_40].fillna(0).values
             pred_rank = rank_model.predict(X_rank)
             pred_rank = np.array(pred_rank, dtype=float)
             if pred_rank.max() > pred_rank.min():
                 pred_rank = (pred_rank - pred_rank.min()) / (pred_rank.max() - pred_rank.min())
-            models_used.append("Ranking(36特徵)")
+            models_used.append("Ranking(40特徵)")
         except Exception as e:
             st.warning(f"⚠️ Ranking 失敗：{e}")
 
