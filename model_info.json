@@ -1,5 +1,5 @@
 {
-  "trained_at": "2026-09-24T20:08:51.391684",
+  "trained_at": "2026-09-24T20:16:34.081434",
   "xgb_auc": 0.6304262894231072,
   "xgb_top1": 0.16470588235294117,
   "xgb_top3": 0.4235294117647059,
@@ -46,12 +46,8 @@
     "injury_60d",
     "injury_90d",
     "total_injuries",
-    "injury_severity",
-    "injury_flag",
-    "trial_rank",
-    "running_pos_score",
-    "recent_form_score"
+    "injury_severity"
   ],
   "non_zero_features": 21,
-  "n_features": 40
+  "n_features": 36
 }
