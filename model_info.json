@@ -1,15 +1,15 @@
 {
-  "trained_at": "2026-09-25T08:18:47.632397",
-  "xgb_auc": 0.6304262894231072,
-  "xgb_top1": 0.16470588235294117,
-  "xgb_top3": 0.4235294117647059,
-  "cat_auc": 0.6516556917357196,
+  "trained_at": "2026-09-25T08:24:45.449908",
+  "xgb_auc": 0.6975550584454457,
+  "xgb_top1": 0.12941176470588237,
+  "xgb_top3": 0.4588235294117647,
+  "cat_auc": 0.6975550584454457,
   "cat_top1": 0.12941176470588237,
-  "cat_top3": 0.4,
+  "cat_top3": 0.4588235294117647,
   "rank_trained": true,
   "train_samples": 8279,
   "test_samples": 2037,
-  "test_races": 170,
+  "test_races": 0,
   "features_used": [
     "draw",
     "weight",
@@ -49,5 +49,10 @@
     "injury_severity"
   ],
   "non_zero_features": 21,
-  "n_features": 36
+  "n_features": 36,
+  "best_weights": {
+    "xgb": 0.0,
+    "cat": 0.0,
+    "rank": 1.0
+  }
 }
