@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-train_models.py - 完整版（智能提取馬匹 ID + 提升版參數 + 自動融合權重）
+train_models.py - 诊断版（逐步追踪数据清洗过程）
 """
 
 import pandas as pd
@@ -17,35 +17,105 @@ import xgboost as xgb
 from xgboost import XGBRanker
 from catboost import CatBoostClassifier
 
+# ============================================================
+# 1️⃣ 读取数据
+# ============================================================
 print("📊 讀取數據...")
 df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig', low_memory=False)
 print(f"  原始數據：{len(df)} 筆")
+print(f"  欄位：{list(df.columns)[:10]}...")
 
-print("🔧 標準化欄位...")
+# ============================================================
+# 2️⃣ 标准化栏位（逐步诊断）
+# ============================================================
+print("\n🔧 標準化欄位...")
+
+# 步骤 A：名次
 for col in ['Pla.', 'finish_position', '名次']:
     if col in df.columns:
         cleaned = pd.to_numeric(df[col].astype(str).str.extract(r'(\d+)')[0], errors='coerce')
         if cleaned.notna().sum() > 100:
             df['real_pos'] = cleaned
-            print(f"  ✅ 名次：'{col}'")
+            print(f"  ✅ 名次：'{col}'（有效值：{cleaned.notna().sum()} 筆）")
             break
+print(f"  🔍 步驟1 - 名次提取後：{len(df)} 筆")
 
+# 步骤 B：日期
 df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce')
+print(f"  🔍 步驟2 - 日期轉換後：{len(df)} 筆")
+
 df = df.dropna(subset=['race_date'])
+print(f"  🔍 步驟3 - 日期過濾後（dropna）：{len(df)} 筆")
+
 df['race_date_str'] = df['race_date'].dt.strftime('%Y%m%d')
+
+# 步骤 C：场次
 df['race_no'] = pd.to_numeric(df['race_no'].astype(str).str.replace(r'[^0-9]', '', regex=True), errors='coerce').fillna(0).astype(int)
+print(f"  🔍 步驟4 - race_no轉換後：{len(df)} 筆")
+
+# 步骤 D：horse_id 清理
 df['horse_id'] = df['horse_id'].astype(str).str.strip()
+print(f"  🔍 步驟5 - horse_id.strip()後：{len(df)} 筆")
+
 df = df.dropna(subset=['real_pos'])
+print(f"  🔍 步驟6 - real_pos過濾後：{len(df)} 筆")
 
-# 🛡️ 智能提取馬匹 ID（允許帶括號或後綴）
-df['horse_id'] = df['horse_id'].astype(str).str.extract(r'([A-Z]\d{3})', expand=False)
-df = df.dropna(subset=['horse_id'])
 df = df[df['horse_id'].str.len() > 0]
-df = df[df['race_no'] > 0]
+print(f"  🔍 步驟7 - horse_id非空後：{len(df)} 筆")
 
+df = df[df['race_no'] > 0]
+print(f"  🔍 步驟8 - race_no>0後：{len(df)} 筆")
+
+# 🛡️ 智能提取馬匹 ID
+before_extract = len(df)
+df['horse_id'] = df['horse_id'].astype(str).str.extract(r'([A-Z]\d{3})', expand=False)
+after_extract = df['horse_id'].notna().sum()
+print(f"  🔍 步驟9 - horse_id提取後：{after_extract} 筆（原本 {before_extract} 筆）")
+print(f"      ⚠️ 被刪除：{before_extract - after_extract} 筆")
+
+# 顯示一些被刪除的 horse_id 樣本
+if before_extract > after_extract:
+    sample_ids = df[df['horse_id'].isna()].head(10)
+    if 'horse_id' in df.columns:
+        original_ids = df.loc[df['horse_id'].isna(), 'horse_id'].head(10).tolist()
+        print(f"      📋 被刪除的 ID 樣本：{original_ids}")
+
+df = df.dropna(subset=['horse_id'])
+print(f"  🔍 步驟10 - 最終清洗後：{len(df)} 筆")
+
+# ============================================================
+# 3️⃣ 后续处理
+# ============================================================
 df['finish_position'] = df['real_pos']
 df['target'] = (df['finish_position'] == 1).astype(int)
-print(f"  清洗後：{len(df)} 筆，頭馬：{df['target'].mean():.2%}")
+print(f"\n  清洗後：{len(df)} 筆，頭馬：{df['target'].mean():.2%}")
+
+# ============================================================
+# 如果数据依然太少，提前终止并输出诊断
+# ============================================================
+if len(df) < 15000:
+    print("\n" + "="*60)
+    print("⚠️ 警告：清洗後數據量過少（少於 15000 筆）")
+    print("="*60)
+    print("\n📋 診斷報告：")
+    print(f"  1. 原始數據：{40298} 筆")
+    print(f"  2. 清洗後：{len(df)} 筆")
+    print(f"  3. 丟失比例：{(1 - len(df)/40298)*100:.1f}%")
+    print("\n🔍 可能原因：")
+    print("  A. ALL_DATA_MERGED.csv 的 horse_id 欄位格式不符")
+    print("  B. race_date 欄位有大量無效值")
+    print("  C. real_pos（名次）欄位有大量 NaN")
+    print("\n📌 建議：將 GitHub 上 ALL_DATA_MERGED.csv 的頭 5 行")
+    print("   Copy 出嚟俾我睇，我幫你診斷格式問題。")
+    print("="*60)
+    
+    # 繼續訓練，但用一個簡單的模型
+    print("\n⚠️ 由於數據量過少，繼續訓練可能效果不佳。")
+
+# ============================================================
+# 4️⃣ 基础特征工程
+# ============================================================
+print("\n🔧 計算基礎特徵...")
 
 def safe_num(s, default=0):
     return pd.to_numeric(s, errors='coerce').fillna(default)
@@ -69,6 +139,9 @@ for c in ['race_course', 'going', 'jockey', 'trainer']:
 
 df['odds_rank_in_race'] = df.groupby(['race_date_str', 'race_no'])['win_odds'].rank(method='min', ascending=True).fillna(0)
 
+# ============================================================
+# 5️⃣ 分组拆分
+# ============================================================
 print("📂 按場次分組拆分...")
 df['_group'] = df['race_date_str'] + "_" + df['race_no'].astype(str)
 group_counts = df.groupby('_group').size()
@@ -87,19 +160,28 @@ df_test = df[df['_group'].isin(test_groups_set)].copy()
 print(f"  訓練：{df_train['_group'].nunique()} 場，{len(df_train)} 筆")
 print(f"  測試：{df_test['_group'].nunique()} 場，{len(df_test)} 筆")
 
+# ============================================================
+# 6️⃣ 胜率特征
+# ============================================================
 print("🔧 計算勝率特徵...")
 jockey_rate = df_train.groupby('jockey')['target'].mean().to_dict()
 trainer_rate = df_train.groupby('trainer')['target'].mean().to_dict()
 jt_rate = df_train.groupby(['jockey', 'trainer'])['target'].mean().to_dict()
 jh_rate = df_train.groupby(['jockey', 'horse_id'])['target'].mean().to_dict()
+
 dist_stats = df_train.groupby(['horse_id', 'distance'])['target'].agg(['mean', 'count']).reset_index()
 dist_rate = dist_stats.set_index(['horse_id', 'distance'])['mean'].to_dict()
 dist_rank = df_train.groupby(['horse_id', 'distance'])['finish_position'].mean().to_dict()
+
 course_rate = df_train.groupby(['horse_id', 'race_course'])['target'].mean().to_dict()
 course_rank = df_train.groupby(['horse_id', 'race_course'])['finish_position'].mean().to_dict()
+
 going_rate = df_train.groupby(['horse_id', 'going'])['target'].mean().to_dict()
 draw_rate = df_train.groupby('draw')['target'].mean().to_dict()
 
+# ============================================================
+# 7️⃣ 历史特征
+# ============================================================
 print("🔧 計算歷史特徵...")
 for d in [df_train, df_test]:
     d.sort_values(['horse_id', 'race_date'], inplace=True)
@@ -124,6 +206,9 @@ df_train['jockey_win_rate_10'] = df_train['jockey'].map(jockey_avg10).fillna(0)
 df_test['jockey_win_rate_5'] = df_test['jockey'].map(jockey_avg5).fillna(0)
 df_test['jockey_win_rate_10'] = df_test['jockey'].map(jockey_avg10).fillna(0)
 
+# ============================================================
+# 8️⃣ Map 胜率
+# ============================================================
 print("🔧 Map 勝率特徵...")
 for d in [df_train, df_test]:
     d['jockey_win_rate_50'] = d['jockey'].map(jockey_rate).fillna(0)
@@ -137,7 +222,9 @@ for d in [df_train, df_test]:
     d['going_win_rate'] = d.apply(lambda r: going_rate.get((r['horse_id'], r['going']), 0), axis=1)
     d['draw_win_rate'] = d['draw'].map(draw_rate).fillna(0)
 
-# ===== 36 特徵 =====
+# ============================================================
+# 9️⃣ 最终特征
+# ============================================================
 features_all = [
     'draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
     'jockey_win_rate_50', 'trainer_win_rate_50',
@@ -178,39 +265,27 @@ print(f"  ✅ 有效特徵：{len(non_zero)} / {len(features_all)}")
 print(f"  🛡️ 危險特徵已歸 0：{len(dangerous)} 個")
 
 # ============================================================
-# 🚀 訓練（提升版參數）
+# 🔟 训练
 # ============================================================
-print("\n🚀 訓練 XGBoost（提升版）...")
+print("\n🚀 訓練 XGBoost...")
 neg = (y_train == 0).sum()
 pos = (y_train == 1).sum()
 spw = neg / pos if pos > 0 else 1
+print(f"  scale_pos_weight = {spw:.2f}")
 
 xgb_model = xgb.XGBClassifier(
-    n_estimators=500,
-    learning_rate=0.03,
-    max_depth=6,
-    subsample=0.8,
-    colsample_bytree=0.8,
-    scale_pos_weight=spw,
-    random_state=42,
-    use_label_encoder=False,
-    eval_metric='logloss'
-)
+    n_estimators=300, learning_rate=0.05, max_depth=5,
+    scale_pos_weight=spw, random_state=42,
+    use_label_encoder=False, eval_metric='logloss')
 xgb_model.fit(X_train, y_train)
 
-print("🚀 訓練 CatBoost（提升版）...")
+print("🚀 訓練 CatBoost...")
 cat_model = CatBoostClassifier(
-    iterations=500,
-    learning_rate=0.03,
-    depth=6,
-    l2_leaf_reg=3,
-    auto_class_weights='Balanced',
-    random_seed=42,
-    verbose=False
-)
+    iterations=300, learning_rate=0.05, depth=5,
+    auto_class_weights='Balanced', random_seed=42, verbose=False)
 cat_model.fit(X_train, y_train)
 
-print("🚀 訓練 Ranking（提升版）...")
+print("🚀 訓練 Ranking...")
 rank_model = None
 try:
     df_r = df_train.sort_values(['race_date_str', 'race_no']).reset_index(drop=True)
@@ -219,40 +294,22 @@ try:
     y_r = df_r['target'].values.astype(int)
     if sum(gs) == len(X_r):
         rank_model = XGBRanker(
-            n_estimators=500,
-            learning_rate=0.03,
-            max_depth=6,
-            subsample=0.8,
-            colsample_bytree=0.8,
-            objective='rank:pairwise',
-            random_state=42
-        )
+            n_estimators=300, learning_rate=0.05, max_depth=5,
+            objective='rank:pairwise', random_state=42)
         rank_model.fit(X_r, y_r, group=gs)
         print("  ✅ Ranking 完成")
 except Exception as e:
     print(f"  ⚠️ Ranking 失敗：{e}")
 
 # ============================================================
-# 🚀 自動搜尋最佳融合權重
+# 1️⃣1️⃣ 评估
 # ============================================================
-print("\n🔍 自動搜尋最佳融合權重...")
-
-def get_pred(model, X):
+def evaluate_topk(model, X_test, y_test, test_groups, name="Model"):
     try:
-        return model.predict_proba(X)[:, 1]
+        proba = model.predict_proba(X_test)[:, 1]
     except Exception:
-        return model.predict(X)
-
-p_xgb = get_pred(xgb_model, X_test)
-p_cat = get_pred(cat_model, X_test)
-p_rank = get_pred(rank_model, X_test) if rank_model is not None else np.zeros(len(X_test))
-
-if p_rank.max() > p_rank.min():
-    p_rank = (p_rank - p_rank.min()) / (p_rank.max() - p_rank.min())
-
-def evaluate_topk_weights(w_xgb, w_cat, w_rank):
-    blended = p_xgb * w_xgb + p_cat * w_cat + p_rank * w_rank
-    df_eval = pd.DataFrame({'group': test_groups, 'y_true': y_test.values, 'proba': blended})
+        proba = model.predict(X_test)
+    df_eval = pd.DataFrame({'group': test_groups, 'y_true': y_test.values, 'proba': proba})
     top1_hit = top3_hit = total = 0
     for g, sub in df_eval.groupby('group'):
         if sub['y_true'].sum() == 0:
@@ -264,35 +321,21 @@ def evaluate_topk_weights(w_xgb, w_cat, w_rank):
         pos = winner_idx[0] + 1
         if pos == 1: top1_hit += 1
         if pos <= 3: top3_hit += 1
-    if total == 0: return 0.0, 0.0
-    return top1_hit / total, top3_hit / total
+    if total == 0: return 0.0, 0.0, 0.0, 0.0, 0
+    top1 = top1_hit / total
+    top3 = top3_hit / total
+    try: auc = roc_auc_score(y_test, proba)
+    except Exception: auc = 0.0
+    try: ll = log_loss(y_test, proba)
+    except Exception: ll = 0.0
+    print(f"  📊 {name}：AUC {auc:.4f}, Top-1 {top1:.2%}, Top-3 {top3:.2%}")
+    return auc, ll, top1, top3, total
 
-best_top3 = 0
-best_top1 = 0
-best_weights = (0.30, 0.45, 0.25)
-
-for w_xgb in np.arange(0.0, 1.01, 0.05):
-    for w_cat in np.arange(0.0, 1.01 - w_xgb, 0.05):
-        w_rank = round(1.0 - w_xgb - w_cat, 2)
-        if w_rank < 0: continue
-        t1, t3 = evaluate_topk_weights(w_xgb, w_cat, w_rank)
-        if t3 > best_top3:
-            best_top3 = t3
-            best_top1 = t1
-            best_weights = (round(w_xgb, 2), round(w_cat, 2), round(w_rank, 2))
-
-print(f"  🏆 最佳權重：XGB {best_weights[0]} / Cat {best_weights[1]} / Rank {best_weights[2]}")
-print(f"  📊 最佳 Top-1：{best_top1:.2%}")
-print(f"  📊 最佳 Top-3：{best_top3:.2%}")
-
-blended_best = p_xgb * best_weights[0] + p_cat * best_weights[1] + p_rank * best_weights[2]
-final_auc = roc_auc_score(y_test, blended_best)
-final_ll = log_loss(y_test, blended_best)
-print(f"  📊 融合 AUC：{final_auc:.4f}")
-print(f"  📊 融合 Log Loss：{final_ll:.4f}")
+xgb_auc, xgb_ll, xgb_top1, xgb_top3, xgb_races = evaluate_topk(xgb_model, X_test, y_test, test_groups, "XGBoost")
+cat_auc, cat_ll, cat_top1, cat_top3, cat_races = evaluate_topk(cat_model, X_test, y_test, test_groups, "CatBoost")
 
 # ============================================================
-# 💾 儲存
+# 1️⃣2️⃣ 储存
 # ============================================================
 print("\n💾 儲存模型...")
 with open('hk_racing_model.pkl', 'wb') as f: pickle.dump(xgb_model, f)
@@ -302,26 +345,18 @@ if rank_model is not None:
 
 info = {
     "trained_at": datetime.now().isoformat(),
-    "xgb_auc": float(final_auc),
-    "xgb_top1": float(best_top1),
-    "xgb_top3": float(best_top3),
-    "cat_auc": float(final_auc),
-    "cat_top1": float(best_top1),
-    "cat_top3": float(best_top3),
+    "xgb_auc": float(xgb_auc), "xgb_top1": float(xgb_top1), "xgb_top3": float(xgb_top3),
+    "cat_auc": float(cat_auc), "cat_top1": float(cat_top1), "cat_top3": float(cat_top3),
     "rank_trained": rank_model is not None,
-    "train_samples": len(X_train),
-    "test_samples": len(X_test),
-    "features_used": features_all,
-    "non_zero_features": len(non_zero),
-    "n_features": len(features_all),
-    "best_weights": {"xgb": best_weights[0], "cat": best_weights[1], "rank": best_weights[2]}
+    "train_samples": len(X_train), "test_samples": len(X_test),
+    "features_used": features_all, "non_zero_features": len(non_zero),
+    "n_features": len(features_all)
 }
 with open("model_info.json", "w", encoding='utf-8') as f:
     json.dump(info, f, ensure_ascii=False, indent=2)
 
 print(f"\n🎯 最終結果：")
-print(f"   融合 AUC：{final_auc:.4f}")
-print(f"   Top-1：{best_top1:.2%}")
-print(f"   Top-3：{best_top3:.2%}")
+print(f"   XGBoost  - AUC: {xgb_auc:.4f}, Top-1: {xgb_top1:.2%}, Top-3: {xgb_top3:.2%}")
+print(f"   CatBoost - AUC: {cat_auc:.4f}, Top-1: {cat_top1:.2%}, Top-3: {cat_top3:.2%}")
 print(f"   特徵總數：{len(features_all)} 個")
 print("🎉 完成！")
