@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-train_models.py - 提升版（放寬數據清洗 + 調參 + 自動融合權重）
+train_models.py - 完整版（智能提取馬匹 ID + 提升版參數 + 自動融合權重）
 """
 
 import pandas as pd
@@ -37,7 +37,7 @@ df['race_no'] = pd.to_numeric(df['race_no'].astype(str).str.replace(r'[^0-9]', '
 df['horse_id'] = df['horse_id'].astype(str).str.strip()
 df = df.dropna(subset=['real_pos'])
 
-# 🛡️ 修復：智能提取馬匹 ID
+# 🛡️ 智能提取馬匹 ID（允許帶括號或後綴）
 df['horse_id'] = df['horse_id'].astype(str).str.extract(r'([A-Z]\d{3})', expand=False)
 df = df.dropna(subset=['horse_id'])
 df = df[df['horse_id'].str.len() > 0]
@@ -175,9 +175,10 @@ y_test = df_test['target'].astype(int)
 test_groups = df_test['_group'].values
 non_zero = [f for f in features_all if df_train[f].abs().sum() > 0]
 print(f"  ✅ 有效特徵：{len(non_zero)} / {len(features_all)}")
+print(f"  🛡️ 危險特徵已歸 0：{len(dangerous)} 個")
 
 # ============================================================
-# 🚀 提升版：訓練模型（加入防過擬合參數）
+# 🚀 訓練（提升版參數）
 # ============================================================
 print("\n🚀 訓練 XGBoost（提升版）...")
 neg = (y_train == 0).sum()
@@ -185,11 +186,11 @@ pos = (y_train == 1).sum()
 spw = neg / pos if pos > 0 else 1
 
 xgb_model = xgb.XGBClassifier(
-    n_estimators=500,          # 由 300 提升到 500
-    learning_rate=0.03,        # 由 0.05 降到 0.03
-    max_depth=6,               # 由 5 提升到 6
-    subsample=0.8,             # 加入：每次用 80% 數據
-    colsample_bytree=0.8,      # 加入：每次用 80% 特徵
+    n_estimators=500,
+    learning_rate=0.03,
+    max_depth=6,
+    subsample=0.8,
+    colsample_bytree=0.8,
     scale_pos_weight=spw,
     random_state=42,
     use_label_encoder=False,
@@ -199,10 +200,10 @@ xgb_model.fit(X_train, y_train)
 
 print("🚀 訓練 CatBoost（提升版）...")
 cat_model = CatBoostClassifier(
-    iterations=500,            # 由 300 提升到 500
-    learning_rate=0.03,        # 由 0.05 降到 0.03
-    depth=6,                   # 由 5 提升到 6
-    l2_leaf_reg=3,             # 加入：L2 正則化
+    iterations=500,
+    learning_rate=0.03,
+    depth=6,
+    l2_leaf_reg=3,
     auto_class_weights='Balanced',
     random_seed=42,
     verbose=False
@@ -232,7 +233,7 @@ except Exception as e:
     print(f"  ⚠️ Ranking 失敗：{e}")
 
 # ============================================================
-# 🚀 提升版：自動尋找最佳融合權重
+# 🚀 自動搜尋最佳融合權重
 # ============================================================
 print("\n🔍 自動搜尋最佳融合權重...")
 
@@ -246,11 +247,10 @@ p_xgb = get_pred(xgb_model, X_test)
 p_cat = get_pred(cat_model, X_test)
 p_rank = get_pred(rank_model, X_test) if rank_model is not None else np.zeros(len(X_test))
 
-# 將 Ranking 的輸出歸一化到 0-1
 if p_rank.max() > p_rank.min():
     p_rank = (p_rank - p_rank.min()) / (p_rank.max() - p_rank.min())
 
-def evaluate_topk_weights(w_xgb, w_cat, w_rank, name="Model"):
+def evaluate_topk_weights(w_xgb, w_cat, w_rank):
     blended = p_xgb * w_xgb + p_cat * w_cat + p_rank * w_rank
     df_eval = pd.DataFrame({'group': test_groups, 'y_true': y_test.values, 'proba': blended})
     top1_hit = top3_hit = total = 0
@@ -267,10 +267,9 @@ def evaluate_topk_weights(w_xgb, w_cat, w_rank, name="Model"):
     if total == 0: return 0.0, 0.0
     return top1_hit / total, top3_hit / total
 
-# 網格搜尋
 best_top3 = 0
-best_weights = (0.30, 0.45, 0.25)
 best_top1 = 0
+best_weights = (0.30, 0.45, 0.25)
 
 for w_xgb in np.arange(0.0, 1.01, 0.05):
     for w_cat in np.arange(0.0, 1.01 - w_xgb, 0.05):
@@ -286,7 +285,6 @@ print(f"  🏆 最佳權重：XGB {best_weights[0]} / Cat {best_weights[1]} / Ra
 print(f"  📊 最佳 Top-1：{best_top1:.2%}")
 print(f"  📊 最佳 Top-3：{best_top3:.2%}")
 
-# 用最佳權重計算最終 AUC
 blended_best = p_xgb * best_weights[0] + p_cat * best_weights[1] + p_rank * best_weights[2]
 final_auc = roc_auc_score(y_test, blended_best)
 final_ll = log_loss(y_test, blended_best)
@@ -313,7 +311,6 @@ info = {
     "rank_trained": rank_model is not None,
     "train_samples": len(X_train),
     "test_samples": len(X_test),
-    "test_races": xgb_races if 'xgb_races' in locals() else 0,
     "features_used": features_all,
     "non_zero_features": len(non_zero),
     "n_features": len(features_all),
