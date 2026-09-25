@@ -38,7 +38,10 @@ df['horse_id'] = df['horse_id'].astype(str).str.strip()
 df = df.dropna(subset=['real_pos'])
 df = df[df['horse_id'].str.len() > 0]
 df = df[df['race_no'] > 0]
-df = df[df['horse_id'].str.match(r'^[A-Z]\d{3}$', na=False)]
+# 放寬馬匹 ID 格式，允許帶括號或後綴
+df['horse_id'] = df['horse_id'].astype(str).str.extract(r'([A-Z]\d{3})', expand=False)
+df = df.dropna(subset=['horse_id'])
+df = df[df['horse_id'].str.len() > 0]
 df['finish_position'] = df['real_pos']
 df['target'] = (df['finish_position'] == 1).astype(int)
 print(f"  清洗後：{len(df)} 筆，頭馬：{df['target'].mean():.2%}")
