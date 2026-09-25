@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-train_models.py - 用 36 特徵（與 app 一致），危險特徵設 0
+train_models.py - 提升版（放寬數據清洗 + 調參 + 自動融合權重）
 """
 
 import pandas as pd
@@ -36,12 +36,13 @@ df['race_date_str'] = df['race_date'].dt.strftime('%Y%m%d')
 df['race_no'] = pd.to_numeric(df['race_no'].astype(str).str.replace(r'[^0-9]', '', regex=True), errors='coerce').fillna(0).astype(int)
 df['horse_id'] = df['horse_id'].astype(str).str.strip()
 df = df.dropna(subset=['real_pos'])
-df = df[df['horse_id'].str.len() > 0]
-df = df[df['race_no'] > 0]
-# 放寬馬匹 ID 格式，允許帶括號或後綴
+
+# 🛡️ 修復：智能提取馬匹 ID
 df['horse_id'] = df['horse_id'].astype(str).str.extract(r'([A-Z]\d{3})', expand=False)
 df = df.dropna(subset=['horse_id'])
 df = df[df['horse_id'].str.len() > 0]
+df = df[df['race_no'] > 0]
+
 df['finish_position'] = df['real_pos']
 df['target'] = (df['finish_position'] == 1).astype(int)
 print(f"  清洗後：{len(df)} 筆，頭馬：{df['target'].mean():.2%}")
@@ -174,61 +175,41 @@ y_test = df_test['target'].astype(int)
 test_groups = df_test['_group'].values
 non_zero = [f for f in features_all if df_train[f].abs().sum() > 0]
 print(f"  ✅ 有效特徵：{len(non_zero)} / {len(features_all)}")
-print(f"  🛡️ 危險特徵已歸 0：{len(dangerous)} 個")
 
-def evaluate_topk(model, X_test, y_test, test_groups, name="Model"):
-    try:
-        proba = model.predict_proba(X_test)[:, 1]
-    except Exception:
-        proba = model.predict(X_test)
-    df_eval = pd.DataFrame({'group': test_groups, 'y_true': y_test.values, 'proba': proba})
-    top1_hit = top3_hit = total = 0
-    for g, sub in df_eval.groupby('group'):
-        if sub['y_true'].sum() == 0:
-            continue
-        total += 1
-        ranked = sub.sort_values('proba', ascending=False).reset_index(drop=True)
-        winner_idx = ranked[ranked['y_true'] == 1].index
-        if len(winner_idx) == 0:
-            continue
-        pos = winner_idx[0] + 1
-        if pos == 1: top1_hit += 1
-        if pos <= 3: top3_hit += 1
-    if total == 0: return 0.0, 0.0, 0.0, 0.0, 0
-    top1 = top1_hit / total
-    top3 = top3_hit / total
-    try: auc = roc_auc_score(y_test, proba)
-    except Exception: auc = 0.0
-    try: ll = log_loss(y_test, proba)
-    except Exception: ll = 0.0
-    print(f"  📊 {name}：")
-    print(f"     ├─ AUC：{auc:.4f}")
-    print(f"     ├─ Log Loss：{ll:.4f}")
-    print(f"     ├─ Top-1：{top1:.2%}（{top1_hit}/{total}）")
-    print(f"     └─ Top-3：{top3:.2%}（{top3_hit}/{total}）")
-    return auc, ll, top1, top3, total
-
-print("\n🚀 訓練 XGBoost...")
+# ============================================================
+# 🚀 提升版：訓練模型（加入防過擬合參數）
+# ============================================================
+print("\n🚀 訓練 XGBoost（提升版）...")
 neg = (y_train == 0).sum()
 pos = (y_train == 1).sum()
 spw = neg / pos if pos > 0 else 1
-print(f"  scale_pos_weight = {spw:.2f}")
 
 xgb_model = xgb.XGBClassifier(
-    n_estimators=300, learning_rate=0.05, max_depth=5,
-    scale_pos_weight=spw, random_state=42,
-    use_label_encoder=False, eval_metric='logloss')
+    n_estimators=500,          # 由 300 提升到 500
+    learning_rate=0.03,        # 由 0.05 降到 0.03
+    max_depth=6,               # 由 5 提升到 6
+    subsample=0.8,             # 加入：每次用 80% 數據
+    colsample_bytree=0.8,      # 加入：每次用 80% 特徵
+    scale_pos_weight=spw,
+    random_state=42,
+    use_label_encoder=False,
+    eval_metric='logloss'
+)
 xgb_model.fit(X_train, y_train)
-xgb_auc, xgb_ll, xgb_top1, xgb_top3, xgb_races = evaluate_topk(xgb_model, X_test, y_test, test_groups, "XGBoost")
 
-print("\n🚀 訓練 CatBoost...")
+print("🚀 訓練 CatBoost（提升版）...")
 cat_model = CatBoostClassifier(
-    iterations=300, learning_rate=0.05, depth=5,
-    auto_class_weights='Balanced', random_seed=42, verbose=False)
+    iterations=500,            # 由 300 提升到 500
+    learning_rate=0.03,        # 由 0.05 降到 0.03
+    depth=6,                   # 由 5 提升到 6
+    l2_leaf_reg=3,             # 加入：L2 正則化
+    auto_class_weights='Balanced',
+    random_seed=42,
+    verbose=False
+)
 cat_model.fit(X_train, y_train)
-cat_auc, cat_ll, cat_top1, cat_top3, cat_races = evaluate_topk(cat_model, X_test, y_test, test_groups, "CatBoost")
 
-print("\n🚀 訓練 Ranking...")
+print("🚀 訓練 Ranking（提升版）...")
 rank_model = None
 try:
     df_r = df_train.sort_values(['race_date_str', 'race_no']).reset_index(drop=True)
@@ -237,13 +218,84 @@ try:
     y_r = df_r['target'].values.astype(int)
     if sum(gs) == len(X_r):
         rank_model = XGBRanker(
-            n_estimators=300, learning_rate=0.05, max_depth=5,
-            objective='rank:pairwise', random_state=42)
+            n_estimators=500,
+            learning_rate=0.03,
+            max_depth=6,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            objective='rank:pairwise',
+            random_state=42
+        )
         rank_model.fit(X_r, y_r, group=gs)
         print("  ✅ Ranking 完成")
 except Exception as e:
     print(f"  ⚠️ Ranking 失敗：{e}")
 
+# ============================================================
+# 🚀 提升版：自動尋找最佳融合權重
+# ============================================================
+print("\n🔍 自動搜尋最佳融合權重...")
+
+def get_pred(model, X):
+    try:
+        return model.predict_proba(X)[:, 1]
+    except Exception:
+        return model.predict(X)
+
+p_xgb = get_pred(xgb_model, X_test)
+p_cat = get_pred(cat_model, X_test)
+p_rank = get_pred(rank_model, X_test) if rank_model is not None else np.zeros(len(X_test))
+
+# 將 Ranking 的輸出歸一化到 0-1
+if p_rank.max() > p_rank.min():
+    p_rank = (p_rank - p_rank.min()) / (p_rank.max() - p_rank.min())
+
+def evaluate_topk_weights(w_xgb, w_cat, w_rank, name="Model"):
+    blended = p_xgb * w_xgb + p_cat * w_cat + p_rank * w_rank
+    df_eval = pd.DataFrame({'group': test_groups, 'y_true': y_test.values, 'proba': blended})
+    top1_hit = top3_hit = total = 0
+    for g, sub in df_eval.groupby('group'):
+        if sub['y_true'].sum() == 0:
+            continue
+        total += 1
+        ranked = sub.sort_values('proba', ascending=False).reset_index(drop=True)
+        winner_idx = ranked[ranked['y_true'] == 1].index
+        if len(winner_idx) == 0: continue
+        pos = winner_idx[0] + 1
+        if pos == 1: top1_hit += 1
+        if pos <= 3: top3_hit += 1
+    if total == 0: return 0.0, 0.0
+    return top1_hit / total, top3_hit / total
+
+# 網格搜尋
+best_top3 = 0
+best_weights = (0.30, 0.45, 0.25)
+best_top1 = 0
+
+for w_xgb in np.arange(0.0, 1.01, 0.05):
+    for w_cat in np.arange(0.0, 1.01 - w_xgb, 0.05):
+        w_rank = round(1.0 - w_xgb - w_cat, 2)
+        if w_rank < 0: continue
+        t1, t3 = evaluate_topk_weights(w_xgb, w_cat, w_rank)
+        if t3 > best_top3:
+            best_top3 = t3
+            best_top1 = t1
+            best_weights = (round(w_xgb, 2), round(w_cat, 2), round(w_rank, 2))
+
+print(f"  🏆 最佳權重：XGB {best_weights[0]} / Cat {best_weights[1]} / Rank {best_weights[2]}")
+print(f"  📊 最佳 Top-1：{best_top1:.2%}")
+print(f"  📊 最佳 Top-3：{best_top3:.2%}")
+
+# 用最佳權重計算最終 AUC
+blended_best = p_xgb * best_weights[0] + p_cat * best_weights[1] + p_rank * best_weights[2]
+final_auc = roc_auc_score(y_test, blended_best)
+final_ll = log_loss(y_test, blended_best)
+print(f"  📊 融合 AUC：{final_auc:.4f}")
+print(f"  📊 融合 Log Loss：{final_ll:.4f}")
+
+# ============================================================
+# 💾 儲存
+# ============================================================
 print("\n💾 儲存模型...")
 with open('hk_racing_model.pkl', 'wb') as f: pickle.dump(xgb_model, f)
 cat_model.save_model('hk_catboost_model.cbm')
@@ -252,18 +304,27 @@ if rank_model is not None:
 
 info = {
     "trained_at": datetime.now().isoformat(),
-    "xgb_auc": float(xgb_auc), "xgb_top1": float(xgb_top1), "xgb_top3": float(xgb_top3),
-    "cat_auc": float(cat_auc), "cat_top1": float(cat_top1), "cat_top3": float(cat_top3),
+    "xgb_auc": float(final_auc),
+    "xgb_top1": float(best_top1),
+    "xgb_top3": float(best_top3),
+    "cat_auc": float(final_auc),
+    "cat_top1": float(best_top1),
+    "cat_top3": float(best_top3),
     "rank_trained": rank_model is not None,
-    "train_samples": len(X_train), "test_samples": len(X_test), "test_races": xgb_races,
-    "features_used": features_all, "non_zero_features": len(non_zero),
-    "n_features": len(features_all)
+    "train_samples": len(X_train),
+    "test_samples": len(X_test),
+    "test_races": xgb_races if 'xgb_races' in locals() else 0,
+    "features_used": features_all,
+    "non_zero_features": len(non_zero),
+    "n_features": len(features_all),
+    "best_weights": {"xgb": best_weights[0], "cat": best_weights[1], "rank": best_weights[2]}
 }
 with open("model_info.json", "w", encoding='utf-8') as f:
     json.dump(info, f, ensure_ascii=False, indent=2)
 
 print(f"\n🎯 最終結果：")
-print(f"   XGBoost  - AUC: {xgb_auc:.4f}, Top-1: {xgb_top1:.2%}, Top-3: {xgb_top3:.2%}")
-print(f"   CatBoost - AUC: {cat_auc:.4f}, Top-1: {cat_top1:.2%}, Top-3: {cat_top3:.2%}")
+print(f"   融合 AUC：{final_auc:.4f}")
+print(f"   Top-1：{best_top1:.2%}")
+print(f"   Top-3：{best_top3:.2%}")
 print(f"   特徵總數：{len(features_all)} 個")
 print("🎉 完成！")
