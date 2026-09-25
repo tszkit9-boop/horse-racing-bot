@@ -1,14 +1,14 @@
 {
-  "trained_at": "2026-09-25T08:43:35.117026",
-  "xgb_auc": 0.6304262894231072,
+  "trained_at": "2026-09-25T10:43:27.438606",
+  "xgb_auc": 0.630398990695474,
   "xgb_top1": 0.16470588235294117,
   "xgb_top3": 0.4235294117647059,
-  "cat_auc": 0.6516556917357196,
+  "cat_auc": 0.6517047784261158,
   "cat_top1": 0.12941176470588237,
   "cat_top3": 0.4,
   "rank_trained": true,
   "train_samples": 8279,
-  "test_samples": 2037,
+  "test_samples": 2035,
   "features_used": [
     "draw",
     "weight",
