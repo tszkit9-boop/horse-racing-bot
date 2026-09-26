@@ -2238,10 +2238,9 @@ def admin_downloads():
             "Authorization": f"Bearer {SUPABASE_KEY}",
             "Content-Type": "application/json"
         }
-        # 從 Supabase 的 predictions 表讀取最新 100 條記錄
-        # 如果 created_at 欄位唔存在，可以改為 order=id.desc 或直接唔要 order
+        # ⚠️ 已改為正確嘅欄位名 predicted_at
         res = requests.get(
-            f"{SUPABASE_URL}/rest/v1/predictions?order=created_at.desc&limit=100",
+            f"{SUPABASE_URL}/rest/v1/predictions?order=predicted_at.desc&limit=100",
             headers=headers,
             timeout=10
         )
@@ -2249,7 +2248,6 @@ def admin_downloads():
         if res.status_code == 200:
             records = res.json()
             if records:
-                # 將數據轉為 JSON 格式俾用戶下載
                 json_data = json.dumps(records, ensure_ascii=False, indent=2).encode('utf-8')
                 st.caption(f"📁 來自 Supabase（共 {len(records)} 條記錄）")
                 st.download_button(
@@ -2260,8 +2258,6 @@ def admin_downloads():
                     use_container_width=True,
                     key="dl_ai_pred"
                 )
-                # 可選：喺下面加個預覽表
-                # st.dataframe(pd.DataFrame(records).head(10), use_container_width=True)
             else:
                 st.info("ℹ️ Supabase 暫未有 AI 預測記錄")
         else:
