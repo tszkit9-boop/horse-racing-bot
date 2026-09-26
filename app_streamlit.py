@@ -2487,10 +2487,39 @@ def admin_monthly_report():
 def admin_finance():
     st.subheader("💰 財務管理")
     f = load_finance()
+
+    # ===== 新增：從 Supabase 讀取「已收款」總額 =====
+    supabase_income = 0.0
+    try:
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json"
+        }
+        # 只讀取 status = approved 嘅紀錄，並只攞 amount 欄位
+        res = requests.get(
+            f"{SUPABASE_URL}/rest/v1/reward_history?status=eq.approved&select=amount",
+            headers=headers,
+            timeout=10
+        )
+        if res.status_code == 200:
+            records = res.json()
+            supabase_income = sum(float(r.get('amount', 0) or 0) for r in records)
+    except Exception as e:
+        st.warning(f"讀取 Supabase 已收款記錄失敗，總收入可能不準確：{e}")
+
+    local_income = float(f.get('total_income', 0) or 0)
+    total_income_display = local_income + supabase_income
+    # =================================================
+
     c1, c2, c3 = st.columns(3)
-    c1.metric("總收入", f"${f.get('total_income', 0):.2f}")
+    c1.metric("總收入", f"${total_income_display:.2f}")  # 改為顯示兩者相加
     c2.metric("本月", f"${f.get('monthly_income', 0):.2f}")
     c3.metric("今年", f"${f.get('yearly_income', 0):.2f}")
+
+    # 加多行細字解釋總收入點嚟（可選，但建議保留，方便你對數）
+    st.caption(f"ℹ️ 總收入 = 本地財務記錄 ${local_income:.2f} + 打賞已收款 ${supabase_income:.2f}")
+
     with st.expander("➕ 新增收入"):
         a = st.number_input("金額", min_value=0.0, step=10.0, key="fin_amt")
         d = st.text_input("描述", key="fin_desc")
@@ -3367,6 +3396,11 @@ def admin_reward_management():
     # ===== Tab 2：已收款 =====
     with tab2:
         st.caption("已收款打賞紀錄。")
+        
+        # 顯示已收款總額（方便你一眼睇到）
+        total_approved = approved['amount'].sum() if not approved.empty else 0
+        st.metric(label="💰 已收款總額", value=f"${total_approved:.2f}")
+        
         if approved.empty:
             st.info("暫無已收款紀錄。")
         else:
@@ -3381,6 +3415,26 @@ def admin_reward_management():
                     "rewarded_at": st.column_config.TextColumn("提交時間"),
                 }
             )
+
+            # ===== 永久清除紀錄區域 =====
+            st.divider()
+            with st.expander("🗑️ 危險操作：永久清除所有已收款紀錄"):
+                st.warning("⚠️ 呢個操作會直接刪除 Supabase 入面所有「已收款」紀錄，**無法還原**！")
+                confirm = st.checkbox("我確定要永久刪除所有已收款紀錄", key="confirm_clear")
+                if st.button("🗑️ 確認永久清除", type="primary", use_container_width=True, disabled=not confirm):
+                    try:
+                        del_res = requests.delete(
+                            f"{SUPABASE_URL}/rest/v1/reward_history?status=eq.approved",
+                            headers=headers,
+                            timeout=10
+                        )
+                        if del_res.status_code in (200, 204):
+                            st.success("✅ 已永久清除所有已收款紀錄！")
+                            st.rerun()
+                        else:
+                            st.error(f"清除失敗 (HTTP {del_res.status_code})：{del_res.text}")
+                    except Exception as e:
+                        st.error(f"連線錯誤：{e}")
 def admin_pool_config():
     st.subheader("🎯 彩池設定")
     st.caption("可以獨立開關每個彩池，同設定最低會員級別。")
