@@ -1949,10 +1949,37 @@ def admin_dashboard():
     records = acc.get('records', [])
     proof = load_payment_proofs()
     today = datetime.now().date()
+    
+    # ===== 新增：從 Supabase 讀取「已收款」總額 =====
+    supabase_income = 0.0
+    try:
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json"
+        }
+        res = requests.get(
+            f"{SUPABASE_URL}/rest/v1/reward_history?status=eq.approved&select=amount",
+            headers=headers,
+            timeout=5
+        )
+        if res.status_code == 200:
+            supabase_records = res.json()
+            supabase_income = sum(float(r.get('amount', 0) or 0) for r in supabase_records)
+    except Exception:
+        pass  # 儀表板唔好因為 Supabase 掛咗而崩潰，靜靜地繼續顯示本地數字
+        
+    local_income = float(finance.get('total_income', 0) or 0)
+    total_income_display = local_income + supabase_income
+    # ===============================================
+
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("👤 總用戶", len(users))
     c2.metric("📈 今日新增", sum(1 for u in users.values() if u.get('created_at', '').startswith(str(today))))
-    c3.metric("💰 總收入", f"${finance.get('total_income', 0):.2f}")
+    
+    # 改為顯示兩者相加嘅總數
+    c3.metric("💰 總收入", f"${total_income_display:.2f}")
+    
     c4.metric("📊 總預測", len(records))
     total = len([r for r in records if r.get('is_hit') is not None])
     hit = sum(1 for r in records if r.get('is_hit') is True)
