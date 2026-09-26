@@ -4268,7 +4268,7 @@ def main():
                 except Exception as e:
                     st.error(f"讀取失敗：{e}")
 
-            # ===== 一鍵預測執行 =====
+# ===== 一鍵預測執行 =====
             if run_batch:
                 date_str = selected_date.strftime("%Y-%m-%d")
                 st.info(f"🚀 開始預測 {date_str} 所有場次...")
@@ -4328,6 +4328,13 @@ def main():
             all_results = st.session_state.get('batch_all_results', {})
             date_str_saved = st.session_state.get('batch_date_str', '')
 
+            # 輔助函數：動態取得欄名（兼容中英文）
+            def _get_col(df, candidates):
+                for c in candidates:
+                    if c in df.columns:
+                        return c
+                return None
+
             if all_results:
                 st.divider()
                 st.subheader(f"🎯 {date_str_saved} 跨場彩池推薦")
@@ -4348,8 +4355,10 @@ def main():
                         d_idx = race_list.index(double_start)
                         d_races = race_list[d_idx:d_idx + 2]
                         if len(d_races) >= 2:
-                            d1 = all_results[d_races[0]].iloc[0]['horse_name']
-                            d2 = all_results[d_races[1]].iloc[0]['horse_name']
+                            name_col_1 = _get_col(all_results[d_races[0]], ['horse_name', '馬名'])
+                            name_col_2 = _get_col(all_results[d_races[1]], ['horse_name', '馬名'])
+                            d1 = all_results[d_races[0]].iloc[0][name_col_1] if name_col_1 else "N/A"
+                            d2 = all_results[d_races[1]].iloc[0][name_col_2] if name_col_2 else "N/A"
                             st.success(f"**【孖寶】第 {d_races[0]}-{d_races[1]} 場**：{d1} + {d2}")
                         else:
                             st.warning(f"⚠️ 由第 {double_start} 場開始，唔夠 2 場數據")
@@ -4372,9 +4381,10 @@ def main():
                         t_idx = race_list.index(treble_start)
                         t_races = race_list[t_idx:t_idx + 3]
                         if len(t_races) >= 3:
-                            t1 = all_results[t_races[0]].iloc[0]['horse_name']
-                            t2 = all_results[t_races[1]].iloc[0]['horse_name']
-                            t3 = all_results[t_races[2]].iloc[0]['horse_name']
+                            name_cols = [_get_col(all_results[rn], ['horse_name', '馬名']) for rn in t_races]
+                            t1 = all_results[t_races[0]].iloc[0][name_cols[0]] if name_cols[0] else "N/A"
+                            t2 = all_results[t_races[1]].iloc[0][name_cols[1]] if name_cols[1] else "N/A"
+                            t3 = all_results[t_races[2]].iloc[0][name_cols[2]] if name_cols[2] else "N/A"
                             st.success(f"**【三寶】第 {t_races[0]}-{t_races[2]} 場**：{t1} + {t2} + {t3}")
                         else:
                             st.warning(f"⚠️ 由第 {treble_start} 場開始，唔夠 3 場數據")
@@ -4397,7 +4407,10 @@ def main():
                         s_idx = race_list.index(six_up_start)
                         six_up_races = race_list[s_idx:s_idx + 6]
                         if len(six_up_races) >= 6:
-                            horses = [all_results[rn].iloc[0]['horse_name'] for rn in six_up_races]
+                            horses = []
+                            for rn in six_up_races:
+                                nc = _get_col(all_results[rn], ['horse_name', '馬名'])
+                                horses.append(all_results[rn].iloc[0][nc] if nc else "N/A")
                             st.success(f"**【六環彩】第 {six_up_races[0]}-{six_up_races[-1]} 場**：{' + '.join(horses)}")
                         else:
                             st.warning(f"⚠️ 由第 {six_up_start} 場開始，唔夠 6 場數據（只有 {len(six_up_races)} 場）")
@@ -4419,13 +4432,36 @@ def main():
                         with col:
                             st.markdown(f"**🏇 第 {rn} 場**")
                             df = all_results[rn].copy()
-                            cols_to_show = ['horse_name']
-                            if 'draw' in df.columns:
-                                cols_to_show.append('draw')
-                            cols_to_show.append('預測勝率')
+                            name_col = _get_col(df, ['horse_name', '馬名'])
+                            prob_col = _get_col(df, ['預測勝率', '勝率'])
+                            draw_col = _get_col(df, ['draw', '檔位'])
+                            
+                            cols_to_show = []
+                            if name_col:
+                                cols_to_show.append(name_col)
+                            if draw_col:
+                                cols_to_show.append(draw_col)
+                            if prob_col:
+                                cols_to_show.append(prob_col)
+                            
+                            if not cols_to_show:
+                                st.warning("⚠️ 無法顯示預測結果（缺少欄位）")
+                                continue
+                            
                             df_show = df[cols_to_show].head(3).copy()
-                            df_show.columns = ['馬名', '檔位', '勝率'][:len(cols_to_show)]
-                            df_show['勝率'] = df_show['勝率'].apply(lambda x: f"{x:.1%}")
+                            # 根據實際欄位數量重命名
+                            new_cols = []
+                            if name_col:
+                                new_cols.append('馬名')
+                            if draw_col:
+                                new_cols.append('檔位')
+                            if prob_col:
+                                new_cols.append('勝率')
+                            df_show.columns = new_cols
+                            
+                            if prob_col:
+                                df_show['勝率'] = df_show['勝率'].apply(lambda x: f"{x:.1%}" if pd.notna(x) else "-")
+                            
                             st.dataframe(df_show, use_container_width=True, hide_index=True)
     cd, cbtn = st.columns([3, 1])
     with cd:
@@ -4464,7 +4500,6 @@ def main():
         if st.session_state.get('last_pool'):
             st.info(st.session_state['last_pool'])
         st.dataframe(st.session_state['last_prediction'], use_container_width=True)
-
     # ============================================================
     # 🤖 AI 預測表現 & 賽果對比（全寬，喺預測下面）
     # ============================================================
