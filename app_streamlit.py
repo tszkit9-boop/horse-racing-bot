@@ -2976,7 +2976,7 @@ def admin_accuracy_monitor():
     if pending_count > 0:
         st.caption(f"⏳ 仲有 {pending_count} 場未出賽果")
 
-    # ===== 每日命中明細（搬到原本表格嘅位置） =====
+    # ===== 每日命中明細 =====
     if compare_rows:
         st.divider()
         st.subheader("📅 每日命中明細")
@@ -3013,11 +3013,20 @@ def admin_accuracy_monitor():
         else:
             st.info("ℹ️ 暫未有已比對嘅賽果")
 
-    # ===== 詳細對比表（改用摺疊區收起，撳開先睇） =====
+    # ===== 詳細對比表（已加入排序） =====
     if compare_rows:
         st.divider()
         with st.expander("📋 查看詳細預測頭3名 vs 真實頭3名"):
             df_compare_detail = pd.DataFrame(compare_rows)
+            
+            # 👇👇👇 新增：按日期同場次排序 👇👇👇
+            df_compare_detail['場次'] = pd.to_numeric(df_compare_detail['場次'], errors='coerce')
+            # 日期升序（舊到新），場次升序（1, 2, 3...）
+            df_compare_detail = df_compare_detail.sort_values(
+                by=['日期', '場次'], 
+                ascending=[True, True]
+            ).reset_index(drop=True)
+            # 👆👆👆 新增部分完結 👆👆👆
             
             def highlight_prediction(row):
                 pred = str(row['預測頭3名'])
