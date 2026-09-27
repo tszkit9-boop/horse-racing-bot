@@ -4308,7 +4308,7 @@ def main():
                 st.session_state.show_shop = False
                 st.rerun()
 
-       st.divider()
+    st.divider()
     st.subheader("🎯 賽事預測")    
     # ============================================================
     # 🔧 管理員專用：一鍵預測所有場次
