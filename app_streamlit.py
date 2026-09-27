@@ -4308,7 +4308,7 @@ def main():
                 st.session_state.show_shop = False
                 st.rerun()
 
-    st.divider()
+       st.divider()
     st.subheader("🎯 賽事預測")    
     # ============================================================
     # 🔧 管理員專用：一鍵預測所有場次
@@ -4362,7 +4362,7 @@ def main():
                 except Exception as e:
                     st.error(f"讀取失敗：{e}")
 
-# ===== 一鍵預測執行 =====
+            # ===== 一鍵預測執行 =====
             if run_batch:
                 date_str = selected_date.strftime("%Y-%m-%d")
                 st.info(f"🚀 開始預測 {date_str} 所有場次...")
@@ -4526,7 +4526,7 @@ def main():
                         with col:
                             st.markdown(f"**🏇 第 {rn} 場**")
                             df = all_results[rn].copy()
-                            horse_no_col = _get_col(df, ['horse_no', '馬號'])
+                            horse_no_col = _get_col(df, ['horse_no', '馬號', 'horse_id'])
                             name_col = _get_col(df, ['horse_name', '馬名'])
                             draw_col = _get_col(df, ['draw', '檔位'])
                             prob_col = _get_col(df, ['預測勝率', '勝率'])
@@ -4557,6 +4557,72 @@ def main():
                                 df_show['勝率'] = df_show['勝率'].apply(lambda x: f"{x:.1%}" if pd.notna(x) else "-")
                             
                             st.dataframe(df_show, use_container_width=True, hide_index=True)
+
+    # ============================================================
+    # 🎯 單場預測（所有用戶可見，已包含馬號）
+    # ============================================================
+    st.divider()
+    st.subheader("🎯 單場預測")
+    
+    cd, cr, cbtn = st.columns([2, 2, 1])
+    with cd:
+        date = st.date_input("📅 日期", value=pd.to_datetime("2026-09-06"), key="pd_date")
+    with cr:
+        race_no = st.selectbox("🏇 場次", list(range(1, 12)), index=0, key="pd_race")
+    with cbtn:
+        run_predict = st.button("🚀 執行預測", type="primary", use_container_width=True, key="pd_btn")
+
+    if run_predict:
+        with st.spinner("預測中..."):
+            result, pool = run_prediction(date.strftime("%Y-%m-%d"), race_no)
+            if result is not None and not result.empty:
+                st.session_state['last_prediction'] = result
+                st.session_state['last_pool'] = pool
+
+    if 'last_prediction' in st.session_state and st.session_state['last_prediction'] is not None:
+        st.success("✅ 預測完成！")
+        if st.session_state.get('last_pool'):
+            st.info(st.session_state['last_pool'])
+        
+        df = st.session_state['last_prediction'].copy()
+        
+        # 輔助函數：動態搵出正確嘅欄位名
+        def _get_col_local(df, candidates):
+            for c in candidates:
+                if c in df.columns:
+                    return c
+            return None
+        
+        # 搵出「馬號」、「馬名」、「檔位」、「勝率」嘅欄位名
+        col_horse_no = _get_col_local(df, ['馬號', 'horse_no', 'horse_id', '馬匹編號', 'no'])
+        col_horse_name = _get_col_local(df, ['馬名', 'horse_name', 'name'])
+        col_draw = _get_col_local(df, ['檔位', 'draw', '排位'])
+        col_prob = _get_col_local(df, ['勝率', '預測勝率', 'win_prob', 'prob', '機率'])
+        
+        # 構建要顯示嘅 DataFrame
+        display_df = pd.DataFrame()
+        
+        if col_horse_no:
+            display_df['馬號'] = df[col_horse_no]
+        else:
+            # 如果真係搵唔到馬號，就用原本嘅 index 加 1 做馬號
+            display_df['馬號'] = range(1, len(df) + 1)
+            
+        if col_horse_name:
+            display_df['馬名'] = df[col_horse_name]
+        else:
+            display_df['馬名'] = '未知'
+            
+        if col_draw:
+            display_df['檔位'] = df[col_draw]
+            
+        if col_prob:
+            display_df['勝率'] = df[col_prob].apply(lambda x: f"{x:.1%}" if isinstance(x, (int, float)) else x)
+        else:
+            display_df['勝率'] = 'N/A'
+        
+        # 最後顯示出嚟
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
     # ============================================================
     # 🤖 AI 預測表現 & 賽果對比（全寬，喺預測下面）
     # ============================================================
