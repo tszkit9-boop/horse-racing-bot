@@ -2866,19 +2866,15 @@ def admin_accuracy_monitor():
         results_df['horse_name'] = results_df['horse_name'].astype(str).str.strip()
         results_df['horse_name'] = results_df['horse_name'].str.replace(r'\([A-Z]\d+\)', '', regex=True).str.strip()
         
-        # 👇👇👇 新增：如果 CSV 冇場地欄位，自動根據日期推算 👇👇👇
         if 'venue' not in results_df.columns and 'racecourse' not in results_df.columns and '馬場' not in results_df.columns:
-            # 0=Monday, 1=Tuesday, 2=Wednesday, 3=Thursday, 4=Friday, 5=Saturday, 6=Sunday
             results_df['venue'] = results_df['race_date'].apply(
                 lambda d: 'HV' if d.weekday() == 2 else ('ST' if d.weekday() in [5, 6] else '未知')
             )
         else:
-            # 如果有現成欄位，就直接用
             for col in ['venue', 'racecourse', '馬場']:
                 if col in results_df.columns:
                     results_df['venue'] = results_df[col]
                     break
-        # 👆👆👆 新增部分完結 👆👆👆
                 
     except Exception as e:
         st.error(f"❌ 讀取賽果失敗：{e}")
@@ -2892,7 +2888,6 @@ def admin_accuracy_monitor():
             continue
         key = f"{row['race_date_str']}_{int(row['race_no'])}"
         
-        # 記錄場地
         if key not in venue_map:
             venue_map[key] = row.get('venue', '未知')
         
@@ -2981,22 +2976,49 @@ def admin_accuracy_monitor():
     if pending_count > 0:
         st.caption(f"⏳ 仲有 {pending_count} 場未出賽果")
 
-    # ===== 新增：每日命中明細 =====
+    # ===== 顯示彩色預測對比表 =====
+    if compare_rows:
+        st.divider()
+        st.subheader("📋 預測頭3名 vs 真實頭3名")
+        
+        df_compare = pd.DataFrame(compare_rows)
+        
+        def highlight_prediction(row):
+            pred = str(row['預測頭3名'])
+            if pred == 'nan' or pred == '': 
+                return pred
+            
+            real = str(row['真實頭3名'])
+            real_names = []
+            if '⏳' not in real:
+                real_names = [re.sub(r'\(.*\)', '', name).strip() for name in real.split(',')]
+            
+            pred_list = [h.strip() for h in pred.split(',')]
+            colored = []
+            for h in pred_list:
+                if h in real_names:
+                    colored.append(f'<span style="color:green; font-weight:bold;">{h}</span>')
+                else:
+                    colored.append(f'<span style="color:red;">{h}</span>')
+            return ', '.join(colored)
+        
+        df_compare['預測頭3名'] = df_compare.apply(highlight_prediction, axis=1)
+        
+        html_table = df_compare.to_html(escape=False, index=False)
+        st.markdown(html_table, unsafe_allow_html=True)
+
+    # ===== 每日命中明細（已加入場地細分） =====
     if compare_rows:
         st.divider()
         st.subheader("📅 每日命中明細")
         
-        df_compare = pd.DataFrame(compare_rows)
-        
-        # 只保留已有賽果嘅紀錄（排除「⏳ 待定」）
         df_result = df_compare[df_compare['結果'] != '⏳ 待定'].copy()
         
         if not df_result.empty:
-            # 判斷有冇命中
             df_result['有命中'] = df_result['結果'].str.contains('✅', na=False)
             
-            # 按日期分組統計
-            daily_stats = df_result.groupby('日期').agg(
+            # 👇👇👇 修改：加入「場地」一齊 Group By 👇👇👇
+            daily_stats = df_result.groupby(['日期', '場地']).agg(
                 總場次=('場次', 'count'),
                 命中場次=('有命中', 'sum')
             ).reset_index()
@@ -3004,8 +3026,9 @@ def admin_accuracy_monitor():
             daily_stats['未命中場次'] = daily_stats['總場次'] - daily_stats['命中場次']
             daily_stats['命中率'] = (daily_stats['命中場次'] / daily_stats['總場次']).apply(lambda x: f"{x:.1%}")
             
-            # 最新日期排最前
-            daily_stats = daily_stats.sort_values('日期', ascending=False)
+            # 排序：日期新到舊，同一日之下場地排序
+            daily_stats = daily_stats.sort_values(['日期', '場地'], ascending=[False, True])
+            # 👆👆👆 修改完結 👆👆👆
             
             st.dataframe(
                 daily_stats,
@@ -3013,6 +3036,7 @@ def admin_accuracy_monitor():
                 hide_index=True,
                 column_config={
                     "日期": st.column_config.TextColumn("📅 日期"),
+                    "場地": st.column_config.TextColumn("🏇 場地"),  # 新增場地欄
                     "總場次": st.column_config.NumberColumn("總場次"),
                     "命中場次": st.column_config.NumberColumn("✅ 命中"),
                     "未命中場次": st.column_config.NumberColumn("❌ 未命中"),
