@@ -2976,48 +2976,17 @@ def admin_accuracy_monitor():
     if pending_count > 0:
         st.caption(f"⏳ 仲有 {pending_count} 場未出賽果")
 
-    # ===== 顯示彩色預測對比表 =====
-    if compare_rows:
-        st.divider()
-        st.subheader("📋 預測頭3名 vs 真實頭3名")
-        
-        df_compare = pd.DataFrame(compare_rows)
-        
-        def highlight_prediction(row):
-            pred = str(row['預測頭3名'])
-            if pred == 'nan' or pred == '': 
-                return pred
-            
-            real = str(row['真實頭3名'])
-            real_names = []
-            if '⏳' not in real:
-                real_names = [re.sub(r'\(.*\)', '', name).strip() for name in real.split(',')]
-            
-            pred_list = [h.strip() for h in pred.split(',')]
-            colored = []
-            for h in pred_list:
-                if h in real_names:
-                    colored.append(f'<span style="color:green; font-weight:bold;">{h}</span>')
-                else:
-                    colored.append(f'<span style="color:red;">{h}</span>')
-            return ', '.join(colored)
-        
-        df_compare['預測頭3名'] = df_compare.apply(highlight_prediction, axis=1)
-        
-        html_table = df_compare.to_html(escape=False, index=False)
-        st.markdown(html_table, unsafe_allow_html=True)
-
-    # ===== 每日命中明細（已加入場地細分） =====
+    # ===== 每日命中明細（搬到原本表格嘅位置） =====
     if compare_rows:
         st.divider()
         st.subheader("📅 每日命中明細")
         
+        df_compare = pd.DataFrame(compare_rows)
         df_result = df_compare[df_compare['結果'] != '⏳ 待定'].copy()
         
         if not df_result.empty:
             df_result['有命中'] = df_result['結果'].str.contains('✅', na=False)
             
-            # 👇👇👇 修改：加入「場地」一齊 Group By 👇👇👇
             daily_stats = df_result.groupby(['日期', '場地']).agg(
                 總場次=('場次', 'count'),
                 命中場次=('有命中', 'sum')
@@ -3026,9 +2995,7 @@ def admin_accuracy_monitor():
             daily_stats['未命中場次'] = daily_stats['總場次'] - daily_stats['命中場次']
             daily_stats['命中率'] = (daily_stats['命中場次'] / daily_stats['總場次']).apply(lambda x: f"{x:.1%}")
             
-            # 排序：日期新到舊，同一日之下場地排序
             daily_stats = daily_stats.sort_values(['日期', '場地'], ascending=[False, True])
-            # 👆👆👆 修改完結 👆👆👆
             
             st.dataframe(
                 daily_stats,
@@ -3036,7 +3003,7 @@ def admin_accuracy_monitor():
                 hide_index=True,
                 column_config={
                     "日期": st.column_config.TextColumn("📅 日期"),
-                    "場地": st.column_config.TextColumn("🏇 場地"),  # 新增場地欄
+                    "場地": st.column_config.TextColumn("🏇 場地"),
                     "總場次": st.column_config.NumberColumn("總場次"),
                     "命中場次": st.column_config.NumberColumn("✅ 命中"),
                     "未命中場次": st.column_config.NumberColumn("❌ 未命中"),
@@ -3045,6 +3012,36 @@ def admin_accuracy_monitor():
             )
         else:
             st.info("ℹ️ 暫未有已比對嘅賽果")
+
+    # ===== 詳細對比表（改用摺疊區收起，撳開先睇） =====
+    if compare_rows:
+        st.divider()
+        with st.expander("📋 查看詳細預測頭3名 vs 真實頭3名"):
+            df_compare_detail = pd.DataFrame(compare_rows)
+            
+            def highlight_prediction(row):
+                pred = str(row['預測頭3名'])
+                if pred == 'nan' or pred == '': 
+                    return pred
+                
+                real = str(row['真實頭3名'])
+                real_names = []
+                if '⏳' not in real:
+                    real_names = [re.sub(r'\(.*\)', '', name).strip() for name in real.split(',')]
+                
+                pred_list = [h.strip() for h in pred.split(',')]
+                colored = []
+                for h in pred_list:
+                    if h in real_names:
+                        colored.append(f'<span style="color:green; font-weight:bold;">{h}</span>')
+                    else:
+                        colored.append(f'<span style="color:red;">{h}</span>')
+                return ', '.join(colored)
+            
+            df_compare_detail['預測頭3名'] = df_compare_detail.apply(highlight_prediction, axis=1)
+            
+            html_table = df_compare_detail.to_html(escape=False, index=False)
+            st.markdown(html_table, unsafe_allow_html=True)
         
     # ===== 分場地命中率 =====
     st.markdown("---")
