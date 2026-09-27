@@ -4,13 +4,18 @@ on:
   schedule:
     # 逢星期日、一、四 早上 8:00 (香港時間)
     - cron: '0 0 * * 0,1,4'
-  workflow_dispatch: # 允許手動觸發
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: '請輸入要爬取嘅日期 (格式: YYYY-MM-DD，留空則由腳本自動決定)'
+        required: false
+        default: ''
 
 jobs:
   update-results:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # 👈 必須要有呢句，先有權限 push
+      contents: write
 
     steps:
       - name: 檢出程式碼
@@ -31,6 +36,8 @@ jobs:
           pip install pandas selenium webdriver-manager
 
       - name: 執行賽果爬蟲
+        env:
+          INPUT_TARGET_DATE: ${{ github.event.inputs.target_date }}
         run: python scrape_results.py
 
       - name: 提交變更
@@ -39,4 +46,4 @@ jobs:
           git config --local user.name "GitHub Action"
           git add race_results_clean.csv
           git commit -m "Auto update race results [skip ci]" || echo "No changes to commit"
-          git push # 👈 呢句最重要，將更新推返 GitHub
+          git push
