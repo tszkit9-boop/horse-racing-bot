@@ -2980,6 +2980,47 @@ def admin_accuracy_monitor():
 
     if pending_count > 0:
         st.caption(f"⏳ 仲有 {pending_count} 場未出賽果")
+
+    # ===== 新增：每日命中明細 =====
+    if compare_rows:
+        st.divider()
+        st.subheader("📅 每日命中明細")
+        
+        df_compare = pd.DataFrame(compare_rows)
+        
+        # 只保留已有賽果嘅紀錄（排除「⏳ 待定」）
+        df_result = df_compare[df_compare['結果'] != '⏳ 待定'].copy()
+        
+        if not df_result.empty:
+            # 判斷有冇命中
+            df_result['有命中'] = df_result['結果'].str.contains('✅', na=False)
+            
+            # 按日期分組統計
+            daily_stats = df_result.groupby('日期').agg(
+                總場次=('場次', 'count'),
+                命中場次=('有命中', 'sum')
+            ).reset_index()
+            
+            daily_stats['未命中場次'] = daily_stats['總場次'] - daily_stats['命中場次']
+            daily_stats['命中率'] = (daily_stats['命中場次'] / daily_stats['總場次']).apply(lambda x: f"{x:.1%}")
+            
+            # 最新日期排最前
+            daily_stats = daily_stats.sort_values('日期', ascending=False)
+            
+            st.dataframe(
+                daily_stats,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "日期": st.column_config.TextColumn("📅 日期"),
+                    "總場次": st.column_config.NumberColumn("總場次"),
+                    "命中場次": st.column_config.NumberColumn("✅ 命中"),
+                    "未命中場次": st.column_config.NumberColumn("❌ 未命中"),
+                    "命中率": st.column_config.TextColumn("🎯 命中率"),
+                }
+            )
+        else:
+            st.info("ℹ️ 暫未有已比對嘅賽果")
         
     # ===== 分場地命中率 =====
     st.markdown("---")
