@@ -1,11 +1,11 @@
 {
-  "trained_at": "2026-09-28T11:12:27.826814",
-  "xgb_auc": 0.7023441192224078,
-  "xgb_top1": 0.16470588235294117,
-  "xgb_top3": 0.47058823529411764,
-  "cat_auc": 0.6781530609029899,
-  "cat_top1": 0.16470588235294117,
-  "cat_top3": 0.4411764705882353,
+  "trained_at": "2026-09-28T11:16:07.327132",
+  "xgb_auc": 0.6391883802262202,
+  "xgb_top1": 0.15294117647058825,
+  "xgb_top3": 0.4294117647058823,
+  "cat_auc": 0.7102712750874319,
+  "cat_top1": 0.15294117647058825,
+  "cat_top3": 0.48823529411764705,
   "rank_trained": true,
   "train_samples": 8279,
   "test_samples": 2037,
@@ -47,6 +47,6 @@
     "total_injuries",
     "injury_severity"
   ],
-  "non_zero_features": 22,
+  "non_zero_features": 19,
   "n_features": 36
 }
