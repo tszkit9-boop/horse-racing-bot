@@ -21,7 +21,7 @@ from catboost import CatBoostClassifier
 # 1️⃣ 讀取數據
 # ============================================================
 print("📊 讀取數據...")
-df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig', low_memory=False)
+df = pd.read_csv("ALL_DATA_MERGED_updated.csv", encoding='utf-8-sig', low_memory=False)
 print(f"  原始數據：{len(df)} 筆")
 
 # ============================================================
