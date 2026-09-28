@@ -16,6 +16,17 @@ import requests
 import re
 warnings.filterwarnings('ignore')
 
+import bcrypt
+
+def hash_password(password):
+    """將密碼加密（bcrypt）"""
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
+
+def verify_password(password, hashed):
+    """驗證密碼"""
+    return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+
 try:
     import plotly.express as px
     import plotly.graph_objects as go
