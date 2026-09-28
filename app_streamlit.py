@@ -801,12 +801,12 @@ def run_prediction(date_str, race_no):
 
     # ===== 歷史數據 =====
     history_df = pd.DataFrame()
-    if os.path.exists("ALL_DATA_MERGED.csv"):
+    if os.path.exists("ALL_DATA_MERGED_updated.csv"):
         try:
-            history_df = pd.read_csv("ALL_DATA_MERGED.csv", encoding='utf-8-sig', low_memory=False)
+            history_df = pd.read_csv("ALL_DATA_MERGED_updated.csv", encoding='utf-8-sig', low_memory=False)
             history_df.columns = [str(c).replace('\ufeff', '').strip() for c in history_df.columns]
-            if 'finish_position' not in history_df.columns and 'Pla' in history_df.columns:
-                history_df['finish_position'] = history_df['Pla']
+            if 'finish_position' not in history_df.columns and 'Pla.' in history_df.columns:
+                history_df['finish_position'] = history_df['Pla.']
         except Exception as e:
             st.warning(f"⚠️ 讀取歷史數據失敗：{e}")
 
