@@ -3944,127 +3944,127 @@ def login_page():
                     st.rerun()
                 else:
                     st.error("❌ 用戶名或密碼錯誤")
-    else:
-    st.subheader("📝 註冊新帳號")
-    with st.form("register_form"):
-        new_user = st.text_input("用戶名稱（最少 3 個字）", key="reg_user")
-        phone = st.text_input("手機號碼（可選）", key="reg_phone")
-        new_pass = st.text_input("密碼", type="password", key="reg_pass")
-        new_pass2 = st.text_input("確認密碼", type="password", key="reg_pass2")
-
-        # ===== 邀請碼 =====
-        if CONFIG.get("enable_invite_reward", True):
-            invite_code_input = st.text_input(
-                "邀請碼（如有）",
-                key="reg_invite_code",
-                placeholder="輸入朋友嘅邀請碼，雙方都會獲得獎勵"
-            )
         else:
-            invite_code_input = None
+            st.subheader("📝 註冊新帳號")
+            with st.form("register_form"):
+                new_user = st.text_input("用戶名稱（最少 3 個字）", key="reg_user")
+                phone = st.text_input("手機號碼（可選）", key="reg_phone")
+                new_pass = st.text_input("密碼", type="password", key="reg_pass")
+                new_pass2 = st.text_input("確認密碼", type="password", key="reg_pass2")
 
-        agree_terms = st.checkbox("✅ 我已閱讀並同意服務條款", key="agree_terms")
-        submitted = st.form_submit_button("註冊")
-
-        if submitted:
-            if len(new_user) < 3:
-                st.error("❌ 用戶名稱至少 3 個字")
-            elif new_pass != new_pass2:
-                st.error("❌ 密碼不一致")
-            elif len(new_pass) < 4:
-                st.error("❌ 密碼至少 4 個字")
-            elif not agree_terms:
-                st.error("❌ 請同意服務條款")
-            else:
-                users = load_users()
-
-                # ===== 驗證邀請碼 =====
-                invited_by = None
-                if CONFIG.get("enable_invite_reward", True) and invite_code_input:
-                    invite_code_input = invite_code_input.strip().upper()
-                    for uid, u in users.items():
-                        if u.get('invite_code', '').upper() == invite_code_input:
-                            invited_by = uid
-                            break
-                    if not invited_by:
-                        st.error("❌ 邀請碼無效，請確認後再試")
-                        st.stop()
-
-                if new_user in users:
-                    st.error("❌ 用戶名稱已被使用")
+                # ===== 邀請碼 =====
+                if CONFIG.get("enable_invite_reward", True):
+                    invite_code_input = st.text_input(
+                        "邀請碼（如有）",
+                        key="reg_invite_code",
+                        placeholder="輸入朋友嘅邀請碼，雙方都會獲得獎勵"
+                    )
                 else:
-                    # ===== 建立新用戶（VIP 永久） =====
-                    users[new_user] = {
-                        'password': hash_password(new_pass),
-                        'phone': phone,
-                        'is_paid': True,
-                        'paid_date': datetime.now().strftime('%Y-%m-%d'),
-                        'expiry_date': None,
-                        'free_usage': 0,
-                        'total_usage': 0,
-                        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                        'note': '',
-                        'group': 'VIP',
-                        'plan': 'VIP',
-                        'predictions_limit': -1,
-                        'history': [],
-                        'terms_agreed': datetime.now().isoformat(),
-                        'invite_code': new_user.upper() + str(random.randint(100, 999)),
-                        'invited_by': invited_by,
-                        'invite_rewards': 0,
-                        'invite_count': 0,
-                        'referred_users': [],
-                        'level': '👑 VIP會員',
-                        'exp': 0,
-                        'badges': [],
-                        'virtual_balance': CONFIG.get('daily_virtual_coin', 1000),
-                        'last_claim_date': '',
-                        'bets': [],
-                        'last_lottery_date': ''
-                    }
+                    invite_code_input = None
 
-                    # ===== 多級獎勵回溯 =====
-                    if invited_by and CONFIG.get("enable_invite_reward", True):
-                        rewards = CONFIG.get("invite_rewards", {"level1": 5, "level2": 2, "level3": 1})
+                agree_terms = st.checkbox("✅ 我已閱讀並同意服務條款", key="agree_terms")
+                submitted = st.form_submit_button("註冊")
 
-                        # Level 1：直接邀請人
-                        inviter = users.get(invited_by)
-                        if inviter:
-                            bonus1 = rewards.get("level1", 5)
-                            if inviter.get('predictions_limit', 0) != -1:
-                                inviter['predictions_limit'] = inviter.get('predictions_limit', 0) + bonus1
-                            inviter['invite_count'] = inviter.get('invite_count', 0) + 1
-                            inviter['invite_rewards'] = inviter.get('invite_rewards', 0) + bonus1
-                            if 'referred_users' not in inviter:
-                                inviter['referred_users'] = []
-                            if new_user not in inviter['referred_users']:
-                                inviter['referred_users'].append(new_user)
+                if submitted:
+                    if len(new_user) < 3:
+                        st.error("❌ 用戶名稱至少 3 個字")
+                    elif new_pass != new_pass2:
+                        st.error("❌ 密碼不一致")
+                    elif len(new_pass) < 4:
+                        st.error("❌ 密碼至少 4 個字")
+                    elif not agree_terms:
+                        st.error("❌ 請同意服務條款")
+                    else:
+                        users = load_users()
 
-                            # 新用戶自己都獲得獎勵（但因為已經係 VIP，唔會再加次數）
-                            if users[new_user].get('predictions_limit', 0) != -1:
-                                users[new_user]['predictions_limit'] += rewards.get("level1", 5)
-                            users[new_user]['invite_rewards'] += rewards.get("level1", 5)
+                        # ===== 驗證邀請碼 =====
+                        invited_by = None
+                        if CONFIG.get("enable_invite_reward", True) and invite_code_input:
+                            invite_code_input = invite_code_input.strip().upper()
+                            for uid, u in users.items():
+                                if u.get('invite_code', '').upper() == invite_code_input:
+                                    invited_by = uid
+                                    break
+                            if not invited_by:
+                                st.error("❌ 邀請碼無效，請確認後再試")
+                                st.stop()
 
-                            # Level 2：上線（邀請人嘅邀請人）
-                            level2_user = inviter.get('invited_by')
-                            if level2_user and level2_user in users:
-                                bonus2 = rewards.get("level2", 2)
-                                if users[level2_user].get('predictions_limit', 0) != -1:
-                                    users[level2_user]['predictions_limit'] += bonus2
-                                users[level2_user]['invite_rewards'] = users[level2_user].get('invite_rewards', 0) + bonus2
+                        if new_user in users:
+                            st.error("❌ 用戶名稱已被使用")
+                        else:
+                            # ===== 建立新用戶（VIP 永久） =====
+                            users[new_user] = {
+                                'password': hash_password(new_pass),
+                                'phone': phone,
+                                'is_paid': True,
+                                'paid_date': datetime.now().strftime('%Y-%m-%d'),
+                                'expiry_date': None,
+                                'free_usage': 0,
+                                'total_usage': 0,
+                                'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                'note': '',
+                                'group': 'VIP',
+                                'plan': 'VIP',
+                                'predictions_limit': -1,
+                                'history': [],
+                                'terms_agreed': datetime.now().isoformat(),
+                                'invite_code': new_user.upper() + str(random.randint(100, 999)),
+                                'invited_by': invited_by,
+                                'invite_rewards': 0,
+                                'invite_count': 0,
+                                'referred_users': [],
+                                'level': '👑 VIP會員',
+                                'exp': 0,
+                                'badges': [],
+                                'virtual_balance': CONFIG.get('daily_virtual_coin', 1000),
+                                'last_claim_date': '',
+                                'bets': [],
+                                'last_lottery_date': ''
+                            }
 
-                                # Level 3：上上線
-                                level3_user = users[level2_user].get('invited_by')
-                                if level3_user and level3_user in users:
-                                    bonus3 = rewards.get("level3", 1)
-                                    if users[level3_user].get('predictions_limit', 0) != -1:
-                                        users[level3_user]['predictions_limit'] += bonus3
-                                    users[level3_user]['invite_rewards'] = users[level3_user].get('invite_rewards', 0) + bonus3
+                            # ===== 多級獎勵回溯 =====
+                            if invited_by and CONFIG.get("enable_invite_reward", True):
+                                rewards = CONFIG.get("invite_rewards", {"level1": 5, "level2": 2, "level3": 1})
 
-                    save_users(users)
-                    log_user_activity(new_user, "註冊", f"邀請人：{invited_by or '無'}｜自動開通 VIP")
-                    st.success("✅ 註冊成功！你已成為 VIP 會員，享有無限預測次數！")
-                    st.session_state.page_mode = "login"
-                    st.rerun()
+                                # Level 1：直接邀請人
+                                inviter = users.get(invited_by)
+                                if inviter:
+                                    bonus1 = rewards.get("level1", 5)
+                                    if inviter.get('predictions_limit', 0) != -1:
+                                        inviter['predictions_limit'] = inviter.get('predictions_limit', 0) + bonus1
+                                    inviter['invite_count'] = inviter.get('invite_count', 0) + 1
+                                    inviter['invite_rewards'] = inviter.get('invite_rewards', 0) + bonus1
+                                    if 'referred_users' not in inviter:
+                                        inviter['referred_users'] = []
+                                    if new_user not in inviter['referred_users']:
+                                        inviter['referred_users'].append(new_user)
+
+                                    # 新用戶自己都獲得獎勵
+                                    if users[new_user].get('predictions_limit', 0) != -1:
+                                        users[new_user]['predictions_limit'] += rewards.get("level1", 5)
+                                    users[new_user]['invite_rewards'] += rewards.get("level1", 5)
+
+                                    # Level 2：上線（邀請人嘅邀請人）
+                                    level2_user = inviter.get('invited_by')
+                                    if level2_user and level2_user in users:
+                                        bonus2 = rewards.get("level2", 2)
+                                        if users[level2_user].get('predictions_limit', 0) != -1:
+                                            users[level2_user]['predictions_limit'] += bonus2
+                                        users[level2_user]['invite_rewards'] = users[level2_user].get('invite_rewards', 0) + bonus2
+
+                                        # Level 3：上上線
+                                        level3_user = users[level2_user].get('invited_by')
+                                        if level3_user and level3_user in users:
+                                            bonus3 = rewards.get("level3", 1)
+                                            if users[level3_user].get('predictions_limit', 0) != -1:
+                                                users[level3_user]['predictions_limit'] += bonus3
+                                            users[level3_user]['invite_rewards'] = users[level3_user].get('invite_rewards', 0) + bonus3
+
+                            save_users(users)
+                            log_user_activity(new_user, "註冊", f"邀請人：{invited_by or '無'}｜自動開通 VIP")
+                            st.success("✅ 註冊成功！你已成為 VIP 會員，享有無限預測次數！")
+                            st.session_state.page_mode = "login"
+                            st.rerun()
 def show_chat_room():
     """聊天室內容（配合 popover 用）"""
 
