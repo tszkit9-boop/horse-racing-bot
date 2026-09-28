@@ -195,6 +195,7 @@ def save_users(users):
 def authenticate(username, password):
     users = load_users()
     if username in users and users[username].get('password') == password:
+        log_user_activity(username, "登入", "")
         return users[username]
     return None
 
@@ -1613,6 +1614,9 @@ def do_checkin(username):
     except Exception as e:
         return False, f"更新用戶失敗：{e}", coins, streak, is_vip_reward
 
+    # 👇 加入呢句記錄用戶動作
+    log_user_activity(username, "簽到", f"連續第 {streak} 日，獲得 {coins} 金幣")
+
     return True, f"簽到成功！連續第 {streak} 日", coins, streak, is_vip_reward
 
 
@@ -1874,6 +1878,10 @@ def show_lottery_interface(username):
             desc = chosen.get('description', '')
 
         save_users(users)
+
+        # 👇 加入呢句記錄用戶動作
+        log_user_activity(username, "抽獎", f"抽中：{pname}（{desc}）")
+
         time.sleep(1.5)
 
         st.session_state.lottery_result = {
@@ -1937,6 +1945,10 @@ def show_shop_interface(username):
                     config['items'] = items
                     save_shop_config(config)
                     save_users(users)
+
+                    # 👇 加入呢句記錄用戶動作
+                    log_user_activity(username, "購買", f"購買了 {item.get('name', '商品')}，花費 ${price}")
+
                     st.success(f"✅ 已購買 {item.get('name')}！")
                     st.rerun()
         st.divider()
@@ -3185,67 +3197,130 @@ def admin_payment_review():
                 st.error(msg)
             st.rerun()
         st.divider()
+def log_user_activity(username, action, detail=""):
+    """記錄用戶活動到 Supabase 及本地檔案"""
+    record = {
+        "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        "username": username,
+        "action": action,
+        "detail": detail
+    }
+    
+    # ===== 1. 寫入 Supabase =====
+    try:
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal"
+        }
+        requests.post(
+            f"{SUPABASE_URL}/rest/v1/user_activity_log",
+            headers=headers,
+            json=record,
+            timeout=5
+        )
+    except Exception as e:
+        print(f"⚠️ 寫入 Supabase 用戶活動失敗: {e}")
+    
+    # ===== 2. 寫入本地檔案（作為備份） =====
+    try:
+        log_file = "user_activity_log.json"
+        if os.path.exists(log_file):
+            with open(log_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        else:
+            data = {"records": []}
+        
+        data["records"].append(record)
+        if len(data["records"]) > 5000:
+            data["records"] = data["records"][-5000:]
+            
+        with open(log_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"⚠️ 寫入本地用戶活動失敗: {e}")
+
+
 def admin_user_activity():
     st.subheader("👤 用戶記錄")
     st.caption("記錄用戶嘅登入、預測、抽獎、購買、付款等活動。")
 
-    log_file = "user_activity_log.json"
-
-    if not os.path.exists(log_file):
-        st.info("📭 暫無任何用戶活動記錄")
-        return
-
+    # ===== 從 Supabase 讀取記錄 =====
     try:
-        with open(log_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json"
+        }
+        res = requests.get(
+            f"{SUPABASE_URL}/rest/v1/user_activity_log?order=time.desc&limit=5000",
+            headers=headers,
+            timeout=10
+        )
+        if res.status_code == 200:
+            records = res.json()
+        else:
+            st.error(f"❌ 讀取失敗 (HTTP {res.status_code})：{res.text}")
+            return
     except Exception as e:
-        st.error(f"❌ 讀取失敗：{e}")
+        st.error(f"❌ 連線錯誤：{e}")
         return
 
-    records = data.get("records", [])
     if not records:
         st.info("📭 暫無任何用戶活動記錄")
         return
 
-    st.markdown("### 📊 活動統計")
     df_all = pd.DataFrame(records)
+    
+    # 確保 time 欄位係字串格式，方便篩選同顯示
+    if 'time' in df_all.columns:
+        df_all['time'] = df_all['time'].astype(str).str.replace('T', ' ').str[:19]
+
+    st.markdown("### 📊 活動統計")
     c1, c2, c3 = st.columns(3)
     c1.metric("📋 總記錄數", len(df_all))
-    c2.metric("👥 活躍用戶", df_all['username'].nunique())
+    c2.metric("👥 活躍用戶", df_all['username'].nunique() if 'username' in df_all.columns else 0)
+    
     today_str = datetime.now().strftime('%Y-%m-%d')
-    c3.metric("📅 今日記錄", len(df_all[df_all['time'].str.startswith(today_str)]))
+    if 'time' in df_all.columns:
+        today_count = len(df_all[df_all['time'].str.startswith(today_str)])
+    else:
+        today_count = 0
+    c3.metric("📅 今日記錄", today_count)
 
     st.divider()
     st.markdown("### 🔍 篩選")
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        user_filter = st.selectbox(
-            "選擇用戶",
-            ["全部"] + sorted(df_all['username'].unique().tolist()),
-            key="act_user_filter"
-        )
+        user_options = ["全部"] + sorted(df_all['username'].dropna().unique().tolist()) if 'username' in df_all.columns else ["全部"]
+        user_filter = st.selectbox("選擇用戶", user_options, key="act_user_filter")
     with col2:
-        action_filter = st.selectbox(
-            "活動類型",
-            ["全部"] + sorted(df_all['action'].unique().tolist()),
-            key="act_action_filter"
-        )
+        action_options = ["全部"] + sorted(df_all['action'].dropna().unique().tolist()) if 'action' in df_all.columns else ["全部"]
+        action_filter = st.selectbox("活動類型", action_options, key="act_action_filter")
     with col3:
         limit = st.number_input("顯示最近幾多條", min_value=10, max_value=5000, value=100, step=10, key="act_limit")
 
     df_filtered = df_all.copy()
-    if user_filter != "全部":
+    if user_filter != "全部" and 'username' in df_filtered.columns:
         df_filtered = df_filtered[df_filtered['username'] == user_filter]
-    if action_filter != "全部":
+    if action_filter != "全部" and 'action' in df_filtered.columns:
         df_filtered = df_filtered[df_filtered['action'] == action_filter]
 
-    df_filtered = df_filtered.tail(int(limit)).iloc[::-1].reset_index(drop=True)
+    df_filtered = df_filtered.head(int(limit)).reset_index(drop=True)
     df_filtered.index = df_filtered.index + 1
 
     st.write(f"**顯示 {len(df_filtered)} 條記錄**")
 
-    df_display = df_filtered[['time', 'username', 'action', 'detail']].copy()
+    # 確保所有欄位都存在
+    display_cols = []
+    for c in ['time', 'username', 'action', 'detail']:
+        if c not in df_filtered.columns:
+            df_filtered[c] = ''
+        display_cols.append(c)
+        
+    df_display = df_filtered[display_cols].copy()
     df_display.columns = ['時間', '用戶', '活動', '詳情']
     st.dataframe(df_display, use_container_width=True)
 
@@ -3258,7 +3333,6 @@ def admin_user_activity():
         use_container_width=True,
         key="dl_user_activity"
     )
-
 def admin_monitoring():
     st.subheader("📡 系統監控")
     files = ['ALL_DATA_MERGED.csv', 'HKCJ_FULL_YEAR_DATA.csv', 'users.json',
@@ -4649,6 +4723,8 @@ def main():
             if result is not None and not result.empty:
                 st.session_state['last_prediction'] = result
                 st.session_state['last_pool'] = pool
+                # 👇 加入呢句記錄用戶動作
+                log_user_activity(st.session_state.get('username', '未知'), "預測", f"{date.strftime('%Y-%m-%d')} 第{race_no}場")
 
     if 'last_prediction' in st.session_state and st.session_state['last_prediction'] is not None:
         st.success("✅ 預測完成！")
@@ -4861,7 +4937,7 @@ def main():
                 st.info("ℹ️ 沒有日期同時有預測同賽果數據")
         else:
             st.info("ℹ️ 請確保已有預測紀錄及賽果數據")
-# ===== 打賞支持 =====
+    # ===== 打賞支持 =====
     st.divider()
     st.subheader("❤️ 打賞支持")
     if st.session_state.get('logged_in', False):
@@ -4906,6 +4982,12 @@ def main():
                     )
                     if post_res.status_code in (200, 201, 204):
                         st.success("✅ 已提交！管理員審核後會盡快處理。")
+                        # 👇 加入呢句記錄用戶動作
+                        log_user_activity(
+                            st.session_state.get('username', 'unknown'),
+                            "打賞",
+                            f"提交打賞 ${float(amount):.0f}（待審核）"
+                        )
                     else:
                         st.error(f"❌ 提交失敗 (HTTP {post_res.status_code})：{post_res.text}")
                 except Exception as e:
