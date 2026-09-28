@@ -4073,7 +4073,7 @@ def login_page():
 
                         save_users(users)
                         log_user_activity(new_user, "註冊", f"邀請人：{invited_by or '無'}｜自動開通 VIP")
-                        st.success("✅ 註冊成功！你已成為 VIP 會員，享有無限預測次數！")
+                        st.session_state['register_success'] = "✅ 註冊成功！你已成為 VIP 會員，享有無限預測次數！"
                         st.session_state.page_mode = "login"
                         st.rerun()
 def show_chat_room():
