@@ -3930,6 +3930,11 @@ def login_page():
         st.warning(st.session_state._timeout_message)
         del st.session_state._timeout_message
 
+    # 🆕 顯示註冊成功訊息
+    if st.session_state.get('register_success'):
+        st.success(st.session_state['register_success'])
+        del st.session_state['register_success']
+
     c1, c2 = st.columns(2)
     with c1:
         if st.button("🔑 登入", use_container_width=True, key="pg_login"):
