@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-train_models.py - 完整修復版（智能日期解析 + 智能馬匹 ID 提取 + 36 特徵）
+train_models.py - 完整修復版（智能日期解析 + 補全日期 + 激活危險特徵 + 36 特徵）
 """
 
 import pandas as pd
@@ -41,9 +41,17 @@ for col in ['Pla.', 'finish_position', '名次']:
 # 🛡️ 智能日期解析（嘗試多種格式）
 df['race_date'] = df['race_date'].astype(str).str.strip()
 df['race_date'] = pd.to_datetime(df['race_date'], errors='coerce', format='mixed', dayfirst=False)
-print(f"  📅 日期有效值：{df['race_date'].notna().sum()} 筆")
 
+# 🆕 嘗試從其他日期欄補全空值
+for date_col in ['Date', '日期']:
+    if date_col in df.columns:
+        df[date_col] = pd.to_datetime(df[date_col], errors='coerce', format='mixed', dayfirst=False)
+        df['race_date'] = df['race_date'].fillna(df[date_col])
+        print(f"  🛠️ 從 '{date_col}' 補全日期")
+
+# 如果日期還是空值，直接丟棄（無法訓練）
 df = df.dropna(subset=['race_date'])
+print(f"  📅 日期有效值：{df['race_date'].notna().sum()} 筆")
 print(f"  🔍 日期過濾後：{len(df)} 筆")
 
 df['race_date_str'] = df['race_date'].dt.strftime('%Y%m%d')
@@ -197,13 +205,19 @@ for d in [df_train, df_test]:
             d[f] = 0
         d[f] = pd.to_numeric(d[f], errors='coerce').fillna(0)
 
+# 🆕 改為：只有當特徵完全冇數據時才歸 0，有數據就保留
 dangerous = ['early_pace', 'finish_speed', 'last_trial_rank', 'last_trial_time',
              'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
              'days_since_injury', 'injury_30d', 'injury_60d', 'injury_90d',
              'total_injuries', 'injury_severity']
 for d in [df_train, df_test]:
     for f in dangerous:
-        d[f] = 0
+        if f in d.columns:
+            # 只有當特徵完全冇數據時才歸 0，有數據就保留
+            if d[f].abs().sum() == 0:
+                d[f] = 0
+        else:
+            d[f] = 0
 
 X_train = df_train[features_all].astype(np.float32)
 y_train = df_train['target'].astype(int)
