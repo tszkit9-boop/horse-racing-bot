@@ -21,7 +21,7 @@ from catboost import CatBoostClassifier
 # 1️⃣ 讀取數據
 # ============================================================
 print("📊 讀取數據...")
-df = pd.read_csv("ALL_DATA_MERGED_MASTER.csv", encoding='utf-8-sig', low_memory=False)
+df = pd.read_csv("ALL_DATA_MERGED_updated.csv", encoding='utf-8-sig', low_memory=False)
 print(f"  原始數據：{len(df)} 筆")
 
 # ============================================================
@@ -49,7 +49,6 @@ for date_col in ['Date', '日期']:
         df['race_date'] = df['race_date'].fillna(df[date_col])
         print(f"  🛠️ 從 '{date_col}' 補全日期")
 
-# 如果日期還是空值，直接丟棄（無法訓練）
 df = df.dropna(subset=['race_date'])
 print(f"  📅 日期有效值：{df['race_date'].notna().sum()} 筆")
 print(f"  🔍 日期過濾後：{len(df)} 筆")
@@ -73,8 +72,15 @@ df['finish_position'] = df['real_pos']
 df['target'] = (df['finish_position'] == 1).astype(int)
 print(f"  清洗後：{len(df)} 筆，頭馬：{df['target'].mean():.2%}")
 
+# 🆕 修復：safe_num 兼容整數同 Series
 def safe_num(s, default=0):
-    return pd.to_numeric(s, errors='coerce').fillna(default)
+    """安全轉換為數字，兼容 Series 同標量"""
+    if isinstance(s, (int, float, np.integer, np.floating)):
+        return s
+    try:
+        return pd.to_numeric(s, errors='coerce').fillna(default)
+    except Exception:
+        return default
 
 df['draw'] = safe_num(df.get('draw', 0))
 df['Rtg.'] = safe_num(df.get('Rtg.', 0))
@@ -205,7 +211,6 @@ for d in [df_train, df_test]:
             d[f] = 0
         d[f] = pd.to_numeric(d[f], errors='coerce').fillna(0)
 
-# 🆕 改為：只有當特徵完全冇數據時才歸 0，有數據就保留
 dangerous = ['early_pace', 'finish_speed', 'last_trial_rank', 'last_trial_time',
              'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
              'days_since_injury', 'injury_30d', 'injury_60d', 'injury_90d',
@@ -213,7 +218,6 @@ dangerous = ['early_pace', 'finish_speed', 'last_trial_rank', 'last_trial_time',
 for d in [df_train, df_test]:
     for f in dangerous:
         if f in d.columns:
-            # 只有當特徵完全冇數據時才歸 0，有數據就保留
             if d[f].abs().sum() == 0:
                 d[f] = 0
         else:
