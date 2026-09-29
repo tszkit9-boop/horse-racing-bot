@@ -748,7 +748,7 @@ def _repair_racecard(df):
     return result
 
 def run_prediction(date_str, race_no):
-    """用真正 ML 模型預測（統一 36 特徵版）"""
+    """用真正 ML 模型預測（39 特徵版，含賽道特徵）"""
     if not os.path.exists("racecard_uploaded.csv"):
         st.error("❌ 找不到 racecard_uploaded.csv")
         return None, None
@@ -764,7 +764,7 @@ def run_prediction(date_str, race_no):
         '馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
         '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
         '負磅': 'weight', '馬號': 'horse_id', '賠率': 'win_odds',
-        '路程': 'distance', '評分': 'rtg'
+        '路程': 'distance', '評分': 'rtg', '賽道': 'track'   # 🆕 加入 track
     }
     existing = [c for c in rename_map if c in race_df.columns]
     if existing:
@@ -810,6 +810,46 @@ def run_prediction(date_str, race_no):
 
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
+    # 🆕 ===== 自動偵測賽道 =====
+    # 優先從 racecard_uploaded.csv 嘅 'track' 欄位攞
+    # 如果冇，就根據 racecourse（ST/HV）同日期推斷
+    track_info = None
+    if 'track' in filtered.columns:
+        track_values = filtered['track'].dropna().unique()
+        if len(track_values) > 0:
+            track_info = str(track_values[0]).strip()
+    
+    # 如果冇 track 欄位，用 racecourse 推斷（預設草地）
+    if not track_info or track_info == '' or track_info == 'nan':
+        racecourse = st.session_state.get('racecourse', 'ST')  # 默認 ST
+        if racecourse == 'HV':
+            track_info = 'HV / Turf'
+        else:
+            track_info = 'ST / Turf'  # 默認沙田草地
+    
+    # 判斷賽道類型
+    track_upper = track_info.upper()
+    if 'AWT' in track_upper or 'ALL WEATHER' in track_upper or '全天候' in track_info:
+        is_st_turf = 0
+        is_st_awt = 1
+        is_hv_turf = 0
+        st.info(f"🏇 偵測到賽道：**全天候賽道**（{track_info}）")
+    elif 'HV' in track_upper:
+        is_st_turf = 0
+        is_st_awt = 0
+        is_hv_turf = 1
+        st.info(f"🏇 偵測到賽道：**跑馬地草地**（{track_info}）")
+    elif 'ST' in track_upper:
+        is_st_turf = 1
+        is_st_awt = 0
+        is_hv_turf = 0
+        st.info(f"🏇 偵測到賽道：**沙田草地**（{track_info}）")
+    else:
+        is_st_turf = 1
+        is_st_awt = 0
+        is_hv_turf = 0
+        st.info(f"🏇 賽道未確認，默認用**沙田草地**（{track_info}）")
+
     # ===== 歷史數據 =====
     history_df = pd.DataFrame()
     if os.path.exists("ALL_DATA_MERGED_updated.csv"):
@@ -825,11 +865,17 @@ def run_prediction(date_str, race_no):
     with st.spinner("🔧 計算特徵中..."):
         features_df = _build_features(filtered, history_df)
 
+    # 🆕 ===== 強制設定賽道特徵（覆蓋 _build_features 嘅結果）=====
+    features_df['is_st_turf'] = is_st_turf
+    features_df['is_st_awt'] = is_st_awt
+    features_df['is_hv_turf'] = is_hv_turf
+    # ==============================================================
+
     # ===== 載入模型 =====
     xgb_model, cat_model, rank_model = load_ml_models()
 
-    # ===== 36 特徵列表 =====
-    features_36 = ['draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
+    # 🆕 ===== 39 特徵列表（加入 3 個賽道特徵）=====
+    features_39 = ['draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
                    'jockey_win_rate_50', 'trainer_win_rate_50',
                    'distance_win_rate', 'distance_avg_rank', 'win_odds',
                    'weight_change', 'jockey_trainer_win_rate',
@@ -841,40 +887,41 @@ def run_prediction(date_str, race_no):
                    'early_pace', 'finish_speed', 'last_trial_rank',
                    'last_trial_time', 'jockey_win_rate_5', 'jockey_win_rate_10',
                    'draw_win_rate', 'days_since_injury', 'injury_30d',
-                   'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity']
+                   'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity',
+                   'is_st_turf', 'is_st_awt', 'is_hv_turf']   # 🆕 加咗呢三個
 
     pred_xgb = None
     pred_cat = None
     pred_rank = None
     models_used = []
 
-    # ===== XGBoost（強制用 36 特徵）=====
+    # ===== XGBoost（用 39 特徵）=====
     if xgb_model is not None:
         try:
-            X_xgb = features_df[features_36].fillna(0).values
+            X_xgb = features_df[features_39].fillna(0).values
             pred_xgb = xgb_model.predict_proba(X_xgb)[:, 1]
-            models_used.append("XGBoost(36特徵)")
+            models_used.append("XGBoost(39特徵)")
         except Exception as e:
             st.warning(f"⚠️ XGBoost 失敗：{e}")
 
-    # ===== CatBoost（強制用 36 特徵）=====
+    # ===== CatBoost（用 39 特徵）=====
     if cat_model is not None:
         try:
-            X_cat = features_df[features_36].fillna(0).values
+            X_cat = features_df[features_39].fillna(0).values
             pred_cat = cat_model.predict_proba(X_cat)[:, 1]
-            models_used.append("CatBoost(36特徵)")
+            models_used.append("CatBoost(39特徵)")
         except Exception as e:
             st.warning(f"⚠️ CatBoost 失敗：{e}")
 
-    # ===== Ranking（強制用 36 特徵）=====
+    # ===== Ranking（用 39 特徵）=====
     if rank_model is not None:
         try:
-            X_rank = features_df[features_36].fillna(0).values
+            X_rank = features_df[features_39].fillna(0).values
             pred_rank = rank_model.predict(X_rank)
             pred_rank = np.array(pred_rank, dtype=float)
             if pred_rank.max() > pred_rank.min():
                 pred_rank = (pred_rank - pred_rank.min()) / (pred_rank.max() - pred_rank.min())
-            models_used.append("Ranking(36特徵)")
+            models_used.append("Ranking(39特徵)")
         except Exception as e:
             st.warning(f"⚠️ Ranking 失敗：{e}")
 
