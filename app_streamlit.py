@@ -869,21 +869,151 @@ def run_prediction(date_str, race_no):
     # ===== 載入模型 =====
     xgb_model, cat_model, rank_model = load_ml_models()
 
-    # ===== 39 特徵列表 =====
-    features_39 = ['draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
-                   'jockey_win_rate_50', 'trainer_win_rate_50',
-                   'distance_win_rate', 'distance_avg_rank', 'win_odds',
-                   'weight_change', 'jockey_trainer_win_rate',
-                   'course_win_rate', 'course_avg_rank',
-                   'days_since_last_run', 'odds_rank_in_race',
-                   'rtg_change', 'jockey_horse_win_rate',
-                   'races_last14days', 'going_win_rate',
-                   'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
-                   'early_pace', 'finish_speed', 'last_trial_rank',
-                   'last_trial_time', 'jockey_win_rate_5', 'jockey_win_rate_10',
-                   'draw_win_rate', 'days_since_injury', 'injury_30d',
-                   'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity',
-                   'is_st_turf', 'is_st_awt', 'is_hv_turf']
+    # ===== 40 特徵列表 =====
+def run_prediction(date_str, race_no):
+    """用真正 ML 模型預測（40 特徵版，含賽道 + 血統特徵）"""
+    if not os.path.exists("racecard_uploaded.csv"):
+        st.error("❌ 找不到 racecard_uploaded.csv")
+        return None, None
+
+    try:
+        race_df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
+        race_df = _repair_racecard(race_df)
+    except Exception as e:
+        st.error(f"❌ 讀取失敗：{e}")
+        return None, None
+
+    rename_map = {
+        '馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
+        '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
+        '負磅': 'weight', '馬號': 'horse_id', '賠率': 'win_odds',
+        '路程': 'distance', '評分': 'rtg', '賽道': 'track'
+    }
+    existing = [c for c in rename_map if c in race_df.columns]
+    if existing:
+        race_df.rename(columns={c: rename_map[c] for c in existing}, inplace=True)
+
+    if 'race_date' not in race_df.columns:
+        st.error("❌ 缺少 '比賽日期'")
+        return None, None
+
+    race_df['race_date'] = pd.to_datetime(race_df['race_date'], errors='coerce')
+    race_df = race_df.dropna(subset=['race_date'])
+    race_df['race_date_str'] = race_df['race_date'].dt.strftime('%Y-%m-%d')
+    race_df['race_no'] = pd.to_numeric(race_df['race_no'], errors='coerce').fillna(0).astype(int)
+
+    available_dates = sorted(race_df['race_date_str'].unique())
+    if not available_dates:
+        st.error("❌ 無可用日期")
+        return None, None
+
+    if date_str not in available_dates:
+        st.warning(f"⚠️ {date_str} 冇數據，自動改用 {available_dates[-1]}")
+        date_str = available_dates[-1]
+
+    try:
+        race_no = int(race_no)
+    except Exception:
+        race_no = 1
+
+    df_date = race_df[race_df['race_date_str'] == date_str]
+    if 'race_no' not in df_date.columns:
+        st.error("❌ 缺少 '場次'")
+        return None, None
+
+    avail_races = sorted(df_date['race_no'].unique())
+    if race_no not in avail_races:
+        st.warning(f"⚠️ {date_str} 冇第 {race_no} 場，改用第 {avail_races[0]} 場")
+        race_no = avail_races[0]
+
+    filtered = df_date[df_date['race_no'] == race_no].copy().reset_index(drop=True)
+    if filtered.empty:
+        st.error(f"❌ {date_str} 第 {race_no} 場冇馬匹數據")
+        return None, None
+
+    st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
+
+    # ===== 自動偵測賽道 =====
+    track_info = None
+    if 'track' in filtered.columns:
+        track_values = filtered['track'].dropna().unique()
+        if len(track_values) > 0:
+            track_info = str(track_values[0]).strip()
+
+    if not track_info or track_info == '' or track_info == 'nan':
+        racecourse = st.session_state.get('racecourse', 'ST')
+        if racecourse == 'HV':
+            track_info = 'HV / Turf'
+        else:
+            track_info = 'ST / Turf'
+
+    track_upper = track_info.upper()
+    if 'AWT' in track_upper or 'ALL WEATHER' in track_upper or '全天候' in track_info:
+        is_st_turf = 0
+        is_st_awt = 1
+        is_hv_turf = 0
+        st.info(f"🏇 偵測到賽道：**全天候賽道**（{track_info}）")
+    elif 'HV' in track_upper:
+        is_st_turf = 0
+        is_st_awt = 0
+        is_hv_turf = 1
+        st.info(f"🏇 偵測到賽道：**跑馬地草地**（{track_info}）")
+    elif 'ST' in track_upper:
+        is_st_turf = 1
+        is_st_awt = 0
+        is_hv_turf = 0
+        st.info(f"🏇 偵測到賽道：**沙田草地**（{track_info}）")
+    else:
+        is_st_turf = 1
+        is_st_awt = 0
+        is_hv_turf = 0
+        st.info(f"🏇 賽道未確認，默認用**沙田草地**（{track_info}）")
+
+    # ===== 歷史數據 =====
+    history_df = pd.DataFrame()
+    if os.path.exists("ALL_DATA_MERGED_updated.csv"):
+        try:
+            history_df = pd.read_csv("ALL_DATA_MERGED_updated.csv", encoding='utf-8-sig', low_memory=False)
+            history_df.columns = [str(c).replace('\ufeff', '').strip() for c in history_df.columns]
+            if 'finish_position' not in history_df.columns and 'Pla.' in history_df.columns:
+                history_df['finish_position'] = history_df['Pla.']
+        except Exception as e:
+            st.warning(f"⚠️ 讀取歷史數據失敗：{e}")
+
+    # ===== 建立特徵 =====
+    with st.spinner("🔧 計算特徵中..."):
+        features_df = _build_features(filtered, history_df)
+
+    # ===== 強制設定賽道特徵 =====
+    features_df['is_st_turf'] = is_st_turf
+    features_df['is_st_awt'] = is_st_awt
+    features_df['is_hv_turf'] = is_hv_turf
+
+    # ===== 確保 dam_win_rate 存在（冇就補 0）=====
+    if 'dam_win_rate' not in features_df.columns:
+        features_df['dam_win_rate'] = 0
+
+    # ===== 載入模型 =====
+    xgb_model, cat_model, rank_model = load_ml_models()
+
+    # ===== 40 特徵列表 =====
+    features_40 = [
+        'draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
+        'jockey_win_rate_50', 'trainer_win_rate_50',
+        'distance_win_rate', 'distance_avg_rank', 'win_odds',
+        'weight_change', 'jockey_trainer_win_rate',
+        'course_win_rate', 'course_avg_rank',
+        'days_since_last_run', 'odds_rank_in_race',
+        'rtg_change', 'jockey_horse_win_rate',
+        'races_last14days', 'going_win_rate',
+        'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
+        'early_pace', 'finish_speed', 'last_trial_rank',
+        'last_trial_time', 'jockey_win_rate_5', 'jockey_win_rate_10',
+        'draw_win_rate', 'days_since_injury', 'injury_30d',
+        'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity',
+        'is_st_turf', 'is_st_awt', 'is_hv_turf',
+        'dam_win_rate'
+    ]
 
     pred_xgb = None
     pred_cat = None
@@ -893,30 +1023,30 @@ def run_prediction(date_str, race_no):
     # ===== XGBoost =====
     if xgb_model is not None:
         try:
-            X_xgb = features_df[features_39].fillna(0).values
+            X_xgb = features_df[features_40].fillna(0).values
             pred_xgb = xgb_model.predict_proba(X_xgb)[:, 1]
-            models_used.append("XGBoost(39特徵)")
+            models_used.append("XGBoost(40特徵)")
         except Exception as e:
             st.warning(f"⚠️ XGBoost 失敗：{e}")
 
     # ===== CatBoost =====
     if cat_model is not None:
         try:
-            X_cat = features_df[features_39].fillna(0).values
+            X_cat = features_df[features_40].fillna(0).values
             pred_cat = cat_model.predict_proba(X_cat)[:, 1]
-            models_used.append("CatBoost(39特徵)")
+            models_used.append("CatBoost(40特徵)")
         except Exception as e:
             st.warning(f"⚠️ CatBoost 失敗：{e}")
 
     # ===== Ranking =====
     if rank_model is not None:
         try:
-            X_rank = features_df[features_39].fillna(0).values
+            X_rank = features_df[features_40].fillna(0).values
             pred_rank = rank_model.predict(X_rank)
             pred_rank = np.array(pred_rank, dtype=float)
             if pred_rank.max() > pred_rank.min():
                 pred_rank = (pred_rank - pred_rank.min()) / (pred_rank.max() - pred_rank.min())
-            models_used.append("Ranking(39特徵)")
+            models_used.append("Ranking(40特徵)")
         except Exception as e:
             st.warning(f"⚠️ Ranking 失敗：{e}")
 
