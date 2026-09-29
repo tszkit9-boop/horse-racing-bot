@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-train_models.py - 完整修復版（智能日期解析 + 補全日期 + 激活危險特徵 + 36 特徵）
+train_models.py - 完整修復版（智能日期解析 + 補全日期 + 39 特徵）
+新增賽道特徵：is_st_turf, is_st_awt, is_hv_turf
 """
 
 import pandas as pd
@@ -21,7 +22,7 @@ from catboost import CatBoostClassifier
 # 1️⃣ 讀取數據
 # ============================================================
 print("📊 讀取數據...")
-df = pd.read_csv("ALL_DATA_MERGED_MASTER.csv", encoding='utf-8-sig', low_memory=False)
+df = pd.read_csv("ALL_DATA_MERGED_updated.csv", encoding='utf-8-sig', low_memory=False)
 print(f"  原始數據：{len(df)} 筆")
 
 # ============================================================
@@ -91,10 +92,21 @@ df['finish_speed'] = safe_num(df.get('FSpeed', 0))
 df['lbw'] = safe_num(df.get('LBW', 0))
 df['age'] = safe_num(df.get('Age', 0))
 
+# 🆕 賽道特徵（原有）
 rc = df.get('RC/Track/Course', pd.Series(dtype=str)).astype(str)
 df['is_turf'] = rc.str.contains('Turf', case=False, na=False).astype(int)
 df['is_st'] = rc.str.contains('ST', case=False, na=False).astype(int)
 df['is_hv'] = rc.str.contains('HV', case=False, na=False).astype(int)
+
+# 🆕 賽道特徵（精確三分類）
+df['is_st_turf'] = ((rc.str.contains('ST', case=False, na=False)) & (rc.str.contains('Turf', case=False, na=False))).astype(int)
+df['is_st_awt'] = ((rc.str.contains('ST', case=False, na=False)) & (rc.str.contains('AWT', case=False, na=False))).astype(int)
+df['is_hv_turf'] = ((rc.str.contains('HV', case=False, na=False)) & (rc.str.contains('Turf', case=False, na=False))).astype(int)
+
+print(f"  🏇 賽道分佈：")
+print(f"     沙田草地：{df['is_st_turf'].sum()} 筆")
+print(f"     沙田全天候：{df['is_st_awt'].sum()} 筆")
+print(f"     跑馬地草地：{df['is_hv_turf'].sum()} 筆")
 
 for c in ['race_course', 'going', 'jockey', 'trainer']:
     df[c] = df.get(c, pd.Series(dtype=str)).astype(str).str.strip()
@@ -187,7 +199,7 @@ for d in [df_train, df_test]:
     d['draw_win_rate'] = d['draw'].map(draw_rate).fillna(0)
 
 # ============================================================
-# 7️⃣ 36 特徵
+# 7️⃣ 36 + 3 賽道特徵
 # ============================================================
 features_all = [
     'draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
@@ -202,7 +214,9 @@ features_all = [
     'early_pace', 'finish_speed', 'last_trial_rank',
     'last_trial_time', 'jockey_win_rate_5', 'jockey_win_rate_10',
     'draw_win_rate', 'days_since_injury', 'injury_30d',
-    'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity'
+    'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity',
+    # 🆕 新增 3 個賽道特徵
+    'is_st_turf', 'is_st_awt', 'is_hv_turf'
 ]
 
 for d in [df_train, df_test]:
