@@ -957,7 +957,15 @@ def run_prediction(date_str, race_no):
         for i, p in enumerate(all_preds):
             pred_proba += weights[i] * p
 
-        st.success(f"✅ 使用模型：{', '.join(models_used)}（權重：XGB {weights[0]:.2f} / Cat {weights[1]:.2f} / Rank {weights[2]:.2f}）")
+if len(weights) == 3:
+        if len(weights) == 3:
+            st.success(f"✅ 使用模型：{', '.join(models_used)}（權重：XGB {weights[0]:.2f} / Cat {weights[1]:.2f} / Rank {weights[2]:.2f}）")
+        elif len(weights) == 2:
+            st.success(f"✅ 使用模型：{', '.join(models_used)}（權重：{weights[0]:.2f} / {weights[1]:.2f}）")
+        elif len(weights) == 1:
+            st.success(f"✅ 使用模型：{', '.join(models_used)}（權重：{weights[0]:.2f}）")
+        else:
+            st.warning("⚠️ 冇可用模型，改用賠率估算")
     else:
         st.warning("⚠️ 冇可用模型，改用賠率估算")
         win_odds = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0).replace(0, 4.0)
