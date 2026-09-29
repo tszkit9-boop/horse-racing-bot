@@ -525,35 +525,60 @@ def generate_pool_recommendations(df, user_group='free'):
 
 @st.cache_resource
 def load_ml_models():
-    """載入 XGBoost + CatBoost + Ranking 模型"""
+    """載入 6 個模型（贏出 + 前三名）"""
     import pickle
-    xgb_model = None
-    cat_model = None
-    rank_model = None
+    xgb_win = None
+    cat_win = None
+    rank_win = None
+    xgb_top3 = None
+    cat_top3 = None
+    rank_top3 = None
 
+    # ===== 贏出模型 =====
     try:
-        with open('hk_racing_model.pkl', 'rb') as f:
+        with open('hk_win_xgb_model.pkl', 'rb') as f:
             obj = pickle.load(f)
-            xgb_model = obj[0] if isinstance(obj, tuple) else obj
+            xgb_win = obj[0] if isinstance(obj, tuple) else obj
     except Exception as e:
-        print(f"XGBoost 載入失敗：{e}")
+        print(f"贏出 XGBoost 載入失敗：{e}")
 
     try:
         from catboost import CatBoostClassifier
-        cat_model = CatBoostClassifier()
-        cat_model.load_model('hk_catboost_model.cbm')
+        cat_win = CatBoostClassifier()
+        cat_win.load_model('hk_win_cat_model.cbm')
     except Exception as e:
-        print(f"CatBoost 載入失敗：{e}")
+        print(f"贏出 CatBoost 載入失敗：{e}")
 
     try:
-        with open('hk_ranking_model.pkl', 'rb') as f:
+        with open('hk_win_rank_model.pkl', 'rb') as f:
             obj = pickle.load(f)
-            rank_model = obj[0] if isinstance(obj, tuple) else obj
+            rank_win = obj[0] if isinstance(obj, tuple) else obj
     except Exception as e:
-        print(f"Ranking 載入失敗：{e}")
+        print(f"贏出 Ranking 載入失敗：{e}")
 
-    return xgb_model, cat_model, rank_model
+    # ===== 前三名模型 =====
+    try:
+        with open('hk_top3_xgb_model.pkl', 'rb') as f:
+            obj = pickle.load(f)
+            xgb_top3 = obj[0] if isinstance(obj, tuple) else obj
+    except Exception as e:
+        print(f"前三名 XGBoost 載入失敗：{e}")
 
+    try:
+        from catboost import CatBoostClassifier
+        cat_top3 = CatBoostClassifier()
+        cat_top3.load_model('hk_top3_cat_model.cbm')
+    except Exception as e:
+        print(f"前三名 CatBoost 載入失敗：{e}")
+
+    try:
+        with open('hk_top3_rank_model.pkl', 'rb') as f:
+            obj = pickle.load(f)
+            rank_top3 = obj[0] if isinstance(obj, tuple) else obj
+    except Exception as e:
+        print(f"前三名 Ranking 載入失敗：{e}")
+
+    return xgb_win, cat_win, rank_win, xgb_top3, cat_top3, rank_top3
 
 def _build_features(race_df, history_df):
     """為排位表每匹馬計算特徵"""
