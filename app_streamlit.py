@@ -806,7 +806,7 @@ def _repair_racecard(df):
     return result
 
 def run_prediction(date_str, race_no):
-    """用雙模型預測（贏出 + 前三名）+ 值博率計算"""
+    """用混合模型預測（沙田分賽道 + 跑馬地舊模型）+ 值博率計算"""
     if not os.path.exists("racecard_uploaded.csv"):
         st.error("❌ 找不到 racecard_uploaded.csv")
         return None, None
@@ -878,13 +878,16 @@ def run_prediction(date_str, race_no):
     track_upper = track_info.upper()
     if 'AWT' in track_upper or '全天候' in track_info:
         is_st_turf, is_st_awt, is_hv_turf = 0, 1, 0
-        st.info(f"🏇 偵測到賽道：**全天候賽道**（{track_info}）")
+        track_type = 'st'
+        st.info(f"🏇 偵測到賽道：**全天候賽道**（{track_info}）→ 使用沙田分賽道模型")
     elif 'HV' in track_upper:
         is_st_turf, is_st_awt, is_hv_turf = 0, 0, 1
-        st.info(f"🏇 偵測到賽道：**跑馬地草地**（{track_info}）")
+        track_type = 'hv'
+        st.info(f"🏇 偵測到賽道：**跑馬地草地**（{track_info}）→ 使用舊模型")
     else:
         is_st_turf, is_st_awt, is_hv_turf = 1, 0, 0
-        st.info(f"🏇 偵測到賽道：**沙田草地**（{track_info}）")
+        track_type = 'st'
+        st.info(f"🏇 偵測到賽道：**沙田草地**（{track_info}）→ 使用沙田分賽道模型")
 
     # ===== 歷史數據 =====
     history_df = pd.DataFrame()
@@ -906,8 +909,8 @@ def run_prediction(date_str, race_no):
     if 'dam_win_rate' not in features_df.columns:
         features_df['dam_win_rate'] = 0
 
-    # ===== 載入 6 個模型 =====
-    xgb_win, cat_win, rank_win, xgb_top3, cat_top3, rank_top3 = load_ml_models()
+    # ===== 載入對應賽道嘅模型 =====
+    xgb_win, cat_win, rank_win, xgb_top3, cat_top3, rank_top3 = load_ml_models(track_type)
 
     features_40 = [
         'draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
@@ -944,6 +947,7 @@ def run_prediction(date_str, race_no):
         w_xgb, w_cat, w_rank = 0.30, 0.50, 0.20
 
     def ensemble_predict(models):
+        """將多個模型加權平均（自動處理 2 個或 3 個）"""
         preds = []
         weights = []
         for m, w in zip(models, [w_xgb, w_cat, w_rank]):
@@ -993,8 +997,8 @@ def run_prediction(date_str, race_no):
     if cat_top3 is not None: top3_models.append("Cat")
     if rank_top3 is not None: top3_models.append("Rank")
 
-    st.success(f"✅ 贏出模型：{'+'.join(win_models)}（權重：{w_xgb:.2f}/{w_cat:.2f}/{w_rank:.2f}）")
-    st.success(f"✅ 前三名模型：{'+'.join(top3_models)}（權重：{w_xgb:.2f}/{w_cat:.2f}/{w_rank:.2f}）")
+    st.success(f"✅ 贏出模型（{track_type.upper()}）：{'+'.join(win_models)}（權重：{w_xgb:.2f}/{w_cat:.2f}/{w_rank:.2f}）")
+    st.success(f"✅ 前三名模型（{track_type.upper()}）：{'+'.join(top3_models)}（權重：{w_xgb:.2f}/{w_cat:.2f}/{w_rank:.2f}）")
 
     # ===== 建立結果表 =====
     id_col = None
@@ -1014,7 +1018,6 @@ def run_prediction(date_str, race_no):
         if c in filtered.columns:
             result_df[c] = filtered[c]
 
-    # 🆕 確保有 win_odds（賠率）
     if 'win_odds' in filtered.columns:
         result_df['賠率'] = pd.to_numeric(filtered['win_odds'], errors='coerce').fillna(0)
     else:
@@ -1031,15 +1034,13 @@ def run_prediction(date_str, race_no):
     result_df['贏出概率'] = proba_win
     result_df['前三概率'] = proba_top3
 
-    # ===== 🆕 計算值博率 =====
     def calc_value(row):
         odds = row['賠率']
         prob = row['贏出概率']
         if odds <= 1.0 or pd.isna(odds):
             return None
         implied_prob = 1.0 / odds
-        value = (prob - implied_prob) / implied_prob
-        return value
+        return (prob - implied_prob) / implied_prob
 
     result_df['隱含概率'] = result_df['賠率'].apply(lambda o: 1.0 / o if o > 1.0 else 0)
     result_df['值博率'] = result_df.apply(calc_value, axis=1)
@@ -1052,7 +1053,7 @@ def run_prediction(date_str, race_no):
 
     result_df = result_df.sort_values('贏出概率', ascending=False).reset_index(drop=True)
 
-    # ===== 🆕 值博推薦 =====
+    # ===== 值博率分析 =====
     st.divider()
     st.subheader("💰 值博率分析")
     st.caption("值博率 = (模型預測概率 - 賠率隱含概率) ÷ 賠率隱含概率。值博率 > 0 代表賠率被低估，值得考慮。")
@@ -1086,7 +1087,7 @@ def run_prediction(date_str, race_no):
             value_names = [f"{row['馬名']}（{row['值博率']:+.1%}）" for _, row in top_value.iterrows()]
             st.success(f"💰 **值博推薦**：{'、'.join(value_names)}")
         else:
-            st.warning("⚠️ 今場冇馬匹嘅值博率 > 0（全部賠率被高估）")
+            st.warning("⚠️ 今場冇馬匹嘅值博率 > 0")
     else:
         st.info("ℹ️ 冇足夠賠率數據計算值博率")
 
@@ -1098,7 +1099,7 @@ def run_prediction(date_str, race_no):
         "top_horse": result_df.iloc[0]['馬名'],
         "top_prob": float(result_df.iloc[0]['預測勝率']),
         "all_horses": result_df['馬名'].tolist(),
-        "model_used": ["贏出模型", "前三名模型", "值博率"],
+        "model_used": [f"{track_type}_贏出", f"{track_type}_前三", "值博率"],
         "predicted_at": datetime.now().isoformat()
     })
 
