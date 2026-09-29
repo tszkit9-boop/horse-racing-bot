@@ -748,7 +748,7 @@ def _repair_racecard(df):
     return result
 
 def run_prediction(date_str, race_no):
-    """用真正 ML 模型預測（39 特徵版，含賽道特徵）"""
+    """用雙模型預測（贏出 + 前三名）"""
     if not os.path.exists("racecard_uploaded.csv"):
         st.error("❌ 找不到 racecard_uploaded.csv")
         return None, None
@@ -794,10 +794,6 @@ def run_prediction(date_str, race_no):
         race_no = 1
 
     df_date = race_df[race_df['race_date_str'] == date_str]
-    if 'race_no' not in df_date.columns:
-        st.error("❌ 缺少 '場次'")
-        return None, None
-
     avail_races = sorted(df_date['race_no'].unique())
     if race_no not in avail_races:
         st.warning(f"⚠️ {date_str} 冇第 {race_no} 場，改用第 {avail_races[0]} 場")
@@ -810,7 +806,7 @@ def run_prediction(date_str, race_no):
 
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
-    # ===== 自動偵測賽道 =====
+    # ===== 賽道偵測 =====
     track_info = None
     if 'track' in filtered.columns:
         track_values = filtered['track'].dropna().unique()
@@ -819,32 +815,18 @@ def run_prediction(date_str, race_no):
 
     if not track_info or track_info == '' or track_info == 'nan':
         racecourse = st.session_state.get('racecourse', 'ST')
-        if racecourse == 'HV':
-            track_info = 'HV / Turf'
-        else:
-            track_info = 'ST / Turf'
+        track_info = 'HV / Turf' if racecourse == 'HV' else 'ST / Turf'
 
     track_upper = track_info.upper()
-    if 'AWT' in track_upper or 'ALL WEATHER' in track_upper or '全天候' in track_info:
-        is_st_turf = 0
-        is_st_awt = 1
-        is_hv_turf = 0
+    if 'AWT' in track_upper or '全天候' in track_info:
+        is_st_turf, is_st_awt, is_hv_turf = 0, 1, 0
         st.info(f"🏇 偵測到賽道：**全天候賽道**（{track_info}）")
     elif 'HV' in track_upper:
-        is_st_turf = 0
-        is_st_awt = 0
-        is_hv_turf = 1
+        is_st_turf, is_st_awt, is_hv_turf = 0, 0, 1
         st.info(f"🏇 偵測到賽道：**跑馬地草地**（{track_info}）")
-    elif 'ST' in track_upper:
-        is_st_turf = 1
-        is_st_awt = 0
-        is_hv_turf = 0
-        st.info(f"🏇 偵測到賽道：**沙田草地**（{track_info}）")
     else:
-        is_st_turf = 1
-        is_st_awt = 0
-        is_hv_turf = 0
-        st.info(f"🏇 賽道未確認，默認用**沙田草地**（{track_info}）")
+        is_st_turf, is_st_awt, is_hv_turf = 1, 0, 0
+        st.info(f"🏇 偵測到賽道：**沙田草地**（{track_info}）")
 
     # ===== 歷史數據 =====
     history_df = pd.DataFrame()
@@ -857,146 +839,18 @@ def run_prediction(date_str, race_no):
         except Exception as e:
             st.warning(f"⚠️ 讀取歷史數據失敗：{e}")
 
-    # ===== 建立特徵 =====
     with st.spinner("🔧 計算特徵中..."):
         features_df = _build_features(filtered, history_df)
 
-    # ===== 強制設定賽道特徵 =====
     features_df['is_st_turf'] = is_st_turf
     features_df['is_st_awt'] = is_st_awt
     features_df['is_hv_turf'] = is_hv_turf
-
-    # ===== 載入模型 =====
-    xgb_model, cat_model, rank_model = load_ml_models()
-
-    # ===== 40 特徵列表 =====
-def run_prediction(date_str, race_no):
-    """用真正 ML 模型預測（40 特徵版，含賽道 + 血統特徵）"""
-    if not os.path.exists("racecard_uploaded.csv"):
-        st.error("❌ 找不到 racecard_uploaded.csv")
-        return None, None
-
-    try:
-        race_df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
-        race_df = _repair_racecard(race_df)
-    except Exception as e:
-        st.error(f"❌ 讀取失敗：{e}")
-        return None, None
-
-    rename_map = {
-        '馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
-        '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
-        '負磅': 'weight', '馬號': 'horse_id', '賠率': 'win_odds',
-        '路程': 'distance', '評分': 'rtg', '賽道': 'track'
-    }
-    existing = [c for c in rename_map if c in race_df.columns]
-    if existing:
-        race_df.rename(columns={c: rename_map[c] for c in existing}, inplace=True)
-
-    if 'race_date' not in race_df.columns:
-        st.error("❌ 缺少 '比賽日期'")
-        return None, None
-
-    race_df['race_date'] = pd.to_datetime(race_df['race_date'], errors='coerce')
-    race_df = race_df.dropna(subset=['race_date'])
-    race_df['race_date_str'] = race_df['race_date'].dt.strftime('%Y-%m-%d')
-    race_df['race_no'] = pd.to_numeric(race_df['race_no'], errors='coerce').fillna(0).astype(int)
-
-    available_dates = sorted(race_df['race_date_str'].unique())
-    if not available_dates:
-        st.error("❌ 無可用日期")
-        return None, None
-
-    if date_str not in available_dates:
-        st.warning(f"⚠️ {date_str} 冇數據，自動改用 {available_dates[-1]}")
-        date_str = available_dates[-1]
-
-    try:
-        race_no = int(race_no)
-    except Exception:
-        race_no = 1
-
-    df_date = race_df[race_df['race_date_str'] == date_str]
-    if 'race_no' not in df_date.columns:
-        st.error("❌ 缺少 '場次'")
-        return None, None
-
-    avail_races = sorted(df_date['race_no'].unique())
-    if race_no not in avail_races:
-        st.warning(f"⚠️ {date_str} 冇第 {race_no} 場，改用第 {avail_races[0]} 場")
-        race_no = avail_races[0]
-
-    filtered = df_date[df_date['race_no'] == race_no].copy().reset_index(drop=True)
-    if filtered.empty:
-        st.error(f"❌ {date_str} 第 {race_no} 場冇馬匹數據")
-        return None, None
-
-    st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
-
-    # ===== 自動偵測賽道 =====
-    track_info = None
-    if 'track' in filtered.columns:
-        track_values = filtered['track'].dropna().unique()
-        if len(track_values) > 0:
-            track_info = str(track_values[0]).strip()
-
-    if not track_info or track_info == '' or track_info == 'nan':
-        racecourse = st.session_state.get('racecourse', 'ST')
-        if racecourse == 'HV':
-            track_info = 'HV / Turf'
-        else:
-            track_info = 'ST / Turf'
-
-    track_upper = track_info.upper()
-    if 'AWT' in track_upper or 'ALL WEATHER' in track_upper or '全天候' in track_info:
-        is_st_turf = 0
-        is_st_awt = 1
-        is_hv_turf = 0
-        st.info(f"🏇 偵測到賽道：**全天候賽道**（{track_info}）")
-    elif 'HV' in track_upper:
-        is_st_turf = 0
-        is_st_awt = 0
-        is_hv_turf = 1
-        st.info(f"🏇 偵測到賽道：**跑馬地草地**（{track_info}）")
-    elif 'ST' in track_upper:
-        is_st_turf = 1
-        is_st_awt = 0
-        is_hv_turf = 0
-        st.info(f"🏇 偵測到賽道：**沙田草地**（{track_info}）")
-    else:
-        is_st_turf = 1
-        is_st_awt = 0
-        is_hv_turf = 0
-        st.info(f"🏇 賽道未確認，默認用**沙田草地**（{track_info}）")
-
-    # ===== 歷史數據 =====
-    history_df = pd.DataFrame()
-    if os.path.exists("ALL_DATA_MERGED_updated.csv"):
-        try:
-            history_df = pd.read_csv("ALL_DATA_MERGED_updated.csv", encoding='utf-8-sig', low_memory=False)
-            history_df.columns = [str(c).replace('\ufeff', '').strip() for c in history_df.columns]
-            if 'finish_position' not in history_df.columns and 'Pla.' in history_df.columns:
-                history_df['finish_position'] = history_df['Pla.']
-        except Exception as e:
-            st.warning(f"⚠️ 讀取歷史數據失敗：{e}")
-
-    # ===== 建立特徵 =====
-    with st.spinner("🔧 計算特徵中..."):
-        features_df = _build_features(filtered, history_df)
-
-    # ===== 強制設定賽道特徵 =====
-    features_df['is_st_turf'] = is_st_turf
-    features_df['is_st_awt'] = is_st_awt
-    features_df['is_hv_turf'] = is_hv_turf
-
-    # ===== 確保 dam_win_rate 存在（冇就補 0）=====
     if 'dam_win_rate' not in features_df.columns:
         features_df['dam_win_rate'] = 0
 
-    # ===== 載入模型 =====
-    xgb_model, cat_model, rank_model = load_ml_models()
+    # ===== 載入 6 個模型 =====
+    xgb_win, cat_win, rank_win, xgb_top3, cat_top3, rank_top3 = load_ml_models()
 
-    # ===== 40 特徵列表 =====
     features_40 = [
         'draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
         'jockey_win_rate_50', 'trainer_win_rate_50',
@@ -1015,83 +869,78 @@ def run_prediction(date_str, race_no):
         'dam_win_rate'
     ]
 
-    pred_xgb = None
-    pred_cat = None
-    pred_rank = None
-    models_used = []
+    X = features_df[features_40].fillna(0).values
 
-    # ===== XGBoost =====
-    if xgb_model is not None:
-        try:
-            X_xgb = features_df[features_40].fillna(0).values
-            pred_xgb = xgb_model.predict_proba(X_xgb)[:, 1]
-            models_used.append("XGBoost(40特徵)")
-        except Exception as e:
-            st.warning(f"⚠️ XGBoost 失敗：{e}")
-
-    # ===== CatBoost =====
-    if cat_model is not None:
-        try:
-            X_cat = features_df[features_40].fillna(0).values
-            pred_cat = cat_model.predict_proba(X_cat)[:, 1]
-            models_used.append("CatBoost(40特徵)")
-        except Exception as e:
-            st.warning(f"⚠️ CatBoost 失敗：{e}")
-
-    # ===== Ranking =====
-    if rank_model is not None:
-        try:
-            X_rank = features_df[features_40].fillna(0).values
-            pred_rank = rank_model.predict(X_rank)
-            pred_rank = np.array(pred_rank, dtype=float)
-            if pred_rank.max() > pred_rank.min():
-                pred_rank = (pred_rank - pred_rank.min()) / (pred_rank.max() - pred_rank.min())
-            models_used.append("Ranking(40特徵)")
-        except Exception as e:
-            st.warning(f"⚠️ Ranking 失敗：{e}")
-
-    # ===== 融合 =====
-    all_preds = [p for p in [pred_xgb, pred_cat, pred_rank] if p is not None]
-
-    if all_preds:
-        try:
-            headers_tune = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-            res_tune = requests.get(f"{SUPABASE_URL}/rest/v1/model_weights?id=eq.1", headers=headers_tune)
-            if res_tune.status_code == 200 and res_tune.json():
-                tune = res_tune.json()[0]
-                w_xgb = float(tune.get('xgb_weight', 0.30))
-                w_cat = float(tune.get('cat_weight', 0.50))
-                w_rank = float(tune.get('rank_weight', 0.20))
-            else:
-                w_xgb, w_cat, w_rank = 0.30, 0.50, 0.20
-        except Exception:
+    # ===== 讀取權重 =====
+    try:
+        headers_tune = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+        res_tune = requests.get(f"{SUPABASE_URL}/rest/v1/model_weights?id=eq.1", headers=headers_tune)
+        if res_tune.status_code == 200 and res_tune.json():
+            tune = res_tune.json()[0]
+            w_xgb = float(tune.get('xgb_weight', 0.30))
+            w_cat = float(tune.get('cat_weight', 0.50))
+            w_rank = float(tune.get('rank_weight', 0.20))
+        else:
             w_xgb, w_cat, w_rank = 0.30, 0.50, 0.20
+    except Exception:
+        w_xgb, w_cat, w_rank = 0.30, 0.50, 0.20
 
+    def ensemble_predict(models):
+        """內部函數：將 3 個模型加權平均"""
+        preds = []
         weights = []
-        if pred_xgb is not None:
-            weights.append(w_xgb)
-        if pred_cat is not None:
-            weights.append(w_cat)
-        if pred_rank is not None:
-            weights.append(w_rank)
-
+        for m, w in zip(models, [w_xgb, w_cat, w_rank]):
+            if m is None:
+                continue
+            try:
+                if hasattr(m, 'predict_proba'):
+                    p = m.predict_proba(X)[:, 1]
+                else:
+                    p = m.predict(X)
+                    p = np.array(p, dtype=float)
+                    if p.max() > p.min():
+                        p = (p - p.min()) / (p.max() - p.min())
+                preds.append(p)
+                weights.append(w)
+            except Exception as e:
+                st.warning(f"⚠️ 模型預測失敗：{e}")
+        if not preds:
+            return None
         weights = np.array(weights) / sum(weights)
+        result = np.zeros(len(X))
+        for p, w in zip(preds, weights):
+            result += w * p
+        return result / result.sum()
 
-        pred_proba = np.zeros(len(filtered))
-        for i, p in enumerate(all_preds):
-            pred_proba += weights[i] * p
+    proba_win = ensemble_predict([xgb_win, cat_win, rank_win])
+    proba_top3 = ensemble_predict([xgb_top3, cat_top3, rank_top3])
 
-        weight_str = " / ".join([f"{w:.2f}" for w in weights])
-        st.success(f"✅ 使用模型：{', '.join(models_used)}（權重：{weight_str}）")
-    else:
+    if proba_win is None and proba_top3 is None:
         st.warning("⚠️ 冇可用模型，改用賠率估算")
         win_odds = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0).replace(0, 4.0)
         inv = 1 / win_odds
-        pred_proba = (inv / inv.sum()).values
+        proba_win = (inv / inv.sum()).values
+        proba_top3 = proba_win
 
-    pred_proba = pred_proba / pred_proba.sum()
+    if proba_win is None:
+        proba_win = proba_top3
+    if proba_top3 is None:
+        proba_top3 = proba_win
 
-    # ===== 結果 =====
+    # 顯示使用的模型
+    win_models = []
+    if xgb_win is not None: win_models.append("XGB")
+    if cat_win is not None: win_models.append("Cat")
+    if rank_win is not None: win_models.append("Rank")
+    top3_models = []
+    if xgb_top3 is not None: top3_models.append("XGB")
+    if cat_top3 is not None: top3_models.append("Cat")
+    if rank_top3 is not None: top3_models.append("Rank")
+
+    st.success(f"✅ 贏出模型：{'+'.join(win_models)}（權重：{w_xgb:.2f}/{w_cat:.2f}/{w_rank:.2f}）")
+    st.success(f"✅ 前三名模型：{'+'.join(top3_models)}（權重：{w_xgb:.2f}/{w_cat:.2f}/{w_rank:.2f}）")
+
+    # ===== 建立結果表 =====
     id_col = None
     for col in ['horse_id', '馬號', 'horse_no']:
         if col in filtered.columns:
@@ -1116,12 +965,17 @@ def run_prediction(date_str, race_no):
         'jockey': '騎師',
         'trainer': '練馬師'
     })
-    result_df['預測勝率'] = pred_proba
+
+    result_df['贏出概率'] = proba_win
+    result_df['前三概率'] = proba_top3
+    result_df = result_df.sort_values('贏出概率', ascending=False).reset_index(drop=True)
+
+    # 為咗唔影響原本嘅彩池推薦邏輯，我哋用「贏出概率」做預測勝率
+    result_df['預測勝率'] = result_df['贏出概率']
     result_df['值博指數'] = result_df['預測勝率'] * 10
     result_df['信心指數'] = result_df['預測勝率'].apply(
         lambda x: '⭐⭐⭐ 高' if x > 0.2 else '⭐⭐ 中' if x > 0.1 else '⭐ 低'
     )
-    result_df = result_df.sort_values('預測勝率', ascending=False).reset_index(drop=True)
 
     # ===== 儲存到 Supabase =====
     from database import save_prediction
@@ -1131,7 +985,7 @@ def run_prediction(date_str, race_no):
         "top_horse": result_df.iloc[0]['馬名'],
         "top_prob": float(result_df.iloc[0]['預測勝率']),
         "all_horses": result_df['馬名'].tolist(),
-        "model_used": models_used,
+        "model_used": ["贏出模型", "前三名模型"],
         "predicted_at": datetime.now().isoformat()
     })
 
