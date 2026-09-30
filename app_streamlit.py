@@ -145,100 +145,112 @@ LOTTERY_FILE = 'lottery_config.json'
 SHOP_FILE = 'shop_config.json'
 
 def load_users():
-    users = load_json(USER_DATA_FILE)
+    users = {}
+    supabase_success = False
 
-    # ===== 如果本地為空或只有 admin，嘗試從 Supabase 載入 =====
-    if not users or len(users) <= 1:
-        try:
-            headers = {
-                "apikey": SUPABASE_KEY,
-                "Authorization": f"Bearer {SUPABASE_KEY}",
-                "Content-Type": "application/json"
-            }
-            res = requests.get(
-                f"{SUPABASE_URL}/rest/v1/users?select=*",
-                headers=headers, timeout=10
-            )
-            if res.status_code == 200:
-                supa_users = res.json()
+    # ===== 1. 優先從 Supabase 載入 =====
+    try:
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json"
+        }
+        res = requests.get(
+            f"{SUPABASE_URL}/rest/v1/users?select=*",
+            headers=headers, timeout=10
+        )
+        if res.status_code == 200:
+            supa_users = res.json()
+            if supa_users and len(supa_users) > 0:
                 for u in supa_users:
                     username = u.get('username')
                     if not username:
                         continue
-                    # 唔覆蓋本地已有嘅用戶（安全措施）
-                    if username in users:
-                        continue
                     # 映射 user_group -> group
                     if 'user_group' in u and 'group' not in u:
                         u['group'] = u['user_group']
+                    elif 'group' in u and 'user_group' not in u:
+                        u['user_group'] = u['group']
                     users[username] = u
-                print(f"✅ 從 Supabase 載入 {len(supa_users)} 個用戶")
-        except Exception as e:
-            print(f"⚠️ 從 Supabase 載入失敗：{e}")
+                supabase_success = True
+                print(f"✅ 從 Supabase 載入 {len(users)} 個用戶")
+    except Exception as e:
+        print(f"⚠️ 從 Supabase 載入失敗：{e}")
 
-    # ===== 如果仍然為空，建立 admin =====
-    if not users or "admin" not in users:
-        users = {
-            "admin": {
-                "username": "admin",
-                "password": CONFIG.get("admin_password", "z54060437K"),
-                "group": "super_admin",
-                "is_paid": True,
-                "predictions_limit": -1,
-                "free_usage": 0,
-                "total_usage": 0,
-                "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                "history": [],
-                "badges": [],
-                "level": "👑 超級管理員",
-                "exp": 0,
-                "virtual_balance": 10000,
-                "last_claim_date": "",
-                "last_lottery_date": "",
-                "invite_code": "ADMIN001",
-                "invite_count": 0,
-                "invite_rewards": 0,
-                "phone": "",
-                "note": "系統超級管理員",
-                "plan": None,
-                "paid_date": None,
-                "expiry_date": None,
-                "terms_agreed": datetime.now().isoformat(),
-                "bets": [],
-            }
+    # ===== 2. Supabase 失敗或為空，從本地載入 =====
+    if not supabase_success or not users:
+        local_users = load_json(USER_DATA_FILE)
+        if local_users:
+            users = local_users
+            print(f"✅ 從本地載入 {len(users)} 個用戶")
+
+    # ===== 3. 確保 admin 存在 =====
+    if "admin" not in users:
+        users["admin"] = {
+            "username": "admin",
+            "password": CONFIG.get("admin_password", "z54060437K"),
+            "group": "super_admin",
+            "user_group": "super_admin",
+            "is_paid": True,
+            "predictions_limit": -1,
+            "free_usage": 0,
+            "total_usage": 0,
+            "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "history": [],
+            "badges": [],
+            "level": "👑 超級管理員",
+            "exp": 0,
+            "virtual_balance": 10000,
+            "last_claim_date": "",
+            "last_lottery_date": "",
+            "invite_code": "ADMIN001",
+            "invite_count": 0,
+            "invite_rewards": 0,
+            "phone": "",
+            "note": "系統超級管理員",
+            "plan": None,
+            "paid_date": None,
+            "expiry_date": None,
+            "terms_agreed": datetime.now().isoformat(),
+            "bets": [],
         }
-        save_users(users)
-    else:
-        # 補全缺少嘅欄位
-        for uid, u in users.items():
-            defaults = {
-                'plan': None, 'paid_date': None, 'expiry_date': None,
-                'phone': '', 'note': '', 'history': [], 'free_usage': 0,
-                'total_usage': 0, 'terms_agreed': None, 'invited_by': None,
-                'invite_rewards': 0, 'invite_count': 0,
-                'level': '🥉 銅牌會員', 'exp': 0, 'badges': [],
-                'virtual_balance': 1000, 'last_claim_date': '',
-                'bets': [], 'last_lottery_date': ''
-            }
-            for k, v in defaults.items():
-                if k not in u:
-                    u[k] = v
-            if 'invite_code' not in u:
-                u['invite_code'] = uid.upper() + str(random.randint(100, 999))
-            if 'predictions_limit' not in u:
-                if u.get('group') in ['super_admin', 'VIP', 'paid']:
-                    u['predictions_limit'] = -1
-                else:
-                    u['predictions_limit'] = CONFIG.get("free_limit", 10)
-        save_users(users)
+
+    # ===== 4. 補全所有用戶缺少嘅欄位 =====
+    for uid, u in users.items():
+        defaults = {
+            'plan': None, 'paid_date': None, 'expiry_date': None,
+            'phone': '', 'note': '', 'history': [], 'free_usage': 0,
+            'total_usage': 0, 'terms_agreed': None, 'invited_by': None,
+            'invite_rewards': 0, 'invite_count': 0,
+            'level': '🥉 銅牌會員', 'exp': 0, 'badges': [],
+            'virtual_balance': 1000, 'last_claim_date': '',
+            'bets': [], 'last_lottery_date': ''
+        }
+        for k, v in defaults.items():
+            if k not in u:
+                u[k] = v
+        if 'invite_code' not in u:
+            u['invite_code'] = uid.upper() + str(random.randint(100, 999))
+        if 'predictions_limit' not in u:
+            group = u.get('group') or u.get('user_group') or 'free'
+            if group in ['super_admin', 'VIP', 'paid']:
+                u['predictions_limit'] = -1
+            else:
+                u['predictions_limit'] = CONFIG.get("free_limit", 10)
+        # 確保 group 同 user_group 同步
+        if 'group' not in u and 'user_group' in u:
+            u['group'] = u['user_group']
+        if 'user_group' not in u and 'group' in u:
+            u['user_group'] = u['group']
+
+    # ===== 5. 將合併後嘅數據寫入本地（做備份）=====
+    save_json(USER_DATA_FILE, users)
+
     return users
 
 
 def save_users(users):
-    # ===== 1. 寫入本地檔案 =====
-    result = save_json(USER_DATA_FILE, users)
-
-    # ===== 2. 同步寫入 Supabase（失敗唔影響本地）=====
+    # ===== 1. 先寫 Supabase =====
     try:
         headers = {
             "apikey": SUPABASE_KEY,
@@ -247,32 +259,45 @@ def save_users(users):
             "Prefer": "resolution=merge-duplicates"
         }
 
-        rows = []
+        success = 0
+        fail = 0
         for username, u in users.items():
             row = u.copy()
-            # 確保有 username 欄位
             if 'username' not in row:
                 row['username'] = username
+
             # 映射 group -> user_group
-            if 'group' in row and 'user_group' not in row:
-                row['user_group'] = row['group']
-            elif 'user_group' in row and 'group' not in row:
-                row['group'] = row['user_group']
-            rows.append(row)
+            if 'group' in row:
+                if 'user_group' not in row:
+                    row['user_group'] = row['group']
+                del row['group']  # 刪除 group，避免 Supabase 報錯
 
-        # 批量 Upsert（每次最多 50 條）
-        for i in range(0, len(rows), 50):
-            batch = rows[i:i+50]
-            requests.post(
-                f"{SUPABASE_URL}/rest/v1/users",
-                headers=headers, json=batch, timeout=10
-            )
-        print(f"✅ 已同步 {len(rows)} 個用戶至 Supabase")
+            # 刪除 Supabase 唔識嘅欄位
+            row.pop('payment_requests', None)
+
+            try:
+                res = requests.post(
+                    f"{SUPABASE_URL}/rest/v1/users",
+                    headers=headers, json=row, timeout=10
+                )
+                if res.status_code in (200, 201, 204):
+                    success += 1
+                else:
+                    fail += 1
+                    print(f"⚠️ {username} 寫入 Supabase 失敗 (HTTP {res.status_code}): {res.text[:200]}")
+            except Exception as e:
+                fail += 1
+                print(f"⚠️ {username} 寫入 Supabase 連線錯誤：{e}")
+
+        if fail == 0:
+            print(f"✅ Supabase 同步成功：{success} 個用戶")
+        else:
+            print(f"⚠️ Supabase 同步：成功 {success} / 失敗 {fail}")
     except Exception as e:
-        print(f"⚠️ Supabase 同步失敗（本地已儲存）：{e}")
+        print(f"⚠️ Supabase 連線失敗：{e}")
 
-    return result
-    return result
+    # ===== 2. 再寫本地（備份）=====
+    return save_json(USER_DATA_FILE, users)
 def authenticate(username, password):
     users = load_users()
     if username in users and users[username].get('password') == password:
