@@ -272,6 +272,7 @@ def save_users(users):
         print(f"⚠️ Supabase 同步失敗（本地已儲存）：{e}")
 
     return result
+    return result
 def authenticate(username, password):
     users = load_users()
     if username in users and users[username].get('password') == password:
