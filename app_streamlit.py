@@ -297,11 +297,12 @@ def save_users(users):
             if 'username' not in row:
                 row['username'] = username
 
-            # 映射 group -> user_group
+            # 映射 group -> user_group（強制同步）
             if 'group' in row:
-                if 'user_group' not in row:
-                    row['user_group'] = row['group']
+                row['user_group'] = row['group']  # 🆕 強制更新
                 del row['group']
+            elif 'user_group' in row:
+                row['group'] = row['user_group']  # 反向同步，確保兩邊一致
 
             # 刪除 Supabase 唔識嘅欄位
             row.pop('payment_requests', None)
