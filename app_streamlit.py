@@ -166,11 +166,31 @@ def load_users():
                     username = u.get('username')
                     if not username:
                         continue
+
                     # 映射 user_group -> group
                     if 'user_group' in u and 'group' not in u:
                         u['group'] = u['user_group']
                     elif 'group' in u and 'user_group' not in u:
                         u['user_group'] = u['group']
+
+                    # 🆕 清洗 history 欄位（確保入面係 list of dict）
+                    history = u.get('history', [])
+                    if isinstance(history, str):
+                        try:
+                            import json as _json
+                            history = _json.loads(history) if history.strip() else []
+                        except Exception:
+                            history = []
+                    elif not isinstance(history, list):
+                        history = []
+                    # 過濾走唔係 dict 嘅元素
+                    cleaned_history = []
+                    if isinstance(history, list):
+                        for h in history:
+                            if isinstance(h, dict):
+                                cleaned_history.append(h)
+                    u['history'] = cleaned_history
+
                     users[username] = u
                 supabase_success = True
                 print(f"✅ 從 Supabase 載入 {len(users)} 個用戶")
@@ -229,6 +249,19 @@ def load_users():
         for k, v in defaults.items():
             if k not in u:
                 u[k] = v
+
+        # 🆕 確保 history 一定係 list of dict
+        if not isinstance(u.get('history'), list):
+            u['history'] = []
+        else:
+            u['history'] = [h for h in u['history'] if isinstance(h, dict)]
+
+        # 🆕 確保 badges 同 bets 都係 list
+        if not isinstance(u.get('badges'), list):
+            u['badges'] = []
+        if not isinstance(u.get('bets'), list):
+            u['bets'] = []
+
         if 'invite_code' not in u:
             u['invite_code'] = uid.upper() + str(random.randint(100, 999))
         if 'predictions_limit' not in u:
@@ -237,7 +270,6 @@ def load_users():
                 u['predictions_limit'] = -1
             else:
                 u['predictions_limit'] = CONFIG.get("free_limit", 10)
-        # 確保 group 同 user_group 同步
         if 'group' not in u and 'user_group' in u:
             u['group'] = u['user_group']
         if 'user_group' not in u and 'group' in u:
@@ -247,7 +279,6 @@ def load_users():
     save_json(USER_DATA_FILE, users)
 
     return users
-
 
 def save_users(users):
     # ===== 1. 先寫 Supabase =====
@@ -270,10 +301,20 @@ def save_users(users):
             if 'group' in row:
                 if 'user_group' not in row:
                     row['user_group'] = row['group']
-                del row['group']  # 刪除 group，避免 Supabase 報錯
+                del row['group']
 
             # 刪除 Supabase 唔識嘅欄位
             row.pop('payment_requests', None)
+
+            # 🆕 將 history / badges / bets 轉為 JSON 字串（如果 Supabase 該欄位係 text 類型）
+            # 如果你嘅 Supabase 該欄位係 jsonb 類型，就唔需要呢段，可以刪走
+            import json as _json
+            for k in ['history', 'badges', 'bets']:
+                if k in row and isinstance(row[k], (list, dict)):
+                    try:
+                        row[k] = _json.dumps(row[k], ensure_ascii=False)
+                    except Exception:
+                        row[k] = '[]'
 
             try:
                 res = requests.post(
