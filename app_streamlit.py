@@ -146,6 +146,37 @@ SHOP_FILE = 'shop_config.json'
 
 def load_users():
     users = load_json(USER_DATA_FILE)
+
+    # ===== 如果本地為空或只有 admin，嘗試從 Supabase 載入 =====
+    if not users or len(users) <= 1:
+        try:
+            headers = {
+                "apikey": SUPABASE_KEY,
+                "Authorization": f"Bearer {SUPABASE_KEY}",
+                "Content-Type": "application/json"
+            }
+            res = requests.get(
+                f"{SUPABASE_URL}/rest/v1/users?select=*",
+                headers=headers, timeout=10
+            )
+            if res.status_code == 200:
+                supa_users = res.json()
+                for u in supa_users:
+                    username = u.get('username')
+                    if not username:
+                        continue
+                    # 唔覆蓋本地已有嘅用戶（安全措施）
+                    if username in users:
+                        continue
+                    # 映射 user_group -> group
+                    if 'user_group' in u and 'group' not in u:
+                        u['group'] = u['user_group']
+                    users[username] = u
+                print(f"✅ 從 Supabase 載入 {len(supa_users)} 個用戶")
+        except Exception as e:
+            print(f"⚠️ 從 Supabase 載入失敗：{e}")
+
+    # ===== 如果仍然為空，建立 admin =====
     if not users or "admin" not in users:
         users = {
             "admin": {
@@ -178,6 +209,7 @@ def load_users():
         }
         save_users(users)
     else:
+        # 補全缺少嘅欄位
         for uid, u in users.items():
             defaults = {
                 'plan': None, 'paid_date': None, 'expiry_date': None,
@@ -201,8 +233,45 @@ def load_users():
         save_users(users)
     return users
 
+
 def save_users(users):
-    return save_json(USER_DATA_FILE, users)
+    # ===== 1. 寫入本地檔案 =====
+    result = save_json(USER_DATA_FILE, users)
+
+    # ===== 2. 同步寫入 Supabase（失敗唔影響本地）=====
+    try:
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates"
+        }
+
+        rows = []
+        for username, u in users.items():
+            row = u.copy()
+            # 確保有 username 欄位
+            if 'username' not in row:
+                row['username'] = username
+            # 映射 group -> user_group
+            if 'group' in row and 'user_group' not in row:
+                row['user_group'] = row['group']
+            elif 'user_group' in row and 'group' not in row:
+                row['group'] = row['user_group']
+            rows.append(row)
+
+        # 批量 Upsert（每次最多 50 條）
+        for i in range(0, len(rows), 50):
+            batch = rows[i:i+50]
+            requests.post(
+                f"{SUPABASE_URL}/rest/v1/users",
+                headers=headers, json=batch, timeout=10
+            )
+        print(f"✅ 已同步 {len(rows)} 個用戶至 Supabase")
+    except Exception as e:
+        print(f"⚠️ Supabase 同步失敗（本地已儲存）：{e}")
+
+    return result
 def authenticate(username, password):
     users = load_users()
     if username in users and users[username].get('password') == password:
