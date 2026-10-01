@@ -2737,14 +2737,6 @@ def admin_monthly_report():
         st.error(f"❌ 讀取預測紀錄失敗：{e}")
         records = []
 
-    # 🆕 過濾走格式錯誤嘅記錄（只保留 YYYY-MM-DD 格式）
-    if records:
-        original_count = len(records)
-        records = [r for r in records if isinstance(r.get('date'), str) and len(r.get('date')) == 10]
-        filtered_count = original_count - len(records)
-        if filtered_count > 0:
-            st.caption(f"ℹ️ 已過濾 {filtered_count} 條格式錯誤嘅記錄")
-
     if not records:
         st.info("暫無足夠數據")
         return
@@ -2808,7 +2800,8 @@ def admin_monthly_report():
             continue
 
         top3_real = results_map[key]
-        hit_count = sum(1 for h in horse_list[:4] if h in top3_real)
+        # 🆕 改為只用前 3 名計算
+        hit_count = sum(1 for h in horse_list[:3] if h in top3_real)
         is_hit = hit_count > 0
 
         rows.append({'date': date_str, 'is_hit': is_hit})
