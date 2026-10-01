@@ -3143,6 +3143,14 @@ def admin_accuracy_monitor():
     from database import load_predictions
     ai_data = load_predictions()
 
+    # 🆕 過濾走格式錯誤嘅記錄（只保留 YYYY-MM-DD 格式）
+    if ai_data:
+        ai_data = {
+            k: v for k, v in ai_data.items()
+            if isinstance(v.get('date'), str) and len(v.get('date')) == 10
+        }
+        print(f"✅ 過濾後剩返 {len(ai_data)} 個有效預測記錄")
+
     if not ai_data:
         st.warning("⚠️ 未有 AI 預測記錄")
         return
@@ -3164,7 +3172,7 @@ def admin_accuracy_monitor():
         results_df['horse_name'] = results_df['horse_name'].astype(str).str.strip()
         results_df['horse_name'] = results_df['horse_name'].str.replace(r'\([A-Z]\d+\)', '', regex=True).str.strip()
 
-        # ===== 🆕 場地推算（星期三 = HV，其餘 = ST）=====
+        # ===== 場地推算（星期三 = HV，其餘 = ST）=====
         if 'venue' not in results_df.columns and 'racecourse' not in results_df.columns and '馬場' not in results_df.columns:
             results_df['venue'] = results_df['race_date'].apply(
                 lambda d: 'HV' if d.weekday() == 2 else 'ST'
