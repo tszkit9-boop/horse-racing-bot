@@ -3163,32 +3163,34 @@ def admin_accuracy_monitor():
         results_df['finish_position'] = pd.to_numeric(results_df['finish_position'], errors='coerce')
         results_df['horse_name'] = results_df['horse_name'].astype(str).str.strip()
         results_df['horse_name'] = results_df['horse_name'].str.replace(r'\([A-Z]\d+\)', '', regex=True).str.strip()
-        
+
+        # ===== 🆕 場地推算（星期三 = HV，其餘 = ST）=====
         if 'venue' not in results_df.columns and 'racecourse' not in results_df.columns and '馬場' not in results_df.columns:
             results_df['venue'] = results_df['race_date'].apply(
-                lambda d: 'HV' if d.weekday() == 2 else ('ST' if d.weekday() in [5, 6] else '未知')
+                lambda d: 'HV' if d.weekday() == 2 else 'ST'
             )
         else:
             for col in ['venue', 'racecourse', '馬場']:
                 if col in results_df.columns:
                     results_df['venue'] = results_df[col]
                     break
-                
+
     except Exception as e:
         st.error(f"❌ 讀取賽果失敗：{e}")
         return
 
+    # ===== 建立真實頭3名 =====
     real_top3 = {}
     venue_map = {}
-    
+
     for _, row in results_df.iterrows():
         if pd.isna(row['race_no']) or pd.isna(row['finish_position']):
             continue
         key = f"{row['race_date_str']}_{int(row['race_no'])}"
-        
+
         if key not in venue_map:
             venue_map[key] = row.get('venue', '未知')
-        
+
         if key not in real_top3:
             real_top3[key] = []
         if row['finish_position'] <= 3:
@@ -3197,6 +3199,7 @@ def admin_accuracy_monitor():
                 'pos': int(row['finish_position'])
             })
 
+    # ===== 比對預測同真實 =====
     compare_rows = []
     combo_hit = 0
     total_with_result = 0
@@ -3214,7 +3217,7 @@ def admin_accuracy_monitor():
 
         lookup_key = f"{date_str}_{race_no}"
         current_venue = venue_map.get(lookup_key, '未知')
-        
+
         if lookup_key not in real_top3 or not real_top3[lookup_key]:
             compare_rows.append({
                 '日期': date_str,
@@ -3278,23 +3281,23 @@ def admin_accuracy_monitor():
     if compare_rows:
         st.divider()
         st.subheader("📅 每日命中明細")
-        
+
         df_compare = pd.DataFrame(compare_rows)
         df_result = df_compare[df_compare['結果'] != '⏳ 待定'].copy()
-        
+
         if not df_result.empty:
             df_result['有命中'] = df_result['結果'].str.contains('✅', na=False)
-            
+
             daily_stats = df_result.groupby(['日期', '場地']).agg(
                 總場次=('場次', 'count'),
                 命中場次=('有命中', 'sum')
             ).reset_index()
-            
+
             daily_stats['未命中場次'] = daily_stats['總場次'] - daily_stats['命中場次']
             daily_stats['命中率'] = (daily_stats['命中場次'] / daily_stats['總場次']).apply(lambda x: f"{x:.1%}")
-            
+
             daily_stats = daily_stats.sort_values(['日期', '場地'], ascending=[False, True])
-            
+
             st.dataframe(
                 daily_stats,
                 use_container_width=True,
@@ -3311,31 +3314,58 @@ def admin_accuracy_monitor():
         else:
             st.info("ℹ️ 暫未有已比對嘅賽果")
 
-    # ===== 詳細對比表（已加入排序） =====
-    if compare_rows:
+        # ===== 按賽道類型統計 =====
+        st.divider()
+        st.subheader("🏇 按賽道類型統計")
+
+        df_valid = df_compare[df_compare['結果'] != '⏳ 待定'].copy()
+        if not df_valid.empty:
+            df_valid['有命中'] = df_valid['結果'].str.contains('✅', na=False)
+
+            track_stats = df_valid.groupby('場地').agg(
+                總場次=('場次', 'count'),
+                命中場次=('有命中', 'sum')
+            ).reset_index()
+
+            track_stats['未命中場次'] = track_stats['總場次'] - track_stats['命中場次']
+            track_stats['命中率'] = (track_stats['命中場次'] / track_stats['總場次']).apply(lambda x: f"{x:.1%}")
+
+            st.dataframe(
+                track_stats,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "場地": st.column_config.TextColumn("🏇 賽道類型"),
+                    "總場次": st.column_config.NumberColumn("總場次"),
+                    "命中場次": st.column_config.NumberColumn("✅ 命中"),
+                    "未命中場次": st.column_config.NumberColumn("❌ 未命中"),
+                    "命中率": st.column_config.TextColumn("🎯 命中率"),
+                }
+            )
+        else:
+            st.info("ℹ️ 暫未有已比對嘅賽果")
+
+        # ===== 詳細對比表 =====
         st.divider()
         with st.expander("📋 查看詳細預測頭3名 vs 真實頭3名"):
             df_compare_detail = pd.DataFrame(compare_rows)
-            
-            # 👇👇👇 新增：按日期同場次排序 👇👇👇
+
             df_compare_detail['場次'] = pd.to_numeric(df_compare_detail['場次'], errors='coerce')
-            # 日期升序（舊到新），場次升序（1, 2, 3...）
             df_compare_detail = df_compare_detail.sort_values(
-                by=['日期', '場次'], 
+                by=['日期', '場次'],
                 ascending=[True, True]
             ).reset_index(drop=True)
-            # 👆👆👆 新增部分完結 👆👆👆
-            
+
             def highlight_prediction(row):
                 pred = str(row['預測頭3名'])
-                if pred == 'nan' or pred == '': 
+                if pred == 'nan' or pred == '':
                     return pred
-                
+
                 real = str(row['真實頭3名'])
                 real_names = []
                 if '⏳' not in real:
                     real_names = [re.sub(r'\(.*\)', '', name).strip() for name in real.split(',')]
-                
+
                 pred_list = [h.strip() for h in pred.split(',')]
                 colored = []
                 for h in pred_list:
@@ -3344,9 +3374,9 @@ def admin_accuracy_monitor():
                     else:
                         colored.append(f'<span style="color:red;">{h}</span>')
                 return ', '.join(colored)
-            
+
             df_compare_detail['預測頭3名'] = df_compare_detail.apply(highlight_prediction, axis=1)
-            
+
             html_table = df_compare_detail.to_html(escape=False, index=False)
             st.markdown(html_table, unsafe_allow_html=True)
         
