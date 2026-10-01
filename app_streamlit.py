@@ -5033,16 +5033,37 @@ def main():
                                 df_show['勝率'] = df_show['勝率'].apply(lambda x: f"{x:.1%}" if pd.notna(x) else "-")
                             
                             st.dataframe(df_show, use_container_width=True, hide_index=True)
-
     # ============================================================
     # 🎯 單場預測（所有用戶可見，已包含馬號）
     # ============================================================
     st.divider()
     st.subheader("🎯 單場預測")
-    
+
+    # 🆕 動態讀取 racecard_uploaded.csv 入面最新嘅日期
+    _default_date = None
+    try:
+        if os.path.exists("racecard_uploaded.csv"):
+            _rc = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
+            # 嘗試唔同嘅日期欄位名
+            _date_col = None
+            for c in ['比賽日期', 'race_date', '日期', 'Date']:
+                if c in _rc.columns:
+                    _date_col = c
+                    break
+            if _date_col:
+                _rc_dates = pd.to_datetime(_rc[_date_col], errors='coerce').dropna()
+                if not _rc_dates.empty:
+                    _default_date = _rc_dates.max()
+    except Exception as e:
+        print(f"⚠️ 讀取最新日期失敗：{e}")
+
+    # 如果讀取失敗，用今日日期做 fallback
+    if _default_date is None:
+        _default_date = pd.to_datetime("today")
+
     cd, cr, cbtn = st.columns([2, 2, 1])
     with cd:
-        date = st.date_input("📅 日期", value=pd.to_datetime("2026-09-06"), key="pd_date")
+        date = st.date_input("📅 日期", value=_default_date, key="pd_date")
     with cr:
         race_no = st.selectbox("🏇 場次", list(range(1, 12)), index=0, key="pd_race")
     with cbtn:
@@ -5061,44 +5082,44 @@ def main():
         st.success("✅ 預測完成！")
         if st.session_state.get('last_pool'):
             st.info(st.session_state['last_pool'])
-        
+
         df = st.session_state['last_prediction'].copy()
-        
+
         # 輔助函數：動態搵出正確嘅欄位名
         def _get_col_local(df, candidates):
             for c in candidates:
                 if c in df.columns:
                     return c
             return None
-        
+
         # 搵出「馬號」、「馬名」、「檔位」、「勝率」嘅欄位名
         col_horse_no = _get_col_local(df, ['馬號', 'horse_no', 'horse_id', '馬匹編號', 'no'])
         col_horse_name = _get_col_local(df, ['馬名', 'horse_name', 'name'])
         col_draw = _get_col_local(df, ['檔位', 'draw', '排位'])
         col_prob = _get_col_local(df, ['勝率', '預測勝率', 'win_prob', 'prob', '機率'])
-        
+
         # 構建要顯示嘅 DataFrame
         display_df = pd.DataFrame()
-        
+
         if col_horse_no:
             display_df['馬號'] = df[col_horse_no]
         else:
             # 如果真係搵唔到馬號，就用原本嘅 index 加 1 做馬號
             display_df['馬號'] = range(1, len(df) + 1)
-            
+
         if col_horse_name:
             display_df['馬名'] = df[col_horse_name]
         else:
             display_df['馬名'] = '未知'
-            
+
         if col_draw:
             display_df['檔位'] = df[col_draw]
-            
+
         if col_prob:
             display_df['勝率'] = df[col_prob].apply(lambda x: f"{x:.1%}" if isinstance(x, (int, float)) else x)
         else:
             display_df['勝率'] = 'N/A'
-        
+
         # 最後顯示出嚟
         st.dataframe(display_df, use_container_width=True, hide_index=True)
     # ============================================================
