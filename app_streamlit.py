@@ -4851,254 +4851,254 @@ def main():
                 st.rerun()
 
     st.divider()
-    st.subheader("🎯 賽事預測")    
+    st.subheader("🎯 賽事預測")
+
     # ============================================================
-    # 🔧 管理員專用：一鍵預測所有場次
+    # 🔧 一鍵預測所有場次（開放俾所有用戶）
     # ============================================================
-    if st.session_state.get('role') == 'super_admin':
-        with st.expander("🛠️ 管理員工具：一鍵預測所有場次"):
-            st.caption("⚠️ 只限管理員使用，會自動預測指定日期嘅所有場次。")
+    with st.expander("🛠️ 一鍵預測所有場次"):
+        st.caption("⚠️ 會自動預測指定日期嘅所有場次。")
 
-            col_date, col_btn, col_status = st.columns([2, 1, 2])
+        col_date, col_btn, col_status = st.columns([2, 1, 2])
 
-            with col_date:
-                selected_date = st.date_input(
-                    "📅 選擇日期",
-                    value=pd.to_datetime("2026-09-06"),
-                    key="batch_pred_date"
-                )
+        with col_date:
+            selected_date = st.date_input(
+                "📅 選擇日期",
+                value=pd.to_datetime("2026-09-06"),
+                key="batch_pred_date"
+            )
 
-            with col_btn:
-                st.write("")
-                run_batch = st.button(
-                    "🔮 一鍵預測",
-                    use_container_width=True,
-                    key="batch_predict_btn_v3"
-                )
+        with col_btn:
+            st.write("")
+            run_batch = st.button(
+                "🔮 一鍵預測",
+                use_container_width=True,
+                key="batch_predict_btn_v3"
+            )
 
-            with col_status:
-                st.write("")
-                date_str = selected_date.strftime("%Y-%m-%d")
-                try:
-                    rc_df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
-                    rc_df = _repair_racecard(rc_df)
-                    rc_df = rc_df.loc[:, ~rc_df.columns.duplicated()]
-                    rename_map = {'馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
-                                  '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
-                                  '負磅': 'weight', '馬號': 'horse_id', '賠率': 'win_odds'}
-                    existing = [c for c in rename_map if c in rc_df.columns]
-                    if existing:
-                        rc_df.rename(columns={c: rename_map[c] for c in existing}, inplace=True)
-                    rc_df = rc_df.loc[:, ~rc_df.columns.duplicated()]
-                    if isinstance(rc_df['race_date'], pd.DataFrame):
-                        rc_df['race_date'] = rc_df['race_date'].iloc[:, 0]
-                    rc_df['race_date'] = pd.to_datetime(rc_df['race_date'], errors='coerce')
-                    rc_df = rc_df.dropna(subset=['race_date'])
-                    rc_df['race_date_str'] = rc_df['race_date'].dt.strftime('%Y-%m-%d')
-                    rc_df['race_no'] = pd.to_numeric(rc_df['race_no'], errors='coerce').fillna(0).astype(int)
-                    day_races = sorted(rc_df[rc_df['race_date_str'] == date_str]['race_no'].unique())
-                    if not day_races:
-                        st.warning(f"⚠️ {date_str} 冇數據")
-                    else:
-                        st.success(f"✅ 準備就緒（共 {len(day_races)} 場）")
-                except Exception as e:
-                    st.error(f"讀取失敗：{e}")
+        with col_status:
+            st.write("")
+            date_str = selected_date.strftime("%Y-%m-%d")
+            try:
+                rc_df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
+                rc_df = _repair_racecard(rc_df)
+                rc_df = rc_df.loc[:, ~rc_df.columns.duplicated()]
+                rename_map = {'馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
+                              '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
+                              '負磅': 'weight', '馬號': 'horse_id', '賠率': 'win_odds'}
+                existing = [c for c in rename_map if c in rc_df.columns]
+                if existing:
+                    rc_df.rename(columns={c: rename_map[c] for c in existing}, inplace=True)
+                rc_df = rc_df.loc[:, ~rc_df.columns.duplicated()]
+                if isinstance(rc_df['race_date'], pd.DataFrame):
+                    rc_df['race_date'] = rc_df['race_date'].iloc[:, 0]
+                rc_df['race_date'] = pd.to_datetime(rc_df['race_date'], errors='coerce')
+                rc_df = rc_df.dropna(subset=['race_date'])
+                rc_df['race_date_str'] = rc_df['race_date'].dt.strftime('%Y-%m-%d')
+                rc_df['race_no'] = pd.to_numeric(rc_df['race_no'], errors='coerce').fillna(0).astype(int)
+                day_races = sorted(rc_df[rc_df['race_date_str'] == date_str]['race_no'].unique())
+                if not day_races:
+                    st.warning(f"⚠️ {date_str} 冇數據")
+                else:
+                    st.success(f"✅ 準備就緒（共 {len(day_races)} 場）")
+            except Exception as e:
+                st.error(f"讀取失敗：{e}")
 
-            # ===== 一鍵預測執行 =====
-            if run_batch:
-                date_str = selected_date.strftime("%Y-%m-%d")
-                st.info(f"🚀 開始預測 {date_str} 所有場次...")
+        # ===== 一鍵預測執行 =====
+        if run_batch:
+            date_str = selected_date.strftime("%Y-%m-%d")
+            st.info(f"🚀 開始預測 {date_str} 所有場次...")
 
-                try:
-                    rc_df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
-                    rc_df = _repair_racecard(rc_df)
-                    rc_df = rc_df.loc[:, ~rc_df.columns.duplicated()]
-                    rename_map = {'馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
-                                  '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
-                                  '負磅': 'weight', '馬號': 'horse_id', '賠率': 'win_odds'}
-                    existing = [c for c in rename_map if c in rc_df.columns]
-                    if existing:
-                        rc_df.rename(columns={c: rename_map[c] for c in existing}, inplace=True)
-                    rc_df = rc_df.loc[:, ~rc_df.columns.duplicated()]
-                    if isinstance(rc_df['race_date'], pd.DataFrame):
-                        rc_df['race_date'] = rc_df['race_date'].iloc[:, 0]
-                    rc_df['race_date'] = pd.to_datetime(rc_df['race_date'], errors='coerce')
-                    rc_df = rc_df.dropna(subset=['race_date'])
-                    rc_df['race_date_str'] = rc_df['race_date'].dt.strftime('%Y-%m-%d')
-                    rc_df['race_no'] = pd.to_numeric(rc_df['race_no'], errors='coerce').fillna(0).astype(int)
-                    day_races = sorted(rc_df[rc_df['race_date_str'] == date_str]['race_no'].unique())
+            try:
+                rc_df = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
+                rc_df = _repair_racecard(rc_df)
+                rc_df = rc_df.loc[:, ~rc_df.columns.duplicated()]
+                rename_map = {'馬名': 'horse_name', '檔位': 'draw', '場次': 'race_no',
+                              '比賽日期': 'race_date', '騎師': 'jockey', '練馬師': 'trainer',
+                              '負磅': 'weight', '馬號': 'horse_id', '賠率': 'win_odds'}
+                existing = [c for c in rename_map if c in rc_df.columns]
+                if existing:
+                    rc_df.rename(columns={c: rename_map[c] for c in existing}, inplace=True)
+                rc_df = rc_df.loc[:, ~rc_df.columns.duplicated()]
+                if isinstance(rc_df['race_date'], pd.DataFrame):
+                    rc_df['race_date'] = rc_df['race_date'].iloc[:, 0]
+                rc_df['race_date'] = pd.to_datetime(rc_df['race_date'], errors='coerce')
+                rc_df = rc_df.dropna(subset=['race_date'])
+                rc_df['race_date_str'] = rc_df['race_date'].dt.strftime('%Y-%m-%d')
+                rc_df['race_no'] = pd.to_numeric(rc_df['race_no'], errors='coerce').fillna(0).astype(int)
+                day_races = sorted(rc_df[rc_df['race_date_str'] == date_str]['race_no'].unique())
 
-                    if not day_races:
-                        st.warning(f"⚠️ {date_str} 冇任何場次數據")
-                    else:
-                        st.info(f"📋 準備預測 {len(day_races)} 場：{day_races}")
-                        progress = st.progress(0)
-                        status = st.empty()
-                        success_count = 0
-                        fail_count = 0
-                        all_results = {}
+                if not day_races:
+                    st.warning(f"⚠️ {date_str} 冇任何場次數據")
+                else:
+                    st.info(f"📋 準備預測 {len(day_races)} 場：{day_races}")
+                    progress = st.progress(0)
+                    status = st.empty()
+                    success_count = 0
+                    fail_count = 0
+                    all_results = {}
 
-                        for i, rn in enumerate(day_races):
-                            status.text(f"⏳ 預測第 {rn} 場中...（{i+1}/{len(day_races)}）")
-                            try:
-                                result, pool = run_prediction(date_str, int(rn))
-                                if result is not None and not result.empty:
-                                    all_results[int(rn)] = result
-                                    success_count += 1
-                                else:
-                                    fail_count += 1
-                            except Exception as e:
+                    for i, rn in enumerate(day_races):
+                        status.text(f"⏳ 預測第 {rn} 場中...（{i+1}/{len(day_races)}）")
+                        try:
+                            result, pool = run_prediction(date_str, int(rn))
+                            if result is not None and not result.empty:
+                                all_results[int(rn)] = result
+                                success_count += 1
+                            else:
                                 fail_count += 1
-                            progress.progress((i + 1) / len(day_races))
+                        except Exception as e:
+                            fail_count += 1
+                        progress.progress((i + 1) / len(day_races))
 
-                        status.text("✅ 完成！")
-                        st.success(f"✅ 成功 {success_count} 場，失敗 {fail_count} 場")
+                    status.text("✅ 完成！")
+                    st.success(f"✅ 成功 {success_count} 場，失敗 {fail_count} 場")
 
-                        # 🔥 儲存到 session_state（防止 rerun 時消失）
-                        st.session_state['batch_all_results'] = all_results
-                        st.session_state['batch_date_str'] = date_str
-                except Exception as e:
-                    st.error(f"執行失敗：{e}")
+                    # 🔥 儲存到 session_state（防止 rerun 時消失）
+                    st.session_state['batch_all_results'] = all_results
+                    st.session_state['batch_date_str'] = date_str
+            except Exception as e:
+                st.error(f"執行失敗：{e}")
 
-            # ===== 讀取 session_state 嘅結果 =====
-            all_results = st.session_state.get('batch_all_results', {})
-            date_str_saved = st.session_state.get('batch_date_str', '')
+        # ===== 讀取 session_state 嘅結果 =====
+        all_results = st.session_state.get('batch_all_results', {})
+        date_str_saved = st.session_state.get('batch_date_str', '')
 
-            # 輔助函數：動態取得欄名（兼容中英文）
-            def _get_col(df, candidates):
-                for c in candidates:
-                    if c in df.columns:
-                        return c
-                return None
+        # 輔助函數：動態取得欄名（兼容中英文）
+        def _get_col(df, candidates):
+            for c in candidates:
+                if c in df.columns:
+                    return c
+            return None
 
-            if all_results:
-                st.divider()
-                st.subheader(f"🎯 {date_str_saved} 跨場彩池推薦")
+        if all_results:
+            st.divider()
+            st.subheader(f"🎯 {date_str_saved} 跨場彩池推薦")
 
-                race_list = sorted(all_results.keys())
+            race_list = sorted(all_results.keys())
 
-                # ===== 1. 孖寶 =====
-                st.markdown("#### 🎯 孖寶（連續 2 場）")
-                if len(race_list) >= 2:
-                    double_start = st.selectbox(
-                        "孖寶起始場次",
-                        race_list,
-                        index=None,
-                        placeholder="請選擇孖寶起始場次...",
-                        key="double_start_selector"
-                    )
-                    if double_start is not None:
-                        d_idx = race_list.index(double_start)
-                        d_races = race_list[d_idx:d_idx + 2]
-                        if len(d_races) >= 2:
-                            name_col_1 = _get_col(all_results[d_races[0]], ['horse_name', '馬名'])
-                            name_col_2 = _get_col(all_results[d_races[1]], ['horse_name', '馬名'])
-                            d1 = all_results[d_races[0]].iloc[0][name_col_1] if name_col_1 else "N/A"
-                            d2 = all_results[d_races[1]].iloc[0][name_col_2] if name_col_2 else "N/A"
-                            st.success(f"**【孖寶】第 {d_races[0]}-{d_races[1]} 場**：{d1} + {d2}")
-                        else:
-                            st.warning(f"⚠️ 由第 {double_start} 場開始，唔夠 2 場數據")
-                else:
-                    st.warning("⚠️ 唔夠 2 場賽事，冇孖寶")
+            # ===== 1. 孖寶 =====
+            st.markdown("#### 🎯 孖寶（連續 2 場）")
+            if len(race_list) >= 2:
+                double_start = st.selectbox(
+                    "孖寶起始場次",
+                    race_list,
+                    index=None,
+                    placeholder="請選擇孖寶起始場次...",
+                    key="double_start_selector"
+                )
+                if double_start is not None:
+                    d_idx = race_list.index(double_start)
+                    d_races = race_list[d_idx:d_idx + 2]
+                    if len(d_races) >= 2:
+                        name_col_1 = _get_col(all_results[d_races[0]], ['horse_name', '馬名'])
+                        name_col_2 = _get_col(all_results[d_races[1]], ['horse_name', '馬名'])
+                        d1 = all_results[d_races[0]].iloc[0][name_col_1] if name_col_1 else "N/A"
+                        d2 = all_results[d_races[1]].iloc[0][name_col_2] if name_col_2 else "N/A"
+                        st.success(f"**【孖寶】第 {d_races[0]}-{d_races[1]} 場**：{d1} + {d2}")
+                    else:
+                        st.warning(f"⚠️ 由第 {double_start} 場開始，唔夠 2 場數據")
+            else:
+                st.warning("⚠️ 唔夠 2 場賽事，冇孖寶")
 
-                st.divider()
+            st.divider()
 
-                # ===== 2. 三寶 =====
-                st.markdown("#### 🎯 三寶（連續 3 場）")
-                if len(race_list) >= 3:
-                    treble_start = st.selectbox(
-                        "三寶起始場次",
-                        race_list,
-                        index=None,
-                        placeholder="請選擇三寶起始場次...",
-                        key="treble_start_selector"
-                    )
-                    if treble_start is not None:
-                        t_idx = race_list.index(treble_start)
-                        t_races = race_list[t_idx:t_idx + 3]
-                        if len(t_races) >= 3:
-                            name_cols = [_get_col(all_results[rn], ['horse_name', '馬名']) for rn in t_races]
-                            t1 = all_results[t_races[0]].iloc[0][name_cols[0]] if name_cols[0] else "N/A"
-                            t2 = all_results[t_races[1]].iloc[0][name_cols[1]] if name_cols[1] else "N/A"
-                            t3 = all_results[t_races[2]].iloc[0][name_cols[2]] if name_cols[2] else "N/A"
-                            st.success(f"**【三寶】第 {t_races[0]}-{t_races[2]} 場**：{t1} + {t2} + {t3}")
-                        else:
-                            st.warning(f"⚠️ 由第 {treble_start} 場開始，唔夠 3 場數據")
-                else:
-                    st.warning("⚠️ 唔夠 3 場賽事，冇三寶")
+            # ===== 2. 三寶 =====
+            st.markdown("#### 🎯 三寶（連續 3 場）")
+            if len(race_list) >= 3:
+                treble_start = st.selectbox(
+                    "三寶起始場次",
+                    race_list,
+                    index=None,
+                    placeholder="請選擇三寶起始場次...",
+                    key="treble_start_selector"
+                )
+                if treble_start is not None:
+                    t_idx = race_list.index(treble_start)
+                    t_races = race_list[t_idx:t_idx + 3]
+                    if len(t_races) >= 3:
+                        name_cols = [_get_col(all_results[rn], ['horse_name', '馬名']) for rn in t_races]
+                        t1 = all_results[t_races[0]].iloc[0][name_cols[0]] if name_cols[0] else "N/A"
+                        t2 = all_results[t_races[1]].iloc[0][name_cols[1]] if name_cols[1] else "N/A"
+                        t3 = all_results[t_races[2]].iloc[0][name_cols[2]] if name_cols[2] else "N/A"
+                        st.success(f"**【三寶】第 {t_races[0]}-{t_races[2]} 場**：{t1} + {t2} + {t3}")
+                    else:
+                        st.warning(f"⚠️ 由第 {treble_start} 場開始，唔夠 3 場數據")
+            else:
+                st.warning("⚠️ 唔夠 3 場賽事，冇三寶")
 
-                st.divider()
+            st.divider()
 
-                # ===== 3. 六環彩 =====
-                st.markdown("#### 🎯 六環彩（連續 6 場）")
-                if len(race_list) >= 6:
-                    six_up_start = st.selectbox(
-                        "六環彩起始場次",
-                        race_list,
-                        index=None,
-                        placeholder="請選擇六環彩起始場次...",
-                        key="six_up_start_selector"
-                    )
-                    if six_up_start is not None:
-                        s_idx = race_list.index(six_up_start)
-                        six_up_races = race_list[s_idx:s_idx + 6]
-                        if len(six_up_races) >= 6:
-                            horses = []
-                            for rn in six_up_races:
-                                nc = _get_col(all_results[rn], ['horse_name', '馬名'])
-                                horses.append(all_results[rn].iloc[0][nc] if nc else "N/A")
-                            st.success(f"**【六環彩】第 {six_up_races[0]}-{six_up_races[-1]} 場**：{' + '.join(horses)}")
-                        else:
-                            st.warning(f"⚠️ 由第 {six_up_start} 場開始，唔夠 6 場數據（只有 {len(six_up_races)} 場）")
-                else:
-                    st.warning("⚠️ 唔夠 6 場賽事，冇六環彩")
+            # ===== 3. 六環彩 =====
+            st.markdown("#### 🎯 六環彩（連續 6 場）")
+            if len(race_list) >= 6:
+                six_up_start = st.selectbox(
+                    "六環彩起始場次",
+                    race_list,
+                    index=None,
+                    placeholder="請選擇六環彩起始場次...",
+                    key="six_up_start_selector"
+                )
+                if six_up_start is not None:
+                    s_idx = race_list.index(six_up_start)
+                    six_up_races = race_list[s_idx:s_idx + 6]
+                    if len(six_up_races) >= 6:
+                        horses = []
+                        for rn in six_up_races:
+                            nc = _get_col(all_results[rn], ['horse_name', '馬名'])
+                            horses.append(all_results[rn].iloc[0][nc] if nc else "N/A")
+                        st.success(f"**【六環彩】第 {six_up_races[0]}-{six_up_races[-1]} 場**：{' + '.join(horses)}")
+                    else:
+                        st.warning(f"⚠️ 由第 {six_up_start} 場開始，唔夠 6 場數據（只有 {len(six_up_races)} 場）")
+            else:
+                st.warning("⚠️ 唔夠 6 場賽事，冇六環彩")
 
-                st.divider()
+            st.divider()
 
-                # ===== 4. 各場預測結果 =====
-                st.subheader("📊 各場預測結果")
-                cols_per_row = 3
-                for i in range(0, len(race_list), cols_per_row):
-                    cols = st.columns(cols_per_row)
-                    for j, col in enumerate(cols):
-                        idx = i + j
-                        if idx >= len(race_list):
-                            break
-                        rn = race_list[idx]
-                        with col:
-                            st.markdown(f"**🏇 第 {rn} 場**")
-                            df = all_results[rn].copy()
-                            horse_no_col = _get_col(df, ['horse_no', '馬號', 'horse_id'])
-                            name_col = _get_col(df, ['horse_name', '馬名'])
-                            draw_col = _get_col(df, ['draw', '檔位'])
-                            prob_col = _get_col(df, ['預測勝率', '勝率'])
-                            
-                            cols_to_show = []
-                            new_cols = []
-                            if horse_no_col:
-                                cols_to_show.append(horse_no_col)
-                                new_cols.append('馬號')
-                            if name_col:
-                                cols_to_show.append(name_col)
-                                new_cols.append('馬名')
-                            if draw_col:
-                                cols_to_show.append(draw_col)
-                                new_cols.append('檔位')
-                            if prob_col:
-                                cols_to_show.append(prob_col)
-                                new_cols.append('勝率')
-                            
-                            if not cols_to_show:
-                                st.warning("⚠️ 無法顯示預測結果（缺少欄位）")
-                                continue
-                            
-                            df_show = df[cols_to_show].head(3).copy()
-                            df_show.columns = new_cols
-                            
-                            if prob_col:
-                                df_show['勝率'] = df_show['勝率'].apply(lambda x: f"{x:.1%}" if pd.notna(x) else "-")
-                            
-                            st.dataframe(df_show, use_container_width=True, hide_index=True)
+            # ===== 4. 各場預測結果 =====
+            st.subheader("📊 各場預測結果")
+            cols_per_row = 3
+            for i in range(0, len(race_list), cols_per_row):
+                cols = st.columns(cols_per_row)
+                for j, col in enumerate(cols):
+                    idx = i + j
+                    if idx >= len(race_list):
+                        break
+                    rn = race_list[idx]
+                    with col:
+                        st.markdown(f"**🏇 第 {rn} 場**")
+                        df = all_results[rn].copy()
+                        horse_no_col = _get_col(df, ['horse_no', '馬號', 'horse_id'])
+                        name_col = _get_col(df, ['horse_name', '馬名'])
+                        draw_col = _get_col(df, ['draw', '檔位'])
+                        prob_col = _get_col(df, ['預測勝率', '勝率'])
+
+                        cols_to_show = []
+                        new_cols = []
+                        if horse_no_col:
+                            cols_to_show.append(horse_no_col)
+                            new_cols.append('馬號')
+                        if name_col:
+                            cols_to_show.append(name_col)
+                            new_cols.append('馬名')
+                        if draw_col:
+                            cols_to_show.append(draw_col)
+                            new_cols.append('檔位')
+                        if prob_col:
+                            cols_to_show.append(prob_col)
+                            new_cols.append('勝率')
+
+                        if not cols_to_show:
+                            st.warning("⚠️ 無法顯示預測結果（缺少欄位）")
+                            continue
+
+                        df_show = df[cols_to_show].head(3).copy()
+                        df_show.columns = new_cols
+
+                        if prob_col:
+                            df_show['勝率'] = df_show['勝率'].apply(lambda x: f"{x:.1%}" if pd.notna(x) else "-")
+
+                        st.dataframe(df_show, use_container_width=True, hide_index=True)
     # ============================================================
     # 🎯 單場預測（所有用戶可見，已包含馬號）
     # ============================================================
