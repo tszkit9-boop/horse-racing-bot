@@ -4854,6 +4854,28 @@ def main():
     st.subheader("🎯 賽事預測")
 
     # ============================================================
+    # 🆕 動態讀取 racecard_uploaded.csv 入面最新嘅日期
+    # ============================================================
+    _batch_default_date = None
+    try:
+        if os.path.exists("racecard_uploaded.csv"):
+            _rc_tmp = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
+            _date_col_tmp = None
+            for c in ['比賽日期', 'race_date', '日期', 'Date']:
+                if c in _rc_tmp.columns:
+                    _date_col_tmp = c
+                    break
+            if _date_col_tmp:
+                _rc_dates_tmp = pd.to_datetime(_rc_tmp[_date_col_tmp], errors='coerce').dropna()
+                if not _rc_dates_tmp.empty:
+                    _batch_default_date = _rc_dates_tmp.max()
+    except Exception as e:
+        print(f"⚠️ 讀取最新日期失敗：{e}")
+
+    if _batch_default_date is None:
+        _batch_default_date = pd.to_datetime("today")
+
+    # ============================================================
     # 🔧 一鍵預測所有場次（開放俾所有用戶）
     # ============================================================
     with st.expander("🛠️ 一鍵預測所有場次"):
@@ -4864,7 +4886,7 @@ def main():
         with col_date:
             selected_date = st.date_input(
                 "📅 選擇日期",
-                value=pd.to_datetime("2026-09-06"),
+                value=_batch_default_date,
                 key="batch_pred_date"
             )
 
@@ -4954,7 +4976,6 @@ def main():
                     status.text("✅ 完成！")
                     st.success(f"✅ 成功 {success_count} 場，失敗 {fail_count} 場")
 
-                    # 🔥 儲存到 session_state（防止 rerun 時消失）
                     st.session_state['batch_all_results'] = all_results
                     st.session_state['batch_date_str'] = date_str
             except Exception as e:
@@ -4964,7 +4985,6 @@ def main():
         all_results = st.session_state.get('batch_all_results', {})
         date_str_saved = st.session_state.get('batch_date_str', '')
 
-        # 輔助函數：動態取得欄名（兼容中英文）
         def _get_col(df, candidates):
             for c in candidates:
                 if c in df.columns:
