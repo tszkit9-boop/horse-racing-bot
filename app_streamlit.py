@@ -342,9 +342,35 @@ def save_users(users):
     return save_json(USER_DATA_FILE, users)
 def authenticate(username, password):
     users = load_users()
-    if username in users and users[username].get('password') == password:
+    if username not in users:
+        return None
+
+    stored = users[username].get('password', '')
+
+    # ===== 如果係 bcrypt hash（$2b$ 或 $2a$ 開頭），用 bcrypt 驗證 =====
+    if stored.startswith('$2b$') or stored.startswith('$2a$'):
+        try:
+            import bcrypt
+            if bcrypt.checkpw(password.encode('utf-8'), stored.encode('utf-8')):
+                log_user_activity(username, "登入", "")
+                return users[username]
+        except Exception as e:
+            print(f"⚠️ bcrypt 驗證失敗：{e}")
+        return None
+
+    # ===== 如果係明文（舊格式），直接比對，並自動升級為 hash =====
+    if stored == password:
+        try:
+            import bcrypt
+            new_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            users[username]['password'] = new_hash
+            save_users(users)
+            print(f"✅ {username} 密碼已自動升級為 bcrypt hash")
+        except Exception as e:
+            print(f"⚠️ 密碼升級失敗：{e}")
         log_user_activity(username, "登入", "")
         return users[username]
+
     return None
 
 def log_admin_action(admin, action):
