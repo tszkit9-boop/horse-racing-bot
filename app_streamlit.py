@@ -3170,13 +3170,12 @@ def admin_accuracy_monitor():
     from database import load_predictions
     ai_data = load_predictions()
 
-    # 🆕 過濾走格式錯誤嘅記錄（只保留 YYYY-MM-DD 格式）
+    # ===== 過濾走格式錯誤嘅記錄（只保留 YYYY-MM-DD 格式）=====
     if ai_data:
         ai_data = {
             k: v for k, v in ai_data.items()
             if isinstance(v.get('date'), str) and len(v.get('date')) == 10
         }
-        print(f"✅ 過濾後剩返 {len(ai_data)} 個有效預測記錄")
 
     if not ai_data:
         st.warning("⚠️ 未有 AI 預測記錄")
@@ -3293,6 +3292,7 @@ def admin_accuracy_monitor():
             '結果': result_str
         })
 
+    # ===== 統計指標 =====
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("📊 總預測", len(ai_data))
     c2.metric("✅ 已比對", total_with_result)
@@ -3311,6 +3311,43 @@ def admin_accuracy_monitor():
 
     if pending_count > 0:
         st.caption(f"⏳ 仲有 {pending_count} 場未出賽果")
+
+    # ===== 🆕 預測頭3名 vs 真實頭3名（放喺馬匹命中率同每日命中明細之間）=====
+    if compare_rows:
+        st.divider()
+        st.subheader("📋 預測頭3名 vs 真實頭3名")
+
+        df_compare_detail = pd.DataFrame(compare_rows)
+
+        df_compare_detail['場次'] = pd.to_numeric(df_compare_detail['場次'], errors='coerce')
+        df_compare_detail = df_compare_detail.sort_values(
+            by=['日期', '場次'],
+            ascending=[True, True]
+        ).reset_index(drop=True)
+
+        def highlight_prediction(row):
+            pred = str(row['預測頭3名'])
+            if pred == 'nan' or pred == '':
+                return pred
+
+            real = str(row['真實頭3名'])
+            real_names = []
+            if '⏳' not in real:
+                real_names = [re.sub(r'\(.*\)', '', name).strip() for name in real.split(',')]
+
+            pred_list = [h.strip() for h in pred.split(',')]
+            colored = []
+            for h in pred_list:
+                if h in real_names:
+                    colored.append(f'<span style="color:green; font-weight:bold;">{h}</span>')
+                else:
+                    colored.append(f'<span style="color:red;">{h}</span>')
+            return ', '.join(colored)
+
+        df_compare_detail['預測頭3名'] = df_compare_detail.apply(highlight_prediction, axis=1)
+
+        html_table = df_compare_detail.to_html(escape=False, index=False)
+        st.markdown(html_table, unsafe_allow_html=True)
 
     # ===== 每日命中明細 =====
     if compare_rows:
@@ -3349,11 +3386,14 @@ def admin_accuracy_monitor():
         else:
             st.info("ℹ️ 暫未有已比對嘅賽果")
 
-        # ===== 按賽道類型統計 =====
+    # ===== 按賽道類型統計 =====
+    if compare_rows:
         st.divider()
         st.subheader("🏇 按賽道類型統計")
 
-        df_valid = df_compare[df_compare['結果'] != '⏳ 待定'].copy()
+        df_valid = pd.DataFrame(compare_rows)
+        df_valid = df_valid[df_valid['結果'] != '⏳ 待定'].copy()
+
         if not df_valid.empty:
             df_valid['有命中'] = df_valid['結果'].str.contains('✅', na=False)
 
