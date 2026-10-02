@@ -6,9 +6,11 @@ st.set_page_config(
     layout="wide"
 )
 
-# ===== 🆕 返回主頁按鈕 =====
-if st.button("⬅️ 返回主頁", key="faq_back_btn"):
-    st.switch_page("app_streamlit.py")
+# ===== 🆕 返回主頁按鈕（右上角）=====
+_col_spacer, _col_back = st.columns([8, 1])
+with _col_back:
+    if st.button("⬅️ 返回主頁", key="faq_back_btn", use_container_width=True):
+        st.switch_page("app_streamlit.py")
 
 st.title("❓ 常見問題 FAQ")
 st.caption("SHTSN 賽馬預測系統")
