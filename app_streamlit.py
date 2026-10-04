@@ -969,7 +969,7 @@ def _repair_racecard(df):
     return result
 
 def run_prediction(date_str, race_no):
-    """用混合模型預測（沙田分賽道 + 跑馬地舊模型）+ 值博率計算"""
+    """用雙模型預測（贏出 + 前三名）+ 值博率計算 + 泥地混合賠率"""
     if not os.path.exists("racecard_uploaded.csv"):
         st.error("❌ 找不到 racecard_uploaded.csv")
         return None, None
@@ -1042,7 +1042,7 @@ def run_prediction(date_str, race_no):
     if 'AWT' in track_upper or '全天候' in track_info:
         is_st_turf, is_st_awt, is_hv_turf = 0, 1, 0
         track_type = 'st'
-        st.info(f"🏇 偵測到賽道：**全天候賽道**（{track_info}）→ 使用沙田分賽道模型")
+        st.info(f"🏇 偵測到賽道：**全天候賽道（泥地）**（{track_info}）→ 使用沙田分賽道模型")
     elif 'HV' in track_upper:
         is_st_turf, is_st_awt, is_hv_turf = 0, 0, 1
         track_type = 'hv'
@@ -1110,7 +1110,6 @@ def run_prediction(date_str, race_no):
         w_xgb, w_cat, w_rank = 0.30, 0.50, 0.20
 
     def ensemble_predict(models):
-        """將多個模型加權平均（自動處理 2 個或 3 個）"""
         preds = []
         weights = []
         for m, w in zip(models, [w_xgb, w_cat, w_rank]):
@@ -1150,6 +1149,23 @@ def run_prediction(date_str, race_no):
         proba_win = proba_top3
     if proba_top3 is None:
         proba_top3 = proba_win
+
+    # ===== 🆕 泥地特殊處理：混合賠率 =====
+    if is_st_awt == 1:
+        try:
+            win_odds_arr = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0).replace(0, 4.0).values
+            odds_implied = 1.0 / win_odds_arr
+            odds_implied = odds_implied / odds_implied.sum()
+
+            # 泥地：模型佔 40%，賠率佔 60%
+            proba_win = 0.4 * proba_win + 0.6 * odds_implied
+            proba_top3 = 0.4 * proba_top3 + 0.6 * odds_implied
+            proba_win = proba_win / proba_win.sum()
+            proba_top3 = proba_top3 / proba_top3.sum()
+
+            st.info("🏇 **泥地賽事特殊處理**：已混合賠率信號（模型 40% + 賠率 60%）")
+        except Exception as e:
+            st.warning(f"⚠️ 泥地混合賠率失敗：{e}")
 
     win_models = []
     if xgb_win is not None: win_models.append("XGB")
@@ -1268,7 +1284,6 @@ def run_prediction(date_str, race_no):
 
     user_group = st.session_state.get('role', 'free')
     return result_df, generate_pool_recommendations(result_df, user_group)
-
 def _find_data_col(df, keywords):
     """搵一個有數據嘅欄位（唔止名要對，仲要有實際值）"""
     for c in df.columns:
