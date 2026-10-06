@@ -3212,34 +3212,48 @@ def admin_accuracy_monitor():
         results_df['finish_position'] = pd.to_numeric(results_df['finish_position'], errors='coerce')
         results_df['horse_name'] = results_df['horse_name'].astype(str).str.strip()
         results_df['horse_name'] = results_df['horse_name'].str.replace(r'\([A-Z]\d+\)', '', regex=True).str.strip()
-
-        # ===== 場地推算（星期三 = HV，其餘 = ST）=====
-        if 'venue' not in results_df.columns and 'racecourse' not in results_df.columns and '馬場' not in results_df.columns:
-            results_df['venue'] = results_df['race_date'].apply(
-                lambda d: 'HV' if d.weekday() == 2 else 'ST'
-            )
-        else:
-            for col in ['venue', 'racecourse', '馬場']:
-                if col in results_df.columns:
-                    results_df['venue'] = results_df[col]
-                    break
-
     except Exception as e:
         st.error(f"❌ 讀取賽果失敗：{e}")
         return
 
+    # ===== 🆕 從 ALL_DATA_MERGED_updated.csv 讀取賽道資訊 =====
+    track_map = {}
+    if os.path.exists("ALL_DATA_MERGED_updated.csv"):
+        try:
+            hist_df = pd.read_csv("ALL_DATA_MERGED_updated.csv", encoding='utf-8-sig', low_memory=False)
+            hist_df.columns = [str(c).replace('\ufeff', '').strip() for c in hist_df.columns]
+            hist_df['race_date_str'] = pd.to_datetime(hist_df['race_date'], errors='coerce').dt.strftime('%Y-%m-%d')
+            hist_df['race_no'] = pd.to_numeric(hist_df['race_no'], errors='coerce')
+
+            if 'RC/Track/Course' in hist_df.columns:
+                for _, row in hist_df.dropna(subset=['race_date_str', 'race_no', 'RC/Track/Course']).iterrows():
+                    key = f"{row['race_date_str']}_{int(row['race_no'])}"
+                    if key not in track_map:
+                        rc = str(row['RC/Track/Course'])
+                        if 'AWT' in rc.upper():
+                            track_map[key] = '沙田全天候'
+                        elif 'ST' in rc.upper() and 'Turf' in rc:
+                            # 從 RC 中提取跑道（例如 "A", "C+3"）
+                            import re as _re
+                            m = _re.search(r'"(.*?)"', rc)
+                            course = m.group(1) if m else ''
+                            track_map[key] = f'沙田草地 {course}' if course else '沙田草地'
+                        elif 'HV' in rc.upper():
+                            import re as _re
+                            m = _re.search(r'"(.*?)"', rc)
+                            course = m.group(1) if m else ''
+                            track_map[key] = f'跑馬地草地 {course}' if course else '跑馬地草地'
+                        else:
+                            track_map[key] = '未知'
+        except Exception:
+            pass
+
     # ===== 建立真實頭3名 =====
     real_top3 = {}
-    venue_map = {}
-
     for _, row in results_df.iterrows():
         if pd.isna(row['race_no']) or pd.isna(row['finish_position']):
             continue
         key = f"{row['race_date_str']}_{int(row['race_no'])}"
-
-        if key not in venue_map:
-            venue_map[key] = row.get('venue', '未知')
-
         if key not in real_top3:
             real_top3[key] = []
         if row['finish_position'] <= 3:
@@ -3265,13 +3279,26 @@ def admin_accuracy_monitor():
         pred_top3_str = ", ".join(pred_top3)
 
         lookup_key = f"{date_str}_{race_no}"
-        current_venue = venue_map.get(lookup_key, '未知')
+        
+        # 🆕 優先從 track_map 攞賽道；搵唔到就用默認規則
+        if lookup_key in track_map:
+            current_track = track_map[lookup_key]
+        else:
+            # 默認：星期三 = 跑馬地草地，其他 = 沙田草地
+            try:
+                d = pd.to_datetime(date_str)
+                if d.weekday() == 2:
+                    current_track = '跑馬地草地'
+                else:
+                    current_track = '沙田草地'
+            except Exception:
+                current_track = '未知'
 
         if lookup_key not in real_top3 or not real_top3[lookup_key]:
             compare_rows.append({
                 '日期': date_str,
                 '場次': race_no,
-                '場地': current_venue,
+                '賽道': current_track,
                 '預測頭3名': pred_top3_str,
                 '真實頭3名': '⏳ 未有賽果',
                 '命中數': '-',
@@ -3300,14 +3327,13 @@ def admin_accuracy_monitor():
         compare_rows.append({
             '日期': date_str,
             '場次': race_no,
-            '場地': current_venue,
+            '賽道': current_track,
             '預測頭3名': pred_top3_str,
             '真實頭3名': real_str,
             '命中數': hit_count,
             '結果': result_str
         })
 
-    # ===== 統計指標 =====
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("📊 總預測", len(ai_data))
     c2.metric("✅ 已比對", total_with_result)
@@ -3327,42 +3353,110 @@ def admin_accuracy_monitor():
     if pending_count > 0:
         st.caption(f"⏳ 仲有 {pending_count} 場未出賽果")
 
-    # ===== 🆕 預測頭3名 vs 真實頭3名（放喺馬匹命中率同每日命中明細之間）=====
+    # ===== 每日命中明細 =====
     if compare_rows:
         st.divider()
-        st.subheader("📋 預測頭3名 vs 真實頭3名")
+        st.subheader("📅 每日命中明細")
 
-        df_compare_detail = pd.DataFrame(compare_rows)
+        df_compare = pd.DataFrame(compare_rows)
+        df_result = df_compare[df_compare['結果'] != '⏳ 待定'].copy()
 
-        df_compare_detail['場次'] = pd.to_numeric(df_compare_detail['場次'], errors='coerce')
-        df_compare_detail = df_compare_detail.sort_values(
-            by=['日期', '場次'],
-            ascending=[True, True]
-        ).reset_index(drop=True)
+        if not df_result.empty:
+            df_result['有命中'] = df_result['結果'].str.contains('✅', na=False)
 
-        def highlight_prediction(row):
-            pred = str(row['預測頭3名'])
-            if pred == 'nan' or pred == '':
-                return pred
+            daily_stats = df_result.groupby(['日期', '賽道']).agg(
+                總場次=('場次', 'count'),
+                命中場次=('有命中', 'sum')
+            ).reset_index()
 
-            real = str(row['真實頭3名'])
-            real_names = []
-            if '⏳' not in real:
-                real_names = [re.sub(r'\(.*\)', '', name).strip() for name in real.split(',')]
+            daily_stats['未命中場次'] = daily_stats['總場次'] - daily_stats['命中場次']
+            daily_stats['命中率'] = (daily_stats['命中場次'] / daily_stats['總場次']).apply(lambda x: f"{x:.1%}")
 
-            pred_list = [h.strip() for h in pred.split(',')]
-            colored = []
-            for h in pred_list:
-                if h in real_names:
-                    colored.append(f'<span style="color:green; font-weight:bold;">{h}</span>')
-                else:
-                    colored.append(f'<span style="color:red;">{h}</span>')
-            return ', '.join(colored)
+            daily_stats = daily_stats.sort_values(['日期', '賽道'], ascending=[False, True])
 
-        df_compare_detail['預測頭3名'] = df_compare_detail.apply(highlight_prediction, axis=1)
+            st.dataframe(
+                daily_stats,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "日期": st.column_config.TextColumn("📅 日期"),
+                    "賽道": st.column_config.TextColumn("🏇 賽道"),
+                    "總場次": st.column_config.NumberColumn("總場次"),
+                    "命中場次": st.column_config.NumberColumn("✅ 命中"),
+                    "未命中場次": st.column_config.NumberColumn("❌ 未命中"),
+                    "命中率": st.column_config.TextColumn("🎯 命中率"),
+                }
+            )
+        else:
+            st.info("ℹ️ 暫未有已比對嘅賽果")
 
-        html_table = df_compare_detail.to_html(escape=False, index=False)
-        st.markdown(html_table, unsafe_allow_html=True)
+        # ===== 按賽道類型統計 =====
+        st.divider()
+        st.subheader("🏇 按賽道類型統計")
+
+        df_valid = pd.DataFrame(compare_rows)
+        df_valid = df_valid[df_valid['結果'] != '⏳ 待定'].copy()
+
+        if not df_valid.empty:
+            df_valid['有命中'] = df_valid['結果'].str.contains('✅', na=False)
+
+            track_stats = df_valid.groupby('賽道').agg(
+                總場次=('場次', 'count'),
+                命中場次=('有命中', 'sum')
+            ).reset_index()
+
+            track_stats['未命中場次'] = track_stats['總場次'] - track_stats['命中場次']
+            track_stats['命中率'] = (track_stats['命中場次'] / track_stats['總場次']).apply(lambda x: f"{x:.1%}")
+
+            st.dataframe(
+                track_stats,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "賽道": st.column_config.TextColumn("🏇 賽道類型"),
+                    "總場次": st.column_config.NumberColumn("總場次"),
+                    "命中場次": st.column_config.NumberColumn("✅ 命中"),
+                    "未命中場次": st.column_config.NumberColumn("❌ 未命中"),
+                    "命中率": st.column_config.TextColumn("🎯 命中率"),
+                }
+            )
+        else:
+            st.info("ℹ️ 暫未有已比對嘅賽果")
+
+        # ===== 詳細對比表 =====
+        st.divider()
+        with st.expander("📋 查看詳細預測頭3名 vs 真實頭3名"):
+            df_compare_detail = pd.DataFrame(compare_rows)
+
+            df_compare_detail['場次'] = pd.to_numeric(df_compare_detail['場次'], errors='coerce')
+            df_compare_detail = df_compare_detail.sort_values(
+                by=['日期', '場次'],
+                ascending=[True, True]
+            ).reset_index(drop=True)
+
+            def highlight_prediction(row):
+                pred = str(row['預測頭3名'])
+                if pred == 'nan' or pred == '':
+                    return pred
+
+                real = str(row['真實頭3名'])
+                real_names = []
+                if '⏳' not in real:
+                    real_names = [re.sub(r'\(.*\)', '', name).strip() for name in real.split(',')]
+
+                pred_list = [h.strip() for h in pred.split(',')]
+                colored = []
+                for h in pred_list:
+                    if h in real_names:
+                        colored.append(f'<span style="color:green; font-weight:bold;">{h}</span>')
+                    else:
+                        colored.append(f'<span style="color:red;">{h}</span>')
+                return ', '.join(colored)
+
+            df_compare_detail['預測頭3名'] = df_compare_detail.apply(highlight_prediction, axis=1)
+
+            html_table = df_compare_detail.to_html(escape=False, index=False)
+            st.markdown(html_table, unsafe_allow_html=True)
 
     # ===== 每日命中明細 =====
     if compare_rows:
