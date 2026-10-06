@@ -3216,7 +3216,7 @@ def admin_accuracy_monitor():
         st.error(f"❌ 讀取賽果失敗：{e}")
         return
 
-    # ===== 🆕 從 ALL_DATA_MERGED_updated.csv 讀取賽道資訊 =====
+    # ===== 從 ALL_DATA_MERGED_updated.csv 讀取賽道資訊 =====
     track_map = {}
     if os.path.exists("ALL_DATA_MERGED_updated.csv"):
         try:
@@ -3233,7 +3233,6 @@ def admin_accuracy_monitor():
                         if 'AWT' in rc.upper():
                             track_map[key] = '沙田全天候'
                         elif 'ST' in rc.upper() and 'Turf' in rc:
-                            # 從 RC 中提取跑道（例如 "A", "C+3"）
                             import re as _re
                             m = _re.search(r'"(.*?)"', rc)
                             course = m.group(1) if m else ''
@@ -3279,12 +3278,11 @@ def admin_accuracy_monitor():
         pred_top3_str = ", ".join(pred_top3)
 
         lookup_key = f"{date_str}_{race_no}"
-        
-        # 🆕 優先從 track_map 攞賽道；搵唔到就用默認規則
+
+        # 優先從 track_map 攞賽道；搵唔到就用默認規則
         if lookup_key in track_map:
             current_track = track_map[lookup_key]
         else:
-            # 默認：星期三 = 跑馬地草地，其他 = 沙田草地
             try:
                 d = pd.to_datetime(date_str)
                 if d.weekday() == 2:
