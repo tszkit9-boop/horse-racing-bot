@@ -3461,7 +3461,7 @@ def admin_accuracy_monitor():
     st.subheader("📍 分場地命中率")
     venue_stats = {}
     for row in compare_rows:
-        v = row['場地']
+        v = row['賽道']
         if row['結果'] == '⏳ 待定':
             continue
         if v not in venue_stats:
