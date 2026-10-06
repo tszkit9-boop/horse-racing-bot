@@ -3209,7 +3209,8 @@ def admin_accuracy_monitor():
 
     st.info(f"📊 總共 {len(ai_data)} 個預測記錄")
 
-    result_file = "race_results_with_track.csv"
+    # ===== 主賽果檔案（有最新賽果）=====
+    result_file = "race_results_clean.csv"
     if not os.path.exists(result_file):
         st.warning("⚠️ 未有賽果檔案")
         return
@@ -3227,14 +3228,22 @@ def admin_accuracy_monitor():
         st.error(f"❌ 讀取賽果失敗：{e}")
         return
 
-    # ===== 從 race_results_with_track.csv 嘅「賽道」欄位建立 track_map =====
+    # ===== 從 race_results_with_track.csv 讀取賽道資訊 =====
     track_map = {}
-    if '賽道' in results_df.columns:
+    track_file = "race_results_with_track.csv"
+    if os.path.exists(track_file):
         try:
-            for _, row in results_df.dropna(subset=['race_date_str', 'race_no', '賽道']).iterrows():
-                key = f"{row['race_date_str']}_{int(row['race_no'])}"
-                if key not in track_map:
-                    track_map[key] = str(row['賽道'])
+            track_df = pd.read_csv(track_file, encoding='utf-8-sig')
+            track_df['race_date'] = pd.to_datetime(track_df['race_date'], errors='coerce')
+            track_df = track_df.dropna(subset=['race_date'])
+            track_df['race_date_str'] = track_df['race_date'].dt.strftime('%Y-%m-%d')
+            track_df['race_no'] = pd.to_numeric(track_df['race_no'], errors='coerce')
+
+            if '賽道' in track_df.columns:
+                for _, row in track_df.dropna(subset=['race_date_str', 'race_no', '賽道']).iterrows():
+                    key = f"{row['race_date_str']}_{int(row['race_no'])}"
+                    if key not in track_map:
+                        track_map[key] = str(row['賽道'])
         except Exception:
             pass
 
