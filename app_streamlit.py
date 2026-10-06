@@ -3198,7 +3198,7 @@ def admin_accuracy_monitor():
 
     st.info(f"📊 總共 {len(ai_data)} 個預測記錄")
 
-    result_file = "race_results_clean.csv"
+    result_file = "race_results_with_track.csv"
     if not os.path.exists(result_file):
         st.warning("⚠️ 未有賽果檔案")
         return
@@ -3216,34 +3216,14 @@ def admin_accuracy_monitor():
         st.error(f"❌ 讀取賽果失敗：{e}")
         return
 
-    # ===== 從 ALL_DATA_MERGED_updated.csv 讀取賽道資訊 =====
+    # ===== 從 race_results_with_track.csv 嘅「賽道」欄位建立 track_map =====
     track_map = {}
-    if os.path.exists("ALL_DATA_MERGED_updated.csv"):
+    if '賽道' in results_df.columns:
         try:
-            hist_df = pd.read_csv("ALL_DATA_MERGED_updated.csv", encoding='utf-8-sig', low_memory=False)
-            hist_df.columns = [str(c).replace('\ufeff', '').strip() for c in hist_df.columns]
-            hist_df['race_date_str'] = pd.to_datetime(hist_df['race_date'], errors='coerce').dt.strftime('%Y-%m-%d')
-            hist_df['race_no'] = pd.to_numeric(hist_df['race_no'], errors='coerce')
-
-            if 'RC/Track/Course' in hist_df.columns:
-                for _, row in hist_df.dropna(subset=['race_date_str', 'race_no', 'RC/Track/Course']).iterrows():
-                    key = f"{row['race_date_str']}_{int(row['race_no'])}"
-                    if key not in track_map:
-                        rc = str(row['RC/Track/Course'])
-                        if 'AWT' in rc.upper():
-                            track_map[key] = '沙田全天候'
-                        elif 'ST' in rc.upper() and 'Turf' in rc:
-                            import re as _re
-                            m = _re.search(r'"(.*?)"', rc)
-                            course = m.group(1) if m else ''
-                            track_map[key] = f'沙田草地 {course}' if course else '沙田草地'
-                        elif 'HV' in rc.upper():
-                            import re as _re
-                            m = _re.search(r'"(.*?)"', rc)
-                            course = m.group(1) if m else ''
-                            track_map[key] = f'跑馬地草地 {course}' if course else '跑馬地草地'
-                        else:
-                            track_map[key] = '未知'
+            for _, row in results_df.dropna(subset=['race_date_str', 'race_no', '賽道']).iterrows():
+                key = f"{row['race_date_str']}_{int(row['race_no'])}"
+                if key not in track_map:
+                    track_map[key] = str(row['賽道'])
         except Exception:
             pass
 
