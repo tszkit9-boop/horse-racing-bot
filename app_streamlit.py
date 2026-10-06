@@ -1035,8 +1035,19 @@ def run_prediction(date_str, race_no):
             track_info = str(track_values[0]).strip()
 
     if not track_info or track_info == '' or track_info == 'nan':
-        racecourse = st.session_state.get('racecourse', 'ST')
-        track_info = 'HV / Turf' if racecourse == 'HV' else 'ST / Turf'
+        racecourse = st.session_state.get('racecourse', None)
+        if racecourse:
+            track_info = 'HV / Turf' if racecourse == 'HV' else 'ST / Turf'
+        else:
+            # 用日期判斷：星期三 = 跑馬地夜賽，其餘 = 沙田
+            try:
+                d = pd.to_datetime(date_str)
+                if d.weekday() == 2:
+                    track_info = 'HV / Turf'
+                else:
+                    track_info = 'ST / Turf'
+            except Exception:
+                track_info = 'ST / Turf'
 
     track_upper = track_info.upper()
     if 'AWT' in track_upper or '全天候' in track_info:
