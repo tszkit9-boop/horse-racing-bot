@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""賽馬預測系統 v16.0 - 完整可用版"""
+"""駿影 AI 賽馬預測系統 v16.0 - 完整可用版"""
 
 import streamlit as st
 import pandas as pd
