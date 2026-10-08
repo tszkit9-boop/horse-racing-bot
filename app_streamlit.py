@@ -2376,7 +2376,7 @@ def admin_user_management():
             nu = st.text_input("新用戶名", key="nu_name")
             np_ = st.text_input("密碼", type="password", key="nu_pw")
         with col2:
-            ng = st.selectbox("群組", ["free", "paid", "VIP", "super_admin"], key="nu_group")
+            ng = st.selectbox("群組", ["free", "paid", "VIP", "admin", "super_admin"], key="nu_group")
             npaid = st.checkbox("付費狀態", value=False, key="nu_paid")
         if st.button("建立用戶", key="create_user_btn"):
             if not nu or not np_:
