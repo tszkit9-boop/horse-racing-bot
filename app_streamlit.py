@@ -2413,7 +2413,7 @@ def admin_user_management():
         u = users[sel]
         col1, col2 = st.columns(2)
         with col1:
-            grp_options = ['free', 'paid', 'VIP', 'super_admin']
+            grp_options = ['free', 'paid', 'VIP', 'admin', 'super_admin']
             cur_grp = u.get('group', 'free')
             ngrp = st.selectbox(
                 "群組", grp_options,
