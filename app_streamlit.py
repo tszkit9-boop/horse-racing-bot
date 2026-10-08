@@ -4366,6 +4366,7 @@ def login_page():
                     st.session_state._last_activity = datetime.now()
                     log_user_activity(u, "登入", "登入成功")
                     st.session_state.role = user.get('group', 'free')
+                    st.session_state.permissions = user.get('permissions', [])
                     st.rerun()
                 else:
                     st.error("❌ 用戶名或密碼錯誤")
