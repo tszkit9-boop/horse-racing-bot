@@ -4304,7 +4304,25 @@ def check_session_timeout():
     st.session_state._last_activity = now
 
 def login_page():
-    st.title("🔐 登入 / 註冊")
+    # 🆕 右上角按鈕佈局（同登入後一致）
+    c1, c2, c3, c4 = st.columns([4, 1, 1, 1])
+
+    with c1:
+        st.title("🔐 登入 / 註冊")
+
+    with c2:
+        if st.button("🔑 登入", use_container_width=True, key="pg_login_top"):
+            st.session_state.page_mode = "login"
+            st.rerun()
+
+    with c3:
+        if st.button("📝 註冊", use_container_width=True, key="pg_reg_top"):
+            st.session_state.page_mode = "register"
+            st.rerun()
+
+    with c4:
+        if st.button("❓ 常見問題", use_container_width=True, key="pg_faq_top"):
+            st.switch_page("pages/FAQ.py")
 
     # 🛡️ 顯示超時訊息
     if st.session_state.get('_timeout_message'):
@@ -4316,14 +4334,8 @@ def login_page():
         st.success(st.session_state['register_success'])
         del st.session_state['register_success']
 
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("🔑 登入", use_container_width=True, key="pg_login"):
-            st.session_state.page_mode = "login"
-    with c2:
-        if st.button("📝 註冊", use_container_width=True, key="pg_reg"):
-            st.session_state.page_mode = "register"
-
+    # 🆕 唔再需要原本嘅 c1, c2 大按鈕
+    # mode 由 session_state 決定
     mode = st.session_state.get("page_mode", "login")
 
     if mode == "login":
