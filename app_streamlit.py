@@ -4230,44 +4230,78 @@ def admin_page():
         st.rerun()
     st.divider()
 
+    # ===== 後台主選單（加入權限檢查）=====
     tabs_def = [
-        ("📊 儀表板", admin_dashboard),
-        ("👥 用戶管理", admin_user_management),
-        ("📥 下載中心", admin_downloads),
-        ("📊 次數管理", admin_manage_predictions),
-        ("📊 數據分析", admin_analytics),
-        ("🏇 馬匹排行榜", admin_horse_ranking),
-        ("👨‍🏫 騎師排行榜", admin_jockey_ranking),
-        ("👨‍🏫 練馬師排行榜", admin_trainer_ranking),
-        ("📊 場地/路程分析", admin_course_analysis),
-        ("📅 每月報告", admin_monthly_report),
-        ("💰 財務", admin_finance),
-        ("🎟️ 優惠碼", admin_promo_codes),
-        ("📈 預測監控", admin_accuracy_monitor),
-        ("⏰ 訂閱管理", admin_subscription),
-        ("❤️ 打賞管理", admin_reward_management),
-        ("📡 監控", admin_monitoring),
-        ("📝 內容", admin_content),
-        ("🤖 自動維護", admin_auto_maintenance),
-        ("⚖️ 模型權重", admin_model_weights),
-        ("🤖 自動化", admin_automation),
-        ("🔐 安全", admin_security),
-        ("👤 用戶記錄", admin_user_activity),
-        ("🎰 抽獎設定", admin_lottery_config),
-        ("🛒 商城設定", admin_shop_config),
-        ("🎯 彩池設定", admin_pool_config),
-        ("⚙️ 系統設定", admin_system_settings),
+        ("📊 儀表板", admin_dashboard, "dashboard"),
+        ("👥 用戶管理", admin_user_management, "user_management"),
+        ("📥 下載中心", admin_downloads, "downloads"),
+        ("📊 次數管理", admin_manage_predictions, "manage_predictions"),
+        ("📊 數據分析", admin_analytics, "analytics"),
+        ("🏇 馬匹排行榜", admin_horse_ranking, "horse_ranking"),
+        ("👨‍🏫 騎師排行榜", admin_jockey_ranking, "jockey_ranking"),
+        ("👨‍🏫 練馬師排行榜", admin_trainer_ranking, "trainer_ranking"),
+        ("📊 場地/路程分析", admin_course_analysis, "course_analysis"),
+        ("📅 每月報告", admin_monthly_report, "monthly_report"),
+        ("💰 財務", admin_finance, "finance"),
+        ("🎟️ 優惠碼", admin_promo_codes, "promo_codes"),
+        ("📈 預測監控", admin_accuracy_monitor, "accuracy_monitor"),
+        ("⏰ 訂閱管理", admin_subscription, "subscription"),
+        ("❤️ 打賞管理", admin_reward_management, "reward_management"),
+        ("📡 監控", admin_monitoring, "monitoring"),
+        ("📝 內容", admin_content, "content"),
+        ("🤖 自動維護", admin_auto_maintenance, "auto_maintenance"),
+        ("⚖️ 模型權重", admin_model_weights, "model_weights"),
+        ("🤖 自動化", admin_automation, "automation"),
+        ("🔐 安全", admin_security, "security"),
+        ("👤 用戶記錄", admin_user_activity, "user_activity"),
+        ("🎰 抽獎設定", admin_lottery_config, "lottery_config"),
+        ("🛒 商城設定", admin_shop_config, "shop_config"),
+        ("🎯 彩池設定", admin_pool_config, "pool_config"),
+        ("⚙️ 系統設定", admin_system_settings, "system_settings"),
     ]
 
-    tabs = st.tabs([t[0] for t in tabs_def])
-    for i, (name, fn) in enumerate(tabs_def):
-        with tabs[i]:
-            try:
-                fn()
-            except Exception as e:
-                st.error(f"⚠️ 呢個分頁載入失敗：{e}")
-                import traceback
-                st.code(traceback.format_exc())
+    # ===== 根據權限過濾 tabs =====
+    _role = st.session_state.get("role")
+    _user_perms = st.session_state.get("permissions", [])
+
+    # 確保 _user_perms 係 list
+    if isinstance(_user_perms, str):
+        try:
+            _user_perms = json.loads(_user_perms)
+        except Exception:
+            _user_perms = []
+    if not isinstance(_user_perms, list):
+        _user_perms = []
+
+    if _role == "super_admin":
+        # super_admin 睇全部
+        visible_tabs = tabs_def
+    elif _role == "admin":
+        if _user_perms:
+            # admin 有 permissions，按 permissions 過濾
+            visible_tabs = [t for t in tabs_def if t[2] in _user_perms]
+        else:
+            # 🆕 admin 冇 permissions，默認顯示基本功能
+            default_perms = ["dashboard", "user_management", "downloads", "manage_predictions"]
+            visible_tabs = [t for t in tabs_def if t[2] in default_perms]
+    else:
+        visible_tabs = []
+
+    # ===== 顯示 tabs =====
+    if visible_tabs:
+        tabs = st.tabs([t[0] for t in visible_tabs])
+        for i, (name, fn, perm_key) in enumerate(visible_tabs):
+            with tabs[i]:
+                try:
+                    fn()
+                except Exception as e:
+                    st.error(f"⚠️ 呢個分頁載入失敗：{e}")
+                    import traceback
+                    st.code(traceback.format_exc())
+    else:
+        st.warning("⚠️ 你冇任何後台權限，請聯絡管理員。")
+        st.write(f"DEBUG: role = {_role}")
+        st.write(f"DEBUG: permissions = {_user_perms}")
 
 def display_race_calendar():
     try:
