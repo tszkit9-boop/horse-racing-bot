@@ -5302,7 +5302,7 @@ def main():
                 if top:
                     horse_list = [str(top).strip()]
 
-            for idx, horse in enumerate(horse_list[:4], 1):
+            for idx, horse in enumerate(horse_list[:3], 1):
                 pred_list.append({
                     '日期': date_str,
                     '場次': race_no_c,
