@@ -2353,6 +2353,36 @@ def admin_user_management():
 
     st.info(f"✅ 成功載入 {len(users)} 個用戶")
 
+    # 🆕 可用權限清單
+    ALL_PERMISSIONS = {
+        "dashboard": "📊 儀表板",
+        "user_management": "👥 用戶管理",
+        "downloads": "📥 下載中心",
+        "manage_predictions": "📊 次數管理",
+        "analytics": "📊 數據分析",
+        "horse_ranking": "🏇 馬匹排行榜",
+        "jockey_ranking": "👨‍🏫 騎師排行榜",
+        "trainer_ranking": "👨‍🏫 練馬師排行榜",
+        "course_analysis": "📊 場地/路程分析",
+        "monthly_report": "📅 每月報告",
+        "finance": "💰 財務",
+        "promo_codes": "🎟️ 優惠碼",
+        "accuracy_monitor": "📈 預測監控",
+        "subscription": "⏰ 訂閱管理",
+        "reward_management": "❤️ 打賞管理",
+        "monitoring": "📡 監控",
+        "content": "📝 內容",
+        "auto_maintenance": "🤖 自動維護",
+        "model_weights": "⚖️ 模型權重",
+        "automation": "🤖 自動化",
+        "security": "🔐 安全",
+        "user_activity": "👤 用戶記錄",
+        "lottery_config": "🎰 抽獎設定",
+        "shop_config": "🛒 商城設定",
+        "pool_config": "🎯 彩池設定",
+        "system_settings": "⚙️ 系統設定",
+    }
+
     # ===== 1. 用戶列表 =====
     if users:
         df = pd.DataFrame.from_dict(users, orient='index')
@@ -2390,13 +2420,14 @@ def admin_user_management():
                     "free_usage": 0, "total_usage": 0,
                     "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                     "note": "手動新增", "group": ng, "plan": None,
-                    "predictions_limit": -1 if ng in ['super_admin', 'VIP'] else CONFIG.get("free_limit", 2),
+                    "predictions_limit": -1 if ng in ['super_admin', 'admin', 'VIP'] else CONFIG.get("free_limit", 2),
                     "history": [], "terms_agreed": datetime.now().isoformat(),
                     "invite_code": nu.upper() + str(random.randint(100, 999)),
                     "invited_by": None, "invite_rewards": 0, "invite_count": 0,
                     "level": "🥉 銅牌會員", "exp": 0, "badges": [],
                     "virtual_balance": CONFIG.get("daily_virtual_coin", 1000),
-                    "last_claim_date": '', "bets": [], "last_lottery_date": ""
+                    "last_claim_date": '', "bets": [], "last_lottery_date": "",
+                    "permissions": [] if ng == "admin" else (list(ALL_PERMISSIONS.keys()) if ng == "super_admin" else [])
                 }
                 if save_users(users):
                     st.success(f"✅ 用戶 {nu} 已建立！")
@@ -2444,6 +2475,22 @@ def admin_user_management():
                 key="edit_badges"
             )
 
+        # 🆕 如果係 admin，顯示權限勾選區
+        if ngrp == "admin":
+            st.divider()
+            st.markdown("#### 🔐 管理員權限設定")
+            st.caption("勾選呢個 admin 可以睇到嘅後台功能（super_admin 自動擁有全部權限）")
+
+            cur_perms = u.get('permissions', [])
+            new_perms = []
+            perm_cols = st.columns(3)
+            for idx, (perm_key, perm_label) in enumerate(ALL_PERMISSIONS.items()):
+                with perm_cols[idx % 3]:
+                    if st.checkbox(perm_label, value=(perm_key in cur_perms), key=f"perm_{sel}_{perm_key}"):
+                        new_perms.append(perm_key)
+        else:
+            new_perms = None  # 非 admin，唔改權限
+
         note = st.text_area("備註", value=u.get('note', ''), key="edit_note")
 
         if st.button("💾 儲存變更", type="primary", key="save_user_changes"):
@@ -2456,10 +2503,19 @@ def admin_user_management():
             users[sel]['phone'] = phone
             if npw:
                 users[sel]['password'] = npw
-            if ngrp in ['super_admin', 'VIP']:
+            if ngrp in ['super_admin', 'admin', 'VIP']:
                 users[sel]['predictions_limit'] = -1
             else:
                 users[sel]['predictions_limit'] = CONFIG.get("free_limit", 2)
+
+            # 🆕 儲存權限
+            if ngrp == "super_admin":
+                users[sel]['permissions'] = list(ALL_PERMISSIONS.keys())
+            elif ngrp == "admin" and new_perms is not None:
+                users[sel]['permissions'] = new_perms
+            else:
+                users[sel]['permissions'] = []
+
             if save_users(users):
                 st.success("✅ 已更新用戶資料！")
                 st.rerun()
