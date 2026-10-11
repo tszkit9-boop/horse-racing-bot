@@ -3490,24 +3490,38 @@ def admin_accuracy_monitor():
 
             def highlight_prediction(row):
                 pred = str(row['預測頭3名'])
-                if pred == 'nan' or pred == '':
-                    return pred
-
                 real = str(row['真實頭3名'])
-                real_names = []
-                if '⏳' not in real:
-                    real_names = [re.sub(r'\(.*\)', '', name).strip() for name in real.split(',')]
 
-                pred_list = [h.strip() for h in pred.split(',')]
-                colored = []
+                if pred == 'nan' or pred == '':
+                    return pred, real
+
+                pred_list = [h.strip() for h in pred.split(',') if h.strip()]
+
+                real_names = []
+                if '⏳' not in real and real != 'nan':
+                    real_names = [re.sub(r'\(.*\)', '', name).strip() for name in real.split(',') if name.strip()]
+
+                # 預測頭3名上色
+                pred_colored = []
                 for h in pred_list:
                     if h in real_names:
-                        colored.append(f'<span style="color:green; font-weight:bold;">{h}</span>')
+                        pred_colored.append(f'<span style="color:green; font-weight:bold;">{h}</span>')
                     else:
-                        colored.append(f'<span style="color:red;">{h}</span>')
-                return ', '.join(colored)
+                        pred_colored.append(f'<span style="color:red;">{h}</span>')
 
-            df_compare_detail['預測頭3名'] = df_compare_detail.apply(highlight_prediction, axis=1)
+                # 真實頭3名上色
+                real_colored = []
+                for r in real_names:
+                    if r in pred_list:
+                        real_colored.append(f'<span style="color:green; font-weight:bold;">{r}</span>')
+                    else:
+                        real_colored.append(f'<span style="color:red;">{r}</span>')
+
+                return ', '.join(pred_colored), ', '.join(real_colored)
+
+            df_compare_detail[['預測頭3名', '真實頭3名']] = df_compare_detail.apply(
+                lambda row: pd.Series(highlight_prediction(row)), axis=1
+            )
 
             html_table = df_compare_detail.to_html(escape=False, index=False)
             st.markdown(html_table, unsafe_allow_html=True)
