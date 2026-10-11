@@ -3488,42 +3488,42 @@ def admin_accuracy_monitor():
                 ascending=[True, True]
             ).reset_index(drop=True)
 
-def highlight_prediction(row):
-    pred = str(row['預測頭3名'])
-    real = str(row['真實頭3名'])
+            def highlight_prediction(row):
+                pred = str(row['預測頭3名'])
+                real = str(row['真實頭3名'])
 
-    if pred == 'nan' or pred == '':
-        return pred, real
+                if pred == 'nan' or pred == '':
+                    return pred, real
 
-    pred_list = [h.strip() for h in pred.split(',') if h.strip()]
+                pred_list = [h.strip() for h in pred.split(',') if h.strip()]
 
-    real_names = []
-    if '⏳' not in real and real != 'nan':
-        # 🆕 用正則提取所有「馬名(名次)」格式嘅馬名，唔依賴逗號
-        matches = re.findall(r'([^,()]+?)\s*\(\d+\)', real)
-        if matches:
-            real_names = [m.strip() for m in matches if m.strip()]
-        else:
-            # Fallback：如果冇括號，就按逗號分割
-            real_names = [name.strip() for name in real.split(',') if name.strip()]
+                real_names = []
+                if '⏳' not in real and real != 'nan':
+                    # 用正則提取所有「馬名(名次)」格式嘅馬名，唔依賴逗號
+                    matches = re.findall(r'([^,()]+?)\s*\(\d+\)', real)
+                    if matches:
+                        real_names = [m.strip() for m in matches if m.strip()]
+                    else:
+                        # Fallback：如果冇括號，就按逗號分割
+                        real_names = [name.strip() for name in real.split(',') if name.strip()]
 
-    # 預測頭3名上色
-    pred_colored = []
-    for h in pred_list:
-        if h in real_names:
-            pred_colored.append(f'<span style="color:green; font-weight:bold;">{h}</span>')
-        else:
-            pred_colored.append(f'<span style="color:red;">{h}</span>')
+                # 預測頭3名上色
+                pred_colored = []
+                for h in pred_list:
+                    if h in real_names:
+                        pred_colored.append(f'<span style="color:green; font-weight:bold;">{h}</span>')
+                    else:
+                        pred_colored.append(f'<span style="color:red;">{h}</span>')
 
-    # 真實頭3名上色
-    real_colored = []
-    for r in real_names:
-        if r in pred_list:
-            real_colored.append(f'<span style="color:green; font-weight:bold;">{r}</span>')
-        else:
-            real_colored.append(f'<span style="color:red;">{r}</span>')
+                # 真實頭3名上色
+                real_colored = []
+                for r in real_names:
+                    if r in pred_list:
+                        real_colored.append(f'<span style="color:green; font-weight:bold;">{r}</span>')
+                    else:
+                        real_colored.append(f'<span style="color:red;">{r}</span>')
 
-    return ', '.join(pred_colored), ', '.join(real_colored)
+                return ', '.join(pred_colored), ', '.join(real_colored)
 
             df_compare_detail[['預測頭3名', '真實頭3名']] = df_compare_detail.apply(
                 lambda row: pd.Series(highlight_prediction(row)), axis=1
