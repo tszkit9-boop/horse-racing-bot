@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 scrape_results.py - 終極版賽果爬蟲（自動 Push + 數據去重 + 拆 horse_id）
+- 🆕 修復平頭馬問題：用正則提取名次，支援 "2 (平頭馬)" 格式
 """
 
 import os
@@ -76,9 +77,14 @@ def fetch_single_race(driver, date_str, racecourse, race_no):
             cells = row.find_elements(By.TAG_NAME, "td")
             if len(cells) < 3:
                 continue
+
+            # 🆕 用正則提取開頭數字，支援 "2 (平頭馬)"
             pos_text = cells[0].text.strip()
-            if not pos_text or not pos_text.isdigit():
+            pos_match = re.match(r'^(\d+)', pos_text)
+            if not pos_match:
                 continue
+            finish_position = int(pos_match.group(1))
+
             raw_name = cells[2].text.strip()
             if raw_name:
                 # 🛡️ 拆 "藤王駒 (K143)" → horse_name="藤王駒", horse_id="K143"
@@ -94,12 +100,12 @@ def fetch_single_race(driver, date_str, racecourse, race_no):
                     'race_no': race_no,
                     'horse_name': horse_name,
                     'horse_id': horse_id,
-                    'finish_position': int(pos_text)
+                    'finish_position': finish_position
                 })
         except Exception:
             continue
 
-    # 🛡️ 關鍵修正：去重 + 限制最多 14 匹馬
+    # 🛡️ 去重 + 限制最多 14 匹馬
     seen_horses = set()
     cleaned_results = []
     for r in results:
