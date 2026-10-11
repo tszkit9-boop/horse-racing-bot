@@ -3361,7 +3361,7 @@ def admin_accuracy_monitor():
             pending_count += 1
             continue
 
-        real_top3_list = real_top3[lookup_key]
+        real_top3_list = real_top3[lookup_key][:3]  # 🆕 只取前 3 匹
         real_names = [r['horse'] for r in real_top3_list]
         real_str = ", ".join([f"{r['horse']}({r['pos']})" for r in real_top3_list])
 
