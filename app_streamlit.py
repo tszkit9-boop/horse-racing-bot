@@ -969,7 +969,7 @@ def _repair_racecard(df):
     return result
 
 def run_prediction(date_str, race_no):
-    """用雙模型預測（贏出 + 前三名）+ 值博率計算 + 泥地混合賠率"""
+    """用雙模型預測（贏出 + 前三名）+ 值博率計算 + 泥地混合賠率 + 穩定度篩選"""
     if not os.path.exists("racecard_uploaded.csv"):
         st.error("❌ 找不到 racecard_uploaded.csv")
         return None, None
@@ -1039,7 +1039,6 @@ def run_prediction(date_str, race_no):
         if racecourse:
             track_info = 'HV / Turf' if racecourse == 'HV' else 'ST / Turf'
         else:
-            # 用日期判斷：星期三 = 跑馬地夜賽，其餘 = 沙田
             try:
                 d = pd.to_datetime(date_str)
                 if d.weekday() == 2:
@@ -1161,14 +1160,13 @@ def run_prediction(date_str, race_no):
     if proba_top3 is None:
         proba_top3 = proba_win
 
-    # ===== 🆕 泥地特殊處理：混合賠率 =====
+    # ===== 泥地特殊處理：混合賠率 =====
     if is_st_awt == 1:
         try:
             win_odds_arr = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0).replace(0, 4.0).values
             odds_implied = 1.0 / win_odds_arr
             odds_implied = odds_implied / odds_implied.sum()
 
-            # 泥地：模型佔 40%，賠率佔 60%
             proba_win = 0.4 * proba_win + 0.6 * odds_implied
             proba_top3 = 0.4 * proba_top3 + 0.6 * odds_implied
             proba_win = proba_win / proba_win.sum()
@@ -1224,6 +1222,27 @@ def run_prediction(date_str, race_no):
     result_df['贏出概率'] = proba_win
     result_df['前三概率'] = proba_top3
 
+    # ===== 🆕 穩定度計算 =====
+    history_top3_rate = {}
+    if not history_df.empty and 'horse_name' in history_df.columns and 'finish_position' in history_df.columns:
+        try:
+            hist = history_df.copy()
+            hist['horse_name'] = hist['horse_name'].astype(str).str.strip()
+            hist['finish_position'] = pd.to_numeric(hist['finish_position'], errors='coerce')
+            hist = hist.dropna(subset=['finish_position'])
+            hist['is_top3'] = (hist['finish_position'] <= 3).astype(int)
+            # 計算每匹馬嘅歷史前三率
+            stats = hist.groupby('horse_name')['is_top3'].agg(['mean', 'count'])
+            for horse, row in stats.iterrows():
+                # 至少要有 3 場記錄先算
+                if row['count'] >= 3:
+                    history_top3_rate[horse] = float(row['mean'])
+        except Exception:
+            pass
+
+    result_df['歷史前三率'] = result_df['馬名'].map(history_top3_rate).fillna(0)
+    result_df['穩定度分數'] = 0.6 * result_df['前三概率'] + 0.4 * result_df['歷史前三率']
+
     def calc_value(row):
         odds = row['賠率']
         prob = row['贏出概率']
@@ -1241,7 +1260,8 @@ def run_prediction(date_str, race_no):
         lambda x: '⭐⭐⭐ 高' if x > 0.2 else '⭐⭐ 中' if x > 0.1 else '⭐ 低'
     )
 
-    result_df = result_df.sort_values('贏出概率', ascending=False).reset_index(drop=True)
+    # 🆕 用穩定度分數排序（取代原本按贏出概率）
+    result_df = result_df.sort_values('穩定度分數', ascending=False).reset_index(drop=True)
 
     # ===== 值博率分析 =====
     st.divider()
@@ -1289,7 +1309,7 @@ def run_prediction(date_str, race_no):
         "top_horse": result_df.iloc[0]['馬名'],
         "top_prob": float(result_df.iloc[0]['預測勝率']),
         "all_horses": result_df['馬名'].tolist(),
-        "model_used": [f"{track_type}_贏出", f"{track_type}_前三", "值博率"],
+        "model_used": [f"{track_type}_贏出", f"{track_type}_前三", "值博率", "穩定度"],
         "predicted_at": datetime.now().isoformat()
     })
 
