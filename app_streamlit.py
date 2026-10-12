@@ -817,7 +817,6 @@ def _build_features(race_df, history_df):
                     name = re.sub(r'[^\u4e00-\u9fffA-Za-z0-9]', '', name)
                     return name
 
-                # 用中文名做 key
                 mapping_df['norm_name'] = mapping_df['horse_name_cn'].apply(normalize_name)
                 mapping_df = mapping_df.dropna(subset=['norm_name'])
                 mapping_df = mapping_df[mapping_df['norm_name'] != '']
@@ -853,7 +852,9 @@ def _build_features(race_df, history_df):
         'last_trial_rank', 'last_trial_time',
         'jockey_win_rate_5', 'jockey_win_rate_10', 'draw_win_rate',
         'days_since_injury', 'injury_30d', 'injury_60d', 'injury_90d',
-        'total_injuries', 'injury_severity'
+        'total_injuries', 'injury_severity',
+        # 🆕 近期狀態特徵
+        'last_race_rank', 'best_rank_last3', 'top3_rate_last5', 'days_since_last_win'
     ]
     for c in feature_cols:
         if c not in result.columns:
@@ -898,6 +899,42 @@ def _build_features(race_df, history_df):
                 return g['finish_position'].mean() if len(g) > 0 else 99
             avg3 = history_df.groupby('horse_id').apply(_avg3).to_dict()
             result['avg_rank_last3'] = result['horse_id'].map(avg3).fillna(99)
+
+            # 🆕 近期狀態特徵
+            def _last_rank(g):
+                g = g.sort_values('race_date')
+                return g['finish_position'].iloc[-1] if len(g) > 0 else 99
+            last_rank = history_df.groupby('horse_id').apply(_last_rank).to_dict()
+            result['last_race_rank'] = result['horse_id'].map(last_rank).fillna(99)
+
+            def _best_rank_last3(g):
+                g = g.sort_values('race_date').tail(3)
+                return g['finish_position'].min() if len(g) > 0 else 99
+            best3 = history_df.groupby('horse_id').apply(_best_rank_last3).to_dict()
+            result['best_rank_last3'] = result['horse_id'].map(best3).fillna(99)
+
+            def _top3_rate_last5(g):
+                g = g.sort_values('race_date').tail(5)
+                if len(g) == 0:
+                    return 0
+                return (g['finish_position'] <= 3).sum() / len(g)
+            top3_rate5 = history_df.groupby('horse_id').apply(_top3_rate_last5).to_dict()
+            result['top3_rate_last5'] = result['horse_id'].map(top3_rate5).fillna(0)
+
+            # 距離上次贏出嘅日數
+            def _days_since_last_win(horse_id):
+                sub = history_df[history_df['horse_id'] == horse_id]
+                if sub.empty:
+                    return 999
+                wins = sub[sub['finish_position'] == 1]
+                if wins.empty:
+                    return 999
+                last_win = wins['race_date'].max()
+                return (datetime.now() - last_win).days
+            days_since_win = {}
+            for h in result['horse_id'].unique():
+                days_since_win[h] = _days_since_last_win(h)
+            result['days_since_last_win'] = result['horse_id'].map(days_since_win).fillna(999)
 
             # 馬匹同路程勝率
             if 'distance' in history_df.columns and 'distance' in result.columns:
@@ -1100,7 +1137,9 @@ def run_prediction(date_str, race_no):
         'draw_win_rate', 'days_since_injury', 'injury_30d',
         'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity',
         'is_st_turf', 'is_st_awt', 'is_hv_turf',
-        'dam_win_rate'
+        'dam_win_rate',
+        # 🆕 近期狀態特徵
+        'last_race_rank', 'best_rank_last3', 'top3_rate_last5', 'days_since_last_win'
     ]
 
     X = features_df[features_40].fillna(0).values
