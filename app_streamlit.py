@@ -1105,19 +1105,26 @@ def run_prediction(date_str, race_no):
 
     X = features_df[features_40].fillna(0).values
 
-    # ===== 讀取權重 =====
+    # ===== 讀取權重（分場地，含穩定度權重）=====
     try:
         headers_tune = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-        res_tune = requests.get(f"{SUPABASE_URL}/rest/v1/model_weights?id=eq.1", headers=headers_tune)
+        venue = "ST" if track_type == "st" else "HV"
+        res_tune = requests.get(
+            f"{SUPABASE_URL}/rest/v1/venue_model_weights?venue=eq.{venue}",
+            headers=headers_tune
+        )
         if res_tune.status_code == 200 and res_tune.json():
             tune = res_tune.json()[0]
             w_xgb = float(tune.get('xgb_weight', 0.30))
             w_cat = float(tune.get('cat_weight', 0.50))
             w_rank = float(tune.get('rank_weight', 0.20))
+            w_stability = float(tune.get('stability_weight', 0.4))
         else:
             w_xgb, w_cat, w_rank = 0.30, 0.50, 0.20
+            w_stability = 0.4
     except Exception:
         w_xgb, w_cat, w_rank = 0.30, 0.50, 0.20
+        w_stability = 0.4
 
     def ensemble_predict(models):
         preds = []
@@ -1222,7 +1229,7 @@ def run_prediction(date_str, race_no):
     result_df['贏出概率'] = proba_win
     result_df['前三概率'] = proba_top3
 
-    # ===== 🆕 穩定度計算 =====
+    # ===== 穩定度計算 =====
     history_top3_rate = {}
     if not history_df.empty and 'horse_name' in history_df.columns and 'finish_position' in history_df.columns:
         try:
@@ -1231,17 +1238,16 @@ def run_prediction(date_str, race_no):
             hist['finish_position'] = pd.to_numeric(hist['finish_position'], errors='coerce')
             hist = hist.dropna(subset=['finish_position'])
             hist['is_top3'] = (hist['finish_position'] <= 3).astype(int)
-            # 計算每匹馬嘅歷史前三率
             stats = hist.groupby('horse_name')['is_top3'].agg(['mean', 'count'])
             for horse, row in stats.iterrows():
-                # 至少要有 3 場記錄先算
                 if row['count'] >= 3:
                     history_top3_rate[horse] = float(row['mean'])
         except Exception:
             pass
 
     result_df['歷史前三率'] = result_df['馬名'].map(history_top3_rate).fillna(0)
-    result_df['穩定度分數'] = 0.6 * result_df['前三概率'] + 0.4 * result_df['歷史前三率']
+    # 🆕 用後台設定嘅穩定度權重
+    result_df['穩定度分數'] = (1 - w_stability) * result_df['前三概率'] + w_stability * result_df['歷史前三率']
 
     def calc_value(row):
         odds = row['賠率']
@@ -1260,7 +1266,7 @@ def run_prediction(date_str, race_no):
         lambda x: '⭐⭐⭐ 高' if x > 0.2 else '⭐⭐ 中' if x > 0.1 else '⭐ 低'
     )
 
-    # 🆕 用穩定度分數排序（取代原本按贏出概率）
+    # 🆕 用穩定度分數排序
     result_df = result_df.sort_values('穩定度分數', ascending=False).reset_index(drop=True)
 
     # ===== 值博率分析 =====
@@ -3202,10 +3208,8 @@ def admin_model_weights():
         st.warning("⚠️ 未有場地權重設定，請先喺 Supabase 建立。")
         return
 
-    # 轉為 dict 方便讀取
     cfg_map = {c['venue']: c for c in configs}
 
-    # ===== 分開兩個 Tab 顯示 =====
     tab_st, tab_hv = st.tabs(["🏇 沙田 (ST)", "🏇 跑馬地 (HV)"])
 
     for venue, tab in [('ST', tab_st), ('HV', tab_hv)]:
@@ -3214,12 +3218,14 @@ def admin_model_weights():
             current_xgb = float(cfg.get('xgb_weight', 0.30))
             current_cat = float(cfg.get('cat_weight', 0.50))
             current_rank = float(cfg.get('rank_weight', 0.20))
+            current_stability = float(cfg.get('stability_weight', 0.4))
 
             st.markdown(f"### 📊 {venue} 目前權重")
-            c1, c2, c3 = st.columns(3)
+            c1, c2, c3, c4 = st.columns(4)
             c1.metric("XGBoost", f"{current_xgb:.2f}")
             c2.metric("CatBoost", f"{current_cat:.2f}")
             c3.metric("Ranking", f"{current_rank:.2f}")
+            c4.metric("穩定度", f"{current_stability:.2f}")
 
             st.divider()
 
@@ -3228,11 +3234,19 @@ def admin_model_weights():
             new_cat = st.slider(f"CatBoost 權重 ({venue})", 0.0, 1.0, current_cat, 0.05, key=f"slider_cat_{venue}")
             new_rank = st.slider(f"Ranking 權重 ({venue})", 0.0, 1.0, current_rank, 0.05, key=f"slider_rank_{venue}")
 
+            st.markdown("---")
+            st.markdown("**🎯 穩定度權重**（用於彩池推薦排序）")
+            st.caption("穩定度分數 = (1 - 穩定度權重) × 模型前三概率 + 穩定度權重 × 歷史前三率")
+            new_stability = st.slider(
+                f"穩定度權重 ({venue})", 0.0, 1.0, current_stability, 0.05,
+                key=f"slider_stability_{venue}"
+            )
+
             total = new_xgb + new_cat + new_rank
             if abs(total - 1.0) > 0.01:
-                st.warning(f"⚠️ 三個權重加埋係 {total:.2f}，必須等於 1.0 先可以儲存。")
+                st.warning(f"⚠️ 三個模型權重加埋係 {total:.2f}，必須等於 1.0 先可以儲存。")
             else:
-                st.success(f"✅ 權重總和：{total:.2f}（正確）")
+                st.success(f"✅ 模型權重總和：{total:.2f}（正確）")
 
             col1, col2 = st.columns(2)
             with col1:
@@ -3246,10 +3260,11 @@ def admin_model_weights():
                                 "xgb_weight": new_xgb,
                                 "cat_weight": new_cat,
                                 "rank_weight": new_rank,
+                                "stability_weight": new_stability,
                                 "updated_at": datetime.now().isoformat()
                             }
                         )
-                        st.success(f"✅ 已更新 {venue}：XGB {new_xgb:.2f} / Cat {new_cat:.2f} / Rank {new_rank:.2f}")
+                        st.success(f"✅ 已更新 {venue}：XGB {new_xgb:.2f} / Cat {new_cat:.2f} / Rank {new_rank:.2f} / 穩定度 {new_stability:.2f}")
                         st.rerun()
                     except Exception as e:
                         st.error(f"儲存失敗：{e}")
@@ -3260,7 +3275,7 @@ def admin_model_weights():
                         requests.patch(
                             f"{SUPABASE_URL}/rest/v1/venue_model_weights?venue=eq.{venue}",
                             headers=headers,
-                            json={"xgb_weight": 0.30, "cat_weight": 0.50, "rank_weight": 0.20}
+                            json={"xgb_weight": 0.30, "cat_weight": 0.50, "rank_weight": 0.20, "stability_weight": 0.4}
                         )
                         st.success(f"✅ 已重設 {venue} 為預設值")
                         st.rerun()
