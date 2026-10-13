@@ -4894,6 +4894,7 @@ else:
             with st.popover("💬 聊天室", use_container_width=True):
                 show_chat_room()
 
+    c1, c2, c3, c4, c5 = st.columns(5)
     with c5:
         if st.session_state.get('logged_in', False):
             if st.button("🚪 登出", use_container_width=True, key="logout_main"):
@@ -4901,7 +4902,6 @@ else:
                     if k in st.session_state:
                         del st.session_state[k]
                 st.rerun()
-
     st.markdown("---")
     
     # ===
