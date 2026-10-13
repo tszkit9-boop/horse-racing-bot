@@ -5133,23 +5133,8 @@ def main():
                             else:
                                 st.error("❌ 儲存失敗")
 
-# 預測記錄
 # ═════════════════════════════════════════════
-# 【定義 user_data】必須貼喺 with st.expander 之前
-# ═════════════════════════════════════════════
-if 'username' not in st.session_state:
-    st.error("請重新登入")
-    st.stop()
-
-res_user = supabase.table('users').select('*').eq('username', st.session_state.username).execute()
-if not res_user.data:
-    st.error("搵唔到用戶資料")
-    st.stop()
-
-user_data = res_user.data[0]
-
-# ═════════════════════════════════════════════
-# 【預測記錄】
+# 【預測記錄】安全、獨立版本
 # ═════════════════════════════════════════════
 if 'username' in st.session_state:
     # 使用 requests 讀取 Supabase（與 run_prediction 一致）
@@ -5161,13 +5146,13 @@ if 'username' in st.session_state:
         f"{SUPABASE_URL}/rest/v1/users?username=eq.{st.session_state.username}&select=history",
         headers=headers_user
     )
-    
+
     if res_user.status_code == 200 and res_user.json():
         user_data = res_user.json()[0]
-        
+
         with st.expander("📜 預測記錄", expanded=False):
             history_raw = user_data.get('history', '')
-            
+
             # 安全解析 JSON
             if isinstance(history_raw, str) and history_raw:
                 try:
@@ -5176,7 +5161,7 @@ if 'username' in st.session_state:
                     history = []
             else:
                 history = history_raw if isinstance(history_raw, list) else []
-        
+
             if not history:
                 st.info("📭 暫無預測記錄")
             else:
