@@ -968,10 +968,10 @@ def _build_features(race_df, history_df):
                 lambda h: (datetime.now() - last_run[h]).days if h in last_run else 999
             ).fillna(999)
 
-        # 填充剩餘特徵
-        for c in features_43:
+    # 填充剩餘特徵
+            for c in features_43:
             if c not in result.columns:
-                result[c] = 0.0
+            result[c] = 0.0
             result[c] = pd.to_numeric(result[c], errors='coerce').fillna(0)
 
     return result
