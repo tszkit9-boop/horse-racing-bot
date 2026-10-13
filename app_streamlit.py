@@ -969,7 +969,7 @@ def _build_features(race_df, history_df):
             ).fillna(999)
 
     # 填充剩餘特徵
-    for c in feature_cols:
+       for c in features_43:
         result[c] = pd.to_numeric(result[c], errors='coerce').fillna(0)
 
     return result
