@@ -859,9 +859,9 @@ def _build_features(race_df, history_df):
     ]
 
 
-   for c in features_43:
-        if c not in result.columns:
-            result[c] = 0.0
+        for c in features_43:
+            if c not in result.columns:
+                result[c] = 0.0
 
     # 填充基本欄位
     if 'draw' in race_df.columns:
