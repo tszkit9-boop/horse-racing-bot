@@ -814,7 +814,7 @@ def _build_features(race_df, history_df):
         except Exception as e:
             st.warning(f"⚠️ 加載馬名對照表失敗：{e}")
 
-feature_cols = [
+    feature_cols = [
         'draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
         'jockey_win_rate_50', 'trainer_win_rate_50',
         'distance_win_rate', 'distance_avg_rank',
