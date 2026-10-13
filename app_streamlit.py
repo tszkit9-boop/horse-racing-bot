@@ -690,7 +690,7 @@ def generate_pool_recommendations(df, user_group='free'):
 def load_ml_models(track_type='st'):
     """
     根據賽道載入對應模型
-    track_type: 'st'（沙田，用新分賽道模型）或 'hv'（跑馬地，用舊模型）
+    track_type: 'st'（沙田）或 'hv'（跑馬地）
     """
     import pickle
     xgb_win = None
@@ -701,9 +701,9 @@ def load_ml_models(track_type='st'):
     rank_top3 = None
 
     if track_type == 'hv':
-        # ===== 跑馬地：用返舊模型（含 Ranking）=====
+        # ===== 跑馬地：用新分場地模型 =====
         try:
-            with open('hk_win_xgb_model.pkl', 'rb') as f:
+            with open('hk_hv_xgb_win.pkl', 'rb') as f:
                 obj = pickle.load(f)
                 xgb_win = obj[0] if isinstance(obj, tuple) else obj
         except Exception as e:
@@ -712,37 +712,21 @@ def load_ml_models(track_type='st'):
         try:
             from catboost import CatBoostClassifier
             cat_win = CatBoostClassifier()
-            cat_win.load_model('hk_win_cat_model.cbm')
+            cat_win.load_model('hk_hv_cat_win.cbm')
         except Exception as e:
             print(f"跑馬地贏出 CatBoost 載入失敗：{e}")
 
         try:
-            with open('hk_win_rank_model.pkl', 'rb') as f:
+            with open('hk_hv_rank.pkl', 'rb') as f:
                 obj = pickle.load(f)
                 rank_win = obj[0] if isinstance(obj, tuple) else obj
         except Exception as e:
             print(f"跑馬地贏出 Ranking 載入失敗：{e}")
 
-        try:
-            with open('hk_top3_xgb_model.pkl', 'rb') as f:
-                obj = pickle.load(f)
-                xgb_top3 = obj[0] if isinstance(obj, tuple) else obj
-        except Exception as e:
-            print(f"跑馬地前三名 XGBoost 載入失敗：{e}")
-
-        try:
-            from catboost import CatBoostClassifier
-            cat_top3 = CatBoostClassifier()
-            cat_top3.load_model('hk_top3_cat_model.cbm')
-        except Exception as e:
-            print(f"跑馬地前三名 CatBoost 載入失敗：{e}")
-
-        try:
-            with open('hk_top3_rank_model.pkl', 'rb') as f:
-                obj = pickle.load(f)
-                rank_top3 = obj[0] if isinstance(obj, tuple) else obj
-        except Exception as e:
-            print(f"跑馬地前三名 Ranking 載入失敗：{e}")
+        # 跑馬地冇 Top3 模型
+        xgb_top3 = None
+        cat_top3 = None
+        rank_top3 = None
 
     else:
         # ===== 沙田：用新分賽道模型（只有 XGB + Cat）=====
@@ -760,19 +744,11 @@ def load_ml_models(track_type='st'):
         except Exception as e:
             print(f"沙田贏出 CatBoost 載入失敗：{e}")
 
-        try:
-            with open('hk_st_all_xgb_top3.pkl', 'rb') as f:
-                obj = pickle.load(f)
-                xgb_top3 = obj[0] if isinstance(obj, tuple) else obj
-        except Exception as e:
-            print(f"沙田前三名 XGBoost 載入失敗：{e}")
-
-        try:
-            from catboost import CatBoostClassifier
-            cat_top3 = CatBoostClassifier()
-            cat_top3.load_model('hk_st_all_cat_top3.cbm')
-        except Exception as e:
-            print(f"沙田前三名 CatBoost 載入失敗：{e}")
+        # 沙田冇 Rank 同 Top3 模型
+        rank_win = None
+        xgb_top3 = None
+        cat_top3 = None
+        rank_top3 = None
 
     return xgb_win, cat_win, rank_win, xgb_top3, cat_top3, rank_top3
 
@@ -838,7 +814,7 @@ def _build_features(race_df, history_df):
         except Exception as e:
             st.warning(f"⚠️ 加載馬名對照表失敗：{e}")
 
-    feature_cols = [
+         feature_cols = [
         'draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
         'jockey_win_rate_50', 'trainer_win_rate_50',
         'distance_win_rate', 'distance_avg_rank',
@@ -853,8 +829,9 @@ def _build_features(race_df, history_df):
         'jockey_win_rate_5', 'jockey_win_rate_10', 'draw_win_rate',
         'days_since_injury', 'injury_30d', 'injury_60d', 'injury_90d',
         'total_injuries', 'injury_severity',
-        # 🆕 近期狀態特徵
-        'last_race_rank', 'best_rank_last3', 'top3_rate_last5', 'days_since_last_win'
+        'last_race_rank', 'best_rank_last3', 'top3_rate_last5', 'days_since_last_win',
+        # 🆕 賽道特徵
+        'is_st_turf', 'is_st_awt', 'is_hv_turf',
     ]
     for c in feature_cols:
         if c not in result.columns:
@@ -1116,8 +1093,6 @@ def run_prediction(date_str, race_no):
     features_df['is_st_turf'] = is_st_turf
     features_df['is_st_awt'] = is_st_awt
     features_df['is_hv_turf'] = is_hv_turf
-    if 'dam_win_rate' not in features_df.columns:
-        features_df['dam_win_rate'] = 0
 
     # ===== 載入對應賽道嘅模型 =====
     xgb_win, cat_win, rank_win, xgb_top3, cat_top3, rank_top3 = load_ml_models(track_type)
@@ -1137,8 +1112,6 @@ def run_prediction(date_str, race_no):
         'draw_win_rate', 'days_since_injury', 'injury_30d',
         'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity',
         'is_st_turf', 'is_st_awt', 'is_hv_turf',
-        'dam_win_rate',
-        # 🆕 近期狀態特徵
         'last_race_rank', 'best_rank_last3', 'top3_rate_last5', 'days_since_last_win'
     ]
 
