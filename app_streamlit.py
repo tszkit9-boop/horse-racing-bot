@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""駿影 AI 賽馬預測系統 v16.0 - 完整可用版"""
+"""賽馬預測系統 v16.0 - 完整可用版"""
 
 import streamlit as st
 import pandas as pd
@@ -266,7 +266,7 @@ def load_users():
             u['invite_code'] = uid.upper() + str(random.randint(100, 999))
         if 'predictions_limit' not in u:
             group = u.get('group') or u.get('user_group') or 'free'
-            if group in ['super_admin', 'admin', 'VIP', 'paid']:
+            if group in ['super_admin', 'VIP', 'paid']:
                 u['predictions_limit'] = -1
             else:
                 u['predictions_limit'] = CONFIG.get("free_limit", 10)
@@ -690,7 +690,7 @@ def generate_pool_recommendations(df, user_group='free'):
 def load_ml_models(track_type='st'):
     """
     根據賽道載入對應模型
-    track_type: 'st'（沙田）或 'hv'（跑馬地）
+    track_type: 'st'（沙田，用新分賽道模型）或 'hv'（跑馬地，用舊模型）
     """
     import pickle
     xgb_win = None
@@ -701,13 +701,9 @@ def load_ml_models(track_type='st'):
     rank_top3 = None
 
     if track_type == 'hv':
-
-        # ===== 跑馬地：用新分場地模型 =====
-
-        # ===== 跑馬地：Win + Rank + Top3 =====
-
+        # ===== 跑馬地：用返舊模型（含 Ranking）=====
         try:
-            with open('hk_hv_xgb_win.pkl', 'rb') as f:
+            with open('hk_win_xgb_model.pkl', 'rb') as f:
                 obj = pickle.load(f)
                 xgb_win = obj[0] if isinstance(obj, tuple) else obj
         except Exception as e:
@@ -716,19 +712,19 @@ def load_ml_models(track_type='st'):
         try:
             from catboost import CatBoostClassifier
             cat_win = CatBoostClassifier()
-            cat_win.load_model('hk_hv_cat_win.cbm')
+            cat_win.load_model('hk_win_cat_model.cbm')
         except Exception as e:
             print(f"跑馬地贏出 CatBoost 載入失敗：{e}")
 
         try:
-            with open('hk_hv_rank.pkl', 'rb') as f:
+            with open('hk_win_rank_model.pkl', 'rb') as f:
                 obj = pickle.load(f)
                 rank_win = obj[0] if isinstance(obj, tuple) else obj
         except Exception as e:
             print(f"跑馬地贏出 Ranking 載入失敗：{e}")
 
         try:
-            with open('hk_hv_xgb_top3.pkl', 'rb') as f:
+            with open('hk_top3_xgb_model.pkl', 'rb') as f:
                 obj = pickle.load(f)
                 xgb_top3 = obj[0] if isinstance(obj, tuple) else obj
         except Exception as e:
@@ -737,15 +733,19 @@ def load_ml_models(track_type='st'):
         try:
             from catboost import CatBoostClassifier
             cat_top3 = CatBoostClassifier()
-            cat_top3.load_model('hk_hv_cat_top3.cbm')
+            cat_top3.load_model('hk_top3_cat_model.cbm')
         except Exception as e:
             print(f"跑馬地前三名 CatBoost 載入失敗：{e}")
 
-        # 跑馬地冇 Rank Top3 模型
-        rank_top3 = None
+        try:
+            with open('hk_top3_rank_model.pkl', 'rb') as f:
+                obj = pickle.load(f)
+                rank_top3 = obj[0] if isinstance(obj, tuple) else obj
+        except Exception as e:
+            print(f"跑馬地前三名 Ranking 載入失敗：{e}")
 
     else:
-        # ===== 沙田：Win + Top3 =====
+        # ===== 沙田：用新分賽道模型（只有 XGB + Cat）=====
         try:
             with open('hk_st_all_xgb_win.pkl', 'rb') as f:
                 obj = pickle.load(f)
@@ -760,15 +760,19 @@ def load_ml_models(track_type='st'):
         except Exception as e:
             print(f"沙田贏出 CatBoost 載入失敗：{e}")
 
-        # 沙田冇 Rank 同 Top3 模型
-        rank_win = None
-        xgb_top3 = None
-        cat_top3 = None
-        rank_top3 = None
+        try:
+            with open('hk_st_all_xgb_top3.pkl', 'rb') as f:
+                obj = pickle.load(f)
+                xgb_top3 = obj[0] if isinstance(obj, tuple) else obj
+        except Exception as e:
+            print(f"沙田前三名 XGBoost 載入失敗：{e}")
 
-        # 沙田冇 Rank 同 Rank Top3 模型
-        rank_win = None
-        rank_top3 = None
+        try:
+            from catboost import CatBoostClassifier
+            cat_top3 = CatBoostClassifier()
+            cat_top3.load_model('hk_st_all_cat_top3.cbm')
+        except Exception as e:
+            print(f"沙田前三名 CatBoost 載入失敗：{e}")
 
     return xgb_win, cat_win, rank_win, xgb_top3, cat_top3, rank_top3
 
@@ -813,6 +817,7 @@ def _build_features(race_df, history_df):
                     name = re.sub(r'[^\u4e00-\u9fffA-Za-z0-9]', '', name)
                     return name
 
+                # 用中文名做 key
                 mapping_df['norm_name'] = mapping_df['horse_name_cn'].apply(normalize_name)
                 mapping_df = mapping_df.dropna(subset=['norm_name'])
                 mapping_df = mapping_df[mapping_df['norm_name'] != '']
@@ -848,10 +853,7 @@ def _build_features(race_df, history_df):
         'last_trial_rank', 'last_trial_time',
         'jockey_win_rate_5', 'jockey_win_rate_10', 'draw_win_rate',
         'days_since_injury', 'injury_30d', 'injury_60d', 'injury_90d',
-        'total_injuries', 'injury_severity',
-        'last_race_rank', 'best_rank_last3', 'top3_rate_last5', 'days_since_last_win',
-        # 🆕 賽道特徵
-        'is_st_turf', 'is_st_awt', 'is_hv_turf',
+        'total_injuries', 'injury_severity'
     ]
     for c in feature_cols:
         if c not in result.columns:
@@ -896,42 +898,6 @@ def _build_features(race_df, history_df):
                 return g['finish_position'].mean() if len(g) > 0 else 99
             avg3 = history_df.groupby('horse_id').apply(_avg3).to_dict()
             result['avg_rank_last3'] = result['horse_id'].map(avg3).fillna(99)
-
-            # 🆕 近期狀態特徵
-            def _last_rank(g):
-                g = g.sort_values('race_date')
-                return g['finish_position'].iloc[-1] if len(g) > 0 else 99
-            last_rank = history_df.groupby('horse_id').apply(_last_rank).to_dict()
-            result['last_race_rank'] = result['horse_id'].map(last_rank).fillna(99)
-
-            def _best_rank_last3(g):
-                g = g.sort_values('race_date').tail(3)
-                return g['finish_position'].min() if len(g) > 0 else 99
-            best3 = history_df.groupby('horse_id').apply(_best_rank_last3).to_dict()
-            result['best_rank_last3'] = result['horse_id'].map(best3).fillna(99)
-
-            def _top3_rate_last5(g):
-                g = g.sort_values('race_date').tail(5)
-                if len(g) == 0:
-                    return 0
-                return (g['finish_position'] <= 3).sum() / len(g)
-            top3_rate5 = history_df.groupby('horse_id').apply(_top3_rate_last5).to_dict()
-            result['top3_rate_last5'] = result['horse_id'].map(top3_rate5).fillna(0)
-
-            # 距離上次贏出嘅日數
-            def _days_since_last_win(horse_id):
-                sub = history_df[history_df['horse_id'] == horse_id]
-                if sub.empty:
-                    return 999
-                wins = sub[sub['finish_position'] == 1]
-                if wins.empty:
-                    return 999
-                last_win = wins['race_date'].max()
-                return (datetime.now() - last_win).days
-            days_since_win = {}
-            for h in result['horse_id'].unique():
-                days_since_win[h] = _days_since_last_win(h)
-            result['days_since_last_win'] = result['horse_id'].map(days_since_win).fillna(999)
 
             # 馬匹同路程勝率
             if 'distance' in history_df.columns and 'distance' in result.columns:
@@ -1003,7 +969,7 @@ def _repair_racecard(df):
     return result
 
 def run_prediction(date_str, race_no):
-    """用雙模型預測（贏出 + 前三名）+ 值博率計算 + 泥地混合賠率 + 穩定度篩選"""
+    """用雙模型預測（贏出 + 前三名）+ 值博率計算 + 泥地混合賠率"""
     if not os.path.exists("racecard_uploaded.csv"):
         st.error("❌ 找不到 racecard_uploaded.csv")
         return None, None
@@ -1069,18 +1035,8 @@ def run_prediction(date_str, race_no):
             track_info = str(track_values[0]).strip()
 
     if not track_info or track_info == '' or track_info == 'nan':
-        racecourse = st.session_state.get('racecourse', None)
-        if racecourse:
-            track_info = 'HV / Turf' if racecourse == 'HV' else 'ST / Turf'
-        else:
-            try:
-                d = pd.to_datetime(date_str)
-                if d.weekday() == 2:
-                    track_info = 'HV / Turf'
-                else:
-                    track_info = 'ST / Turf'
-            except Exception:
-                track_info = 'ST / Turf'
+        racecourse = st.session_state.get('racecourse', 'ST')
+        track_info = 'HV / Turf' if racecourse == 'HV' else 'ST / Turf'
 
     track_upper = track_info.upper()
     if 'AWT' in track_upper or '全天候' in track_info:
@@ -1090,7 +1046,7 @@ def run_prediction(date_str, race_no):
     elif 'HV' in track_upper:
         is_st_turf, is_st_awt, is_hv_turf = 0, 0, 1
         track_type = 'hv'
-        st.info(f"🏇 偵測到賽道：**跑馬地草地**（{track_info}）→ 使用跑馬地分場地模型")
+        st.info(f"🏇 偵測到賽道：**跑馬地草地**（{track_info}）→ 使用舊模型")
     else:
         is_st_turf, is_st_awt, is_hv_turf = 1, 0, 0
         track_type = 'st'
@@ -1113,6 +1069,8 @@ def run_prediction(date_str, race_no):
     features_df['is_st_turf'] = is_st_turf
     features_df['is_st_awt'] = is_st_awt
     features_df['is_hv_turf'] = is_hv_turf
+    if 'dam_win_rate' not in features_df.columns:
+        features_df['dam_win_rate'] = 0
 
     # ===== 載入對應賽道嘅模型 =====
     xgb_win, cat_win, rank_win, xgb_top3, cat_top3, rank_top3 = load_ml_models(track_type)
@@ -1132,31 +1090,24 @@ def run_prediction(date_str, race_no):
         'draw_win_rate', 'days_since_injury', 'injury_30d',
         'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity',
         'is_st_turf', 'is_st_awt', 'is_hv_turf',
-        'last_race_rank', 'best_rank_last3', 'top3_rate_last5', 'days_since_last_win'
+        'dam_win_rate'
     ]
 
     X = features_df[features_40].fillna(0).values
 
-    # ===== 讀取權重（分場地，含穩定度權重）=====
+    # ===== 讀取權重 =====
     try:
         headers_tune = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-        venue = "ST" if track_type == "st" else "HV"
-        res_tune = requests.get(
-            f"{SUPABASE_URL}/rest/v1/venue_model_weights?venue=eq.{venue}",
-            headers=headers_tune
-        )
+        res_tune = requests.get(f"{SUPABASE_URL}/rest/v1/model_weights?id=eq.1", headers=headers_tune)
         if res_tune.status_code == 200 and res_tune.json():
             tune = res_tune.json()[0]
             w_xgb = float(tune.get('xgb_weight', 0.30))
             w_cat = float(tune.get('cat_weight', 0.50))
             w_rank = float(tune.get('rank_weight', 0.20))
-            w_stability = float(tune.get('stability_weight', 0.4))
         else:
             w_xgb, w_cat, w_rank = 0.30, 0.50, 0.20
-            w_stability = 0.4
     except Exception:
         w_xgb, w_cat, w_rank = 0.30, 0.50, 0.20
-        w_stability = 0.4
 
     def ensemble_predict(models):
         preds = []
@@ -1199,13 +1150,14 @@ def run_prediction(date_str, race_no):
     if proba_top3 is None:
         proba_top3 = proba_win
 
-    # ===== 泥地特殊處理：混合賠率 =====
+    # ===== 🆕 泥地特殊處理：混合賠率 =====
     if is_st_awt == 1:
         try:
             win_odds_arr = pd.to_numeric(filtered.get('win_odds', 4.0), errors='coerce').fillna(4.0).replace(0, 4.0).values
             odds_implied = 1.0 / win_odds_arr
             odds_implied = odds_implied / odds_implied.sum()
 
+            # 泥地：模型佔 40%，賠率佔 60%
             proba_win = 0.4 * proba_win + 0.6 * odds_implied
             proba_top3 = 0.4 * proba_top3 + 0.6 * odds_implied
             proba_win = proba_win / proba_win.sum()
@@ -1261,26 +1213,6 @@ def run_prediction(date_str, race_no):
     result_df['贏出概率'] = proba_win
     result_df['前三概率'] = proba_top3
 
-    # ===== 穩定度計算 =====
-    history_top3_rate = {}
-    if not history_df.empty and 'horse_name' in history_df.columns and 'finish_position' in history_df.columns:
-        try:
-            hist = history_df.copy()
-            hist['horse_name'] = hist['horse_name'].astype(str).str.strip()
-            hist['finish_position'] = pd.to_numeric(hist['finish_position'], errors='coerce')
-            hist = hist.dropna(subset=['finish_position'])
-            hist['is_top3'] = (hist['finish_position'] <= 3).astype(int)
-            stats = hist.groupby('horse_name')['is_top3'].agg(['mean', 'count'])
-            for horse, row in stats.iterrows():
-                if row['count'] >= 3:
-                    history_top3_rate[horse] = float(row['mean'])
-        except Exception:
-            pass
-
-    result_df['歷史前三率'] = result_df['馬名'].map(history_top3_rate).fillna(0)
-    # 🆕 用後台設定嘅穩定度權重
-    result_df['穩定度分數'] = (1 - w_stability) * result_df['前三概率'] + w_stability * result_df['歷史前三率']
-
     def calc_value(row):
         odds = row['賠率']
         prob = row['贏出概率']
@@ -1298,8 +1230,7 @@ def run_prediction(date_str, race_no):
         lambda x: '⭐⭐⭐ 高' if x > 0.2 else '⭐⭐ 中' if x > 0.1 else '⭐ 低'
     )
 
-    # 🆕 用穩定度分數排序
-    result_df = result_df.sort_values('穩定度分數', ascending=False).reset_index(drop=True)
+    result_df = result_df.sort_values('贏出概率', ascending=False).reset_index(drop=True)
 
     # ===== 值博率分析 =====
     st.divider()
@@ -1339,7 +1270,7 @@ def run_prediction(date_str, race_no):
     else:
         st.info("ℹ️ 冇足夠賠率數據計算值博率")
 
-    # ===== 第一邊：儲存到 Supabase predictions 表（全站共用）=====
+    # ===== 儲存到 Supabase =====
     from database import save_prediction
     key = f"{date_str}_{race_no}"
     save_prediction(key, {
@@ -1347,57 +1278,12 @@ def run_prediction(date_str, race_no):
         "top_horse": result_df.iloc[0]['馬名'],
         "top_prob": float(result_df.iloc[0]['預測勝率']),
         "all_horses": result_df['馬名'].tolist(),
-        "model_used": [f"{track_type}_贏出", f"{track_type}_前三", "值博率", "穩定度"],
+        "model_used": [f"{track_type}_贏出", f"{track_type}_前三", "值博率"],
         "predicted_at": datetime.now().isoformat()
     })
 
-    # ===== 第二邊：儲存到 Supabase users 表（用戶個人紀錄）=====
-    try:
-        import json
-        current_username = st.session_state.get('username', None)
-        
-        if current_username:
-            # 設定 Supabase headers
-            headers_supabase = {
-                "apikey": SUPABASE_KEY,
-                "Authorization": f"Bearer {SUPABASE_KEY}",
-                "Content-Type": "application/json",
-                "Prefer": "return=minimal"
-            }
-            
-            # 1. 讀取當前用戶嘅 history
-            url_get = f"{SUPABASE_URL}/rest/v1/users?username=eq.{current_username}&select=history"
-            res_hist = requests.get(url_get, headers=headers_supabase)
-            
-            history_list = []
-            if res_hist.status_code == 200 and res_hist.json():
-                raw_history = res_hist.json()[0].get('history', '')
-                if raw_history:
-                    try:
-                        history_list = json.loads(raw_history)
-                    except Exception:
-                        history_list = []
-            
-            # 2. 加入新紀錄
-            new_record = {
-                "date": date_str,
-                "race": race_no,
-                "horse": result_df.iloc[0]['馬名'],
-                "is_hit": None
-            }
-            history_list.append(new_record)
-            
-            # 3. 寫返去 Supabase
-            url_patch = f"{SUPABASE_URL}/rest/v1/users?username=eq.{current_username}"
-            payload = {"history": json.dumps(history_list, ensure_ascii=False)}
-            requests.patch(url_patch, headers=headers_supabase, json=payload)
-            
-            # 4. 同步更新 session_state
-            if 'user_data' in st.session_state and st.session_state.user_data.get('username') == current_username:
-                st.session_state.user_data['history'] = history_list
-                
-    except Exception as e:
-        st.warning(f"寫入預測紀錄失敗: {e}")
+    user_group = st.session_state.get('role', 'free')
+    return result_df, generate_pool_recommendations(result_df, user_group)
 def _find_data_col(df, keywords):
     """搵一個有數據嘅欄位（唔止名要對，仲要有實際值）"""
     for c in df.columns:
@@ -2456,37 +2342,6 @@ def admin_user_management():
 
     st.info(f"✅ 成功載入 {len(users)} 個用戶")
 
-    # 🆕 可用權限清單
-    ALL_PERMISSIONS = {
-        "dashboard": "📊 儀表板",
-        "user_management": "👥 用戶管理",
-        "downloads": "📥 下載中心",
-        "manage_predictions": "📊 次數管理",
-        "analytics": "📊 數據分析",
-        "horse_ranking": "🏇 馬匹排行榜",
-        "jockey_ranking": "👨‍🏫 騎師排行榜",
-        "trainer_ranking": "👨‍🏫 練馬師排行榜",
-        "course_analysis": "📊 場地/路程分析",
-        "monthly_report": "📅 每月報告",
-        "finance": "💰 財務",
-        "promo_codes": "🎟️ 優惠碼",
-        "accuracy_monitor": "📈 預測監控",
-        "subscription": "⏰ 訂閱管理",
-        "reward_management": "❤️ 打賞管理",
-        "monitoring": "📡 監控",
-        "content": "📝 內容",
-        "auto_maintenance": "🤖 自動維護",
-        "model_weights": "⚖️ 模型權重",
-        "automation": "🤖 自動化",
-        "security": "🔐 安全",
-        "user_activity": "👤 用戶記錄",
-        "lottery_config": "🎰 抽獎設定",
-        "shop_config": "🛒 商城設定",
-        "pool_config": "🎯 彩池設定",
-        "system_settings": "⚙️ 系統設定",
-        "accuracy_report": "📊 命中率報告",  # 🆕
-    }
-
     # ===== 1. 用戶列表 =====
     if users:
         df = pd.DataFrame.from_dict(users, orient='index')
@@ -2510,7 +2365,7 @@ def admin_user_management():
             nu = st.text_input("新用戶名", key="nu_name")
             np_ = st.text_input("密碼", type="password", key="nu_pw")
         with col2:
-            ng = st.selectbox("群組", ["free", "paid", "VIP", "admin", "super_admin"], key="nu_group")
+            ng = st.selectbox("群組", ["free", "paid", "VIP", "super_admin"], key="nu_group")
             npaid = st.checkbox("付費狀態", value=False, key="nu_paid")
         if st.button("建立用戶", key="create_user_btn"):
             if not nu or not np_:
@@ -2524,14 +2379,13 @@ def admin_user_management():
                     "free_usage": 0, "total_usage": 0,
                     "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                     "note": "手動新增", "group": ng, "plan": None,
-                    "predictions_limit": -1 if ng in ['super_admin', 'admin', 'VIP'] else CONFIG.get("free_limit", 2),
+                    "predictions_limit": -1 if ng in ['super_admin', 'VIP'] else CONFIG.get("free_limit", 2),
                     "history": [], "terms_agreed": datetime.now().isoformat(),
                     "invite_code": nu.upper() + str(random.randint(100, 999)),
                     "invited_by": None, "invite_rewards": 0, "invite_count": 0,
                     "level": "🥉 銅牌會員", "exp": 0, "badges": [],
                     "virtual_balance": CONFIG.get("daily_virtual_coin", 1000),
-                    "last_claim_date": '', "bets": [], "last_lottery_date": "",
-                    "permissions": [] if ng == "admin" else (list(ALL_PERMISSIONS.keys()) if ng == "super_admin" else [])
+                    "last_claim_date": '', "bets": [], "last_lottery_date": ""
                 }
                 if save_users(users):
                     st.success(f"✅ 用戶 {nu} 已建立！")
@@ -2548,7 +2402,7 @@ def admin_user_management():
         u = users[sel]
         col1, col2 = st.columns(2)
         with col1:
-            grp_options = ['free', 'paid', 'VIP', 'admin', 'super_admin']
+            grp_options = ['free', 'paid', 'VIP', 'super_admin']
             cur_grp = u.get('group', 'free')
             ngrp = st.selectbox(
                 "群組", grp_options,
@@ -2579,22 +2433,6 @@ def admin_user_management():
                 key="edit_badges"
             )
 
-        # 🆕 如果係 admin，顯示權限勾選區
-        if ngrp == "admin":
-            st.divider()
-            st.markdown("#### 🔐 管理員權限設定")
-            st.caption("勾選呢個 admin 可以睇到嘅後台功能（super_admin 自動擁有全部權限）")
-
-            cur_perms = u.get('permissions', [])
-            new_perms = []
-            perm_cols = st.columns(3)
-            for idx, (perm_key, perm_label) in enumerate(ALL_PERMISSIONS.items()):
-                with perm_cols[idx % 3]:
-                    if st.checkbox(perm_label, value=(perm_key in cur_perms), key=f"perm_{sel}_{perm_key}"):
-                        new_perms.append(perm_key)
-        else:
-            new_perms = None  # 非 admin，唔改權限
-
         note = st.text_area("備註", value=u.get('note', ''), key="edit_note")
 
         if st.button("💾 儲存變更", type="primary", key="save_user_changes"):
@@ -2607,19 +2445,10 @@ def admin_user_management():
             users[sel]['phone'] = phone
             if npw:
                 users[sel]['password'] = npw
-            if ngrp in ['super_admin', 'admin', 'VIP']:
+            if ngrp in ['super_admin', 'VIP']:
                 users[sel]['predictions_limit'] = -1
             else:
                 users[sel]['predictions_limit'] = CONFIG.get("free_limit", 2)
-
-            # 🆕 儲存權限
-            if ngrp == "super_admin":
-                users[sel]['permissions'] = list(ALL_PERMISSIONS.keys())
-            elif ngrp == "admin" and new_perms is not None:
-                users[sel]['permissions'] = new_perms
-            else:
-                users[sel]['permissions'] = []
-
             if save_users(users):
                 st.success("✅ 已更新用戶資料！")
                 st.rerun()
@@ -3286,8 +3115,10 @@ def admin_model_weights():
         st.warning("⚠️ 未有場地權重設定，請先喺 Supabase 建立。")
         return
 
+    # 轉為 dict 方便讀取
     cfg_map = {c['venue']: c for c in configs}
 
+    # ===== 分開兩個 Tab 顯示 =====
     tab_st, tab_hv = st.tabs(["🏇 沙田 (ST)", "🏇 跑馬地 (HV)"])
 
     for venue, tab in [('ST', tab_st), ('HV', tab_hv)]:
@@ -3296,14 +3127,12 @@ def admin_model_weights():
             current_xgb = float(cfg.get('xgb_weight', 0.30))
             current_cat = float(cfg.get('cat_weight', 0.50))
             current_rank = float(cfg.get('rank_weight', 0.20))
-            current_stability = float(cfg.get('stability_weight', 0.4))
 
             st.markdown(f"### 📊 {venue} 目前權重")
-            c1, c2, c3, c4 = st.columns(4)
+            c1, c2, c3 = st.columns(3)
             c1.metric("XGBoost", f"{current_xgb:.2f}")
             c2.metric("CatBoost", f"{current_cat:.2f}")
             c3.metric("Ranking", f"{current_rank:.2f}")
-            c4.metric("穩定度", f"{current_stability:.2f}")
 
             st.divider()
 
@@ -3312,19 +3141,11 @@ def admin_model_weights():
             new_cat = st.slider(f"CatBoost 權重 ({venue})", 0.0, 1.0, current_cat, 0.05, key=f"slider_cat_{venue}")
             new_rank = st.slider(f"Ranking 權重 ({venue})", 0.0, 1.0, current_rank, 0.05, key=f"slider_rank_{venue}")
 
-            st.markdown("---")
-            st.markdown("**🎯 穩定度權重**（用於彩池推薦排序）")
-            st.caption("穩定度分數 = (1 - 穩定度權重) × 模型前三概率 + 穩定度權重 × 歷史前三率")
-            new_stability = st.slider(
-                f"穩定度權重 ({venue})", 0.0, 1.0, current_stability, 0.05,
-                key=f"slider_stability_{venue}"
-            )
-
             total = new_xgb + new_cat + new_rank
             if abs(total - 1.0) > 0.01:
-                st.warning(f"⚠️ 三個模型權重加埋係 {total:.2f}，必須等於 1.0 先可以儲存。")
+                st.warning(f"⚠️ 三個權重加埋係 {total:.2f}，必須等於 1.0 先可以儲存。")
             else:
-                st.success(f"✅ 模型權重總和：{total:.2f}（正確）")
+                st.success(f"✅ 權重總和：{total:.2f}（正確）")
 
             col1, col2 = st.columns(2)
             with col1:
@@ -3338,11 +3159,10 @@ def admin_model_weights():
                                 "xgb_weight": new_xgb,
                                 "cat_weight": new_cat,
                                 "rank_weight": new_rank,
-                                "stability_weight": new_stability,
                                 "updated_at": datetime.now().isoformat()
                             }
                         )
-                        st.success(f"✅ 已更新 {venue}：XGB {new_xgb:.2f} / Cat {new_cat:.2f} / Rank {new_rank:.2f} / 穩定度 {new_stability:.2f}")
+                        st.success(f"✅ 已更新 {venue}：XGB {new_xgb:.2f} / Cat {new_cat:.2f} / Rank {new_rank:.2f}")
                         st.rerun()
                     except Exception as e:
                         st.error(f"儲存失敗：{e}")
@@ -3353,7 +3173,7 @@ def admin_model_weights():
                         requests.patch(
                             f"{SUPABASE_URL}/rest/v1/venue_model_weights?venue=eq.{venue}",
                             headers=headers,
-                            json={"xgb_weight": 0.30, "cat_weight": 0.50, "rank_weight": 0.20, "stability_weight": 0.4}
+                            json={"xgb_weight": 0.30, "cat_weight": 0.50, "rank_weight": 0.20}
                         )
                         st.success(f"✅ 已重設 {venue} 為預設值")
                         st.rerun()
@@ -3378,7 +3198,6 @@ def admin_accuracy_monitor():
 
     st.info(f"📊 總共 {len(ai_data)} 個預測記錄")
 
-    # ===== 主賽果檔案（有最新賽果）=====
     result_file = "race_results_clean.csv"
     if not os.path.exists(result_file):
         st.warning("⚠️ 未有賽果檔案")
@@ -3393,35 +3212,34 @@ def admin_accuracy_monitor():
         results_df['finish_position'] = pd.to_numeric(results_df['finish_position'], errors='coerce')
         results_df['horse_name'] = results_df['horse_name'].astype(str).str.strip()
         results_df['horse_name'] = results_df['horse_name'].str.replace(r'\([A-Z]\d+\)', '', regex=True).str.strip()
+
+        # ===== 場地推算（星期三 = HV，其餘 = ST）=====
+        if 'venue' not in results_df.columns and 'racecourse' not in results_df.columns and '馬場' not in results_df.columns:
+            results_df['venue'] = results_df['race_date'].apply(
+                lambda d: 'HV' if d.weekday() == 2 else 'ST'
+            )
+        else:
+            for col in ['venue', 'racecourse', '馬場']:
+                if col in results_df.columns:
+                    results_df['venue'] = results_df[col]
+                    break
+
     except Exception as e:
         st.error(f"❌ 讀取賽果失敗：{e}")
         return
 
-    # ===== 從 race_results_with_track.csv 讀取賽道資訊 =====
-    track_map = {}
-    track_file = "race_results_with_track.csv"
-    if os.path.exists(track_file):
-        try:
-            track_df = pd.read_csv(track_file, encoding='utf-8-sig')
-            track_df['race_date'] = pd.to_datetime(track_df['race_date'], errors='coerce')
-            track_df = track_df.dropna(subset=['race_date'])
-            track_df['race_date_str'] = track_df['race_date'].dt.strftime('%Y-%m-%d')
-            track_df['race_no'] = pd.to_numeric(track_df['race_no'], errors='coerce')
-
-            if '賽道' in track_df.columns:
-                for _, row in track_df.dropna(subset=['race_date_str', 'race_no', '賽道']).iterrows():
-                    key = f"{row['race_date_str']}_{int(row['race_no'])}"
-                    if key not in track_map:
-                        track_map[key] = str(row['賽道'])
-        except Exception:
-            pass
-
     # ===== 建立真實頭3名 =====
     real_top3 = {}
+    venue_map = {}
+
     for _, row in results_df.iterrows():
         if pd.isna(row['race_no']) or pd.isna(row['finish_position']):
             continue
         key = f"{row['race_date_str']}_{int(row['race_no'])}"
+
+        if key not in venue_map:
+            venue_map[key] = row.get('venue', '未知')
+
         if key not in real_top3:
             real_top3[key] = []
         if row['finish_position'] <= 3:
@@ -3447,25 +3265,13 @@ def admin_accuracy_monitor():
         pred_top3_str = ", ".join(pred_top3)
 
         lookup_key = f"{date_str}_{race_no}"
-
-        # 優先從 track_map 攞賽道；搵唔到就用默認規則
-        if lookup_key in track_map:
-            current_track = track_map[lookup_key]
-        else:
-            try:
-                d = pd.to_datetime(date_str)
-                if d.weekday() == 2:
-                    current_track = '跑馬地草地'
-                else:
-                    current_track = '沙田草地'
-            except Exception:
-                current_track = '未知'
+        current_venue = venue_map.get(lookup_key, '未知')
 
         if lookup_key not in real_top3 or not real_top3[lookup_key]:
             compare_rows.append({
                 '日期': date_str,
                 '場次': race_no,
-                '賽道': current_track,
+                '場地': current_venue,
                 '預測頭3名': pred_top3_str,
                 '真實頭3名': '⏳ 未有賽果',
                 '命中數': '-',
@@ -3474,7 +3280,7 @@ def admin_accuracy_monitor():
             pending_count += 1
             continue
 
-        real_top3_list = real_top3[lookup_key][:3]  # 🆕 只取前 3 匹
+        real_top3_list = real_top3[lookup_key]
         real_names = [r['horse'] for r in real_top3_list]
         real_str = ", ".join([f"{r['horse']}({r['pos']})" for r in real_top3_list])
 
@@ -3494,13 +3300,14 @@ def admin_accuracy_monitor():
         compare_rows.append({
             '日期': date_str,
             '場次': race_no,
-            '賽道': current_track,
+            '場地': current_venue,
             '預測頭3名': pred_top3_str,
             '真實頭3名': real_str,
             '命中數': hit_count,
             '結果': result_str
         })
 
+    # ===== 統計指標 =====
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("📊 總預測", len(ai_data))
     c2.metric("✅ 已比對", total_with_result)
@@ -3520,6 +3327,43 @@ def admin_accuracy_monitor():
     if pending_count > 0:
         st.caption(f"⏳ 仲有 {pending_count} 場未出賽果")
 
+    # ===== 🆕 預測頭3名 vs 真實頭3名（放喺馬匹命中率同每日命中明細之間）=====
+    if compare_rows:
+        st.divider()
+        st.subheader("📋 預測頭3名 vs 真實頭3名")
+
+        df_compare_detail = pd.DataFrame(compare_rows)
+
+        df_compare_detail['場次'] = pd.to_numeric(df_compare_detail['場次'], errors='coerce')
+        df_compare_detail = df_compare_detail.sort_values(
+            by=['日期', '場次'],
+            ascending=[True, True]
+        ).reset_index(drop=True)
+
+        def highlight_prediction(row):
+            pred = str(row['預測頭3名'])
+            if pred == 'nan' or pred == '':
+                return pred
+
+            real = str(row['真實頭3名'])
+            real_names = []
+            if '⏳' not in real:
+                real_names = [re.sub(r'\(.*\)', '', name).strip() for name in real.split(',')]
+
+            pred_list = [h.strip() for h in pred.split(',')]
+            colored = []
+            for h in pred_list:
+                if h in real_names:
+                    colored.append(f'<span style="color:green; font-weight:bold;">{h}</span>')
+                else:
+                    colored.append(f'<span style="color:red;">{h}</span>')
+            return ', '.join(colored)
+
+        df_compare_detail['預測頭3名'] = df_compare_detail.apply(highlight_prediction, axis=1)
+
+        html_table = df_compare_detail.to_html(escape=False, index=False)
+        st.markdown(html_table, unsafe_allow_html=True)
+
     # ===== 每日命中明細 =====
     if compare_rows:
         st.divider()
@@ -3531,7 +3375,7 @@ def admin_accuracy_monitor():
         if not df_result.empty:
             df_result['有命中'] = df_result['結果'].str.contains('✅', na=False)
 
-            daily_stats = df_result.groupby(['日期', '賽道']).agg(
+            daily_stats = df_result.groupby(['日期', '場地']).agg(
                 總場次=('場次', 'count'),
                 命中場次=('有命中', 'sum')
             ).reset_index()
@@ -3539,7 +3383,7 @@ def admin_accuracy_monitor():
             daily_stats['未命中場次'] = daily_stats['總場次'] - daily_stats['命中場次']
             daily_stats['命中率'] = (daily_stats['命中場次'] / daily_stats['總場次']).apply(lambda x: f"{x:.1%}")
 
-            daily_stats = daily_stats.sort_values(['日期', '賽道'], ascending=[False, True])
+            daily_stats = daily_stats.sort_values(['日期', '場地'], ascending=[False, True])
 
             st.dataframe(
                 daily_stats,
@@ -3547,7 +3391,7 @@ def admin_accuracy_monitor():
                 hide_index=True,
                 column_config={
                     "日期": st.column_config.TextColumn("📅 日期"),
-                    "賽道": st.column_config.TextColumn("🏇 賽道"),
+                    "場地": st.column_config.TextColumn("🏇 場地"),
                     "總場次": st.column_config.NumberColumn("總場次"),
                     "命中場次": st.column_config.NumberColumn("✅ 命中"),
                     "未命中場次": st.column_config.NumberColumn("❌ 未命中"),
@@ -3557,7 +3401,8 @@ def admin_accuracy_monitor():
         else:
             st.info("ℹ️ 暫未有已比對嘅賽果")
 
-        # ===== 按賽道類型統計 =====
+    # ===== 按賽道類型統計 =====
+    if compare_rows:
         st.divider()
         st.subheader("🏇 按賽道類型統計")
 
@@ -3567,7 +3412,7 @@ def admin_accuracy_monitor():
         if not df_valid.empty:
             df_valid['有命中'] = df_valid['結果'].str.contains('✅', na=False)
 
-            track_stats = df_valid.groupby('賽道').agg(
+            track_stats = df_valid.groupby('場地').agg(
                 總場次=('場次', 'count'),
                 命中場次=('有命中', 'sum')
             ).reset_index()
@@ -3580,7 +3425,7 @@ def admin_accuracy_monitor():
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "賽道": st.column_config.TextColumn("🏇 賽道類型"),
+                    "場地": st.column_config.TextColumn("🏇 賽道類型"),
                     "總場次": st.column_config.NumberColumn("總場次"),
                     "命中場次": st.column_config.NumberColumn("✅ 命中"),
                     "未命中場次": st.column_config.NumberColumn("❌ 未命中"),
@@ -3603,44 +3448,24 @@ def admin_accuracy_monitor():
 
             def highlight_prediction(row):
                 pred = str(row['預測頭3名'])
-                real = str(row['真實頭3名'])
-
                 if pred == 'nan' or pred == '':
-                    return pred, real
+                    return pred
 
-                pred_list = [h.strip() for h in pred.split(',') if h.strip()]
-
+                real = str(row['真實頭3名'])
                 real_names = []
-                if '⏳' not in real and real != 'nan':
-                    # 用正則提取所有「馬名(名次)」格式嘅馬名，唔依賴逗號
-                    matches = re.findall(r'([^,()]+?)\s*\(\d+\)', real)
-                    if matches:
-                        real_names = [m.strip() for m in matches if m.strip()]
-                    else:
-                        # Fallback：如果冇括號，就按逗號分割
-                        real_names = [name.strip() for name in real.split(',') if name.strip()]
+                if '⏳' not in real:
+                    real_names = [re.sub(r'\(.*\)', '', name).strip() for name in real.split(',')]
 
-                # 預測頭3名上色
-                pred_colored = []
+                pred_list = [h.strip() for h in pred.split(',')]
+                colored = []
                 for h in pred_list:
                     if h in real_names:
-                        pred_colored.append(f'<span style="color:green; font-weight:bold;">{h}</span>')
+                        colored.append(f'<span style="color:green; font-weight:bold;">{h}</span>')
                     else:
-                        pred_colored.append(f'<span style="color:red;">{h}</span>')
+                        colored.append(f'<span style="color:red;">{h}</span>')
+                return ', '.join(colored)
 
-                # 真實頭3名上色
-                real_colored = []
-                for r in real_names:
-                    if r in pred_list:
-                        real_colored.append(f'<span style="color:green; font-weight:bold;">{r}</span>')
-                    else:
-                        real_colored.append(f'<span style="color:red;">{r}</span>')
-
-                return ', '.join(pred_colored), ', '.join(real_colored)
-
-            df_compare_detail[['預測頭3名', '真實頭3名']] = df_compare_detail.apply(
-                lambda row: pd.Series(highlight_prediction(row)), axis=1
-            )
+            df_compare_detail['預測頭3名'] = df_compare_detail.apply(highlight_prediction, axis=1)
 
             html_table = df_compare_detail.to_html(escape=False, index=False)
             st.markdown(html_table, unsafe_allow_html=True)
@@ -3650,7 +3475,7 @@ def admin_accuracy_monitor():
     st.subheader("📍 分場地命中率")
     venue_stats = {}
     for row in compare_rows:
-        v = row['賽道']
+        v = row['場地']
         if row['結果'] == '⏳ 待定':
             continue
         if v not in venue_stats:
@@ -4332,156 +4157,6 @@ def admin_system_settings():
             st.rerun()
         else:
             st.error("❌ 儲存失敗")
-def admin_accuracy_report():
-    """命中率報告（後台分頁）- 分場地顯示"""
-    st.subheader("📊 命中率報告")
-    st.caption("對比預測結果同實際賽果，分場地統計 Top-1 同 Top-3 命中率。")
-
-    # ===== 從 Supabase 讀取預測紀錄 =====
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}"
-    }
-    try:
-        res = requests.get(
-            f"{SUPABASE_URL}/rest/v1/predictions?order=date.desc",
-            headers=headers,
-            timeout=10
-        )
-        records = res.json() if res.status_code == 200 else []
-    except Exception as e:
-        st.error(f"❌ 讀取預測紀錄失敗：{e}")
-        return
-
-    if not records:
-        st.info("暫無足夠數據")
-        return
-
-    # ===== 讀取賽果 =====
-    result_file = "race_results_clean.csv"
-    if not os.path.exists(result_file):
-        st.info("暫無足夠數據")
-        return
-
-    try:
-        df_results = pd.read_csv(result_file, encoding='utf-8-sig')
-        df_results['horse_name'] = df_results['horse_name'].astype(str).str.strip()
-        df_results['horse_name'] = df_results['horse_name'].str.replace(
-            r'\s*\([A-Z]\d+\)\s*$', '', regex=True
-        ).str.strip()
-        df_results['finish_position'] = pd.to_numeric(df_results['finish_position'], errors='coerce')
-        df_results['race_no'] = pd.to_numeric(df_results['race_no'], errors='coerce')
-        df_results = df_results.dropna(subset=['race_no', 'finish_position'])
-        df_results['race_no'] = df_results['race_no'].astype(int)
-        df_results['race_date'] = pd.to_datetime(df_results['race_date'], errors='coerce')
-    except Exception as e:
-        st.error(f"❌ 讀取賽果失敗：{e}")
-        return
-
-    # ===== 建立賽果 lookup：(date, race) -> 真實頭 3 名 =====
-    results_map = {}
-    df_results['date_str'] = df_results['race_date'].dt.strftime('%Y-%m-%d')
-    for (date_str, race_no), group in df_results.groupby(['date_str', 'race_no']):
-        top3 = group.sort_values('finish_position').head(3)['horse_name'].tolist()
-        results_map[(date_str, int(race_no))] = top3
-
-    # ===== 判斷場地 =====
-    def get_venue(race_date_str):
-        try:
-            d = pd.to_datetime(race_date_str)
-            return 'HV' if d.weekday() == 2 else 'ST'
-        except Exception:
-            return 'ST'
-
-    # ===== 逐條預測計算命中 =====
-    rows = []
-    for rec in records:
-        date_str = str(rec.get('date', '')).strip()
-        race_no = rec.get('race')
-        top_horse = rec.get('top_horse', '')
-        if not date_str or race_no is None:
-            continue
-        try:
-            race_no = int(race_no)
-        except Exception:
-            continue
-
-        horse_list = []
-        raw_all = rec.get('all_horses')
-        if raw_all:
-            try:
-                parsed = json.loads(raw_all) if isinstance(raw_all, str) else raw_all
-                if isinstance(parsed, list):
-                    horse_list = [str(h).strip() for h in parsed if str(h).strip()]
-            except Exception:
-                pass
-        if not horse_list:
-            if top_horse:
-                horse_list = [str(top_horse).strip()]
-
-        key = (date_str, race_no)
-        if key not in results_map:
-            continue
-
-        top3_real = results_map[key]
-        actual_winner = top3_real[0] if top3_real else ''
-
-        top1_hit = (str(top_horse).strip() == actual_winner)
-        top3_hit = (actual_winner in horse_list[:3])
-
-        rows.append({
-            'date': date_str,
-            'race': race_no,
-            'venue': get_venue(date_str),
-            'top_horse': top_horse,
-            'actual_winner': actual_winner,
-            'top1_hit': top1_hit,
-            'top3_hit': top3_hit,
-        })
-
-    detail_df = pd.DataFrame(rows)
-    if detail_df.empty:
-        st.info("暫無足夠數據")
-        return
-
-    # ===== 分場地統計 =====
-    for venue in ['ST', 'HV']:
-        venue_df = detail_df[detail_df['venue'] == venue]
-        if venue_df.empty:
-            continue
-        total = len(venue_df)
-        top1_hits = int(venue_df['top1_hit'].sum())
-        top3_hits = int(venue_df['top3_hit'].sum())
-        venue_name = '沙田（ST）' if venue == 'ST' else '跑馬地（HV）'
-        st.markdown(f"### {venue_name}")
-        col1, col2, col3 = st.columns(3)
-        col1.metric("總場次", f"{total}")
-        col2.metric("Top-1 命中", f"{top1_hits}（{top1_hits/total:.1%}）")
-        col3.metric("Top-3 命中", f"{top3_hits}（{top3_hits/total:.1%}）")
-
-    # ===== 整體統計 =====
-    st.divider()
-    total = len(detail_df)
-    top1_hits = int(detail_df['top1_hit'].sum())
-    top3_hits = int(detail_df['top3_hit'].sum())
-    st.markdown("### 📈 整體")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("總場次", f"{total}")
-    col2.metric("Top-1 命中", f"{top1_hits}（{top1_hits/total:.1%}）")
-    col3.metric("Top-3 命中", f"{top3_hits}（{top3_hits/total:.1%}）")
-
-    # ===== 詳細記錄 =====
-    st.divider()
-    st.dataframe(detail_df, use_container_width=True, hide_index=True)
-
-    # ===== 匯出 CSV =====
-    csv = detail_df.to_csv(index=False).encode('utf-8-sig')
-    st.download_button(
-        label="📥 下載 CSV",
-        data=csv,
-        file_name="accuracy_report.csv",
-        mime="text/csv"
-    )
 
 def admin_page():
     if 'admin_authenticated' not in st.session_state:
@@ -4513,79 +4188,44 @@ def admin_page():
         st.rerun()
     st.divider()
 
-    # ===== 後台主選單（加入權限檢查）=====
     tabs_def = [
-        ("📊 儀表板", admin_dashboard, "dashboard"),
-        ("👥 用戶管理", admin_user_management, "user_management"),
-        ("📥 下載中心", admin_downloads, "downloads"),
-        ("📊 次數管理", admin_manage_predictions, "manage_predictions"),
-        ("📊 數據分析", admin_analytics, "analytics"),
-        ("🏇 馬匹排行榜", admin_horse_ranking, "horse_ranking"),
-        ("👨‍🏫 騎師排行榜", admin_jockey_ranking, "jockey_ranking"),
-        ("👨‍🏫 練馬師排行榜", admin_trainer_ranking, "trainer_ranking"),
-        ("📊 場地/路程分析", admin_course_analysis, "course_analysis"),
-        ("📅 每月報告", admin_monthly_report, "monthly_report"),
-        ("📊 命中率報告", admin_accuracy_report, "accuracy_report"),  # 🆕
-        ("💰 財務", admin_finance, "finance"),
-        ("🎟️ 優惠碼", admin_promo_codes, "promo_codes"),
-        ("📈 預測監控", admin_accuracy_monitor, "accuracy_monitor"),
-        ("⏰ 訂閱管理", admin_subscription, "subscription"),
-        ("❤️ 打賞管理", admin_reward_management, "reward_management"),
-        ("📡 監控", admin_monitoring, "monitoring"),
-        ("📝 內容", admin_content, "content"),
-        ("🤖 自動維護", admin_auto_maintenance, "auto_maintenance"),
-        ("⚖️ 模型權重", admin_model_weights, "model_weights"),
-        ("🤖 自動化", admin_automation, "automation"),
-        ("🔐 安全", admin_security, "security"),
-        ("👤 用戶記錄", admin_user_activity, "user_activity"),
-        ("🎰 抽獎設定", admin_lottery_config, "lottery_config"),
-        ("🛒 商城設定", admin_shop_config, "shop_config"),
-        ("🎯 彩池設定", admin_pool_config, "pool_config"),
-        ("⚙️ 系統設定", admin_system_settings, "system_settings"),
+        ("📊 儀表板", admin_dashboard),
+        ("👥 用戶管理", admin_user_management),
+        ("📥 下載中心", admin_downloads),
+        ("📊 次數管理", admin_manage_predictions),
+        ("📊 數據分析", admin_analytics),
+        ("🏇 馬匹排行榜", admin_horse_ranking),
+        ("👨‍🏫 騎師排行榜", admin_jockey_ranking),
+        ("👨‍🏫 練馬師排行榜", admin_trainer_ranking),
+        ("📊 場地/路程分析", admin_course_analysis),
+        ("📅 每月報告", admin_monthly_report),
+        ("💰 財務", admin_finance),
+        ("🎟️ 優惠碼", admin_promo_codes),
+        ("📈 預測監控", admin_accuracy_monitor),
+        ("⏰ 訂閱管理", admin_subscription),
+        ("❤️ 打賞管理", admin_reward_management),
+        ("📡 監控", admin_monitoring),
+        ("📝 內容", admin_content),
+        ("🤖 自動維護", admin_auto_maintenance),
+        ("⚖️ 模型權重", admin_model_weights),
+        ("🤖 自動化", admin_automation),
+        ("🔐 安全", admin_security),
+        ("👤 用戶記錄", admin_user_activity),
+        ("🎰 抽獎設定", admin_lottery_config),
+        ("🛒 商城設定", admin_shop_config),
+        ("🎯 彩池設定", admin_pool_config),
+        ("⚙️ 系統設定", admin_system_settings),
     ]
 
-    # ===== 根據權限過濾 tabs =====
-    _role = st.session_state.get("role")
-    _user_perms = st.session_state.get("permissions", [])
-
-    # 確保 _user_perms 係 list
-    if isinstance(_user_perms, str):
-        try:
-            _user_perms = json.loads(_user_perms)
-        except Exception:
-            _user_perms = []
-    if not isinstance(_user_perms, list):
-        _user_perms = []
-
-    if _role == "super_admin":
-        # super_admin 睇全部
-        visible_tabs = tabs_def
-    elif _role == "admin":
-        if _user_perms:
-            # admin 有 permissions，按 permissions 過濾
-            visible_tabs = [t for t in tabs_def if t[2] in _user_perms]
-        else:
-            # 🆕 admin 冇 permissions，默認顯示基本功能
-            default_perms = ["dashboard", "user_management", "downloads", "manage_predictions"]
-            visible_tabs = [t for t in tabs_def if t[2] in default_perms]
-    else:
-        visible_tabs = []
-
-    # ===== 顯示 tabs =====
-    if visible_tabs:
-        tabs = st.tabs([t[0] for t in visible_tabs])
-        for i, (name, fn, perm_key) in enumerate(visible_tabs):
-            with tabs[i]:
-                try:
-                    fn()
-                except Exception as e:
-                    st.error(f"⚠️ 呢個分頁載入失敗：{e}")
-                    import traceback
-                    st.code(traceback.format_exc())
-    else:
-        st.warning("⚠️ 你冇任何後台權限，請聯絡管理員。")
-        st.write(f"DEBUG: role = {_role}")
-        st.write(f"DEBUG: permissions = {_user_perms}")
+    tabs = st.tabs([t[0] for t in tabs_def])
+    for i, (name, fn) in enumerate(tabs_def):
+        with tabs[i]:
+            try:
+                fn()
+            except Exception as e:
+                st.error(f"⚠️ 呢個分頁載入失敗：{e}")
+                import traceback
+                st.code(traceback.format_exc())
 
 def display_race_calendar():
     try:
@@ -4678,25 +4318,7 @@ def check_session_timeout():
     st.session_state._last_activity = now
 
 def login_page():
-    # 🆕 右上角按鈕佈局（同登入後一致）
-    c1, c2, c3, c4 = st.columns([4, 1, 1, 1])
-
-    with c1:
-        st.title("🔐 登入 / 註冊")
-
-    with c2:
-        if st.button("🔑 登入", use_container_width=True, key="pg_login_top"):
-            st.session_state.page_mode = "login"
-            st.rerun()
-
-    with c3:
-        if st.button("📝 註冊", use_container_width=True, key="pg_reg_top"):
-            st.session_state.page_mode = "register"
-            st.rerun()
-
-    with c4:
-        if st.button("❓ 常見問題", use_container_width=True, key="pg_faq_top"):
-            st.switch_page("pages/FAQ.py")
+    st.title("🔐 登入 / 註冊")
 
     # 🛡️ 顯示超時訊息
     if st.session_state.get('_timeout_message'):
@@ -4708,8 +4330,14 @@ def login_page():
         st.success(st.session_state['register_success'])
         del st.session_state['register_success']
 
-    # 🆕 唔再需要原本嘅 c1, c2 大按鈕
-    # mode 由 session_state 決定
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("🔑 登入", use_container_width=True, key="pg_login"):
+            st.session_state.page_mode = "login"
+    with c2:
+        if st.button("📝 註冊", use_container_width=True, key="pg_reg"):
+            st.session_state.page_mode = "register"
+
     mode = st.session_state.get("page_mode", "login")
 
     if mode == "login":
@@ -4724,7 +4352,6 @@ def login_page():
                     st.session_state._last_activity = datetime.now()
                     log_user_activity(u, "登入", "登入成功")
                     st.session_state.role = user.get('group', 'free')
-                    st.session_state.permissions = user.get('permissions', [])
                     st.rerun()
                 else:
                     st.error("❌ 用戶名或密碼錯誤")
@@ -5067,7 +4694,7 @@ def main():
         st.markdown("AI 驅動・即時預測・彩池推薦")
         st.caption(f"{datetime.now().strftime('%Y年%m月%d日')}")
     with c2:
-        if CONFIG["enable_admin"] and st.session_state.get("role") in ["super_admin", "admin"]:
+        if CONFIG["enable_admin"] and st.session_state.get("role") == "super_admin":
             if st.button("🔐 後台", use_container_width=True, key="go_admin"):
                 st.session_state.show_admin = True
                 st.rerun()
@@ -5133,63 +4760,34 @@ def main():
                             else:
                                 st.error("❌ 儲存失敗")
 
-# ═════════════════════════════════════════════
-# 【預測記錄】安全、獨立版本
-# ═════════════════════════════════════════════
-if 'username' in st.session_state:
-    # 使用 requests 讀取 Supabase（與 run_prediction 一致）
-    headers_user = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}"
-    }
-    res_user = requests.get(
-        f"{SUPABASE_URL}/rest/v1/users?username=eq.{st.session_state.username}&select=history",
-        headers=headers_user
-    )
+                # 預測記錄
+                with st.expander("📜 預測記錄", expanded=False):
+                    history = user_data.get('history', [])
+                    if not history:
+                        st.info("📭 暫無預測記錄")
+                    else:
+                        total = len(history)
+                        hits = sum(1 for h in history if h.get('is_hit') is True)
+                        hit_rate = hits / total if total > 0 else 0
+                        hc1, hc2, hc3 = st.columns(3)
+                        hc1.metric("總預測", total)
+                        hc2.metric("命中", hits)
+                        hc3.metric("命中率", f"{hit_rate:.1%}")
+                        st.divider()
+                        df_hist = pd.DataFrame(history[-20:][::-1])
+                        cols = [c for c in ['date', 'race', 'horse', 'is_hit'] if c in df_hist.columns]
+                        if cols:
+                            df_show = df_hist[cols].copy()
+                            df_show.rename(columns={
+                                'date': '日期', 'race': '場次',
+                                'horse': '預測馬', 'is_hit': '結果'
+                            }, inplace=True)
+                            if '結果' in df_show.columns:
+                                df_show['結果'] = df_show['結果'].apply(
+                                    lambda x: '✅' if x is True else ('❌' if x is False else '⏳')
+                                )
+                            st.dataframe(df_show, use_container_width=True, hide_index=True)
 
-    if res_user.status_code == 200 and res_user.json():
-        user_data = res_user.json()[0]
-
-        with st.expander("📜 預測記錄", expanded=False):
-            history_raw = user_data.get('history', '')
-
-            # 安全解析 JSON
-            if isinstance(history_raw, str) and history_raw:
-                try:
-                    history = json.loads(history_raw)
-                except:
-                    history = []
-            else:
-                history = history_raw if isinstance(history_raw, list) else []
-
-            if not history:
-                st.info("📭 暫無預測記錄")
-            else:
-                total = len(history)
-                hits = sum(1 for h in history if h.get('is_hit') is True)
-                hit_rate = hits / total if total > 0 else 0
-                hc1, hc2, hc3 = st.columns(3)
-                hc1.metric("總預測", total)
-                hc2.metric("命中", hits)
-                hc3.metric("命中率", f"{hit_rate:.1%}")
-                st.divider()
-                df_hist = pd.DataFrame(history[-20:][::-1])
-                cols = [c for c in ['date', 'race', 'horse', 'is_hit'] if c in df_hist.columns]
-                if cols:
-                    df_show = df_hist[cols].copy()
-                    df_show.rename(columns={
-                        'date': '日期', 'race': '場次',
-                        'horse': '預測馬', 'is_hit': '結果'
-                    }, inplace=True)
-                    if '結果' in df_show.columns:
-                        df_show['結果'] = df_show['結果'].apply(
-                            lambda x: '✅' if x is True else ('❌' if x is False else '⏳')
-                        )
-                    st.dataframe(df_show, use_container_width=True, hide_index=True)
-    else:
-        st.warning("⚠️ 無法讀取用戶資料，請稍後再試")
-else:
-    st.info("👋 請先登入以查看預測記錄")
     # 👇 c4 完結，縮進 4 格
     if st.session_state.get('logged_in', False):
         _checkin_user = st.session_state.get('username')
@@ -5217,7 +4815,6 @@ else:
             with st.popover("💬 聊天室", use_container_width=True):
                 show_chat_room()
 
-    c1, c2, c3, c4, c5 = st.columns(5)
     with c5:
         if st.session_state.get('logged_in', False):
             if st.button("🚪 登出", use_container_width=True, key="logout_main"):
@@ -5243,7 +4840,7 @@ else:
     display_race_calendar()
     st.markdown("---")
 
-  if st.session_state.get('logged_in', False):
+    if st.session_state.logged_in:
         ca, cb = st.columns(2)
         with ca:
             if CONFIG.get("enable_lottery", True):
@@ -5707,7 +5304,7 @@ else:
                 if top:
                     horse_list = [str(top).strip()]
 
-            for idx, horse in enumerate(horse_list[:3], 1):
+            for idx, horse in enumerate(horse_list[:4], 1):
                 pred_list.append({
                     '日期': date_str,
                     '場次': race_no_c,
