@@ -839,7 +839,7 @@ def _build_features(race_df, history_df):
         except Exception as e:
             st.warning(f"⚠️ 加載馬名對照表失敗：{e}")
 
-    features_43 = [
+    features_43 = {
         'draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
         'jockey_win_rate_50', 'trainer_win_rate_50',
         'distance_win_rate', 'distance_avg_rank', 'win_odds',
@@ -854,14 +854,14 @@ def _build_features(race_df, history_df):
         'draw_win_rate', 'days_since_injury', 'injury_30d',
         'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity',
         'is_st_turf', 'is_st_awt', 'is_hv_turf',
-        'dam_win_rate', 'last_race_rank', 'best_rank_last3', 'top3_rate_last5',
+        'last_race_rank', 'best_rank_last3', 'top3_rate_last5',
         'days_since_last_win'
-    ]
+    }
 
-
-    for c in feature_cols:
+    for c in features_43:
         if c not in result.columns:
             result[c] = 0.0
+        result[c] = pd.to_numeric(result[c], errors='coerce').fillna(0)
 
     # 填充基本欄位
     if 'draw' in race_df.columns:
@@ -968,7 +968,7 @@ def _build_features(race_df, history_df):
                 lambda h: (datetime.now() - last_run[h]).days if h in last_run else 999
             ).fillna(999)
 
-            # 填充剩餘特徵
+        # 填充剩餘特徵
         for c in features_43:
             if c not in result.columns:
                 result[c] = 0.0
@@ -1132,7 +1132,7 @@ def run_prediction(date_str, race_no):
         'draw_win_rate', 'days_since_injury', 'injury_30d',
         'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity',
         'is_st_turf', 'is_st_awt', 'is_hv_turf',
-        'dam_win_rate', 'last_race_rank', 'best_rank_last3', 'top3_rate_last5',
+        'last_race_rank', 'best_rank_last3', 'top3_rate_last5',
         'days_since_last_win'
     ]
 
