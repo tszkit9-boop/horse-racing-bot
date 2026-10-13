@@ -798,9 +798,9 @@ def _build_features(race_df, history_df):
 
     result = race_df.copy()
 
-    # ========================================================
+    # 
     # 🛡️ 智能馬名對照：用中文馬名去匹配 horse_id
-    # ========================================================
+    # 
     mapping_file = "horse_name_mapping_cn.csv"
     if os.path.exists(mapping_file):
         try:
@@ -1332,7 +1332,7 @@ def run_prediction(date_str, race_no):
     except Exception as e:
         st.warning(f"寫入預測紀錄失敗: {e}")
 
-=======
+
 
     user_group = st.session_state.get('role', 'free')
     return result_df, generate_pool_recommendations(result_df, user_group)
@@ -2361,7 +2361,7 @@ def admin_dashboard():
         
     local_income = float(finance.get('total_income', 0) or 0)
     total_income_display = local_income + supabase_income
-    # ===============================================
+    # =====
 
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("👤 總用戶", len(users))
@@ -2942,7 +2942,7 @@ def admin_finance():
 
     local_income = float(f.get('total_income', 0) or 0)
     total_income_display = local_income + supabase_income
-    # =================================================
+    # 
 
     c1, c2, c3 = st.columns(3)
     c1.metric("總收入", f"${total_income_display:.2f}")  # 改為顯示兩者相加
@@ -4813,7 +4813,7 @@ def main():
                                 st.error("❌ 儲存失敗")
 
                 # 預測記錄
-<<<<<<< HEAD
+
 # ═════════════════════════════════════════════
 # 【讀取端】個人中心顯示預測記錄（安全獨立版）
 # ═════════════════════════════════════════════
@@ -4867,7 +4867,7 @@ if 'username' in st.session_state:
         st.warning("⚠️ 無法讀取用戶資料")
 else:
     st.info("👋 請先登入以查看預測記錄")
-=======
+
                 with st.expander("📜 預測記錄", expanded=False):
                     history = user_data.get('history', [])
                     if not history:
@@ -4894,7 +4894,7 @@ else:
                                     lambda x: '✅' if x is True else ('❌' if x is False else '⏳')
                                 )
                             st.dataframe(df_show, use_container_width=True, hide_index=True)
->>>>>>> bd3f0850a9d5d4fa943e155ae10a0e6137eba80f
+ bd3f0850a9d5d4fa943e155ae10a0e6137eba80f
 
     # 👇 c4 完結，縮進 4 格
     if st.session_state.get('logged_in', False):
@@ -4933,12 +4933,12 @@ else:
 
     st.markdown("---")
     
-    # =========================================================================
+    # ===
     # 👇👇👇 重要：倒數卡片（⏰ 距離下場賽事）一定要放喺呢度！ 👇👇👇
     # 你必須將包含「⏰ 距離下場賽事」嘅代碼，原封不動咁貼喺呢度。
     # 記住：呢度嘅代碼前面「唔可以有 with c1: 或者 with c2: 嘅縮排」，佢一定要係最左邊（或者同上面 c1, c2... 對齊）。
     # 咁樣佢就會自動佔滿成行，變返做「成條橫額」！
-    # =========================================================================
+    # ===
     
     # (貼上你原本倒數卡片嘅代碼，例如：)
     # st.markdown("⏰ 距離下場賽事：跑馬地夜馬")
@@ -4976,9 +4976,9 @@ else:
     st.divider()
     st.subheader("🎯 賽事預測")
 
-    # ============================================================
+    # ====
     # 🆕 動態讀取 racecard_uploaded.csv 入面最新嘅日期
-    # ============================================================
+    # ====
     _batch_default_date = None
     try:
         if os.path.exists("racecard_uploaded.csv"):
@@ -4998,9 +4998,9 @@ else:
     if _batch_default_date is None:
         _batch_default_date = pd.to_datetime("today")
 
-    # ============================================================
+    # ====
     # 🔧 一鍵預測所有場次（開放俾所有用戶）
-    # ============================================================
+    # ====
     with st.expander("🛠️ 一鍵預測所有場次"):
         st.caption("⚠️ 會自動預測指定日期嘅所有場次。")
 
@@ -5242,9 +5242,9 @@ else:
                             df_show['勝率'] = df_show['勝率'].apply(lambda x: f"{x:.1%}" if pd.notna(x) else "-")
 
                         st.dataframe(df_show, use_container_width=True, hide_index=True)
-    # ============================================================
+    # ====
     # 🎯 單場預測（所有用戶可見，已包含馬號）
-    # ============================================================
+    # ====
     st.divider()
     st.subheader("🎯 單場預測")
 
@@ -5331,9 +5331,9 @@ else:
 
         # 最後顯示出嚟
         st.dataframe(display_df, use_container_width=True, hide_index=True)
-    # ============================================================
+    # ====
     # 🤖 AI 預測表現 & 賽果對比（全寬，喺預測下面）
-    # ============================================================
+    # ====
     st.divider()
     with st.expander("🤖 AI 預測表現 & 賽果對比（點擊展開）", expanded=False):
         # ===== 從 Supabase 讀取預測紀錄 =====
