@@ -1131,26 +1131,48 @@ def run_prediction(date_str, race_no):
     # ===== 載入對應賽道嘅模型 =====
     xgb_win, cat_win, rank_win, xgb_top3, cat_top3, rank_top3 = load_ml_models(track_type)
 
-    features_43 = [
-        'draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
-        'jockey_win_rate_50', 'trainer_win_rate_50',
-        'distance_win_rate', 'distance_avg_rank', 'win_odds',
-        'weight_change', 'jockey_trainer_win_rate',
-        'course_win_rate', 'course_avg_rank',
-        'days_since_last_run', 'odds_rank_in_race',
-        'rtg_change', 'jockey_horse_win_rate',
-        'races_last14days', 'going_win_rate',
-        'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
-        'early_pace', 'finish_speed', 'last_trial_rank',
-        'last_trial_time', 'jockey_win_rate_5', 'jockey_win_rate_10',
-        'draw_win_rate', 'days_since_injury', 'injury_30d',
-        'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity',
-        'is_st_turf', 'is_st_awt', 'is_hv_turf',
-        'last_race_rank', 'best_rank_last3', 'top3_rate_last5',
-        'days_since_last_win'
-    ]
+    # ===== 根據賽道自動選擇正確的特徵數量 =====
+    if track_type == 'hv':
+        # 跑馬地舊模型：只需要 40 個特徵
+        features_final = [
+            'draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
+            'jockey_win_rate_50', 'trainer_win_rate_50',
+            'distance_win_rate', 'distance_avg_rank', 'win_odds',
+            'weight_change', 'jockey_trainer_win_rate',
+            'course_win_rate', 'course_avg_rank',
+            'days_since_last_run', 'odds_rank_in_race',
+            'rtg_change', 'jockey_horse_win_rate',
+            'races_last14days', 'going_win_rate',
+            'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
+            'early_pace', 'finish_speed', 'last_trial_rank',
+            'last_trial_time', 'jockey_win_rate_5', 'jockey_win_rate_10',
+            'draw_win_rate', 'days_since_injury', 'injury_30d',
+            'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity',
+            'is_st_turf', 'is_st_awt', 'is_hv_turf',
+            'dam_win_rate'
+        ]
+    else:
+        # 沙田新模型：需要 43 個特徵
+        features_final = [
+            'draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
+            'jockey_win_rate_50', 'trainer_win_rate_50',
+            'distance_win_rate', 'distance_avg_rank', 'win_odds',
+            'weight_change', 'jockey_trainer_win_rate',
+            'course_win_rate', 'course_avg_rank',
+            'days_since_last_run', 'odds_rank_in_race',
+            'rtg_change', 'jockey_horse_win_rate',
+            'races_last14days', 'going_win_rate',
+            'trial_win_rate', 'sire_win_rate', 'sire_course_win_rate',
+            'early_pace', 'finish_speed', 'last_trial_rank',
+            'last_trial_time', 'jockey_win_rate_5', 'jockey_win_rate_10',
+            'draw_win_rate', 'days_since_injury', 'injury_30d',
+            'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity',
+            'is_st_turf', 'is_st_awt', 'is_hv_turf',
+            'last_race_rank', 'best_rank_last3', 'top3_rate_last5',
+            'days_since_last_win'
+        ]
 
-    X = features_df[features_43].fillna(0).values
+    X = features_df[features_final].fillna(0).values
 
     # ===== 讀取權重 =====
     try:
