@@ -4494,7 +4494,7 @@ def show_chat_room():
 
     current_user = st.session_state.get('username', 'unknown')
     is_admin = st.session_state.get('role') == 'super_admin'
- 
+
     # ===== 檢查封鎖 =====
     banned = False
     ban_reason = ""
