@@ -798,9 +798,9 @@ def _build_features(race_df, history_df):
 
     result = race_df.copy()
 
-    # 
+    # ========================================================
     # 🛡️ 智能馬名對照：用中文馬名去匹配 horse_id
-    # 
+    # ========================================================
     mapping_file = "horse_name_mapping_cn.csv"
     if os.path.exists(mapping_file):
         try:
@@ -1281,58 +1281,6 @@ def run_prediction(date_str, race_no):
         "model_used": [f"{track_type}_贏出", f"{track_type}_前三", "值博率"],
         "predicted_at": datetime.now().isoformat()
     })
-
-
-    # ═════════════════════════════════════════════
-    # 【寫入端】自動將預測紀錄寫入用戶 history（使用 requests）
-    # ═════════════════════════════════════════════
-    try:
-        import json
-        current_username = st.session_state.get('username', None)
-
-        if current_username:
-            headers_supabase = {
-                "apikey": SUPABASE_KEY,
-                "Authorization": f"Bearer {SUPABASE_KEY}",
-                "Content-Type": "application/json",
-                "Prefer": "return=minimal"
-            }
-
-            # 1. 讀取當前用戶嘅 history
-            url_get = f"{SUPABASE_URL}/rest/v1/users?username=eq.{current_username}&select=history"
-            res_hist = requests.get(url_get, headers=headers_supabase)
-
-            history_list = []
-            if res_hist.status_code == 200 and res_hist.json():
-                raw_history = res_hist.json()[0].get('history', '')
-                if raw_history:
-                    try:
-                        history_list = json.loads(raw_history)
-                    except Exception:
-                        history_list = []
-
-            # 2. 加入新紀錄
-            new_record = {
-                "date": date_str,
-                "race": race_no,
-                "horse": result_df.iloc[0]['馬名'],
-                "is_hit": None
-            }
-            history_list.append(new_record)
-
-            # 3. 寫返去 Supabase
-            url_patch = f"{SUPABASE_URL}/rest/v1/users?username=eq.{current_username}"
-            payload = {"history": json.dumps(history_list, ensure_ascii=False)}
-            requests.patch(url_patch, headers=headers_supabase, json=payload)
-
-            # 4. 同步更新 session_state
-            if 'user_data' in st.session_state and st.session_state.user_data.get('username') == current_username:
-                st.session_state.user_data['history'] = history_list
-
-    except Exception as e:
-        st.warning(f"寫入預測紀錄失敗: {e}")
-
-
 
     user_group = st.session_state.get('role', 'free')
     return result_df, generate_pool_recommendations(result_df, user_group)
@@ -2361,7 +2309,7 @@ def admin_dashboard():
         
     local_income = float(finance.get('total_income', 0) or 0)
     total_income_display = local_income + supabase_income
-    # =====
+    # ===============================================
 
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("👤 總用戶", len(users))
@@ -2942,7 +2890,7 @@ def admin_finance():
 
     local_income = float(f.get('total_income', 0) or 0)
     total_income_display = local_income + supabase_income
-    # 
+    # =================================================
 
     c1, c2, c3 = st.columns(3)
     c1.metric("總收入", f"${total_income_display:.2f}")  # 改為顯示兩者相加
@@ -4546,8 +4494,7 @@ def show_chat_room():
 
     current_user = st.session_state.get('username', 'unknown')
     is_admin = st.session_state.get('role') == 'super_admin'
-    ...
-
+ 
     # ===== 檢查封鎖 =====
     banned = False
     ban_reason = ""
@@ -4813,59 +4760,32 @@ def main():
                                 st.error("❌ 儲存失敗")
 
                 # 預測記錄
-
-# ═════════════════════════════════════════════
-# 【讀取端】個人中心顯示預測記錄（安全獨立版）
-# ═════════════════════════════════════════════
-if 'username' in st.session_state:
-    headers_user = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-    res_user = requests.get(
-        f"{SUPABASE_URL}/rest/v1/users?username=eq.{st.session_state.username}&select=*",
-        headers=headers_user
-    )
-
-    if res_user.status_code == 200 and res_user.json():
-        user_data = res_user.json()[0]
-
-        with st.expander("📜 預測記錄", expanded=False):
-            history_raw = user_data.get('history', '')
-
-            if isinstance(history_raw, str) and history_raw:
-                try:
-                    history = json.loads(history_raw)
-                except:
-                    history = []
-            else:
-                history = history_raw if isinstance(history_raw, list) else []
-
-            if not history:
-                st.info("📭 暫無預測記錄")
-            else:
-                total = len(history)
-                hits = sum(1 for h in history if h.get('is_hit') is True)
-                hit_rate = hits / total if total > 0 else 0
-                hc1, hc2, hc3 = st.columns(3)
-                hc1.metric("總預測", total)
-                hc2.metric("命中", hits)
-                hc3.metric("命中率", f"{hit_rate:.1%}")
-                st.divider()
-                df_hist = pd.DataFrame(history[-20:][::-1])
-                cols = [c for c in ['date', 'race', 'horse', 'is_hit'] if c in df_hist.columns]
-                if cols:
-                    df_show = df_hist[cols].copy()
-                    df_show.rename(columns={
-                        'date': '日期', 'race': '場次',
-                        'horse': '預測馬', 'is_hit': '結果'
-                    }, inplace=True)
-                    if '結果' in df_show.columns:
-                        df_show['結果'] = df_show['結果'].apply(
-                            lambda x: '✅' if x is True else ('❌' if x is False else '⏳')
-                        )
-                    st.dataframe(df_show, use_container_width=True, hide_index=True)
-    else:
-        st.warning("⚠️ 無法讀取用戶資料")
-else:
-    st.info("👋 請先登入以查看預測記錄")
+                with st.expander("📜 預測記錄", expanded=False):
+                    history = user_data.get('history', [])
+                    if not history:
+                        st.info("📭 暫無預測記錄")
+                    else:
+                        total = len(history)
+                        hits = sum(1 for h in history if h.get('is_hit') is True)
+                        hit_rate = hits / total if total > 0 else 0
+                        hc1, hc2, hc3 = st.columns(3)
+                        hc1.metric("總預測", total)
+                        hc2.metric("命中", hits)
+                        hc3.metric("命中率", f"{hit_rate:.1%}")
+                        st.divider()
+                        df_hist = pd.DataFrame(history[-20:][::-1])
+                        cols = [c for c in ['date', 'race', 'horse', 'is_hit'] if c in df_hist.columns]
+                        if cols:
+                            df_show = df_hist[cols].copy()
+                            df_show.rename(columns={
+                                'date': '日期', 'race': '場次',
+                                'horse': '預測馬', 'is_hit': '結果'
+                            }, inplace=True)
+                            if '結果' in df_show.columns:
+                                df_show['結果'] = df_show['結果'].apply(
+                                    lambda x: '✅' if x is True else ('❌' if x is False else '⏳')
+                                )
+                            st.dataframe(df_show, use_container_width=True, hide_index=True)
 
     # 👇 c4 完結，縮進 4 格
     if st.session_state.get('logged_in', False):
@@ -4894,7 +4814,6 @@ else:
             with st.popover("💬 聊天室", use_container_width=True):
                 show_chat_room()
 
-    c1, c2, c3, c4, c5 = st.columns(5)
     with c5:
         if st.session_state.get('logged_in', False):
             if st.button("🚪 登出", use_container_width=True, key="logout_main"):
@@ -4902,14 +4821,15 @@ else:
                     if k in st.session_state:
                         del st.session_state[k]
                 st.rerun()
+
     st.markdown("---")
     
-    # ===
+    # =========================================================================
     # 👇👇👇 重要：倒數卡片（⏰ 距離下場賽事）一定要放喺呢度！ 👇👇👇
     # 你必須將包含「⏰ 距離下場賽事」嘅代碼，原封不動咁貼喺呢度。
     # 記住：呢度嘅代碼前面「唔可以有 with c1: 或者 with c2: 嘅縮排」，佢一定要係最左邊（或者同上面 c1, c2... 對齊）。
     # 咁樣佢就會自動佔滿成行，變返做「成條橫額」！
-    # ===
+    # =========================================================================
     
     # (貼上你原本倒數卡片嘅代碼，例如：)
     # st.markdown("⏰ 距離下場賽事：跑馬地夜馬")
@@ -4919,7 +4839,7 @@ else:
     display_race_calendar()
     st.markdown("---")
 
-    if st.session_state.get('logged_in', False):
+    if st.session_state.logged_in:
         ca, cb = st.columns(2)
         with ca:
             if CONFIG.get("enable_lottery", True):
@@ -4932,24 +4852,24 @@ else:
                     st.session_state.show_shop = True
                     st.session_state.show_lottery = False
 
-        if st.session_state.get('show_lottery'):
-            show_lottery_interface(st.session_state.username)
-            if st.button("⬅️ 返回", key="bl"):
-                st.session_state.show_lottery = False
-                st.rerun()
+    if st.session_state.get('show_lottery'):
+        show_lottery_interface(st.session_state.get('username', ''))
+        if st.button("⬅️ 返回", key="bl"):
+            st.session_state.show_lottery = False
+            st.rerun()
 
-        if st.session_state.get('show_shop'):
-            show_shop_interface(st.session_state.username)
-            if st.button("⬅️ 返回", key="bs"):
-                st.session_state.show_shop = False
-                st.rerun()
+    if st.session_state.get('show_shop'):
+        show_shop_interface(st.session_state.get('username', ''))
+        if st.button("⬅️ 返回", key="bs"):
+            st.session_state.show_shop = False
+            st.rerun()
 
     st.divider()
     st.subheader("🎯 賽事預測")
 
-    # ====
+    # ============================================================
     # 🆕 動態讀取 racecard_uploaded.csv 入面最新嘅日期
-    # ====
+    # ============================================================
     _batch_default_date = None
     try:
         if os.path.exists("racecard_uploaded.csv"):
@@ -4969,9 +4889,9 @@ else:
     if _batch_default_date is None:
         _batch_default_date = pd.to_datetime("today")
 
-    # ====
+    # ============================================================
     # 🔧 一鍵預測所有場次（開放俾所有用戶）
-    # ====
+    # ============================================================
     with st.expander("🛠️ 一鍵預測所有場次"):
         st.caption("⚠️ 會自動預測指定日期嘅所有場次。")
 
@@ -5213,9 +5133,9 @@ else:
                             df_show['勝率'] = df_show['勝率'].apply(lambda x: f"{x:.1%}" if pd.notna(x) else "-")
 
                         st.dataframe(df_show, use_container_width=True, hide_index=True)
-    # ====
+    # ============================================================
     # 🎯 單場預測（所有用戶可見，已包含馬號）
-    # ====
+    # ============================================================
     st.divider()
     st.subheader("🎯 單場預測")
 
@@ -5302,9 +5222,9 @@ else:
 
         # 最後顯示出嚟
         st.dataframe(display_df, use_container_width=True, hide_index=True)
-    # ====
+    # ============================================================
     # 🤖 AI 預測表現 & 賽果對比（全寬，喺預測下面）
-    # ====
+    # ============================================================
     st.divider()
     with st.expander("🤖 AI 預測表現 & 賽果對比（點擊展開）", expanded=False):
         # ===== 從 Supabase 讀取預測紀錄 =====
