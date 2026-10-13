@@ -4824,11 +4824,11 @@ if 'username' in st.session_state:
         headers=headers_user
     )
 
-    if res_user.status_code == 200 and res_user.json():
-        user_data = res_user.json()[0]
+            if res_user.status_code == 200 and res_user.json():
+                user_data = res_user.json()[0]
 
-        with st.expander("📜 預測記錄", expanded=False):
-            history_raw = user_data.get('history', '')
+                with st.expander("📜 預測記錄", expanded=False):
+                    history_raw = user_data.get('history', '')
 
             if isinstance(history_raw, str) and history_raw:
                 try:
