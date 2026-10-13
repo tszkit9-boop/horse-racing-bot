@@ -4693,7 +4693,11 @@ def main():
         st.markdown("AI 驅動・即時預測・彩池推薦")
         st.caption(f"{datetime.now().strftime('%Y年%m月%d日')}")
     with c2:
-        if CONFIG["enable_admin"] and st.session_state.get("role") == "super_admin":
+        # 🛡️ 穩健版檢查：兼容大小寫、空格，並防範設定檔出錯
+        user_role = str(st.session_state.get("role", "")).strip().lower()
+        enable_admin = CONFIG.get("enable_admin", True)
+        
+        if enable_admin and ("super_admin" in user_role or "admin" in user_role):
             if st.button("🔐 後台", use_container_width=True, key="go_admin"):
                 st.session_state.show_admin = True
                 st.rerun()
