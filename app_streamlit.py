@@ -2439,6 +2439,7 @@ def admin_user_management():
         "shop_config": "🛒 商城設定",
         "pool_config": "🎯 彩池設定",
         "system_settings": "⚙️ 系統設定",
+        "accuracy_report": "📊 命中率報告",  # 🆕
     }
 
     # ===== 1. 用戶列表 =====
@@ -4286,6 +4287,156 @@ def admin_system_settings():
             st.rerun()
         else:
             st.error("❌ 儲存失敗")
+def admin_accuracy_report():
+    """命中率報告（後台分頁）- 分場地顯示"""
+    st.subheader("📊 命中率報告")
+    st.caption("對比預測結果同實際賽果，分場地統計 Top-1 同 Top-3 命中率。")
+
+    # ===== 從 Supabase 讀取預測紀錄 =====
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}"
+    }
+    try:
+        res = requests.get(
+            f"{SUPABASE_URL}/rest/v1/predictions?order=date.desc",
+            headers=headers,
+            timeout=10
+        )
+        records = res.json() if res.status_code == 200 else []
+    except Exception as e:
+        st.error(f"❌ 讀取預測紀錄失敗：{e}")
+        return
+
+    if not records:
+        st.info("暫無足夠數據")
+        return
+
+    # ===== 讀取賽果 =====
+    result_file = "race_results_clean.csv"
+    if not os.path.exists(result_file):
+        st.info("暫無足夠數據")
+        return
+
+    try:
+        df_results = pd.read_csv(result_file, encoding='utf-8-sig')
+        df_results['horse_name'] = df_results['horse_name'].astype(str).str.strip()
+        df_results['horse_name'] = df_results['horse_name'].str.replace(
+            r'\s*\([A-Z]\d+\)\s*$', '', regex=True
+        ).str.strip()
+        df_results['finish_position'] = pd.to_numeric(df_results['finish_position'], errors='coerce')
+        df_results['race_no'] = pd.to_numeric(df_results['race_no'], errors='coerce')
+        df_results = df_results.dropna(subset=['race_no', 'finish_position'])
+        df_results['race_no'] = df_results['race_no'].astype(int)
+        df_results['race_date'] = pd.to_datetime(df_results['race_date'], errors='coerce')
+    except Exception as e:
+        st.error(f"❌ 讀取賽果失敗：{e}")
+        return
+
+    # ===== 建立賽果 lookup：(date, race) -> 真實頭 3 名 =====
+    results_map = {}
+    df_results['date_str'] = df_results['race_date'].dt.strftime('%Y-%m-%d')
+    for (date_str, race_no), group in df_results.groupby(['date_str', 'race_no']):
+        top3 = group.sort_values('finish_position').head(3)['horse_name'].tolist()
+        results_map[(date_str, int(race_no))] = top3
+
+    # ===== 判斷場地 =====
+    def get_venue(race_date_str):
+        try:
+            d = pd.to_datetime(race_date_str)
+            return 'HV' if d.weekday() == 2 else 'ST'
+        except Exception:
+            return 'ST'
+
+    # ===== 逐條預測計算命中 =====
+    rows = []
+    for rec in records:
+        date_str = str(rec.get('date', '')).strip()
+        race_no = rec.get('race')
+        top_horse = rec.get('top_horse', '')
+        if not date_str or race_no is None:
+            continue
+        try:
+            race_no = int(race_no)
+        except Exception:
+            continue
+
+        horse_list = []
+        raw_all = rec.get('all_horses')
+        if raw_all:
+            try:
+                parsed = json.loads(raw_all) if isinstance(raw_all, str) else raw_all
+                if isinstance(parsed, list):
+                    horse_list = [str(h).strip() for h in parsed if str(h).strip()]
+            except Exception:
+                pass
+        if not horse_list:
+            if top_horse:
+                horse_list = [str(top_horse).strip()]
+
+        key = (date_str, race_no)
+        if key not in results_map:
+            continue
+
+        top3_real = results_map[key]
+        actual_winner = top3_real[0] if top3_real else ''
+
+        top1_hit = (str(top_horse).strip() == actual_winner)
+        top3_hit = (actual_winner in horse_list[:3])
+
+        rows.append({
+            'date': date_str,
+            'race': race_no,
+            'venue': get_venue(date_str),
+            'top_horse': top_horse,
+            'actual_winner': actual_winner,
+            'top1_hit': top1_hit,
+            'top3_hit': top3_hit,
+        })
+
+    detail_df = pd.DataFrame(rows)
+    if detail_df.empty:
+        st.info("暫無足夠數據")
+        return
+
+    # ===== 分場地統計 =====
+    for venue in ['ST', 'HV']:
+        venue_df = detail_df[detail_df['venue'] == venue]
+        if venue_df.empty:
+            continue
+        total = len(venue_df)
+        top1_hits = int(venue_df['top1_hit'].sum())
+        top3_hits = int(venue_df['top3_hit'].sum())
+        venue_name = '沙田（ST）' if venue == 'ST' else '跑馬地（HV）'
+        st.markdown(f"### {venue_name}")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("總場次", f"{total}")
+        col2.metric("Top-1 命中", f"{top1_hits}（{top1_hits/total:.1%}）")
+        col3.metric("Top-3 命中", f"{top3_hits}（{top3_hits/total:.1%}）")
+
+    # ===== 整體統計 =====
+    st.divider()
+    total = len(detail_df)
+    top1_hits = int(detail_df['top1_hit'].sum())
+    top3_hits = int(detail_df['top3_hit'].sum())
+    st.markdown("### 📈 整體")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("總場次", f"{total}")
+    col2.metric("Top-1 命中", f"{top1_hits}（{top1_hits/total:.1%}）")
+    col3.metric("Top-3 命中", f"{top3_hits}（{top3_hits/total:.1%}）")
+
+    # ===== 詳細記錄 =====
+    st.divider()
+    st.dataframe(detail_df, use_container_width=True, hide_index=True)
+
+    # ===== 匯出 CSV =====
+    csv = detail_df.to_csv(index=False).encode('utf-8-sig')
+    st.download_button(
+        label="📥 下載 CSV",
+        data=csv,
+        file_name="accuracy_report.csv",
+        mime="text/csv"
+    )
 
 def admin_page():
     if 'admin_authenticated' not in st.session_state:
@@ -4345,6 +4496,7 @@ def admin_page():
         ("🛒 商城設定", admin_shop_config, "shop_config"),
         ("🎯 彩池設定", admin_pool_config, "pool_config"),
         ("⚙️ 系統設定", admin_system_settings, "system_settings"),
+        ("📊 命中率報告", admin_accuracy_report, "accuracy_report"),  # 🆕
     ]
 
     # ===== 根據權限過濾 tabs =====
