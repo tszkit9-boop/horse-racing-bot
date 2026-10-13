@@ -1092,7 +1092,21 @@ def run_prediction(date_str, race_no):
             track_info = 'ST / Turf'
     except Exception:
         if not track_info or track_info == '' or track_info == 'nan':
-            track_info = 'ST / Turf'
+            track_info = 'ST / Turf'    
+# ===== 根據 track_info 設定模型變數 =====
+    track_upper = track_info.upper()
+    if 'AWT' in track_upper or '全天候' in track_info:
+        is_st_turf, is_st_awt, is_hv_turf = 0, 1, 0
+        track_type = 'st'
+        st.info(f"🏇 偵測到賽道：**全天候賽道（泥地）**（{track_info}）→ 使用沙田分賽道模型")
+    elif 'HV' in track_upper:
+        is_st_turf, is_st_awt, is_hv_turf = 0, 0, 1
+        track_type = 'hv'
+        st.info(f"🏇 偵測到賽道：**跑馬地草地**（{track_info}）→ 使用跑馬地分場地模型")
+    else:
+        is_st_turf, is_st_awt, is_hv_turf = 1, 0, 0
+        track_type = 'st'
+        st.info(f"🏇 偵測到賽道：**沙田草地**（{track_info}）→ 使用沙田分賽道模型")
 
     # ===== 歷史數據 =====
     history_df = pd.DataFrame()
