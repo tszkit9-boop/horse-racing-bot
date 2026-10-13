@@ -1070,7 +1070,7 @@ def run_prediction(date_str, race_no):
     elif 'HV' in track_upper:
         is_st_turf, is_st_awt, is_hv_turf = 0, 0, 1
         track_type = 'hv'
-        st.info(f"🏇 偵測到賽道：**跑馬地草地**（{track_info}）→ 使用舊模型")
+        st.info(f"🏇 偵測到賽道：**跑馬地草地**（{track_info}）→ 使用跑馬地分場地模型")
     else:
         is_st_turf, is_st_awt, is_hv_turf = 1, 0, 0
         track_type = 'st'
