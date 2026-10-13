@@ -1143,8 +1143,6 @@ def run_prediction(date_str, race_no):
 
     X = features_df[features_43].fillna(0).values
 
-    X = features_df[features_40].fillna(0).values
-
     # ===== 讀取權重 =====
     try:
         headers_tune = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
