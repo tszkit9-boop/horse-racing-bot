@@ -1357,15 +1357,26 @@ def run_prediction(date_str, race_no):
         current_username = st.session_state.get('username', None)
         
         if current_username:
+            # 設定 Supabase headers
+            headers_supabase = {
+                "apikey": SUPABASE_KEY,
+                "Authorization": f"Bearer {SUPABASE_KEY}",
+                "Content-Type": "application/json",
+                "Prefer": "return=minimal"
+            }
+            
             # 1. 讀取當前用戶嘅 history
-            res_hist = supabase.table('users').select('history').eq('username', current_username).execute()
+            url_get = f"{SUPABASE_URL}/rest/v1/users?username=eq.{current_username}&select=history"
+            res_hist = requests.get(url_get, headers=headers_supabase)
             
             history_list = []
-            if res_hist.data and res_hist.data[0]['history']:
-                try:
-                    history_list = json.loads(res_hist.data[0]['history'])
-                except Exception:
-                    history_list = []
+            if res_hist.status_code == 200 and res_hist.json():
+                raw_history = res_hist.json()[0].get('history', '')
+                if raw_history:
+                    try:
+                        history_list = json.loads(raw_history)
+                    except Exception:
+                        history_list = []
             
             # 2. 加入新紀錄
             new_record = {
@@ -1377,19 +1388,16 @@ def run_prediction(date_str, race_no):
             history_list.append(new_record)
             
             # 3. 寫返去 Supabase
-            supabase.table('users').update({
-                "history": json.dumps(history_list, ensure_ascii=False)
-            }).eq('username', current_username).execute()
+            url_patch = f"{SUPABASE_URL}/rest/v1/users?username=eq.{current_username}"
+            payload = {"history": json.dumps(history_list, ensure_ascii=False)}
+            requests.patch(url_patch, headers=headers_supabase, json=payload)
             
-            # 4. 同步更新 session_state（避免要刷新頁面先見到）
+            # 4. 同步更新 session_state
             if 'user_data' in st.session_state and st.session_state.user_data.get('username') == current_username:
                 st.session_state.user_data['history'] = history_list
                 
     except Exception as e:
         st.warning(f"寫入預測紀錄失敗: {e}")
-
-    user_group = st.session_state.get('role', 'free')
-    return result_df, generate_pool_recommendations(result_df, user_group)
 def _find_data_col(df, keywords):
     """搵一個有數據嘅欄位（唔止名要對，仲要有實際值）"""
     for c in df.columns:
@@ -5143,42 +5151,60 @@ user_data = res_user.data[0]
 # ═════════════════════════════════════════════
 # 【預測記錄】
 # ═════════════════════════════════════════════
-with st.expander("📜 預測記錄", expanded=False):
-    history_raw = user_data.get('history', [])
+if 'username' in st.session_state:
+    # 使用 requests 讀取 Supabase（與 run_prediction 一致）
+    headers_user = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}"
+    }
+    res_user = requests.get(
+        f"{SUPABASE_URL}/rest/v1/users?username=eq.{st.session_state.username}&select=history",
+        headers=headers_user
+    )
     
-    # 安全解析 JSON（因為 Supabase 儲存嘅係 text）
-    if isinstance(history_raw, str):
-        try:
-            history = json.loads(history_raw)
-        except:
-            history = []
+    if res_user.status_code == 200 and res_user.json():
+        user_data = res_user.json()[0]
+        
+        with st.expander("📜 預測記錄", expanded=False):
+            history_raw = user_data.get('history', '')
+            
+            # 安全解析 JSON
+            if isinstance(history_raw, str) and history_raw:
+                try:
+                    history = json.loads(history_raw)
+                except:
+                    history = []
+            else:
+                history = history_raw if isinstance(history_raw, list) else []
+        
+            if not history:
+                st.info("📭 暫無預測記錄")
+            else:
+                total = len(history)
+                hits = sum(1 for h in history if h.get('is_hit') is True)
+                hit_rate = hits / total if total > 0 else 0
+                hc1, hc2, hc3 = st.columns(3)
+                hc1.metric("總預測", total)
+                hc2.metric("命中", hits)
+                hc3.metric("命中率", f"{hit_rate:.1%}")
+                st.divider()
+                df_hist = pd.DataFrame(history[-20:][::-1])
+                cols = [c for c in ['date', 'race', 'horse', 'is_hit'] if c in df_hist.columns]
+                if cols:
+                    df_show = df_hist[cols].copy()
+                    df_show.rename(columns={
+                        'date': '日期', 'race': '場次',
+                        'horse': '預測馬', 'is_hit': '結果'
+                    }, inplace=True)
+                    if '結果' in df_show.columns:
+                        df_show['結果'] = df_show['結果'].apply(
+                            lambda x: '✅' if x is True else ('❌' if x is False else '⏳')
+                        )
+                    st.dataframe(df_show, use_container_width=True, hide_index=True)
     else:
-        history = history_raw if isinstance(history_raw, list) else []
-
-    if not history:
-        st.info("📭 暫無預測記錄")
-    else:
-        total = len(history)
-        hits = sum(1 for h in history if h.get('is_hit') is True)
-        hit_rate = hits / total if total > 0 else 0
-        hc1, hc2, hc3 = st.columns(3)
-        hc1.metric("總預測", total)
-        hc2.metric("命中", hits)
-        hc3.metric("命中率", f"{hit_rate:.1%}")
-        st.divider()
-        df_hist = pd.DataFrame(history[-20:][::-1])
-        cols = [c for c in ['date', 'race', 'horse', 'is_hit'] if c in df_hist.columns]
-        if cols:
-            df_show = df_hist[cols].copy()
-            df_show.rename(columns={
-                'date': '日期', 'race': '場次',
-                'horse': '預測馬', 'is_hit': '結果'
-            }, inplace=True)
-            if '結果' in df_show.columns:
-                df_show['結果'] = df_show['結果'].apply(
-                    lambda x: '✅' if x is True else ('❌' if x is False else '⏳')
-                )
-            st.dataframe(df_show, use_container_width=True, hide_index=True)
+        st.warning("⚠️ 無法讀取用戶資料，請稍後再試")
+else:
+    st.info("👋 請先登入以查看預測記錄")
     # 👇 c4 完結，縮進 4 格
     if st.session_state.get('logged_in', False):
         _checkin_user = st.session_state.get('username')
