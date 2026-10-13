@@ -701,7 +701,11 @@ def load_ml_models(track_type='st'):
     rank_top3 = None
 
     if track_type == 'hv':
+
         # ===== 跑馬地：用新分場地模型 =====
+
+        # ===== 跑馬地：Win + Rank + Top3 =====
+
         try:
             with open('hk_hv_xgb_win.pkl', 'rb') as f:
                 obj = pickle.load(f)
@@ -723,13 +727,25 @@ def load_ml_models(track_type='st'):
         except Exception as e:
             print(f"跑馬地贏出 Ranking 載入失敗：{e}")
 
-        # 跑馬地冇 Top3 模型
-        xgb_top3 = None
-        cat_top3 = None
+        try:
+            with open('hk_hv_xgb_top3.pkl', 'rb') as f:
+                obj = pickle.load(f)
+                xgb_top3 = obj[0] if isinstance(obj, tuple) else obj
+        except Exception as e:
+            print(f"跑馬地前三名 XGBoost 載入失敗：{e}")
+
+        try:
+            from catboost import CatBoostClassifier
+            cat_top3 = CatBoostClassifier()
+            cat_top3.load_model('hk_hv_cat_top3.cbm')
+        except Exception as e:
+            print(f"跑馬地前三名 CatBoost 載入失敗：{e}")
+
+        # 跑馬地冇 Rank Top3 模型
         rank_top3 = None
 
     else:
-        # ===== 沙田：用新分賽道模型（只有 XGB + Cat）=====
+        # ===== 沙田：Win + Top3 =====
         try:
             with open('hk_st_all_xgb_win.pkl', 'rb') as f:
                 obj = pickle.load(f)
@@ -748,6 +764,10 @@ def load_ml_models(track_type='st'):
         rank_win = None
         xgb_top3 = None
         cat_top3 = None
+        rank_top3 = None
+
+        # 沙田冇 Rank 同 Rank Top3 模型
+        rank_win = None
         rank_top3 = None
 
     return xgb_win, cat_win, rank_win, xgb_top3, cat_top3, rank_top3
