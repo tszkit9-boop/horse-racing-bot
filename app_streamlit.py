@@ -4823,14 +4823,13 @@ if 'username' in st.session_state:
         f"{SUPABASE_URL}/rest/v1/users?username=eq.{st.session_state.username}&select=*",
         headers=headers_user
     )
-    
-            if res_user.status_code == 200 and res_user.json():
-                user_data = res_user.json()[0]
 
-                with st.expander("📜 預測記錄", expanded=False):
-                    history_raw = user_data.get('history', '')
-            
-            # 安全解析 JSON
+    if res_user.status_code == 200 and res_user.json():
+        user_data = res_user.json()[0]
+
+        with st.expander("📜 預測記錄", expanded=False):
+            history_raw = user_data.get('history', '')
+
             if isinstance(history_raw, str) and history_raw:
                 try:
                     history = json.loads(history_raw)
@@ -4838,7 +4837,7 @@ if 'username' in st.session_state:
                     history = []
             else:
                 history = history_raw if isinstance(history_raw, list) else []
-        
+
             if not history:
                 st.info("📭 暫無預測記錄")
             else:
