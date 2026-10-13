@@ -839,7 +839,7 @@ def _build_features(race_df, history_df):
         except Exception as e:
             st.warning(f"⚠️ 加載馬名對照表失敗：{e}")
 
-    features_43 = [
+    features_43 = {
         'draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
         'jockey_win_rate_50', 'trainer_win_rate_50',
         'distance_win_rate', 'distance_avg_rank', 'win_odds',
@@ -856,7 +856,7 @@ def _build_features(race_df, history_df):
         'is_st_turf', 'is_st_awt', 'is_hv_turf',
         'last_race_rank', 'best_rank_last3', 'top3_rate_last5',
         'days_since_last_win'
-    ]
+    }
 
     for c in features_43:
         if c not in result.columns:
