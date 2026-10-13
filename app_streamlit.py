@@ -5217,7 +5217,7 @@ else:
             with st.popover("💬 聊天室", use_container_width=True):
                 show_chat_room()
 
-    with c5:
+c1, c2, c3, c4, c5 = st.columns(5)
         if st.session_state.get('logged_in', False):
             if st.button("🚪 登出", use_container_width=True, key="logout_main"):
                 for k in ['logged_in', 'username', 'role']:
