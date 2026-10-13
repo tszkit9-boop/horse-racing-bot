@@ -1142,7 +1142,6 @@ def run_prediction(date_str, race_no):
         'last_race_rank', 'best_rank_last3', 'top3_rate_last5',
         'days_since_last_win'
     ]
-    ]
 
     X = features_df[features_43].fillna(0).values
 
