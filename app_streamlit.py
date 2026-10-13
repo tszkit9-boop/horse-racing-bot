@@ -854,11 +854,9 @@ def _build_features(race_df, history_df):
         'draw_win_rate', 'days_since_injury', 'injury_30d',
         'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity',
         'is_st_turf', 'is_st_awt', 'is_hv_turf',
-        'is_st_turf', 'is_st_awt', 'is_hv_turf',
         'last_race_rank', 'best_rank_last3', 'top3_rate_last5',
         'days_since_last_win'
     ]
-
 
     for c in features_43:
         if c not in result.columns:
