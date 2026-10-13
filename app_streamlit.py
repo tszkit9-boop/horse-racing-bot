@@ -4919,7 +4919,7 @@ else:
     display_race_calendar()
     st.markdown("---")
 
-    if st.session_state.logged_in:
+    if st.session_state.get('logged_in', False):
         ca, cb = st.columns(2)
         with ca:
             if CONFIG.get("enable_lottery", True):
