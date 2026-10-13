@@ -1282,6 +1282,7 @@ def run_prediction(date_str, race_no):
         "predicted_at": datetime.now().isoformat()
     })
 
+
     # ═════════════════════════════════════════════
     # 【寫入端】自動將預測紀錄寫入用戶 history（使用 requests）
     # ═════════════════════════════════════════════
@@ -1330,6 +1331,8 @@ def run_prediction(date_str, race_no):
 
     except Exception as e:
         st.warning(f"寫入預測紀錄失敗: {e}")
+
+=======
 
     user_group = st.session_state.get('role', 'free')
     return result_df, generate_pool_recommendations(result_df, user_group)
@@ -4810,6 +4813,7 @@ def main():
                                 st.error("❌ 儲存失敗")
 
                 # 預測記錄
+<<<<<<< HEAD
 # ═════════════════════════════════════════════
 # 【讀取端】個人中心顯示預測記錄（安全獨立版）
 # ═════════════════════════════════════════════
@@ -4863,6 +4867,34 @@ if 'username' in st.session_state:
         st.warning("⚠️ 無法讀取用戶資料")
 else:
     st.info("👋 請先登入以查看預測記錄")
+=======
+                with st.expander("📜 預測記錄", expanded=False):
+                    history = user_data.get('history', [])
+                    if not history:
+                        st.info("📭 暫無預測記錄")
+                    else:
+                        total = len(history)
+                        hits = sum(1 for h in history if h.get('is_hit') is True)
+                        hit_rate = hits / total if total > 0 else 0
+                        hc1, hc2, hc3 = st.columns(3)
+                        hc1.metric("總預測", total)
+                        hc2.metric("命中", hits)
+                        hc3.metric("命中率", f"{hit_rate:.1%}")
+                        st.divider()
+                        df_hist = pd.DataFrame(history[-20:][::-1])
+                        cols = [c for c in ['date', 'race', 'horse', 'is_hit'] if c in df_hist.columns]
+                        if cols:
+                            df_show = df_hist[cols].copy()
+                            df_show.rename(columns={
+                                'date': '日期', 'race': '場次',
+                                'horse': '預測馬', 'is_hit': '結果'
+                            }, inplace=True)
+                            if '結果' in df_show.columns:
+                                df_show['結果'] = df_show['結果'].apply(
+                                    lambda x: '✅' if x is True else ('❌' if x is False else '⏳')
+                                )
+                            st.dataframe(df_show, use_container_width=True, hide_index=True)
+>>>>>>> bd3f0850a9d5d4fa943e155ae10a0e6137eba80f
 
     # 👇 c4 完結，縮進 4 格
     if st.session_state.get('logged_in', False):
