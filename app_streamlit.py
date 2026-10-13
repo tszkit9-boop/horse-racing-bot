@@ -1357,15 +1357,26 @@ def run_prediction(date_str, race_no):
         current_username = st.session_state.get('username', None)
         
         if current_username:
+            # 設定 Supabase headers
+            headers_supabase = {
+                "apikey": SUPABASE_KEY,
+                "Authorization": f"Bearer {SUPABASE_KEY}",
+                "Content-Type": "application/json",
+                "Prefer": "return=minimal"
+            }
+            
             # 1. 讀取當前用戶嘅 history
-            res_hist = supabase.table('users').select('history').eq('username', current_username).execute()
+            url_get = f"{SUPABASE_URL}/rest/v1/users?username=eq.{current_username}&select=history"
+            res_hist = requests.get(url_get, headers=headers_supabase)
             
             history_list = []
-            if res_hist.data and res_hist.data[0]['history']:
-                try:
-                    history_list = json.loads(res_hist.data[0]['history'])
-                except Exception:
-                    history_list = []
+            if res_hist.status_code == 200 and res_hist.json():
+                raw_history = res_hist.json()[0].get('history', '')
+                if raw_history:
+                    try:
+                        history_list = json.loads(raw_history)
+                    except Exception:
+                        history_list = []
             
             # 2. 加入新紀錄
             new_record = {
@@ -1377,19 +1388,16 @@ def run_prediction(date_str, race_no):
             history_list.append(new_record)
             
             # 3. 寫返去 Supabase
-            supabase.table('users').update({
-                "history": json.dumps(history_list, ensure_ascii=False)
-            }).eq('username', current_username).execute()
+            url_patch = f"{SUPABASE_URL}/rest/v1/users?username=eq.{current_username}"
+            payload = {"history": json.dumps(history_list, ensure_ascii=False)}
+            requests.patch(url_patch, headers=headers_supabase, json=payload)
             
-            # 4. 同步更新 session_state（避免要刷新頁面先見到）
+            # 4. 同步更新 session_state
             if 'user_data' in st.session_state and st.session_state.user_data.get('username') == current_username:
                 st.session_state.user_data['history'] = history_list
                 
     except Exception as e:
         st.warning(f"寫入預測紀錄失敗: {e}")
-
-    user_group = st.session_state.get('role', 'free')
-    return result_df, generate_pool_recommendations(result_df, user_group)
 def _find_data_col(df, keywords):
     """搵一個有數據嘅欄位（唔止名要對，仲要有實際值）"""
     for c in df.columns:
