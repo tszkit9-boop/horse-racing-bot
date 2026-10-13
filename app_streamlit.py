@@ -859,7 +859,7 @@ def _build_features(race_df, history_df):
     ]
 
 
-    for c in feature_cols:
+   for c in features_43:
         if c not in result.columns:
             result[c] = 0.0
 
