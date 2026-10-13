@@ -4480,6 +4480,7 @@ def admin_page():
         ("👨‍🏫 練馬師排行榜", admin_trainer_ranking, "trainer_ranking"),
         ("📊 場地/路程分析", admin_course_analysis, "course_analysis"),
         ("📅 每月報告", admin_monthly_report, "monthly_report"),
+        ("📊 命中率報告", admin_accuracy_report, "accuracy_report"),  # 🆕
         ("💰 財務", admin_finance, "finance"),
         ("🎟️ 優惠碼", admin_promo_codes, "promo_codes"),
         ("📈 預測監控", admin_accuracy_monitor, "accuracy_monitor"),
@@ -4496,7 +4497,6 @@ def admin_page():
         ("🛒 商城設定", admin_shop_config, "shop_config"),
         ("🎯 彩池設定", admin_pool_config, "pool_config"),
         ("⚙️ 系統設定", admin_system_settings, "system_settings"),
-        ("📊 命中率報告", admin_accuracy_report, "accuracy_report"),  # 🆕
     ]
 
     # ===== 根據權限過濾 tabs =====
