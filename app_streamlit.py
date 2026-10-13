@@ -1339,7 +1339,7 @@ def run_prediction(date_str, race_no):
     else:
         st.info("ℹ️ 冇足夠賠率數據計算值博率")
 
-    # ===== 儲存到 Supabase =====
+    # ===== 第一邊：儲存到 Supabase predictions 表（全站共用）=====
     from database import save_prediction
     key = f"{date_str}_{race_no}"
     save_prediction(key, {
@@ -1350,6 +1350,43 @@ def run_prediction(date_str, race_no):
         "model_used": [f"{track_type}_贏出", f"{track_type}_前三", "值博率", "穩定度"],
         "predicted_at": datetime.now().isoformat()
     })
+
+    # ===== 第二邊：儲存到 Supabase users 表（用戶個人紀錄）=====
+    try:
+        import json
+        current_username = st.session_state.get('username', None)
+        
+        if current_username:
+            # 1. 讀取當前用戶嘅 history
+            res_hist = supabase.table('users').select('history').eq('username', current_username).execute()
+            
+            history_list = []
+            if res_hist.data and res_hist.data[0]['history']:
+                try:
+                    history_list = json.loads(res_hist.data[0]['history'])
+                except Exception:
+                    history_list = []
+            
+            # 2. 加入新紀錄
+            new_record = {
+                "date": date_str,
+                "race": race_no,
+                "horse": result_df.iloc[0]['馬名'],
+                "is_hit": None
+            }
+            history_list.append(new_record)
+            
+            # 3. 寫返去 Supabase
+            supabase.table('users').update({
+                "history": json.dumps(history_list, ensure_ascii=False)
+            }).eq('username', current_username).execute()
+            
+            # 4. 同步更新 session_state（避免要刷新頁面先見到）
+            if 'user_data' in st.session_state and st.session_state.user_data.get('username') == current_username:
+                st.session_state.user_data['history'] = history_list
+                
+    except Exception as e:
+        st.warning(f"寫入預測紀錄失敗: {e}")
 
     user_group = st.session_state.get('role', 'free')
     return result_df, generate_pool_recommendations(result_df, user_group)
