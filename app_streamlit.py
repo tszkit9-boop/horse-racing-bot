@@ -858,7 +858,7 @@ def _build_features(race_df, history_df):
         'days_since_last_win'
     ]
 
-    X = features_df[features_43].fillna(0).values
+
     for c in feature_cols:
         if c not in result.columns:
             result[c] = 0.0
@@ -1122,7 +1122,7 @@ def run_prediction(date_str, race_no):
     # ===== 載入對應賽道嘅模型 =====
     xgb_win, cat_win, rank_win, xgb_top3, cat_top3, rank_top3 = load_ml_models(track_type)
 
-    features_40 = [
+    features_43 = [
         'draw', 'weight', 'distance', 'Rtg.', 'avg_rank_last3',
         'jockey_win_rate_50', 'trainer_win_rate_50',
         'distance_win_rate', 'distance_avg_rank', 'win_odds',
@@ -1137,8 +1137,11 @@ def run_prediction(date_str, race_no):
         'draw_win_rate', 'days_since_injury', 'injury_30d',
         'injury_60d', 'injury_90d', 'total_injuries', 'injury_severity',
         'is_st_turf', 'is_st_awt', 'is_hv_turf',
-        'dam_win_rate'
+        'dam_win_rate', 'last_race_rank', 'best_rank_last3', 'top3_rate_last5',
+        'days_since_last_win'
     ]
+
+    X = features_df[features_43].fillna(0).values
 
     X = features_df[features_40].fillna(0).values
 
