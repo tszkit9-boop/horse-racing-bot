@@ -5151,42 +5151,60 @@ user_data = res_user.data[0]
 # ═════════════════════════════════════════════
 # 【預測記錄】
 # ═════════════════════════════════════════════
-with st.expander("📜 預測記錄", expanded=False):
-    history_raw = user_data.get('history', [])
+if 'username' in st.session_state:
+    # 使用 requests 讀取 Supabase（與 run_prediction 一致）
+    headers_user = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}"
+    }
+    res_user = requests.get(
+        f"{SUPABASE_URL}/rest/v1/users?username=eq.{st.session_state.username}&select=history",
+        headers=headers_user
+    )
     
-    # 安全解析 JSON（因為 Supabase 儲存嘅係 text）
-    if isinstance(history_raw, str):
-        try:
-            history = json.loads(history_raw)
-        except:
-            history = []
+    if res_user.status_code == 200 and res_user.json():
+        user_data = res_user.json()[0]
+        
+        with st.expander("📜 預測記錄", expanded=False):
+            history_raw = user_data.get('history', '')
+            
+            # 安全解析 JSON
+            if isinstance(history_raw, str) and history_raw:
+                try:
+                    history = json.loads(history_raw)
+                except:
+                    history = []
+            else:
+                history = history_raw if isinstance(history_raw, list) else []
+        
+            if not history:
+                st.info("📭 暫無預測記錄")
+            else:
+                total = len(history)
+                hits = sum(1 for h in history if h.get('is_hit') is True)
+                hit_rate = hits / total if total > 0 else 0
+                hc1, hc2, hc3 = st.columns(3)
+                hc1.metric("總預測", total)
+                hc2.metric("命中", hits)
+                hc3.metric("命中率", f"{hit_rate:.1%}")
+                st.divider()
+                df_hist = pd.DataFrame(history[-20:][::-1])
+                cols = [c for c in ['date', 'race', 'horse', 'is_hit'] if c in df_hist.columns]
+                if cols:
+                    df_show = df_hist[cols].copy()
+                    df_show.rename(columns={
+                        'date': '日期', 'race': '場次',
+                        'horse': '預測馬', 'is_hit': '結果'
+                    }, inplace=True)
+                    if '結果' in df_show.columns:
+                        df_show['結果'] = df_show['結果'].apply(
+                            lambda x: '✅' if x is True else ('❌' if x is False else '⏳')
+                        )
+                    st.dataframe(df_show, use_container_width=True, hide_index=True)
     else:
-        history = history_raw if isinstance(history_raw, list) else []
-
-    if not history:
-        st.info("📭 暫無預測記錄")
-    else:
-        total = len(history)
-        hits = sum(1 for h in history if h.get('is_hit') is True)
-        hit_rate = hits / total if total > 0 else 0
-        hc1, hc2, hc3 = st.columns(3)
-        hc1.metric("總預測", total)
-        hc2.metric("命中", hits)
-        hc3.metric("命中率", f"{hit_rate:.1%}")
-        st.divider()
-        df_hist = pd.DataFrame(history[-20:][::-1])
-        cols = [c for c in ['date', 'race', 'horse', 'is_hit'] if c in df_hist.columns]
-        if cols:
-            df_show = df_hist[cols].copy()
-            df_show.rename(columns={
-                'date': '日期', 'race': '場次',
-                'horse': '預測馬', 'is_hit': '結果'
-            }, inplace=True)
-            if '結果' in df_show.columns:
-                df_show['結果'] = df_show['結果'].apply(
-                    lambda x: '✅' if x is True else ('❌' if x is False else '⏳')
-                )
-            st.dataframe(df_show, use_container_width=True, hide_index=True)
+        st.warning("⚠️ 無法讀取用戶資料，請稍後再試")
+else:
+    st.info("👋 請先登入以查看預測記錄")
     # 👇 c4 完結，縮進 4 格
     if st.session_state.get('logged_in', False):
         _checkin_user = st.session_state.get('username')
