@@ -5430,13 +5430,14 @@ def main():
             styled_df = display_value.style.apply(highlight_value_rate, axis=1)
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
-            positive_value = value_df[value_df['值博率'] > 0]
+            # 🆕 加入過濾器：只推薦賠率 <= 25.0 嘅馬（避免推薦大冷門）
+            positive_value = value_df[(value_df['值博率'] > 0) & (value_df['賠率'] <= 25.0)]
             if not positive_value.empty:
                 top_value = positive_value.head(3)
                 value_names = [f"{row['馬名']}（{row['值博率']:+.1%}）" for _, row in top_value.iterrows()]
                 st.success(f"💰 **值博推薦**：{'、'.join(value_names)}")
             else:
-                st.warning("⚠️ 今場冇馬匹嘅值博率 > 0")
+                st.warning("⚠️ 今場冇馬匹符合推薦條件（值博率 > 0 且 賠率 <= 25.0）")
         else:
             st.info("ℹ️ 冇足夠賠率數據計算值博率")
         # ===== 值博率分析結束 =====
