@@ -4909,9 +4909,8 @@ def main():
                         del st.session_state[k]
                 st.rerun()
     # ===== 🆕 自動偵測下一場賽事倒數 =====
-    import json
-    from datetime import datetime
-
+    # (import json 同 from datetime import datetime 已經喺檔案最頂，唔使喺度重複)
+    
     schedule_file = "race_schedule.json"
     next_race = None
 
