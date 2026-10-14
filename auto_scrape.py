@@ -48,7 +48,7 @@ def main():
     # ===== 自動 push racecard_uploaded.csv 上 GitHub =====
     print("📤 開始上傳 racecard_uploaded.csv 上 GitHub...")
     try:
-        subprocess.run(["git", "add", "racecard_uploaded.csv"], check=True)
+        subprocess.run(["git", "add", "racecard_uploaded.csv", "odds_history.csv"], check=True)
         result = subprocess.run(
             ["git", "diff", "--cached", "--quiet"],
             capture_output=True
