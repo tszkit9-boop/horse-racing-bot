@@ -4240,6 +4240,44 @@ def admin_system_settings():
             st.rerun()
         else:
             st.error("❌ 儲存失敗")
+def admin_accuracy_report():
+    """命中率報告頁面"""
+    import os
+    import pandas as pd
+    import streamlit as st
+    
+    st.subheader("📊 命中率報告")
+    st.caption("對比歷史預測同實際賽果，統計 Top-1 同 Top-3 命中率。")
+    
+    report_file = "accuracy_report.csv"
+    if not os.path.exists(report_file):
+        st.warning("⚠️ 暫時未有命中率報告數據（`accuracy_report.csv` 未生成）。")
+        return
+        
+    try:
+        df = pd.read_csv(report_file, encoding='utf-8-sig')
+        if df.empty:
+            st.info("ℹ️ 命中率報告暫時未有數據。")
+            return
+            
+        # 顯示整體統計
+        total_races = len(df)
+        top1_hits = df['top1_hit'].sum() if 'top1_hit' in df.columns else 0
+        top3_hits = df['top3_hit'].sum() if 'top3_hit' in df.columns else 0
+        
+        col1, col2, col3 = st.columns(3)
+        col1.metric("總場次", f"{total_races} 場")
+        col2.metric("Top-1 命中", f"{top1_hits} 場", f"{top1_hits/total_races:.1%}" if total_races > 0 else "0%")
+        col3.metric("Top-3 命中", f"{top3_hits} 場", f"{top3_hits/total_races:.1%}" if total_races > 0 else "0%")
+        
+        st.divider()
+        
+        # 顯示詳細記錄
+        st.markdown("#### 📋 詳細記錄")
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        
+    except Exception as e:
+        st.error(f"❌ 讀取命中率報告失敗：{e}")
 
 def admin_page():
     if 'admin_authenticated' not in st.session_state:
@@ -4282,9 +4320,10 @@ def admin_page():
         ("👨‍🏫 練馬師排行榜", admin_trainer_ranking),
         ("📊 場地/路程分析", admin_course_analysis),
         ("📅 每月報告", admin_monthly_report),
+        ("📊 命中率報告", admin_accuracy_report),   # 🆕 加返呢行
         ("💰 財務", admin_finance),
         ("🎟️ 優惠碼", admin_promo_codes),
-        ("📈 預測監控", admin_accuracy_monitor),
+        ("📈 預測監控", admin_accuracy_monitor),        
         ("⏰ 訂閱管理", admin_subscription),
         ("❤️ 打賞管理", admin_reward_management),
         ("📡 監控", admin_monitoring),
