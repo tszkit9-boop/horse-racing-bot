@@ -5265,7 +5265,7 @@ def main():
                 # 👇 加入呢句記錄用戶動作
                 log_user_activity(st.session_state.get('username', '未知'), "預測", f"{date.strftime('%Y-%m-%d')} 第{race_no}場")
 
-     if 'last_prediction' in st.session_state and st.session_state['last_prediction'] is not None:
+    if 'last_prediction' in st.session_state and st.session_state['last_prediction'] is not None:
         st.success("✅ 預測完成！")
         if st.session_state.get('last_pool'):
             st.info(st.session_state['last_pool'])
