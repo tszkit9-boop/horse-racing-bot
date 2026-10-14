@@ -1114,7 +1114,7 @@ def run_prediction(date_str, race_no):
         return None, None
 
     # 🆕 加入賠率平滑（用最近 3 次平均賠率，過濾臨場噪音）
-    # filtered = _smooth_win_odds_for_prediction(filtered, window=3)
+    filtered = _smooth_win_odds_for_prediction(filtered, window=3)
 
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
@@ -1353,44 +1353,6 @@ def run_prediction(date_str, race_no):
 
     result_df = result_df.sort_values('贏出概率', ascending=False).reset_index(drop=True)
 
-    # ===== 值博率分析 =====
-    st.divider()
-    st.subheader("💰 值博率分析")
-    st.caption("值博率 = (模型預測概率 - 賠率隱含概率) ÷ 賠率隱含概率。值博率 > 0 代表賠率被低估，值得考慮。")
-
-    value_df = result_df[result_df['值博率'].notna()].copy()
-    value_df = value_df.sort_values('值博率', ascending=False)
-
-    if not value_df.empty:
-        display_value = value_df[['馬號', '馬名', '賠率', '贏出概率', '隱含概率', '值博率']].copy()
-        display_value['贏出概率'] = display_value['贏出概率'].apply(lambda x: f"{x:.1%}")
-        display_value['隱含概率'] = display_value['隱含概率'].apply(lambda x: f"{x:.1%}")
-        display_value['值博率'] = display_value['值博率'].apply(lambda x: f"{x:+.1%}")
-
-        st.dataframe(
-            display_value,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "馬號": st.column_config.TextColumn("馬號"),
-                "馬名": st.column_config.TextColumn("馬名"),
-                "賠率": st.column_config.NumberColumn("賠率", format="%.1f"),
-                "贏出概率": st.column_config.TextColumn("模型概率"),
-                "隱含概率": st.column_config.TextColumn("市場概率"),
-                "值博率": st.column_config.TextColumn("值博率"),
-            }
-        )
-
-        positive_value = value_df[value_df['值博率'] > 0]
-        if not positive_value.empty:
-            top_value = positive_value.head(3)
-            value_names = [f"{row['馬名']}（{row['值博率']:+.1%}）" for _, row in top_value.iterrows()]
-            st.success(f"💰 **值博推薦**：{'、'.join(value_names)}")
-        else:
-            st.warning("⚠️ 今場冇馬匹嘅值博率 > 0")
-    else:
-        st.info("ℹ️ 冇足夠賠率數據計算值博率")
-
     # ===== 儲存到 Supabase =====
     from database import save_prediction
     key = f"{date_str}_{race_no}"
@@ -1404,8 +1366,7 @@ def run_prediction(date_str, race_no):
     })
 
     user_group = st.session_state.get('role', 'free')
-    return result_df, generate_pool_recommendations(result_df, user_group)
-def _find_data_col(df, keywords):
+    return result_df, generate_pool_recommendations(result_df, user_group)def _find_data_col(df, keywords):
     """搵一個有數據嘅欄位（唔止名要對，仲要有實際值）"""
     for c in df.columns:
         cl = str(c).lower().strip()
@@ -5303,13 +5264,66 @@ def main():
                 # 👇 加入呢句記錄用戶動作
                 log_user_activity(st.session_state.get('username', '未知'), "預測", f"{date.strftime('%Y-%m-%d')} 第{race_no}場")
 
-    if 'last_prediction' in st.session_state and st.session_state['last_prediction'] is not None:
+     if 'last_prediction' in st.session_state and st.session_state['last_prediction'] is not None:
         st.success("✅ 預測完成！")
         if st.session_state.get('last_pool'):
             st.info(st.session_state['last_pool'])
 
         df = st.session_state['last_prediction'].copy()
 
+        # ===== 🆕 值博率分析（放喺呢度就唔會消失） =====
+        st.divider()
+        st.subheader("💰 值博率分析")
+        st.caption("值博率 = (模型預測概率 - 賠率隱含概率) ÷ 賠率隱含概率。值博率 > 0 代表賠率被低估，值得考慮。")
+
+        value_df = df[df['值博率'].notna()].copy()
+        value_df = value_df.sort_values('值博率', ascending=False)
+
+        if not value_df.empty:
+            display_value = value_df[['馬號', '馬名', '賠率', '贏出概率', '隱含概率', '值博率']].copy()
+            display_value['贏出概率'] = display_value['贏出概率'].apply(lambda x: f"{x:.1%}")
+            display_value['隱含概率'] = display_value['隱含概率'].apply(lambda x: f"{x:.1%}")
+            display_value['值博率'] = display_value['值博率'].apply(lambda x: f"{x:+.1%}")
+
+            # 🆕 顏色分類邏輯
+            def highlight_value_rate(row):
+                styles = [''] * len(row)
+                try:
+                    vb = float(str(row['值博率']).replace('%', '').replace('+', ''))
+                    odds = float(row['賠率'])
+                except:
+                    return styles
+                
+                color = ''
+                if vb < 0:
+                    color = 'color: red; font-weight: bold;'       # ❌ 負數：唔好買
+                elif vb >= 15.0:
+                    if 3.0 <= odds <= 12.0:
+                        color = 'color: green; font-weight: bold;' # ✅ 最佳
+                    elif 12.0 < odds <= 20.0:
+                        color = 'color: blue; font-weight: bold;'  # ⚠️ 可以考慮
+                    elif odds > 20.0 and vb >= 50.0:
+                        color = 'color: red; font-weight: bold;'   # ⚠️ 高風險
+                
+                idx = row.index.get_loc('值博率')
+                styles[idx] = color
+                return styles
+
+            styled_df = display_value.style.apply(highlight_value_rate, axis=1)
+            st.dataframe(styled_df, use_container_width=True, hide_index=True)
+
+            positive_value = value_df[value_df['值博率'] > 0]
+            if not positive_value.empty:
+                top_value = positive_value.head(3)
+                value_names = [f"{row['馬名']}（{row['值博率']:+.1%}）" for _, row in top_value.iterrows()]
+                st.success(f"💰 **值博推薦**：{'、'.join(value_names)}")
+            else:
+                st.warning("⚠️ 今場冇馬匹嘅值博率 > 0")
+        else:
+            st.info("ℹ️ 冇足夠賠率數據計算值博率")
+        # ===== 值博率分析結束 =====
+
+        # 下面繼續顯示原本嘅預測結果表（唔使改）
         # 輔助函數：動態搵出正確嘅欄位名
         def _get_col_local(df, candidates):
             for c in candidates:
@@ -5329,7 +5343,6 @@ def main():
         if col_horse_no:
             display_df['馬號'] = df[col_horse_no]
         else:
-            # 如果真係搵唔到馬號，就用原本嘅 index 加 1 做馬號
             display_df['馬號'] = range(1, len(df) + 1)
 
         if col_horse_name:
