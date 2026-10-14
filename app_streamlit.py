@@ -1134,7 +1134,7 @@ def run_prediction(date_str, race_no):
             track_info = 'ST / Turf'
     except Exception:
         if not track_info or track_info == '' or track_info == 'nan':
-            track_info = 'ST / Turf'    
+            track_info = 'ST / Turf'   
 # ===== 根據 track_info 設定模型變數 =====
     track_upper = track_info.upper()
     if 'AWT' in track_upper or '全天候' in track_info:
@@ -4908,24 +4908,51 @@ def main():
                     if k in st.session_state:
                         del st.session_state[k]
                 st.rerun()
+    # ===== 🆕 自動偵測下一場賽事倒數 =====
+    import json
+    from datetime import datetime
+
+    schedule_file = "race_schedule.json"
+    next_race = None
+
+    if os.path.exists(schedule_file):
+        try:
+            with open(schedule_file, 'r', encoding='utf-8') as f:
+                schedule = json.load(f)
+            
+            now_dt = datetime.now()
+            for d_str, venue in sorted(schedule.items()):
+                hour = 12 if venue == "ST" else 18
+                race_time = pd.to_datetime(f"{d_str} {hour}:30:00")
+                if race_time > now_dt:
+                    next_race = (d_str, venue, race_time)
+                    break
+        except Exception as e:
+            st.warning(f"⚠️ 讀取賽期表失敗：{e}")
+
+    if next_race:
+        d_str, venue, race_time = next_race
+        delta = race_time - datetime.now()
+        days = delta.days
+        hours, remainder = divmod(delta.seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        
+        venue_name = "沙田日馬" if venue == "ST" else "跑馬地夜馬"
+        venue_short = "ST" if venue == "ST" else "HV"
+        
+        st.markdown(f"""
+        <div style="background: linear-gradient(90deg, #4e65ff, #92effd); padding: 20px; border-radius: 10px; color: white; text-align: center;">
+            <h4>⏰ 距離開場賽事：{venue_name}</h4>
+            <h1 style="font-size: 48px; margin: 10px 0;">{days} 日 {hours} 時 {minutes} 分 {seconds} 秒</h1>
+            <p style="font-size: 16px;">📍 {d_str} · {venue_short}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.info("📅 目前沒有即將到來的賽事（請確保 race_schedule.json 存在且內容正確）")
 
     st.markdown("---")
-    
-    # =========================================================================
-    # 👇👇👇 重要：倒數卡片（⏰ 距離下場賽事）一定要放喺呢度！ 👇👇👇
-    # 你必須將包含「⏰ 距離下場賽事」嘅代碼，原封不動咁貼喺呢度。
-    # 記住：呢度嘅代碼前面「唔可以有 with c1: 或者 with c2: 嘅縮排」，佢一定要係最左邊（或者同上面 c1, c2... 對齊）。
-    # 咁樣佢就會自動佔滿成行，變返做「成條橫額」！
-    # =========================================================================
-    
-    # (貼上你原本倒數卡片嘅代碼，例如：)
-    # st.markdown("⏰ 距離下場賽事：跑馬地夜馬")
-    # st.markdown("## 2 00 11")
-    # ...
-    
-    display_race_calendar()
-    st.markdown("---")
 
+    # ===== 抽獎同商城按鈕 =====
     if st.session_state.logged_in:
         ca, cb = st.columns(2)
         with ca:
@@ -4939,12 +4966,14 @@ def main():
                     st.session_state.show_shop = True
                     st.session_state.show_lottery = False
 
+    # ===== 抽獎介面 =====
     if st.session_state.get('show_lottery'):
         show_lottery_interface(st.session_state.get('username', ''))
         if st.button("⬅️ 返回", key="bl"):
             st.session_state.show_lottery = False
             st.rerun()
 
+    # ===== 商城介面 =====
     if st.session_state.get('show_shop'):
         show_shop_interface(st.session_state.get('username', ''))
         if st.button("⬅️ 返回", key="bs"):
