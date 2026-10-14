@@ -1016,6 +1016,45 @@ def _repair_racecard(df):
     result = pd.concat(parts, ignore_index=True)
     result = result[std_cols]
     return result
+# ============================================================
+# 🆕 賠率平滑函數（放在 run_prediction 函數之前）
+# ============================================================
+def _smooth_win_odds_for_prediction(race_df, odds_history_path="odds_history.csv", window=3):
+    """
+    讀取 odds_history.csv，為每匹馬計算最近 window 次嘅平均賠率，
+    並取代 race_df 入面嘅 win_odds，用嚟過濾臨場極端波動。
+    """
+    import os
+    import pandas as pd
+    
+    if not os.path.exists(odds_history_path):
+        return race_df
+
+    try:
+        hist = pd.read_csv(odds_history_path, encoding='utf-8-sig')
+        hist.columns = hist.columns.str.strip()
+
+        if 'win_odds' not in hist.columns or 'horse_name' not in hist.columns:
+            return race_df
+
+        hist['win_odds'] = pd.to_numeric(hist['win_odds'], errors='coerce')
+        hist = hist.dropna(subset=['win_odds'])
+        hist = hist.sort_values('crawl_time', ascending=False)
+
+        avg_odds = hist.groupby('horse_name')['win_odds'].apply(
+            lambda x: x.head(window).mean()
+        ).to_dict()
+
+        if 'horse_name' in race_df.columns:
+            race_df['win_odds_original'] = race_df['win_odds']
+            race_df['win_odds_smoothed'] = race_df['horse_name'].map(avg_odds)
+            race_df['win_odds'] = race_df['win_odds_smoothed'].fillna(race_df['win_odds_original'])
+            
+        return race_df
+    except Exception as e:
+        print(f"⚠️ 賠率平滑失敗：{e}")
+        return race_df
+
 
 def run_prediction(date_str, race_no):
     """用雙模型預測（贏出 + 前三名）+ 值博率計算 + 泥地混合賠率"""
@@ -1073,6 +1112,9 @@ def run_prediction(date_str, race_no):
     if filtered.empty:
         st.error(f"❌ {date_str} 第 {race_no} 場冇馬匹數據")
         return None, None
+
+    # 🆕 加入賠率平滑（用最近 3 次平均賠率，過濾臨場噪音）
+    filtered = _smooth_win_odds_for_prediction(filtered, window=3)
 
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
