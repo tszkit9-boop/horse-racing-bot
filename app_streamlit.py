@@ -1366,7 +1366,8 @@ def run_prediction(date_str, race_no):
     })
 
     user_group = st.session_state.get('role', 'free')
-    return result_df, generate_pool_recommendations(result_df, user_group)def _find_data_col(df, keywords):
+    return result_df, generate_pool_recommendations(result_df, user_group)
+def _find_data_col(df, keywords):
     """搵一個有數據嘅欄位（唔止名要對，仲要有實際值）"""
     for c in df.columns:
         cl = str(c).lower().strip()
