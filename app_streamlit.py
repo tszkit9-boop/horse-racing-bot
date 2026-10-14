@@ -4259,6 +4259,12 @@ def admin_accuracy_report():
         if df.empty:
             st.info("ℹ️ 命中率報告暫時未有數據。")
             return
+        
+        # 🆕 加入排序：先按日期（新到舊），再按場次（細到大）
+        if 'date' in df.columns and 'race' in df.columns:
+            df['date'] = pd.to_datetime(df['date'], errors='coerce')
+            df['race'] = pd.to_numeric(df['race'], errors='coerce').fillna(0).astype(int)
+            df = df.sort_values(by=['date', 'race'], ascending=[False, True]).reset_index(drop=True)
             
         # 顯示整體統計
         total_races = len(df)
@@ -4274,7 +4280,14 @@ def admin_accuracy_report():
         
         # 顯示詳細記錄
         st.markdown("#### 📋 詳細記錄")
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        
+        # 🆕 如果想將日期變返做字串顯示，可以咁做（可選）
+        if 'date' in df.columns:
+            df_display = df.copy()
+            df_display['date'] = df_display['date'].dt.strftime('%Y-%m-%d')
+            st.dataframe(df_display, use_container_width=True, hide_index=True)
+        else:
+            st.dataframe(df, use_container_width=True, hide_index=True)
         
     except Exception as e:
         st.error(f"❌ 讀取命中率報告失敗：{e}")
