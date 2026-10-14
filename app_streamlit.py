@@ -5444,7 +5444,9 @@ def main():
         st.caption("根據模型計算嘅「前三概率」，揀出最有可能跑入前三名嘅 3 匹馬。")
 
         if '前三概率' in df.columns:
-            top3_df = df.sort_values('前三概率', ascending=False).head(3).copy()
+            # 🆕 先篩選「贏出概率」排名前 6 嘅馬，再按「前三概率」排序
+            df['贏出概率_排名'] = df['贏出概率'].rank(ascending=False)
+            top3_df = df[df['贏出概率_排名'] <= 6].sort_values('前三概率', ascending=False).head(3).copy()
             top3_df = top3_df.reset_index(drop=True)
 
             for i, row in top3_df.iterrows():
