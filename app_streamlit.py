@@ -4908,27 +4908,72 @@ def main():
                     if k in st.session_state:
                         del st.session_state[k]
                 st.rerun()
-    # ===== 🆕 自動偵測下一場賽事倒數 =====
-    # (import json 同 from datetime import datetime 已經喺檔案最頂，唔使喺度重複)
+    # =========================================================================
+    # 👇👇👇 倒數卡片（⏰ 距離下場賽事）自動偵測版本 👇👇👇
+    # =========================================================================
     
+    # ===== 🆕 自動偵測下一場賽事倒數 =====
+    # 第一層：讀取本地 race_schedule.json（由 auto_scrape.py 自動生成）
     schedule_file = "race_schedule.json"
-    next_race = None
+    schedule = {}
 
     if os.path.exists(schedule_file):
         try:
             with open(schedule_file, 'r', encoding='utf-8') as f:
                 schedule = json.load(f)
-            
-            now_dt = datetime.now()
-            for d_str, venue in sorted(schedule.items()):
-                hour = 12 if venue == "ST" else 18
-                race_time = pd.to_datetime(f"{d_str} {hour}:30:00")
-                if race_time > now_dt:
-                    next_race = (d_str, venue, race_time)
-                    break
-        except Exception as e:
-            st.warning(f"⚠️ 讀取賽期表失敗：{e}")
+        except Exception:
+            schedule = {}
 
+    # 第二層：如果 JSON 為空，自動爬取 HKJC 賽期表（實時）
+    if not schedule:
+        try:
+            import requests
+            from bs4 import BeautifulSoup
+            url = "https://racing.hkjc.com/racing/information/Chinese/racing/Fixture.aspx"
+            headers = {"User-Agent": "Mozilla/5.0"}
+            r = requests.get(url, headers=headers, timeout=10)
+            r.encoding = 'utf-8'
+            soup = BeautifulSoup(r.text, 'html.parser')
+            for table in soup.find_all('table'):
+                for row in table.find_all('tr'):
+                    cols = row.find_all('td')
+                    if len(cols) >= 3:
+                        date_text = cols[0].get_text(strip=True)
+                        venue_text = cols[2].get_text(strip=True)
+                        try:
+                            dt = datetime.strptime(date_text, '%d/%m/%Y')
+                            date_key = dt.strftime('%Y-%m-%d')
+                            if '跑馬地' in venue_text:
+                                schedule[date_key] = 'HV'
+                            elif '沙田' in venue_text:
+                                schedule[date_key] = 'ST'
+                        except:
+                            continue
+        except Exception:
+            pass
+
+    # 第三層：如果爬蟲失敗，用內置默認賽期（確保倒數卡片永遠顯示到）
+    if not schedule:
+        schedule = {
+            "2026-10-18": "ST",
+            "2026-10-19": "HV",
+            "2026-10-23": "ST",
+            "2026-10-26": "HV",
+            "2026-10-30": "ST"
+        }
+
+    # 計算下一場賽事
+    next_race = None
+    if schedule:
+        now_dt = datetime.now()
+        for d_str, venue in sorted(schedule.items()):
+            hour = 12 if venue == "ST" else 18
+            race_time = pd.to_datetime(f"{d_str} {hour}:30:00")
+            if race_time > now_dt:
+                next_race = (d_str, venue, race_time)
+                break
+
+    # 顯示倒數卡片
     if next_race:
         d_str, venue, race_time = next_race
         delta = race_time - datetime.now()
@@ -4947,7 +4992,7 @@ def main():
         </div>
         """, unsafe_allow_html=True)
     else:
-        st.info("📅 目前沒有即將到來的賽事（請確保 race_schedule.json 存在且內容正確）")
+        st.info("📅 目前沒有即將到來的賽事（請確保賽期表設定正確）")
 
     st.markdown("---")
 
@@ -4965,14 +5010,12 @@ def main():
                     st.session_state.show_shop = True
                     st.session_state.show_lottery = False
 
-    # ===== 抽獎介面 =====
     if st.session_state.get('show_lottery'):
         show_lottery_interface(st.session_state.get('username', ''))
         if st.button("⬅️ 返回", key="bl"):
             st.session_state.show_lottery = False
             st.rerun()
 
-    # ===== 商城介面 =====
     if st.session_state.get('show_shop'):
         show_shop_interface(st.session_state.get('username', ''))
         if st.button("⬅️ 返回", key="bs"):
