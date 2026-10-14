@@ -1288,6 +1288,22 @@ def run_prediction(date_str, race_no):
         except Exception as e:
             st.warning(f"⚠️ 泥地混合賠率失敗：{e}")
 
+    # ===== 🆕 賠率過濾器：如果賠率 > 25.0，降級 =====
+    if 'win_odds' in filtered.columns:
+        try:
+            _odds_arr = pd.to_numeric(filtered['win_odds'], errors='coerce').fillna(999).values
+            _penalty_count = 0
+            for _i in range(len(proba_top3)):
+                if _odds_arr[_i] > 25.0:
+                    proba_top3[_i] = proba_top3[_i] * 0.2
+                    _penalty_count += 1
+            if proba_top3.sum() > 0:
+                proba_top3 = proba_top3 / proba_top3.sum()
+            if _penalty_count > 0:
+                st.info(f"ℹ️ 已啟用賠率過濾器：{_penalty_count} 匹賠率 > 25.0 嘅馬，前三概率已降級。")
+        except Exception as e:
+            st.warning(f"⚠️ 賠率過濾器失敗：{e}")
+
     win_models = []
     if xgb_win is not None: win_models.append("XGB")
     if cat_win is not None: win_models.append("Cat")
