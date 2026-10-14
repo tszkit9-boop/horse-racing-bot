@@ -1114,7 +1114,7 @@ def run_prediction(date_str, race_no):
         return None, None
 
     # 🆕 加入賠率平滑（用最近 3 次平均賠率，過濾臨場噪音）
-    filtered = _smooth_win_odds_for_prediction(filtered, window=3)
+    # filtered = _smooth_win_odds_for_prediction(filtered, window=3)
 
     st.success(f"✅ 成功載入 {date_str} 第 {race_no} 場，共 {len(filtered)} 匹馬")
 
