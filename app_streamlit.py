@@ -4912,11 +4912,11 @@ def main():
     # 👇👇👇 倒數卡片（⏰ 距離下場賽事）自動偵測版本 👇👇👇
     # =========================================================================
     
-    # ===== 🆕 自動偵測下一場賽事倒數 =====
-    # 第一層：讀取本地 race_schedule.json（由 auto_scrape.py 自動生成）
+    # ===== 🆕 自動偵測下一場賽事倒數（內置完整賽期表） =====
     schedule_file = "race_schedule.json"
     schedule = {}
 
+    # 第一層：讀取本地 race_schedule.json（由 auto_scrape.py 自動生成）
     if os.path.exists(schedule_file):
         try:
             with open(schedule_file, 'r', encoding='utf-8') as f:
@@ -4924,42 +4924,48 @@ def main():
         except Exception:
             schedule = {}
 
-    # 第二層：如果 JSON 為空，自動爬取 HKJC 賽期表（實時）
-    if not schedule:
-        try:
-            import requests
-            from bs4 import BeautifulSoup
-            url = "https://racing.hkjc.com/racing/information/Chinese/racing/Fixture.aspx"
-            headers = {"User-Agent": "Mozilla/5.0"}
-            r = requests.get(url, headers=headers, timeout=10)
-            r.encoding = 'utf-8'
-            soup = BeautifulSoup(r.text, 'html.parser')
-            for table in soup.find_all('table'):
-                for row in table.find_all('tr'):
-                    cols = row.find_all('td')
-                    if len(cols) >= 3:
-                        date_text = cols[0].get_text(strip=True)
-                        venue_text = cols[2].get_text(strip=True)
-                        try:
-                            dt = datetime.strptime(date_text, '%d/%m/%Y')
-                            date_key = dt.strftime('%Y-%m-%d')
-                            if '跑馬地' in venue_text:
-                                schedule[date_key] = 'HV'
-                            elif '沙田' in venue_text:
-                                schedule[date_key] = 'ST'
-                        except:
-                            continue
-        except Exception:
-            pass
-
-    # 第三層：如果爬蟲失敗，用內置默認賽期（確保倒數卡片永遠顯示到）
+    # 第二層：如果 JSON 為空，使用內置完整賽期表（涵蓋至 2027年7月）
     if not schedule:
         schedule = {
-            "2026-10-18": "ST",
-            "2026-10-19": "HV",
-            "2026-10-23": "ST",
-            "2026-10-26": "HV",
-            "2026-10-30": "ST"
+            # 2026年10月
+            "2026-10-15": "HV", "2026-10-19": "ST", "2026-10-21": "HV",
+            "2026-10-25": "ST", "2026-10-28": "HV",
+            # 2026年11月
+            "2026-11-01": "ST", "2026-11-04": "HV", "2026-11-08": "ST",
+            "2026-11-11": "HV", "2026-11-15": "ST", "2026-11-18": "HV",
+            "2026-11-22": "ST", "2026-11-25": "HV", "2026-11-29": "ST",
+            # 2026年12月
+            "2026-12-02": "HV", "2026-12-06": "ST", "2026-12-09": "HV",
+            "2026-12-13": "ST", "2026-12-16": "HV", "2026-12-20": "ST",
+            "2026-12-23": "HV", "2026-12-27": "ST",
+            # 2027年1月
+            "2027-01-01": "ST", "2027-01-06": "HV", "2027-01-10": "ST",
+            "2027-01-13": "HV", "2027-01-17": "ST", "2027-01-20": "HV",
+            "2027-01-24": "ST", "2027-01-27": "HV", "2027-01-31": "ST",
+            # 2027年2月
+            "2027-02-03": "HV", "2027-02-07": "ST", "2027-02-10": "HV",
+            "2027-02-14": "ST", "2027-02-18": "HV", "2027-02-21": "ST",
+            "2027-02-25": "HV", "2027-02-28": "ST",
+            # 2027年3月
+            "2027-03-03": "HV", "2027-03-07": "ST", "2027-03-10": "HV",
+            "2027-03-14": "ST", "2027-03-17": "HV", "2027-03-21": "ST",
+            "2027-03-24": "HV", "2027-03-28": "ST", "2027-03-31": "HV",
+            # 2027年4月
+            "2027-04-04": "ST", "2027-04-07": "HV", "2027-04-11": "ST",
+            "2027-04-14": "HV", "2027-04-18": "ST", "2027-04-21": "HV",
+            "2027-04-25": "ST", "2027-04-28": "HV",
+            # 2027年5月
+            "2027-05-02": "ST", "2027-05-05": "HV", "2027-05-09": "ST",
+            "2027-05-12": "HV", "2027-05-16": "ST", "2027-05-19": "HV",
+            "2027-05-23": "ST", "2027-05-26": "HV", "2027-05-30": "ST",
+            # 2027年6月
+            "2027-06-02": "HV", "2027-06-06": "ST", "2027-06-09": "HV",
+            "2027-06-13": "ST", "2027-06-16": "HV", "2027-06-20": "ST",
+            "2027-06-23": "HV", "2027-06-27": "ST",
+            # 2027年7月
+            "2027-07-01": "ST", "2027-07-04": "ST", "2027-07-07": "HV",
+            "2027-07-11": "ST", "2027-07-14": "HV", "2027-07-18": "ST",
+            "2027-07-25": "ST"
         }
 
     # 計算下一場賽事
@@ -4967,6 +4973,7 @@ def main():
     if schedule:
         now_dt = datetime.now()
         for d_str, venue in sorted(schedule.items()):
+            # 日馬開跑時間約 12:30，夜馬約 18:30
             hour = 12 if venue == "ST" else 18
             race_time = pd.to_datetime(f"{d_str} {hour}:30:00")
             if race_time > now_dt:
@@ -4992,38 +4999,9 @@ def main():
         </div>
         """, unsafe_allow_html=True)
     else:
-        st.info("📅 目前沒有即將到來的賽事（請確保賽期表設定正確）")
+        st.info("📅 目前沒有即將到來的賽事")
 
     st.markdown("---")
-
-    # ===== 抽獎同商城按鈕 =====
-    if st.session_state.logged_in:
-        ca, cb = st.columns(2)
-        with ca:
-            if CONFIG.get("enable_lottery", True):
-                if st.button("🎰 每日抽獎", use_container_width=True, key="go_lot"):
-                    st.session_state.show_lottery = True
-                    st.session_state.show_shop = False
-        with cb:
-            if CONFIG.get("enable_shop", True):
-                if st.button("🛒 虛擬商城", use_container_width=True, key="go_shp"):
-                    st.session_state.show_shop = True
-                    st.session_state.show_lottery = False
-
-    if st.session_state.get('show_lottery'):
-        show_lottery_interface(st.session_state.get('username', ''))
-        if st.button("⬅️ 返回", key="bl"):
-            st.session_state.show_lottery = False
-            st.rerun()
-
-    if st.session_state.get('show_shop'):
-        show_shop_interface(st.session_state.get('username', ''))
-        if st.button("⬅️ 返回", key="bs"):
-            st.session_state.show_shop = False
-            st.rerun()
-
-    st.divider()
-    st.subheader("🎯 賽事預測")
 
     # ============================================================
     # 🆕 動態讀取 racecard_uploaded.csv 入面最新嘅日期
