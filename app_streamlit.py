@@ -4307,6 +4307,59 @@ def admin_accuracy_report():
         
     except Exception as e:
         st.error(f"❌ 讀取命中率報告失敗：{e}")
+def admin_paper_trades():
+    """紙上回測報告頁面"""
+    import requests
+    import pandas as pd
+    import streamlit as st
+
+    st.subheader("📊 紙上回測")
+    st.caption("記錄低每次符合條件嘅紙上投注，自動對比賽果計盈虧。")
+
+    try:
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}"
+        }
+        r = requests.get(
+            f"{SUPABASE_URL}/rest/v1/paper_trades?order=date.desc,race.asc",
+            headers=headers
+        )
+        if r.status_code != 200 or not r.json():
+            st.info("ℹ️ 暫時未有紙上回測記錄。")
+            return
+
+        df = pd.DataFrame(r.json())
+        settled = df[df['settled'] == True].copy()
+
+        if settled.empty:
+            st.info("ℹ️ 暫時未有已結算嘅紙上投注。")
+        else:
+            total_bet = settled['bet_amount'].sum()
+            total_profit = settled['profit'].sum()
+            wins = (settled['result'] == 'win').sum()
+            win_rate = wins / len(settled) if len(settled) > 0 else 0
+            roi = total_profit / total_bet if total_bet > 0 else 0
+
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("總投注", f"{len(settled)} 筆")
+            col2.metric("總盈虧", f"${total_profit:,.0f}")
+            col3.metric("勝率", f"{win_rate:.1%}")
+            col4.metric("ROI", f"{roi:+.1%}")
+
+            st.divider()
+            st.markdown("#### 📋 詳細記錄")
+            st.dataframe(settled, use_container_width=True, hide_index=True)
+
+        st.divider()
+        st.markdown("#### ⏳ 未結算記錄")
+        unsettled = df[df['settled'] == False]
+        if not unsettled.empty:
+            st.dataframe(unsettled, use_container_width=True, hide_index=True)
+        else:
+            st.info("ℹ️ 所有記錄已結算。")
+    except Exception as e:
+        st.error(f"❌ 讀取紙上回測失敗：{e}")
 
 def admin_page():
     if 'admin_authenticated' not in st.session_state:
@@ -4350,6 +4403,7 @@ def admin_page():
         ("📊 場地/路程分析", admin_course_analysis),
         ("📅 每月報告", admin_monthly_report),
         ("📊 命中率報告", admin_accuracy_report),   # 🆕 加返呢行
+        ("📊 紙上回測", admin_paper_trades),
         ("💰 財務", admin_finance),
         ("🎟️ 優惠碼", admin_promo_codes),
         ("📈 預測監控", admin_accuracy_monitor),        
