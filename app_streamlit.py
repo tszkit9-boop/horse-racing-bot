@@ -5268,23 +5268,33 @@ def main():
                                     _venue = "HV" if pd.to_datetime(date_str).weekday() == 2 else "ST"
                                     records = []
 
-                                    # 策略 1：模型預測首選（贏出概率最高嗰隻）
-                                    top_pick = result.sort_values('贏出概率', ascending=False).head(1)
-                                    for _, row in top_pick.iterrows():
-                                        records.append({
-                                            "date": date_str,
-                                            "race": int(rn),
-                                            "venue": _venue,
-                                            "horse_no": str(row.get('馬號', '')),
-                                            "horse_name": row.get('馬名', ''),
-                                            "odds": float(row.get('賠率', 0)) if pd.notna(row.get('賠率')) else 0,
-                                            "value_rate": float(row.get('值博率', 0)) if pd.notna(row.get('值博率')) else 0,
-                                            "bet_amount": 100.0,
-                                            "settled": False,
-                                            "source": "prediction"
-                                        })
+                                    # ===== 策略 1：模型預測首選 =====
+                                    # 🆕 自動偵測正確嘅概率欄位名
+                                    _prob_col = None
+                                    for c in ['贏出概率', '預測勝率', '勝率', 'win_prob', 'prob']:
+                                        if c in result.columns:
+                                            _prob_col = c
+                                            break
 
-                                    # 策略 2：值博率推薦（值博率 > +15% 且 賠率 3.0-25.0）
+                                    if _prob_col:
+                                        top_pick = result.sort_values(_prob_col, ascending=False).head(1)
+                                        for _, row in top_pick.iterrows():
+                                            records.append({
+                                                "date": date_str,
+                                                "race": int(rn),
+                                                "venue": _venue,
+                                                "horse_no": str(row.get('馬號', '')),
+                                                "horse_name": row.get('馬名', ''),
+                                                "odds": float(row.get('賠率', 0)) if pd.notna(row.get('賠率')) else 0,
+                                                "value_rate": float(row.get('值博率', 0)) if pd.notna(row.get('值博率')) else 0,
+                                                "bet_amount": 100.0,
+                                                "settled": False,
+                                                "source": "prediction"
+                                            })
+                                    else:
+                                        st.warning(f"⚠️ 第 {rn} 場搵唔到概率欄位（贏出概率/預測勝率/勝率），無法記錄預測首選。")
+
+                                    # ===== 策略 2：值博率推薦 =====
                                     if '值博率' in result.columns and '賠率' in result.columns:
                                         value_picks = result[
                                             (result['值博率'] > 0.15) &
@@ -5305,6 +5315,7 @@ def main():
                                                 "source": "value_bet"
                                             })
 
+                                    # ===== 寫入 Supabase =====
                                     if records:
                                         headers = {
                                             "apikey": SUPABASE_KEY,
@@ -5318,8 +5329,8 @@ def main():
                                             json=records
                                         )
                                         _total_recorded += len(records)
-                                except Exception:
-                                    pass
+                                except Exception as e:
+                                    st.warning(f"⚠️ 第 {rn} 場記錄失敗：{e}")
 
                             else:
                                 fail_count += 1
@@ -5335,9 +5346,7 @@ def main():
                     st.session_state['batch_all_results'] = all_results
                     st.session_state['batch_date_str'] = date_str
             except Exception as e:
-                st.error(f"執行失敗：{e}")
-
-        # ===== 讀取 session_state 嘅結果 =====
+                st.error(f"執行失敗：{e}")        # ===== 讀取 session_state 嘅結果 =====
         all_results = st.session_state.get('batch_all_results', {})
         date_str_saved = st.session_state.get('batch_date_str', '')
 
