@@ -5259,6 +5259,7 @@ def main():
                         status.text(f"⏳ 預測第 {rn} 場中...（{i+1}/{len(day_races)}）")
                         try:
                             result, pool = run_prediction(date_str, int(rn))
+                            st.write(f"第 {rn} 場嘅欄位名：{result.columns.tolist()}")
                             if result is not None and not result.empty:
                                 all_results[int(rn)] = result
                                 success_count += 1
@@ -5268,16 +5269,10 @@ def main():
                                     _venue = "HV" if pd.to_datetime(date_str).weekday() == 2 else "ST"
                                     records = []
 
-                                    # ===== 策略 1：模型預測首選 =====
-                                    # 🆕 自動偵測正確嘅概率欄位名
-                                    _prob_col = None
-                                    for c in ['贏出概率', '預測勝率', '勝率', 'win_prob', 'prob']:
-                                        if c in result.columns:
-                                            _prob_col = c
-                                            break
-
-                                    if _prob_col:
-                                        top_pick = result.sort_values(_prob_col, ascending=False).head(1)
+                                    # ===== 策略 1：模型預測首選（直接拎第一行，無視欄位名） =====
+                                    try:
+                                        # result 已經喺 run_prediction 入面按贏出概率排好序，直接拎第一行
+                                        top_pick = result.head(1)
                                         for _, row in top_pick.iterrows():
                                             records.append({
                                                 "date": date_str,
@@ -5291,8 +5286,8 @@ def main():
                                                 "settled": False,
                                                 "source": "prediction"
                                             })
-                                    else:
-                                        st.warning(f"⚠️ 第 {rn} 場搵唔到概率欄位（贏出概率/預測勝率/勝率），無法記錄預測首選。")
+                                    except Exception as e:
+                                        st.warning(f"⚠️ 第 {rn} 場記錄預測首選失敗：{e}")
 
                                     # ===== 策略 2：值博率推薦 =====
                                     if '值博率' in result.columns and '賠率' in result.columns:
