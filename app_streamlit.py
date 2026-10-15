@@ -5536,7 +5536,6 @@ def main():
         if st.session_state.get('role') in ['admin', 'super_admin'] or st.session_state.get('user_group') in ['admin', 'super_admin']:
             if st.button("📝 記錄紙上回測", key="paper_trade_btn"):
                 try:
-                    import requests
                     trade_df = df[
                         (df['值博率'] > 0.15) &
                         (df['賠率'] >= 3.0) &
