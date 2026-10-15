@@ -4314,7 +4314,7 @@ def admin_paper_trades():
     import streamlit as st
 
     st.subheader("📊 紙上回測")
-    st.caption("記錄低每次符合條件嘅紙上投注，自動對比賽果計盈虧。")
+    st.caption("同時追蹤兩種策略：模型預測首選 與 值博率推薦。")
 
     try:
         headers = {
@@ -4335,6 +4335,33 @@ def admin_paper_trades():
         if settled.empty:
             st.info("ℹ️ 暫時未有已結算嘅紙上投注。")
         else:
+            # ===== 分開兩種策略統計 =====
+            for source_key, source_name in [("prediction", "🎯 模型預測首選"), ("value_bet", "💰 值博率推薦")]:
+                st.markdown(f"#### {source_name}")
+                sub = settled[settled['source'] == source_key] if 'source' in settled.columns else pd.DataFrame()
+                
+                if sub.empty:
+                    st.info(f"暫時未有「{source_name}」嘅結算記錄。")
+                    continue
+
+                total_bet = sub['bet_amount'].sum()
+                total_profit = sub['profit'].sum()
+                wins = (sub['result'] == 'win').sum()
+                win_rate = wins / len(sub) if len(sub) > 0 else 0
+                roi = total_profit / total_bet if total_bet > 0 else 0
+
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("總投注", f"{len(sub)} 筆")
+                col2.metric("總盈虧", f"${total_profit:,.0f}")
+                col3.metric("勝率", f"{win_rate:.1%}")
+                col4.metric("ROI", f"{roi:+.1%}")
+
+                st.dataframe(sub[['date', 'race', 'venue', 'horse_name', 'odds', 'result', 'profit']], 
+                             use_container_width=True, hide_index=True)
+                st.divider()
+
+            # ===== 整體 =====
+            st.markdown("#### 📊 整體")
             total_bet = settled['bet_amount'].sum()
             total_profit = settled['profit'].sum()
             wins = (settled['result'] == 'win').sum()
@@ -4346,10 +4373,6 @@ def admin_paper_trades():
             col2.metric("總盈虧", f"${total_profit:,.0f}")
             col3.metric("勝率", f"{win_rate:.1%}")
             col4.metric("ROI", f"{roi:+.1%}")
-
-            st.divider()
-            st.markdown("#### 📋 詳細記錄")
-            st.dataframe(settled, use_container_width=True, hide_index=True)
 
         st.divider()
         st.markdown("#### ⏳ 未結算記錄")
@@ -5197,7 +5220,6 @@ def main():
                     st.success(f"✅ 準備就緒（共 {len(day_races)} 場）")
             except Exception as e:
                 st.error(f"讀取失敗：{e}")
-
         # ===== 一鍵預測執行 =====
         if run_batch:
             date_str = selected_date.strftime("%Y-%m-%d")
@@ -5231,6 +5253,7 @@ def main():
                     success_count = 0
                     fail_count = 0
                     all_results = {}
+                    _total_recorded = 0
 
                     for i, rn in enumerate(day_races):
                         status.text(f"⏳ 預測第 {rn} 場中...（{i+1}/{len(day_races)}）")
@@ -5239,6 +5262,65 @@ def main():
                             if result is not None and not result.empty:
                                 all_results[int(rn)] = result
                                 success_count += 1
+
+                                # 🆕 自動記錄兩種策略：預測首選 + 值博率推薦
+                                try:
+                                    _venue = "HV" if pd.to_datetime(date_str).weekday() == 2 else "ST"
+                                    records = []
+
+                                    # 策略 1：模型預測首選（贏出概率最高嗰隻）
+                                    top_pick = result.sort_values('贏出概率', ascending=False).head(1)
+                                    for _, row in top_pick.iterrows():
+                                        records.append({
+                                            "date": date_str,
+                                            "race": int(rn),
+                                            "venue": _venue,
+                                            "horse_no": str(row.get('馬號', '')),
+                                            "horse_name": row.get('馬名', ''),
+                                            "odds": float(row.get('賠率', 0)) if pd.notna(row.get('賠率')) else 0,
+                                            "value_rate": float(row.get('值博率', 0)) if pd.notna(row.get('值博率')) else 0,
+                                            "bet_amount": 100.0,
+                                            "settled": False,
+                                            "source": "prediction"
+                                        })
+
+                                    # 策略 2：值博率推薦（值博率 > +15% 且 賠率 3.0-25.0）
+                                    if '值博率' in result.columns and '賠率' in result.columns:
+                                        value_picks = result[
+                                            (result['值博率'] > 0.15) &
+                                            (result['賠率'] >= 3.0) &
+                                            (result['賠率'] <= 25.0)
+                                        ]
+                                        for _, row in value_picks.iterrows():
+                                            records.append({
+                                                "date": date_str,
+                                                "race": int(rn),
+                                                "venue": _venue,
+                                                "horse_no": str(row.get('馬號', '')),
+                                                "horse_name": row.get('馬名', ''),
+                                                "odds": float(row.get('賠率', 0)),
+                                                "value_rate": float(row.get('值博率', 0)),
+                                                "bet_amount": 100.0,
+                                                "settled": False,
+                                                "source": "value_bet"
+                                            })
+
+                                    if records:
+                                        headers = {
+                                            "apikey": SUPABASE_KEY,
+                                            "Authorization": f"Bearer {SUPABASE_KEY}",
+                                            "Content-Type": "application/json",
+                                            "Prefer": "return=minimal"
+                                        }
+                                        requests.post(
+                                            f"{SUPABASE_URL}/rest/v1/paper_trades",
+                                            headers=headers,
+                                            json=records
+                                        )
+                                        _total_recorded += len(records)
+                                except Exception:
+                                    pass
+
                             else:
                                 fail_count += 1
                         except Exception as e:
@@ -5247,6 +5329,8 @@ def main():
 
                     status.text("✅ 完成！")
                     st.success(f"✅ 成功 {success_count} 場，失敗 {fail_count} 場")
+                    if _total_recorded > 0:
+                        st.info(f"📝 已自動記錄 {_total_recorded} 筆紙上投注（預測首選 + 值博率推薦）")
 
                     st.session_state['batch_all_results'] = all_results
                     st.session_state['batch_date_str'] = date_str
