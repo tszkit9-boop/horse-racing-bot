@@ -5346,7 +5346,8 @@ def main():
                     st.session_state['batch_all_results'] = all_results
                     st.session_state['batch_date_str'] = date_str
             except Exception as e:
-                st.error(f"執行失敗：{e}")        # ===== 讀取 session_state 嘅結果 =====
+                st.error(f"執行失敗：{e}")      
+# ===== 讀取 session_state 嘅結果 =====
         all_results = st.session_state.get('batch_all_results', {})
         date_str_saved = st.session_state.get('batch_date_str', '')
 
