@@ -5389,6 +5389,56 @@ def main():
 
         df = st.session_state['last_prediction'].copy()
 
+        # ===== 🆕 記錄紙上回測（只有管理員先見到） =====
+        if st.session_state.get('role') in ['admin', 'super_admin'] or st.session_state.get('user_group') in ['admin', 'super_admin']:
+            if st.button("📝 記錄紙上回測", key="paper_trade_btn"):
+                try:
+                    import requests
+                    trade_df = df[
+                        (df['值博率'] > 0.15) &
+                        (df['賠率'] >= 3.0) &
+                        (df['賠率'] <= 25.0)
+                    ].copy()
+
+                    if trade_df.empty:
+                        st.warning("⚠️ 冇馬匹符合記錄條件（值博率 > +15% 且 賠率 3.0-25.0）。")
+                    else:
+                        _date = st.session_state.get('pd_date', pd.to_datetime("today"))
+                        _race = st.session_state.get('pd_race', 1)
+                        _date_str = pd.to_datetime(_date).strftime('%Y-%m-%d')
+
+                        records = []
+                        for _, row in trade_df.iterrows():
+                            records.append({
+                                "date": _date_str,
+                                "race": int(_race),
+                                "venue": "HV" if pd.to_datetime(_date_str).weekday() == 2 else "ST",
+                                "horse_no": str(row.get('馬號', '')),
+                                "horse_name": row.get('馬名', ''),
+                                "odds": float(row.get('賠率', 0)),
+                                "value_rate": float(row.get('值博率', 0)),
+                                "bet_amount": 100.0,
+                                "settled": False
+                            })
+
+                        headers = {
+                            "apikey": SUPABASE_KEY,
+                            "Authorization": f"Bearer {SUPABASE_KEY}",
+                            "Content-Type": "application/json",
+                            "Prefer": "return=minimal"
+                        }
+                        r = requests.post(
+                            f"{SUPABASE_URL}/rest/v1/paper_trades",
+                            headers=headers,
+                            json=records
+                        )
+                        if r.status_code in (200, 201, 204):
+                            st.success(f"✅ 已記錄 {len(records)} 筆紙上投注！")
+                        else:
+                            st.error(f"❌ 記錄失敗：{r.status_code} {r.text}")
+                except Exception as e:
+                    st.error(f"❌ 記錄失敗：{e}")
+
         # ===== 🆕 值博率分析 =====
         st.divider()
         st.subheader("💰 值博率分析")
