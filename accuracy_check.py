@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 accuracy_check.py - 對比預測同實際賽果，輸出 accuracy_report.csv
+                  + 自動結算紙上回測盈虧
 """
 
 import pandas as pd
@@ -24,7 +25,13 @@ def get_venue(race_date_str):
         return 'ST'
 
 
-def main():
+# ============================================================
+# 📊 命中率報告
+# ============================================================
+def generate_accuracy_report():
+    print("=" * 60)
+    print("📊 開始生成命中率報告...")
+
     # ===== 讀取預測記錄 =====
     print("📂 讀取預測記錄...")
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -108,5 +115,98 @@ def main():
     print(f"\n🎉 已寫入 {OUTPUT_CSV}")
 
 
+# ============================================================
+# 📝 紙上回測自動結算
+# ============================================================
+def settle_paper_trades():
+    print("=" * 60)
+    print("📝 開始結算紙上回測...")
+
+    if not os.path.exists("race_results_clean.csv"):
+        print("⚠️ 冇 race_results_clean.csv，無法結算紙上回測。")
+        return
+
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+        # ===== 讀取賽果 =====
+        results_df = pd.read_csv("race_results_clean.csv", encoding="utf-8-sig", low_memory=False)
+        results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce')
+        results_df['race_no'] = pd.to_numeric(results_df['race_no'], errors='coerce').fillna(0).astype(int)
+        results_df['finish_position'] = pd.to_numeric(results_df['finish_position'], errors='coerce')
+        results_df = results_df.dropna(subset=['race_date', 'finish_position'])
+
+        # ===== 讀取未結算嘅紙上投注 =====
+        response = supabase.table("paper_trades").select("*").eq("settled", False).execute()
+        trades = response.data
+        if not trades:
+            print("ℹ️ 冇未結算嘅紙上投注。")
+            return
+
+        print(f"✅ 已載入 {len(trades)} 筆未結算紙上投注")
+
+        settled_count = 0
+        win_count = 0
+        lose_count = 0
+        total_profit = 0.0
+
+        for trade in trades:
+            try:
+                pred_date = trade.get('date', '')
+                pred_race = int(trade.get('race', 0))
+                horse_name = trade.get('horse_name', '')
+                odds = float(trade.get('odds', 0))
+                bet_amount = float(trade.get('bet_amount', 100))
+
+                sub = results_df[
+                    (results_df['race_date'].dt.strftime('%Y-%m-%d') == pred_date) &
+                    (results_df['race_no'] == pred_race) &
+                    (results_df['horse_name'].astype(str).str.strip() == str(horse_name).strip())
+                ]
+                if sub.empty:
+                    continue
+
+                pos = sub.iloc[0]['finish_position']
+                if pd.isna(pos):
+                    continue
+
+                # 買獨贏：跑第一先贏
+                if int(pos) == 1:
+                    profit = (odds - 1.0) * bet_amount
+                    result = 'win'
+                    win_count += 1
+                else:
+                    profit = -bet_amount
+                    result = 'lose'
+                    lose_count += 1
+
+                total_profit += profit
+
+                # 更新 Supabase
+                supabase.table("paper_trades").update({
+                    "result": result,
+                    "profit": profit,
+                    "settled": True
+                }).eq("id", trade['id']).execute()
+
+                settled_count += 1
+            except Exception as e:
+                print(f"⚠️ 結算交易 {trade.get('id')} 失敗：{e}")
+
+        print(f"✅ 已結算 {settled_count} 筆紙上投注")
+        if settled_count > 0:
+            print(f"   勝：{win_count} 筆 ｜ 負：{lose_count} 筆")
+            print(f"   總盈虧：${total_profit:,.0f}")
+
+    except Exception as e:
+        print(f"⚠️ 結算紙上回測失敗：{e}")
+
+
+# ============================================================
+# 主程式
+# ============================================================
 if __name__ == "__main__":
-    main()
+    generate_accuracy_report()
+    settle_paper_trades()
+    print("=" * 60)
+    print("✅ 所有任務完成")
