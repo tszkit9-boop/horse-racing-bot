@@ -6,6 +6,7 @@ auto_scrape.py - 自動探測賽馬日，執行 scrape_racecard_full.py，並自
 - 支援特別賽馬日（星期一、四、五、公眾假期）
 - 自動更新 race_schedule.json
 - 自動 push racecard_uploaded.csv, odds_history.csv, race_schedule.json
+- 🆕 加入 git pull 防衝突機制
 """
 
 import subprocess
@@ -14,6 +15,7 @@ import os
 import json
 import tempfile
 import shutil
+import pandas as pd
 from datetime import datetime, timedelta
 
 
@@ -21,7 +23,6 @@ def probe_future_races():
     """
     自動探測未來 7 日嘅賽期，並寫入 race_schedule.json。
     做法：用 scrape_racecard_full.py 試爬每一日，爬到有數據就記錄低。
-    完全無視星期幾，純粹基於實際爬取結果。
     """
     schedule_file = "race_schedule.json"
     schedule = {}
@@ -48,7 +49,6 @@ def probe_future_races():
         for course in ["HV", "ST"]:
             try:
                 with tempfile.TemporaryDirectory() as tmpdir:
-                    # 將 scrape_racecard_full.py 複製到臨時目錄
                     shutil.copy("scrape_racecard_full.py", os.path.join(tmpdir, "scrape_racecard_full.py"))
 
                     cmd = [
@@ -57,12 +57,10 @@ def probe_future_races():
                         "--racecourse", course,
                         "--skip-finished"
                     ]
-                    # 喺臨時目錄執行爬蟲，唔會覆蓋原本嘅 racecard_uploaded.csv
                     subprocess.run(cmd, cwd=tmpdir, capture_output=True, text=True, timeout=90)
 
                     tmp_csv = os.path.join(tmpdir, "racecard_uploaded.csv")
                     if os.path.exists(tmp_csv):
-                        import pandas as pd
                         df = pd.read_csv(tmp_csv, encoding='utf-8-sig')
                         if len(df) > 0:
                             schedule[check_date] = course
@@ -72,20 +70,21 @@ def probe_future_races():
                 pass
 
     # 寫入 race_schedule.json
-    with open(schedule_file, 'w', encoding='utf-8') as f:
-        json.dump(schedule, f, ensure_ascii=False, indent=2)
-    print(f"📅 已更新賽期表：{schedule}")
+    if schedule:
+        with open(schedule_file, 'w', encoding='utf-8') as f:
+            json.dump(schedule, f, ensure_ascii=False, indent=2)
+        print(f"📅 已更新賽期表：{schedule}")
 
 
 def main():
     now = datetime.now()
     date_str = now.strftime('%Y-%m-%d')
 
-    # 🆕 第一步：無論今日係咩日子，都先探測未來賽期
+    # 第一步：無論今日係咩日子，都先探測未來賽期
     print("🔍 開始探測未來賽期...")
     probe_future_races()
 
-    # 🆕 第二步：檢查今日係唔係賽馬日（基於探測結果）
+    # 第二步：檢查今日係唔係賽馬日
     schedule_file = "race_schedule.json"
     today_is_race_day = False
     racecourse = None
@@ -105,7 +104,7 @@ def main():
 
     print(f"📅 今日 {date_str} 係賽馬日，馬場：{racecourse}")
 
-    # ===== 下面保持爬取同 Push 邏輯 =====
+    # ===== 爬取邏輯 =====
     csv_file = "racecard_uploaded.csv"
     before_mtime = os.path.getmtime(csv_file) if os.path.exists(csv_file) else 0
 
@@ -123,22 +122,27 @@ def main():
         print("ℹ️ racecard_uploaded.csv 冇更新，唔需要 push")
         return
 
-    print("📤 開始上傳 racecard_uploaded.csv, odds_history.csv, race_schedule.json 上 GitHub...")
+    print("📤 開始上傳上 GitHub...")
     try:
+        # 1. 加入檔案
         subprocess.run(["git", "add", "racecard_uploaded.csv", "odds_history.csv", "race_schedule.json"], check=True)
-        result = subprocess.run(
-            ["git", "diff", "--cached", "--quiet"],
-            capture_output=True
-        )
+        
+        # 2. 檢查有無變更
+        result = subprocess.run(["git", "diff", "--cached", "--quiet"], capture_output=True)
         if result.returncode != 0:
-            subprocess.run(
-                ["git", "commit", "-m", f"Auto update racecard & odds ({date_str})"],
-                check=True
-            )
+            # 3. Commit
+            subprocess.run(["git", "commit", "-m", f"Auto update racecard & odds ({date_str})"], check=True)
+            
+            # 🆕 4. 關鍵修復：Push 之前先拉取遠端，避免衝突！
+            print("🔄 同步遠端最新數據 (git pull)...")
+            subprocess.run(["git", "pull", "origin", "main", "--no-rebase"], check=False)
+            
+            # 5. 正式 Push
             subprocess.run(["git", "push"], check=True)
             print("✅ 已成功 push 上 GitHub")
         else:
             print("ℹ️ 檔案冇變更，唔需要 push")
+            
     except subprocess.CalledProcessError as e:
         print(f"⚠️ Git 操作失敗：{e}")
     except Exception as e:
