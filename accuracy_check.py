@@ -170,8 +170,8 @@ def settle_paper_trades():
                 if pd.isna(pos):
                     continue
 
-                # 買獨贏：跑第一先贏
-                if int(pos) == 1:
+                # 買位置：跑第一先贏
+                if int(pos) == 3:
                     profit = (odds - 1.0) * bet_amount
                     result = 'win'
                     win_count += 1
