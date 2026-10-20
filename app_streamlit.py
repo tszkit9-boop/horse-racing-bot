@@ -3426,42 +3426,42 @@ def admin_accuracy_monitor():
     if pending_count > 0:
         st.caption(f"⏳ 仲有 {pending_count} 場未出賽果")
 
-    # ===== 🆕 預測頭3名 vs 真實頭3名（放喺馬匹命中率同每日命中明細之間）=====
+    # ===== 🆕 預測頭3名 vs 真實頭3名（收埋喺 Expander 入面）=====
     if compare_rows:
         st.divider()
-        st.subheader("📋 預測頭3名 vs 真實頭3名")
+        
+        with st.expander("📋 點擊查看詳細記錄（預測頭3名 vs 真實頭3名）", expanded=False):
+            df_compare_detail = pd.DataFrame(compare_rows)
 
-        df_compare_detail = pd.DataFrame(compare_rows)
+            df_compare_detail['場次'] = pd.to_numeric(df_compare_detail['場次'], errors='coerce')
+            df_compare_detail = df_compare_detail.sort_values(
+                by=['日期', '場次'],
+                ascending=[True, True]
+            ).reset_index(drop=True)
 
-        df_compare_detail['場次'] = pd.to_numeric(df_compare_detail['場次'], errors='coerce')
-        df_compare_detail = df_compare_detail.sort_values(
-            by=['日期', '場次'],
-            ascending=[True, True]
-        ).reset_index(drop=True)
+            def highlight_prediction(row):
+                pred = str(row['預測頭3名'])
+                if pred == 'nan' or pred == '':
+                    return pred
 
-        def highlight_prediction(row):
-            pred = str(row['預測頭3名'])
-            if pred == 'nan' or pred == '':
-                return pred
+                real = str(row['真實頭3名'])
+                real_names = []
+                if '⏳' not in real:
+                    real_names = [re.sub(r'\(.*\)', '', name).strip() for name in real.split(',')]
 
-            real = str(row['真實頭3名'])
-            real_names = []
-            if '⏳' not in real:
-                real_names = [re.sub(r'\(.*\)', '', name).strip() for name in real.split(',')]
+                pred_list = [h.strip() for h in pred.split(',')]
+                colored = []
+                for h in pred_list:
+                    if h in real_names:
+                        colored.append(f'<span style="color:green; font-weight:bold;">{h}</span>')
+                    else:
+                        colored.append(f'<span style="color:red;">{h}</span>')
+                return ', '.join(colored)
 
-            pred_list = [h.strip() for h in pred.split(',')]
-            colored = []
-            for h in pred_list:
-                if h in real_names:
-                    colored.append(f'<span style="color:green; font-weight:bold;">{h}</span>')
-                else:
-                    colored.append(f'<span style="color:red;">{h}</span>')
-            return ', '.join(colored)
+            df_compare_detail['預測頭3名'] = df_compare_detail.apply(highlight_prediction, axis=1)
 
-        df_compare_detail['預測頭3名'] = df_compare_detail.apply(highlight_prediction, axis=1)
-
-        html_table = df_compare_detail.to_html(escape=False, index=False)
-        st.markdown(html_table, unsafe_allow_html=True)
+            html_table = df_compare_detail.to_html(escape=False, index=False)
+            st.markdown(html_table, unsafe_allow_html=True)
 
     # ===== 每日命中明細 =====
     if compare_rows:
