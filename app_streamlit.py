@@ -4350,9 +4350,9 @@ def admin_paper_trades():
             "source": "策略來源"
         }
 
-        # 🆕 設定各欄位嘅顯示闊度（small, medium, large）
+        # 設定各欄位嘅顯示闊度（small, medium, large）
         col_config = {
-            "日期": st.column_config.TextColumn("日期", width="small"),
+            "日期": st.column_config.TextColumn("日期", width="medium"),
             "場次": st.column_config.NumberColumn("場次", width="small"),
             "馬場": st.column_config.TextColumn("馬場", width="small"),
             "馬名": st.column_config.TextColumn("馬名", width="medium"),
@@ -4387,14 +4387,14 @@ def admin_paper_trades():
                 col3.metric("勝率", f"{win_rate:.1%}")
                 col4.metric("ROI", f"{roi:+.1%}")
 
-                # 顯示表（加入 col_config 限制闊度）
+                # 顯示表（改返 use_container_width=True 佢就會填滿闊度，但唔會拉得太過分）
                 display_sub = sub.rename(columns=rename_map)
                 cols_to_show = ["日期", "場次", "馬場", "馬名", "賠率", "賽果", "盈虧"]
                 display_sub = display_sub[[c for c in cols_to_show if c in display_sub.columns]]
                 
                 st.dataframe(
                     display_sub, 
-                    use_container_width=False,  # 🆕 改為 False，唔好強行拉闊
+                    use_container_width=True,  # 🆕 改返 True，自動填滿畫面
                     hide_index=True,
                     column_config=col_config
                 )
@@ -4424,7 +4424,7 @@ def admin_paper_trades():
             
             st.dataframe(
                 display_unsettled, 
-                use_container_width=False,  # 🆕 改為 False
+                use_container_width=True,  # 🆕 改返 True
                 hide_index=True,
                 column_config=col_config
             )
