@@ -4313,6 +4313,16 @@ def admin_paper_trades():
     import pandas as pd
     import streamlit as st
 
+    # 🆕 用 CSS 限制表格最大闊度並置中，令佢冇咁多空白位
+    st.markdown("""
+        <style>
+        div[data-testid="stDataFrame"] {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
     st.subheader("📊 紙上回測")
     st.caption("同時追蹤兩種策略：模型預測首選 與 值博率推薦。")
 
@@ -4334,23 +4344,13 @@ def admin_paper_trades():
 
         # 欄位中文對照表
         rename_map = {
-            "id": "編號",
-            "date": "日期",
-            "race": "場次",
-            "venue": "馬場",
-            "horse_no": "馬號",
-            "horse_name": "馬名",
-            "odds": "賠率",
-            "value_rate": "值博率",
-            "bet_amount": "投注額",
-            "result": "賽果",
-            "profit": "盈虧",
-            "settled": "已結算",
-            "created_at": "記錄時間",
-            "source": "策略來源"
+            "id": "編號", "date": "日期", "race": "場次", "venue": "馬場",
+            "horse_no": "馬號", "horse_name": "馬名", "odds": "賠率",
+            "value_rate": "值博率", "bet_amount": "投注額", "result": "賽果",
+            "profit": "盈虧", "settled": "已結算", "created_at": "記錄時間", "source": "策略來源"
         }
 
-        # 🆕 改用 "small" / "medium" 比例，配合 use_container_width=True，佢會自動按比例填滿畫面
+        # 保留 small / medium 比例
         col_config = {
             "日期": st.column_config.TextColumn("日期", width="medium"),
             "場次": st.column_config.NumberColumn("場次", width="small"),
@@ -4366,7 +4366,6 @@ def admin_paper_trades():
         if settled.empty:
             st.info("ℹ️ 暫時未有已結算嘅紙上投注。")
         else:
-            # ===== 分開兩種策略統計 =====
             for source_key, source_name in [("prediction", "🎯 模型預測首選"), ("value_bet", "💰 值博率推薦")]:
                 st.markdown(f"#### {source_name}")
                 sub = settled[settled['source'] == source_key] if 'source' in settled.columns else pd.DataFrame()
@@ -4391,7 +4390,7 @@ def admin_paper_trades():
                 cols_to_show = ["日期", "場次", "馬場", "馬名", "賠率", "賽果", "盈虧"]
                 display_sub = display_sub[[c for c in cols_to_show if c in display_sub.columns]]
                 
-                # 🆕 用 True 填滿闊度，配合 width="small"/"medium" 控制比例
+                # 用 True，配合 CSS 嘅 max-width: 900px，個表就會適中
                 st.dataframe(
                     display_sub, 
                     use_container_width=True, 
@@ -4400,7 +4399,6 @@ def admin_paper_trades():
                 )
                 st.divider()
 
-            # ===== 整體 =====
             st.markdown("#### 📊 整體")
             total_bet = settled['bet_amount'].sum()
             total_profit = settled['profit'].sum()
