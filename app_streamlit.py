@@ -4350,7 +4350,6 @@ def admin_paper_trades():
             "profit": "盈虧", "settled": "已結算", "created_at": "記錄時間", "source": "策略來源"
         }
 
-        # 保留 small / medium 比例
         col_config = {
             "日期": st.column_config.TextColumn("日期", width="medium"),
             "場次": st.column_config.NumberColumn("場次", width="small"),
@@ -4386,17 +4385,18 @@ def admin_paper_trades():
                 col3.metric("勝率", f"{win_rate:.1%}")
                 col4.metric("ROI", f"{roi:+.1%}")
 
-                display_sub = sub.rename(columns=rename_map)
-                cols_to_show = ["日期", "場次", "馬場", "馬名", "賠率", "賽果", "盈虧"]
-                display_sub = display_sub[[c for c in cols_to_show if c in display_sub.columns]]
-                
-                # 用 True，配合 CSS 嘅 max-width: 900px，個表就會適中
-                st.dataframe(
-                    display_sub, 
-                    use_container_width=True, 
-                    hide_index=True,
-                    column_config=col_config
-                )
+                # 🆕 將表格收入 Expander
+                with st.expander(f"📋 點擊查看「{source_name}」詳細記錄"):
+                    display_sub = sub.rename(columns=rename_map)
+                    cols_to_show = ["日期", "場次", "馬場", "馬名", "賠率", "賽果", "盈虧"]
+                    display_sub = display_sub[[c for c in cols_to_show if c in display_sub.columns]]
+                    
+                    st.dataframe(
+                        display_sub, 
+                        use_container_width=True, 
+                        hide_index=True,
+                        column_config=col_config
+                    )
                 st.divider()
 
             st.markdown("#### 📊 整體")
@@ -4413,19 +4413,21 @@ def admin_paper_trades():
             col4.metric("ROI", f"{roi:+.1%}")
 
         st.divider()
-        st.markdown("#### ⏳ 未結算記錄")
+        
+        # 🆕 將未結算記錄都收入 Expander
         unsettled = df[df['settled'] == False].copy()
         if not unsettled.empty:
-            display_unsettled = unsettled.rename(columns=rename_map)
-            cols_to_show_unsettled = ["日期", "場次", "馬場", "馬名", "賠率", "值博率", "策略來源"]
-            display_unsettled = display_unsettled[[c for c in cols_to_show_unsettled if c in display_unsettled.columns]]
-            
-            st.dataframe(
-                display_unsettled, 
-                use_container_width=True, 
-                hide_index=True,
-                column_config=col_config
-            )
+            with st.expander(f"⏳ 點擊查看未結算記錄（共 {len(unsettled)} 筆）"):
+                display_unsettled = unsettled.rename(columns=rename_map)
+                cols_to_show_unsettled = ["日期", "場次", "馬場", "馬名", "賠率", "值博率", "策略來源"]
+                display_unsettled = display_unsettled[[c for c in cols_to_show_unsettled if c in display_unsettled.columns]]
+                
+                st.dataframe(
+                    display_unsettled, 
+                    use_container_width=True, 
+                    hide_index=True,
+                    column_config=col_config
+                )
         else:
             st.info("ℹ️ 所有記錄已結算。")
     except Exception as e:
