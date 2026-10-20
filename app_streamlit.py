@@ -4332,7 +4332,7 @@ def admin_paper_trades():
         df = pd.DataFrame(r.json())
         settled = df[df['settled'] == True].copy()
 
-        # 🆕 欄位中文對照表
+        # 欄位中文對照表
         rename_map = {
             "id": "編號",
             "date": "日期",
@@ -4350,6 +4350,19 @@ def admin_paper_trades():
             "source": "策略來源"
         }
 
+        # 🆕 設定各欄位嘅顯示闊度（small, medium, large）
+        col_config = {
+            "日期": st.column_config.TextColumn("日期", width="small"),
+            "場次": st.column_config.NumberColumn("場次", width="small"),
+            "馬場": st.column_config.TextColumn("馬場", width="small"),
+            "馬名": st.column_config.TextColumn("馬名", width="medium"),
+            "賠率": st.column_config.NumberColumn("賠率", width="small", format="%.1f"),
+            "賽果": st.column_config.TextColumn("賽果", width="small"),
+            "盈虧": st.column_config.NumberColumn("盈虧", width="small", format="$%.0f"),
+            "值博率": st.column_config.NumberColumn("值博率", width="small", format="%.1%%"),
+            "策略來源": st.column_config.TextColumn("策略來源", width="small")
+        }
+
         if settled.empty:
             st.info("ℹ️ 暫時未有已結算嘅紙上投注。")
         else:
@@ -4362,7 +4375,6 @@ def admin_paper_trades():
                     st.info(f"暫時未有「{source_name}」嘅結算記錄。")
                     continue
 
-                # 計算統計數字（用英文原欄位名計）
                 total_bet = sub['bet_amount'].sum()
                 total_profit = sub['profit'].sum()
                 wins = (sub['result'] == 'win').sum()
@@ -4375,13 +4387,17 @@ def admin_paper_trades():
                 col3.metric("勝率", f"{win_rate:.1%}")
                 col4.metric("ROI", f"{roi:+.1%}")
 
-                # 🆕 顯示前將欄位轉做中文
+                # 顯示表（加入 col_config 限制闊度）
                 display_sub = sub.rename(columns=rename_map)
-                # 只顯示想要嘅欄位
                 cols_to_show = ["日期", "場次", "馬場", "馬名", "賠率", "賽果", "盈虧"]
                 display_sub = display_sub[[c for c in cols_to_show if c in display_sub.columns]]
                 
-                st.dataframe(display_sub, use_container_width=True, hide_index=True)
+                st.dataframe(
+                    display_sub, 
+                    use_container_width=False,  # 🆕 改為 False，唔好強行拉闊
+                    hide_index=True,
+                    column_config=col_config
+                )
                 st.divider()
 
             # ===== 整體 =====
@@ -4402,12 +4418,16 @@ def admin_paper_trades():
         st.markdown("#### ⏳ 未結算記錄")
         unsettled = df[df['settled'] == False].copy()
         if not unsettled.empty:
-            # 🆕 未結算記錄一樣轉做中文
             display_unsettled = unsettled.rename(columns=rename_map)
             cols_to_show_unsettled = ["編號", "日期", "場次", "馬場", "馬名", "賠率", "值博率", "策略來源"]
             display_unsettled = display_unsettled[[c for c in cols_to_show_unsettled if c in display_unsettled.columns]]
             
-            st.dataframe(display_unsettled, use_container_width=True, hide_index=True)
+            st.dataframe(
+                display_unsettled, 
+                use_container_width=False,  # 🆕 改為 False
+                hide_index=True,
+                column_config=col_config
+            )
         else:
             st.info("ℹ️ 所有記錄已結算。")
     except Exception as e:
