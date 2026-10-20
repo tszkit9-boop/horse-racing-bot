@@ -4350,17 +4350,17 @@ def admin_paper_trades():
             "source": "策略來源"
         }
 
-        # 設定各欄位嘅顯示闊度（small, medium, large）
+        # 🆕 設定各欄位嘅「固定像素寬度」，唔會再縮到極窄，亦唔會拉到中間穿晒
         col_config = {
-            "日期": st.column_config.TextColumn("日期", width="medium"),
-            "場次": st.column_config.NumberColumn("場次", width="small"),
-            "馬場": st.column_config.TextColumn("馬場", width="small"),
-            "馬名": st.column_config.TextColumn("馬名", width="medium"),
-            "賠率": st.column_config.NumberColumn("賠率", width="small", format="%.1f"),
-            "賽果": st.column_config.TextColumn("賽果", width="small"),
-            "盈虧": st.column_config.NumberColumn("盈虧", width="small", format="$%.0f"),
-            "值博率": st.column_config.NumberColumn("值博率", width="small", format="%.1%%"),
-            "策略來源": st.column_config.TextColumn("策略來源", width="small")
+            "日期": st.column_config.TextColumn("日期", width=110),
+            "場次": st.column_config.NumberColumn("場次", width=70),
+            "馬場": st.column_config.TextColumn("馬場", width=70),
+            "馬名": st.column_config.TextColumn("馬名", width=160),
+            "賠率": st.column_config.NumberColumn("賠率", width=80, format="%.1f"),
+            "賽果": st.column_config.TextColumn("賽果", width=80),
+            "盈虧": st.column_config.NumberColumn("盈虧", width=90, format="$%.0f"),
+            "值博率": st.column_config.NumberColumn("值博率", width=80, format="%.1%%"),
+            "策略來源": st.column_config.TextColumn("策略來源", width=100)
         }
 
         if settled.empty:
@@ -4387,14 +4387,14 @@ def admin_paper_trades():
                 col3.metric("勝率", f"{win_rate:.1%}")
                 col4.metric("ROI", f"{roi:+.1%}")
 
-                # 顯示表（改返 use_container_width=True 佢就會填滿闊度，但唔會拉得太過分）
                 display_sub = sub.rename(columns=rename_map)
                 cols_to_show = ["日期", "場次", "馬場", "馬名", "賠率", "賽果", "盈虧"]
                 display_sub = display_sub[[c for c in cols_to_show if c in display_sub.columns]]
                 
+                # 🆕 用 False + 固定像素寬度，表格就唔會亂拉
                 st.dataframe(
                     display_sub, 
-                    use_container_width=True,  # 🆕 改返 True，自動填滿畫面
+                    use_container_width=False, 
                     hide_index=True,
                     column_config=col_config
                 )
@@ -4419,12 +4419,12 @@ def admin_paper_trades():
         unsettled = df[df['settled'] == False].copy()
         if not unsettled.empty:
             display_unsettled = unsettled.rename(columns=rename_map)
-            cols_to_show_unsettled = ["編號", "日期", "場次", "馬場", "馬名", "賠率", "值博率", "策略來源"]
+            cols_to_show_unsettled = ["日期", "場次", "馬場", "馬名", "賠率", "值博率", "策略來源"]
             display_unsettled = display_unsettled[[c for c in cols_to_show_unsettled if c in display_unsettled.columns]]
             
             st.dataframe(
                 display_unsettled, 
-                use_container_width=True,  # 🆕 改返 True
+                use_container_width=False, 
                 hide_index=True,
                 column_config=col_config
             )
