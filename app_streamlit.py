@@ -4332,6 +4332,24 @@ def admin_paper_trades():
         df = pd.DataFrame(r.json())
         settled = df[df['settled'] == True].copy()
 
+        # 🆕 欄位中文對照表
+        rename_map = {
+            "id": "編號",
+            "date": "日期",
+            "race": "場次",
+            "venue": "馬場",
+            "horse_no": "馬號",
+            "horse_name": "馬名",
+            "odds": "賠率",
+            "value_rate": "值博率",
+            "bet_amount": "投注額",
+            "result": "賽果",
+            "profit": "盈虧",
+            "settled": "已結算",
+            "created_at": "記錄時間",
+            "source": "策略來源"
+        }
+
         if settled.empty:
             st.info("ℹ️ 暫時未有已結算嘅紙上投注。")
         else:
@@ -4344,6 +4362,7 @@ def admin_paper_trades():
                     st.info(f"暫時未有「{source_name}」嘅結算記錄。")
                     continue
 
+                # 計算統計數字（用英文原欄位名計）
                 total_bet = sub['bet_amount'].sum()
                 total_profit = sub['profit'].sum()
                 wins = (sub['result'] == 'win').sum()
@@ -4356,8 +4375,13 @@ def admin_paper_trades():
                 col3.metric("勝率", f"{win_rate:.1%}")
                 col4.metric("ROI", f"{roi:+.1%}")
 
-                st.dataframe(sub[['date', 'race', 'venue', 'horse_name', 'odds', 'result', 'profit']], 
-                             use_container_width=True, hide_index=True)
+                # 🆕 顯示前將欄位轉做中文
+                display_sub = sub.rename(columns=rename_map)
+                # 只顯示想要嘅欄位
+                cols_to_show = ["日期", "場次", "馬場", "馬名", "賠率", "賽果", "盈虧"]
+                display_sub = display_sub[[c for c in cols_to_show if c in display_sub.columns]]
+                
+                st.dataframe(display_sub, use_container_width=True, hide_index=True)
                 st.divider()
 
             # ===== 整體 =====
@@ -4376,9 +4400,14 @@ def admin_paper_trades():
 
         st.divider()
         st.markdown("#### ⏳ 未結算記錄")
-        unsettled = df[df['settled'] == False]
+        unsettled = df[df['settled'] == False].copy()
         if not unsettled.empty:
-            st.dataframe(unsettled, use_container_width=True, hide_index=True)
+            # 🆕 未結算記錄一樣轉做中文
+            display_unsettled = unsettled.rename(columns=rename_map)
+            cols_to_show_unsettled = ["編號", "日期", "場次", "馬場", "馬名", "賠率", "值博率", "策略來源"]
+            display_unsettled = display_unsettled[[c for c in cols_to_show_unsettled if c in display_unsettled.columns]]
+            
+            st.dataframe(display_unsettled, use_container_width=True, hide_index=True)
         else:
             st.info("ℹ️ 所有記錄已結算。")
     except Exception as e:
