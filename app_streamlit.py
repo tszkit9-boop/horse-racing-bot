@@ -4276,7 +4276,7 @@ def admin_accuracy_report():
             st.info("ℹ️ 命中率報告暫時未有數據。")
             return
         
-        # 🆕 加入排序：先按日期（新到舊），再按場次（細到大）
+        # 加入排序：先按日期（新到舊），再按場次（細到大）
         if 'date' in df.columns and 'race' in df.columns:
             df['date'] = pd.to_datetime(df['date'], errors='coerce')
             df['race'] = pd.to_numeric(df['race'], errors='coerce').fillna(0).astype(int)
@@ -4294,16 +4294,15 @@ def admin_accuracy_report():
         
         st.divider()
         
-        # 顯示詳細記錄
-        st.markdown("#### 📋 詳細記錄")
-        
-        # 🆕 如果想將日期變返做字串顯示，可以咁做（可選）
-        if 'date' in df.columns:
-            df_display = df.copy()
-            df_display['date'] = df_display['date'].dt.strftime('%Y-%m-%d')
-            st.dataframe(df_display, use_container_width=True, hide_index=True)
-        else:
-            st.dataframe(df, use_container_width=True, hide_index=True)
+        # 🆕 將詳細記錄收入 Expander
+        with st.expander("📋 點擊查看詳細記錄", expanded=False):
+            # 如果想將日期變返做字串顯示
+            if 'date' in df.columns:
+                df_display = df.copy()
+                df_display['date'] = df_display['date'].dt.strftime('%Y-%m-%d')
+                st.dataframe(df_display, use_container_width=True, hide_index=True)
+            else:
+                st.dataframe(df, use_container_width=True, hide_index=True)
         
     except Exception as e:
         st.error(f"❌ 讀取命中率報告失敗：{e}")
