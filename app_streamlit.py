@@ -5839,16 +5839,29 @@ def main():
         # ===== 🥉 Top 3 前三推薦 =====
         st.divider()
         st.subheader("🥉 Top 3 前三推薦")
-        st.caption("根據模型計算嘅「前三概率」，揀出最有可能跑入前三名嘅 3 匹馬。")
+        st.caption("結合前三概率、贏出概率、賠率保底及近期狀態，揀出最穩陣嘅 3 匹馬。")
 
-        if '前三概率' in df.columns:
-            # 🆕 優化邏輯：結合「前三概率」同「賠率保底」
-            df['贏出概率_排名'] = df['贏出概率'].rank(ascending=False)
+        if '前三概率' in df.columns and '贏出概率' in df.columns:
+            df_top3 = df.copy()
             
-            # 條件：贏出概率排前 6，或者賠率 <= 4.0 (大熱門)
-            _filter_condition = (df['贏出概率_排名'] <= 6) | (df['賠率'] <= 4.0)
+            # 🆕 1. 計算「綜合分數」 (前三概率佔 50%，贏出概率佔 30%)
+            # 如果有 avg_rank_last3 (近3場平均名次)，就加埋落去 (名次越細越好)
+            df_top3['綜合分數'] = (df_top3['前三概率'] * 0.5) + (df_top3['贏出概率'] * 0.3)
             
-            top3_df = df[_filter_condition].sort_values('前三概率', ascending=False).head(3).copy()
+            if 'avg_rank_last3' in df_top3.columns:
+                # 將近況轉化為分數：如果平均名次係 1，加 0.2；如果係 10，加 0.02
+                df_top3['綜合分數'] += (1 / df_top3['avg_rank_last3'].fillna(10)) * 0.2
+
+            # 🆕 2. 賠率保底 (如果賠率 <= 4.0，強制加分，確保大熱門唔會漏)
+            # 給予大熱門額外 0.15 嘅保底分數
+            df_top3.loc[df_top3['賠率'] <= 4.0, '綜合分數'] += 0.15
+
+            # 🆕 3. 剔除「死火馬」 (近3場平均名次大過 8 嘅馬，除非佢賠率極熱)
+            if 'avg_rank_last3' in df_top3.columns:
+                df_top3 = df_top3[~((df_top3['avg_rank_last3'] > 8) & (df_top3['賠率'] > 6.0))]
+
+            # 按綜合分數排序，攞頭 3 隻
+            top3_df = df_top3.sort_values('綜合分數', ascending=False).head(3).copy()
             top3_df = top3_df.reset_index(drop=True)
 
             for i, row in top3_df.iterrows():
@@ -5856,13 +5869,16 @@ def main():
                 name = row.get('馬名', '未知')
                 prob = row.get('前三概率', 0)
                 odds = row.get('賠率', 0)
-                st.markdown(f"**{medal} 第 {i+1} 選：{name}**（前三概率：{prob:.1%} ｜ 賠率：{odds:.1f}）")
+                # 顯示時可以順便顯示近況（如果有）
+                recent = f" ｜ 近3場: {row.get('avg_rank_last3'):.1f}" if 'avg_rank_last3' in row and pd.notna(row.get('avg_rank_last3')) else ""
+                
+                st.markdown(f"**{medal} 第 {i+1} 選：{name}**（前三概率：{prob:.1%} ｜ 賠率：{odds:.1f}{recent}）")
 
             display_top3 = top3_df[['馬號', '馬名', '賠率', '前三概率']].copy()
             display_top3['前三概率'] = display_top3['前三概率'].apply(lambda x: f"{x:.1%}")
             st.dataframe(display_top3, use_container_width=True, hide_index=True)
         else:
-            st.info("ℹ️ 暫時未有前三概率數據。")
+            st.info("ℹ️ 暫時未有足夠數據計算 Top 3。")
         # ===== Top 3 推薦結束 =====
 
         # ===== 原本嘅預測結果表 =====
