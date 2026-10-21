@@ -5842,9 +5842,13 @@ def main():
         st.caption("根據模型計算嘅「前三概率」，揀出最有可能跑入前三名嘅 3 匹馬。")
 
         if '前三概率' in df.columns:
-            # 🆕 先篩選「贏出概率」排名前 6 嘅馬，再按「前三概率」排序
+            # 🆕 優化邏輯：結合「前三概率」同「賠率保底」
             df['贏出概率_排名'] = df['贏出概率'].rank(ascending=False)
-            top3_df = df[df['贏出概率_排名'] <= 6].sort_values('前三概率', ascending=False).head(3).copy()
+            
+            # 條件：贏出概率排前 6，或者賠率 <= 4.0 (大熱門)
+            _filter_condition = (df['贏出概率_排名'] <= 6) | (df['賠率'] <= 4.0)
+            
+            top3_df = df[_filter_condition].sort_values('前三概率', ascending=False).head(3).copy()
             top3_df = top3_df.reset_index(drop=True)
 
             for i, row in top3_df.iterrows():
