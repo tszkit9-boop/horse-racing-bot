@@ -5109,7 +5109,7 @@ def main():
     schedule_file = "race_schedule.json"
     schedule = {}
 
-    # 第一層：讀取本地 race_schedule.json（由 auto_scrape.py 自動生成）
+    # 第一層：讀取本地 race_schedule.json
     if os.path.exists(schedule_file):
         try:
             with open(schedule_file, 'r', encoding='utf-8') as f:
@@ -5166,9 +5166,12 @@ def main():
     if schedule:
         now_dt = datetime.now()
         for d_str, venue in sorted(schedule.items()):
-            # 日馬開跑時間約 12:30，夜馬約 18:30
-            hour = 12 if venue == "ST" else 18
-            race_time = pd.to_datetime(f"{d_str} {hour}:30:00")
+            # 🆕 調整默認開跑時間：沙田日馬 12:30，跑馬地夜馬 19:15
+            hour = 12 if venue == "ST" else 19
+            minute = 30 if venue == "ST" else 15
+            
+            race_time = pd.to_datetime(f"{d_str} {hour:02d}:{minute:02d}:00")
+            
             if race_time > now_dt:
                 next_race = (d_str, venue, race_time)
                 break
@@ -5188,7 +5191,7 @@ def main():
         <div style="background: linear-gradient(90deg, #4e65ff, #92effd); padding: 20px; border-radius: 10px; color: white; text-align: center;">
             <h4>⏰ 距離開場賽事：{venue_name}</h4>
             <h1 style="font-size: 48px; margin: 10px 0;">{days} 日 {hours} 時 {minutes} 分 {seconds} 秒</h1>
-            <p style="font-size: 16px;">📍 {d_str} · {venue_short}</p>
+            <p style="font-size: 16px;">📍 {d_str} · {venue_short} （預計 {hour:02d}:{minute:02d} 開跑）</p>
         </div>
         """, unsafe_allow_html=True)
     else:
