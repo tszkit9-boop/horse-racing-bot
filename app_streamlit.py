@@ -5537,100 +5537,218 @@ def main():
     # ============================================================
     # 🎯 單場預測（所有用戶可見，已包含馬號）
     # ============================================================
-    # ===== 🆕 自動偵測下一場賽事倒數（內置完整賽期表） =====
-    schedule_file = "race_schedule.json"
-    schedule = {}
+    st.divider()
+    st.subheader("🎯 單場預測")
 
-    # 第一層：讀取本地 race_schedule.json
-    if os.path.exists(schedule_file):
-        try:
-            with open(schedule_file, 'r', encoding='utf-8') as f:
-                schedule = json.load(f)
-        except Exception:
-            schedule = {}
+    # 動態讀取 racecard_uploaded.csv 入面最新嘅日期
+    _default_date = None
+    try:
+        if os.path.exists("racecard_uploaded.csv"):
+            _rc = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
+            _date_col = None
+            for c in ['比賽日期', 'race_date', '日期', 'Date']:
+                if c in _rc.columns:
+                    _date_col = c
+                    break
+            if _date_col:
+                _rc_dates = pd.to_datetime(_rc[_date_col], errors='coerce').dropna()
+                if not _rc_dates.empty:
+                    _default_date = _rc_dates.max()
+    except Exception as e:
+        print(f"⚠️ 讀取最新日期失敗：{e}")
 
-    # 第二層：如果 JSON 為空，使用內置完整賽期表（涵蓋至 2027年7月）
-    if not schedule:
-        schedule = {
-            # 2026年10月
-            "2026-10-19": "ST", "2026-10-21": "HV",
-            "2026-10-25": "ST", "2026-10-28": "HV",
-            # 2026年11月
-            "2026-11-01": "ST", "2026-11-04": "HV", "2026-11-08": "ST",
-            "2026-11-11": "HV", "2026-11-15": "ST", "2026-11-18": "HV",
-            "2026-11-22": "ST", "2026-11-25": "HV", "2026-11-29": "ST",
-            # 2026年12月
-            "2026-12-02": "HV", "2026-12-06": "ST", "2026-12-09": "HV",
-            "2026-12-13": "ST", "2026-12-16": "HV", "2026-12-20": "ST",
-            "2026-12-23": "HV", "2026-12-27": "ST",
-            # 2027年1月
-            "2027-01-01": "ST", "2027-01-06": "HV", "2027-01-10": "ST",
-            "2027-01-13": "HV", "2027-01-17": "ST", "2027-01-20": "HV",
-            "2027-01-24": "ST", "2027-01-27": "HV", "2027-01-31": "ST",
-            # 2027年2月
-            "2027-02-03": "HV", "2027-02-07": "ST", "2027-02-10": "HV",
-            "2027-02-14": "ST", "2027-02-18": "HV", "2027-02-21": "ST",
-            "2027-02-25": "HV", "2027-02-28": "ST",
-            # 2027年3月
-            "2027-03-03": "HV", "2027-03-07": "ST", "2027-03-10": "HV",
-            "2027-03-14": "ST", "2027-03-17": "HV", "2027-03-21": "ST",
-            "2027-03-24": "HV", "2027-03-28": "ST", "2027-03-31": "HV",
-            # 2027年4月
-            "2027-04-04": "ST", "2027-04-07": "HV", "2027-04-11": "ST",
-            "2027-04-14": "HV", "2027-04-18": "ST", "2027-04-21": "HV",
-            "2027-04-25": "ST", "2027-04-28": "HV",
-            # 2027年5月
-            "2027-05-02": "ST", "2027-05-05": "HV", "2027-05-09": "ST",
-            "2027-05-12": "HV", "2027-05-16": "ST", "2027-05-19": "HV",
-            "2027-05-23": "ST", "2027-05-26": "HV", "2027-05-30": "ST",
-            # 2027年6月
-            "2027-06-02": "HV", "2027-06-06": "ST", "2027-06-09": "HV",
-            "2027-06-13": "ST", "2027-06-16": "HV", "2027-06-20": "ST",
-            "2027-06-23": "HV", "2027-06-27": "ST",
-            # 2027年7月
-            "2027-07-01": "ST", "2027-07-04": "ST", "2027-07-07": "HV",
-            "2027-07-11": "ST", "2027-07-14": "HV", "2027-07-18": "ST",
-            "2027-07-25": "ST"
-        }
+    if _default_date is None:
+        _default_date = pd.to_datetime("today")
 
-    # 計算下一場賽事
-    next_race = None
-    if schedule:
-        now_dt = datetime.now()
-        for d_str, venue in sorted(schedule.items()):
-            # 🆕 調整默認開跑時間：沙田日馬 12:30，跑馬地夜馬 19:15
-            hour = 12 if venue == "ST" else 19
-            minute = 30 if venue == "ST" else 15
-            
-            race_time = pd.to_datetime(f"{d_str} {hour:02d}:{minute:02d}:00")
-            
-            if race_time > now_dt:
-                next_race = (d_str, venue, race_time)
-                break
+    cd, cr, cbtn = st.columns([2, 2, 1])
+    with cd:
+        date = st.date_input("📅 日期", value=_default_date, key="pd_date")
+    with cr:
+        race_no = st.selectbox("🏇 場次", list(range(1, 12)), index=0, key="pd_race")
+    with cbtn:
+        run_predict = st.button("🚀 執行預測", type="primary", use_container_width=True, key="pd_btn")
 
-    # 顯示倒數卡片
-    if next_race:
-        d_str, venue, race_time = next_race
-        delta = race_time - datetime.now()
-        days = delta.days
-        hours, remainder = divmod(delta.seconds, 3600)
-        minutes, seconds = divmod(remainder, 60)
-        
-        venue_name = "沙田日馬" if venue == "ST" else "跑馬地夜馬"
-        venue_short = "ST" if venue == "ST" else "HV"
-        
-        st.markdown(f"""
-        <div style="background: linear-gradient(90deg, #4e65ff, #92effd); padding: 20px; border-radius: 10px; color: white; text-align: center;">
-            <h4>⏰ 距離開場賽事：{venue_name}</h4>
-            <h1 style="font-size: 48px; margin: 10px 0;">{days} 日 {hours} 時 {minutes} 分 {seconds} 秒</h1>
-            <p style="font-size: 16px;">📍 {d_str} · {venue_short} （預計 {hour:02d}:{minute:02d} 開跑）</p>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.info("📅 目前沒有即將到來的賽事")
+    if run_predict:
+        with st.spinner("預測中..."):
+            result, pool = run_prediction(date.strftime("%Y-%m-%d"), race_no)
+            if result is not None and not result.empty:
+                st.session_state['last_prediction'] = result
+                st.session_state['last_pool'] = pool
+                log_user_activity(st.session_state.get('username', '未知'), "預測", f"{date.strftime('%Y-%m-%d')} 第{race_no}場")
 
-    st.markdown("---")
+                # 🆕 單場預測自動記錄紙上回測
+                try:
+                    _venue = "HV" if pd.to_datetime(date.strftime("%Y-%m-%d")).weekday() == 2 else "ST"
+                    records = []
 
+                    # 策略 1：模型預測首選
+                    _prob_col = None
+                    for c in ['贏出概率', '預測勝率', '勝率', 'win_prob', 'prob']:
+                        if c in result.columns:
+                            _prob_col = c
+                            break
+
+                    if _prob_col:
+                        top_pick = result.sort_values(_prob_col, ascending=False).head(1)
+                        for _, row in top_pick.iterrows():
+                            records.append({
+                                "date": date.strftime("%Y-%m-%d"),
+                                "race": int(race_no),
+                                "venue": _venue,
+                                "horse_no": str(row.get('馬號', '')),
+                                "horse_name": row.get('馬名', ''),
+                                "odds": float(row.get('賠率', 0)) if pd.notna(row.get('賠率')) else 0,
+                                "value_rate": float(row.get('值博率', 0)) if pd.notna(row.get('值博率')) else 0,
+                                "bet_amount": 100.0,
+                                "settled": False,
+                                "source": "prediction"
+                            })
+
+                    # 策略 2：值博率推薦
+                    if '值博率' in result.columns and '賠率' in result.columns:
+                        value_picks = result[
+                            (result['值博率'] > 0.15) &
+                            (result['賠率'] >= 3.0) &
+                            (result['賠率'] <= 25.0)
+                        ]
+                        for _, row in value_picks.iterrows():
+                            records.append({
+                                "date": date.strftime("%Y-%m-%d"),
+                                "race": int(race_no),
+                                "venue": _venue,
+                                "horse_no": str(row.get('馬號', '')),
+                                "horse_name": row.get('馬名', ''),
+                                "odds": float(row.get('賠率', 0)),
+                                "value_rate": float(row.get('值博率', 0)),
+                                "bet_amount": 100.0,
+                                "settled": False,
+                                "source": "value_bet"
+                            })
+
+                    if records:
+                        headers = {
+                            "apikey": SUPABASE_KEY,
+                            "Authorization": f"Bearer {SUPABASE_KEY}",
+                            "Content-Type": "application/json",
+                            "Prefer": "return=minimal"
+                        }
+                        requests.post(
+                            f"{SUPABASE_URL}/rest/v1/paper_trades",
+                            headers=headers,
+                            json=records
+                        )
+                        st.toast(f"📝 已自動記錄 {len(records)} 筆紙上投注！")
+                except Exception as e:
+                    st.warning(f"⚠️ 單場紙上回測記錄失敗：{e}")
+
+    if 'last_prediction' in st.session_state and st.session_state['last_prediction'] is not None:
+        st.success("✅ 預測完成！")
+        if st.session_state.get('last_pool'):
+            st.info(st.session_state['last_pool'])
+
+        df = st.session_state['last_prediction'].copy()
+
+        # ===== 💰 值博率分析 =====
+        st.divider()
+        st.subheader("💰 值博率分析")
+        st.caption("值博率 = (模型預測概率 - 賠率隱含概率) ÷ 賠率隱含概率。值博率 > 0 代表賠率被低估，值得考慮。")
+
+        value_df = df[df['值博率'].notna()].copy()
+        value_df = value_df.sort_values('值博率', ascending=False)
+
+        if not value_df.empty:
+            display_value = value_df[['馬號', '馬名', '賠率', '贏出概率', '隱含概率', '值博率']].copy()
+            display_value['贏出概率'] = display_value['贏出概率'].apply(lambda x: f"{x:.1%}")
+            display_value['隱含概率'] = display_value['隱含概率'].apply(lambda x: f"{x:.1%}")
+            display_value['值博率'] = display_value['值博率'].apply(lambda x: f"{x:+.1%}")
+
+            def highlight_value_rate(row):
+                styles = [''] * len(row)
+                try:
+                    vb = float(str(row['值博率']).replace('%', '').replace('+', ''))
+                    odds = float(row['賠率'])
+                except:
+                    return styles
+                color = ''
+                if vb < 0:
+                    color = 'color: red; font-weight: bold;'
+                elif vb >= 15.0:
+                    if 3.0 <= odds <= 12.0:
+                        color = 'color: green; font-weight: bold;'
+                    elif 12.0 < odds <= 20.0:
+                        color = 'color: blue; font-weight: bold;'
+                    elif odds > 20.0 and vb >= 50.0:
+                        color = 'color: red; font-weight: bold;'
+                idx = row.index.get_loc('值博率')
+                styles[idx] = color
+                return styles
+
+            styled_df = display_value.style.apply(highlight_value_rate, axis=1)
+            st.dataframe(styled_df, use_container_width=True, hide_index=True)
+
+            positive_value = value_df[(value_df['值博率'] > 0) & (value_df['賠率'] <= 25.0)]
+            if not positive_value.empty:
+                top_value = positive_value.head(3)
+                value_names = [f"{row['馬名']}（{row['值博率']:+.1%}）" for _, row in top_value.iterrows()]
+                st.success(f"💰 **值博推薦**：{'、'.join(value_names)}")
+            else:
+                st.warning("⚠️ 今場冇馬匹符合推薦條件（值博率 > 0 且 賠率 <= 25.0）")
+        else:
+            st.info("ℹ️ 冇足夠賠率數據計算值博率")
+        # ===== 值博率分析結束 =====
+
+        # ===== 🥉 Top 3 前三推薦 =====
+        st.divider()
+        st.subheader("🥉 Top 3 前三推薦")
+        st.caption("根據模型計算嘅「前三概率」，揀出最有可能跑入前三名嘅 3 匹馬。")
+
+        if '前三概率' in df.columns:
+            top3_df = df.sort_values('前三概率', ascending=False).head(3).copy()
+            top3_df = top3_df.reset_index(drop=True)
+
+            for i, row in top3_df.iterrows():
+                medal = ["🥇", "🥈", "🥉"][i]
+                name = row.get('馬名', '未知')
+                prob = row.get('前三概率', 0)
+                odds = row.get('賠率', 0)
+                st.markdown(f"**{medal} 第 {i+1} 選：{name}**（前三概率：{prob:.1%} ｜ 賠率：{odds:.1f}）")
+
+            display_top3 = top3_df[['馬號', '馬名', '賠率', '前三概率']].copy()
+            display_top3['前三概率'] = display_top3['前三概率'].apply(lambda x: f"{x:.1%}")
+            st.dataframe(display_top3, use_container_width=True, hide_index=True)
+        else:
+            st.info("ℹ️ 暫時未有前三概率數據。")
+        # ===== Top 3 推薦結束 =====
+
+        # ===== 原本嘅預測結果表 =====
+        def _get_col_local(df, candidates):
+            for c in candidates:
+                if c in df.columns:
+                    return c
+            return None
+
+        col_horse_no = _get_col_local(df, ['馬號', 'horse_no', 'horse_id', '馬匹編號', 'no'])
+        col_horse_name = _get_col_local(df, ['馬名', 'horse_name', 'name'])
+        col_draw = _get_col_local(df, ['檔位', 'draw', '排位'])
+        col_prob = _get_col_local(df, ['勝率', '預測勝率', 'win_prob', 'prob', '機率'])
+
+        display_df = pd.DataFrame()
+        if col_horse_no:
+            display_df['馬號'] = df[col_horse_no]
+        else:
+            display_df['馬號'] = range(1, len(df) + 1)
+        if col_horse_name:
+            display_df['馬名'] = df[col_horse_name]
+        else:
+            display_df['馬名'] = '未知'
+        if col_draw:
+            display_df['檔位'] = df[col_draw]
+        if col_prob:
+            display_df['勝率'] = df[col_prob].apply(lambda x: f"{x:.1%}" if isinstance(x, (int, float)) else x)
+        else:
+            display_df['勝率'] = 'N/A'
+
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
         # ===== 🆕 值博率分析 =====
         st.divider()
         st.subheader("💰 值博率分析")
