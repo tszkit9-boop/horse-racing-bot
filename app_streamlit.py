@@ -4261,6 +4261,7 @@ def admin_accuracy_report():
     import os
     import pandas as pd
     import streamlit as st
+    import json
     
     st.subheader("📊 命中率報告")
     st.caption("對比歷史預測同實際賽果，統計 Top-1 同 Top-3 命中率。")
@@ -4296,13 +4297,41 @@ def admin_accuracy_report():
         
         # 🆕 將詳細記錄收入 Expander
         with st.expander("📋 點擊查看詳細記錄", expanded=False):
-            # 如果想將日期變返做字串顯示
             if 'date' in df.columns:
                 df_display = df.copy()
                 df_display['date'] = df_display['date'].dt.strftime('%Y-%m-%d')
                 st.dataframe(df_display, use_container_width=True, hide_index=True)
             else:
                 st.dataframe(df, use_container_width=True, hide_index=True)
+
+        # ============================================================
+        # 🧪 位置Q (A+B / A+C) 策略分析區塊 (新加入)
+        # ============================================================
+        st.divider()
+        st.subheader("🧪 位置Q (A+B / A+C) 策略")
+        st.caption("分析如果每次都買 Top 3 入面嘅 A+B 或 A+C 位置Q，命中率有幾高。")
+        
+        qpl_summary_file = "qpl_summary.json"
+        qpl_detail_file = "qpl_backtest_report.csv"
+
+        if os.path.exists(qpl_summary_file):
+            with open(qpl_summary_file, "r", encoding="utf-8") as f:
+                qpl_sum = json.load(f)
+            
+            c1, c2, c3 = st.columns(3)
+            c1.metric("總場次", f"{qpl_sum['total_races']} 場")
+            c2.metric("A+B 命中率", f"{qpl_sum['ab_rate']:.1%}", f"命中 {qpl_sum['ab_hits']} 場")
+            c3.metric("A+C 命中率", f"{qpl_sum['ac_rate']:.1%}", f"命中 {qpl_sum['ac_hits']} 場")
+            
+            if os.path.exists(qpl_detail_file):
+                with st.expander("📋 點擊查看位置Q命中詳細記錄", expanded=False):
+                    qpl_detail_df = pd.read_csv(qpl_detail_file)
+                    st.dataframe(qpl_detail_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("ℹ️ 未有位置Q詳細記錄")
+        else:
+            st.info("ℹ️ 暫時未有位置Q分析數據，請先執行 `accuracy_check.py`。")
+        # ============================================================
         
     except Exception as e:
         st.error(f"❌ 讀取命中率報告失敗：{e}")
