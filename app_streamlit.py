@@ -5164,22 +5164,26 @@ def main():
     # 計算下一場賽事
     next_race = None
     if schedule:
-        now_dt = datetime.now()
+        # 🆕 強制使用香港時間 (UTC+8)
+        now_hk = datetime.now(pytz.timezone('Asia/Hong_Kong')).replace(tzinfo=None)
+        
         for d_str, venue in sorted(schedule.items()):
-            # 🆕 調整默認開跑時間：沙田日馬 12:30，跑馬地夜馬 19:15
+            # 🆕 沙田日馬 12:30，跑馬地夜馬 18:40
             hour = 12 if venue == "ST" else 18
             minute = 30 if venue == "ST" else 40
             
             race_time = pd.to_datetime(f"{d_str} {hour:02d}:{minute:02d}:00")
             
-            if race_time > now_dt:
+            if race_time > now_hk:
                 next_race = (d_str, venue, race_time)
                 break
 
     # 顯示倒數卡片
     if next_race:
         d_str, venue, race_time = next_race
-        delta = race_time - datetime.now()
+        # 🆕 強制使用香港時間計時間差
+        now_hk = datetime.now(pytz.timezone('Asia/Hong_Kong')).replace(tzinfo=None)
+        delta = race_time - now_hk
         days = delta.days
         hours, remainder = divmod(delta.seconds, 3600)
         minutes, seconds = divmod(remainder, 60)
@@ -5198,7 +5202,6 @@ def main():
         st.info("📅 目前沒有即將到來的賽事")
 
     st.markdown("---")
-
     # ============================================================
     # 🆕 動態讀取 racecard_uploaded.csv 入面最新嘅日期
     # ============================================================
