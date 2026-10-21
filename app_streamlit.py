@@ -5167,8 +5167,8 @@ def main():
         now_dt = datetime.now()
         for d_str, venue in sorted(schedule.items()):
             # 🆕 調整默認開跑時間：沙田日馬 12:30，跑馬地夜馬 19:15
-            hour = 12 if venue == "ST" else 19
-            minute = 30 if venue == "ST" else 15
+            hour = 12 if venue == "ST" else 18
+            minute = 30 if venue == "ST" else 40
             
             race_time = pd.to_datetime(f"{d_str} {hour:02d}:{minute:02d}:00")
             
