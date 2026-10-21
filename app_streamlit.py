@@ -5537,54 +5537,99 @@ def main():
     # ============================================================
     # 🎯 單場預測（所有用戶可見，已包含馬號）
     # ============================================================
-    st.divider()
-    st.subheader("🎯 單場預測")
+    # ===== 🆕 自動偵測下一場賽事倒數（內置完整賽期表） =====
+    schedule_file = "race_schedule.json"
+    schedule = {}
 
-    # 🆕 動態讀取 racecard_uploaded.csv 入面最新嘅日期
-    _default_date = None
-    try:
-        if os.path.exists("racecard_uploaded.csv"):
-            _rc = pd.read_csv("racecard_uploaded.csv", encoding='utf-8-sig')
-            # 嘗試唔同嘅日期欄位名
-            _date_col = None
-            for c in ['比賽日期', 'race_date', '日期', 'Date']:
-                if c in _rc.columns:
-                    _date_col = c
-                    break
-            if _date_col:
-                _rc_dates = pd.to_datetime(_rc[_date_col], errors='coerce').dropna()
-                if not _rc_dates.empty:
-                    _default_date = _rc_dates.max()
-    except Exception as e:
-        print(f"⚠️ 讀取最新日期失敗：{e}")
+    # 第一層：讀取本地 race_schedule.json
+    if os.path.exists(schedule_file):
+        try:
+            with open(schedule_file, 'r', encoding='utf-8') as f:
+                schedule = json.load(f)
+        except Exception:
+            schedule = {}
 
-    # 如果讀取失敗，用今日日期做 fallback
-    if _default_date is None:
-        _default_date = pd.to_datetime("today")
+    # 第二層：如果 JSON 為空，使用內置完整賽期表（涵蓋至 2027年7月）
+    if not schedule:
+        schedule = {
+            # 2026年10月
+            "2026-10-19": "ST", "2026-10-21": "HV",
+            "2026-10-25": "ST", "2026-10-28": "HV",
+            # 2026年11月
+            "2026-11-01": "ST", "2026-11-04": "HV", "2026-11-08": "ST",
+            "2026-11-11": "HV", "2026-11-15": "ST", "2026-11-18": "HV",
+            "2026-11-22": "ST", "2026-11-25": "HV", "2026-11-29": "ST",
+            # 2026年12月
+            "2026-12-02": "HV", "2026-12-06": "ST", "2026-12-09": "HV",
+            "2026-12-13": "ST", "2026-12-16": "HV", "2026-12-20": "ST",
+            "2026-12-23": "HV", "2026-12-27": "ST",
+            # 2027年1月
+            "2027-01-01": "ST", "2027-01-06": "HV", "2027-01-10": "ST",
+            "2027-01-13": "HV", "2027-01-17": "ST", "2027-01-20": "HV",
+            "2027-01-24": "ST", "2027-01-27": "HV", "2027-01-31": "ST",
+            # 2027年2月
+            "2027-02-03": "HV", "2027-02-07": "ST", "2027-02-10": "HV",
+            "2027-02-14": "ST", "2027-02-18": "HV", "2027-02-21": "ST",
+            "2027-02-25": "HV", "2027-02-28": "ST",
+            # 2027年3月
+            "2027-03-03": "HV", "2027-03-07": "ST", "2027-03-10": "HV",
+            "2027-03-14": "ST", "2027-03-17": "HV", "2027-03-21": "ST",
+            "2027-03-24": "HV", "2027-03-28": "ST", "2027-03-31": "HV",
+            # 2027年4月
+            "2027-04-04": "ST", "2027-04-07": "HV", "2027-04-11": "ST",
+            "2027-04-14": "HV", "2027-04-18": "ST", "2027-04-21": "HV",
+            "2027-04-25": "ST", "2027-04-28": "HV",
+            # 2027年5月
+            "2027-05-02": "ST", "2027-05-05": "HV", "2027-05-09": "ST",
+            "2027-05-12": "HV", "2027-05-16": "ST", "2027-05-19": "HV",
+            "2027-05-23": "ST", "2027-05-26": "HV", "2027-05-30": "ST",
+            # 2027年6月
+            "2027-06-02": "HV", "2027-06-06": "ST", "2027-06-09": "HV",
+            "2027-06-13": "ST", "2027-06-16": "HV", "2027-06-20": "ST",
+            "2027-06-23": "HV", "2027-06-27": "ST",
+            # 2027年7月
+            "2027-07-01": "ST", "2027-07-04": "ST", "2027-07-07": "HV",
+            "2027-07-11": "ST", "2027-07-14": "HV", "2027-07-18": "ST",
+            "2027-07-25": "ST"
+        }
 
-    cd, cr, cbtn = st.columns([2, 2, 1])
-    with cd:
-        date = st.date_input("📅 日期", value=_default_date, key="pd_date")
-    with cr:
-        race_no = st.selectbox("🏇 場次", list(range(1, 12)), index=0, key="pd_race")
-    with cbtn:
-        run_predict = st.button("🚀 執行預測", type="primary", use_container_width=True, key="pd_btn")
+    # 計算下一場賽事
+    next_race = None
+    if schedule:
+        now_dt = datetime.now()
+        for d_str, venue in sorted(schedule.items()):
+            # 🆕 調整默認開跑時間：沙田日馬 12:30，跑馬地夜馬 19:15
+            hour = 12 if venue == "ST" else 19
+            minute = 30 if venue == "ST" else 15
+            
+            race_time = pd.to_datetime(f"{d_str} {hour:02d}:{minute:02d}:00")
+            
+            if race_time > now_dt:
+                next_race = (d_str, venue, race_time)
+                break
 
-    if run_predict:
-        with st.spinner("預測中..."):
-            result, pool = run_prediction(date.strftime("%Y-%m-%d"), race_no)
-            if result is not None and not result.empty:
-                st.session_state['last_prediction'] = result
-                st.session_state['last_pool'] = pool
-                # 👇 加入呢句記錄用戶動作
-                log_user_activity(st.session_state.get('username', '未知'), "預測", f"{date.strftime('%Y-%m-%d')} 第{race_no}場")
+    # 顯示倒數卡片
+    if next_race:
+        d_str, venue, race_time = next_race
+        delta = race_time - datetime.now()
+        days = delta.days
+        hours, remainder = divmod(delta.seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        
+        venue_name = "沙田日馬" if venue == "ST" else "跑馬地夜馬"
+        venue_short = "ST" if venue == "ST" else "HV"
+        
+        st.markdown(f"""
+        <div style="background: linear-gradient(90deg, #4e65ff, #92effd); padding: 20px; border-radius: 10px; color: white; text-align: center;">
+            <h4>⏰ 距離開場賽事：{venue_name}</h4>
+            <h1 style="font-size: 48px; margin: 10px 0;">{days} 日 {hours} 時 {minutes} 分 {seconds} 秒</h1>
+            <p style="font-size: 16px;">📍 {d_str} · {venue_short} （預計 {hour:02d}:{minute:02d} 開跑）</p>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.info("📅 目前沒有即將到來的賽事")
 
-    if 'last_prediction' in st.session_state and st.session_state['last_prediction'] is not None:
-        st.success("✅ 預測完成！")
-        if st.session_state.get('last_pool'):
-            st.info(st.session_state['last_pool'])
-
-        df = st.session_state['last_prediction'].copy()
+    st.markdown("---")
 
         # ===== 🆕 記錄紙上回測（只有管理員先見到） =====
         if st.session_state.get('role') in ['admin', 'super_admin'] or st.session_state.get('user_group') in ['admin', 'super_admin']:
