@@ -3951,36 +3951,146 @@ def cleanup_expired_promos():
 
 
 def admin_auto_maintenance():
-    st.subheader("🤖 自動維護")
+    """自動維護頁面（升級版）"""
+    import os
+    import glob
+    import time
+    import pandas as pd
+    import streamlit as st
+    from datetime import datetime, timedelta
+    from supabase import create_client
+
+    st.subheader("🤖 自動維護（升級版）")
+    st.caption("一鍵處理 VIP 過期、清理舊 Log、刪除重複投注、自動作廢退賽馬、清理舊檔案及快取。")
+
     if st.button("🚀 執行維護", type="primary", use_container_width=True, key="run_maint"):
-        users = load_users()
-        today = datetime.now()
-        exp = []
-        for uid, u in users.items():
-            if u.get('group') == 'VIP' and u.get('expiry_date'):
-                try:
-                    if pd.to_datetime(u['expiry_date']) < today:
-                        u['group'] = 'free'
-                        u['is_paid'] = False
-                        u['predictions_limit'] = CONFIG["free_limit"]
-                        exp.append(uid)
-                except Exception:
-                    pass
-        if exp:
-            save_users(users)
+        with st.spinner("正在進行系統大掃除，請稍候..."):
+            
+            # ==========================================
+            # 1. 處理 VIP 過期降級 (保留你原本嘅邏輯)
+            # ==========================================
+            try:
+                users = load_users()
+                today = datetime.now()
+                exp = []
+                for uid, u in users.items():
+                    # ⚠️ 注意：如果你已改咗做「用戶」，請將下面 'free' 改做 '用戶'
+                    if u.get('user_group') == 'VIP' and u.get('expiry_date'):
+                        try:
+                            if pd.to_datetime(u['expiry_date']) < today:
+                                u['user_group'] = '用戶'  # 或者 'free'
+                                u['is_paid'] = False
+                                exp.append(uid)
+                        except Exception:
+                            pass
+                if exp:
+                    save_users(users)
+                st.success(f"✅ VIP 過期處理：{len(exp)} 位降級")
+            except Exception as e:
+                st.error(f"❌ VIP 處理失敗：{e}")
 
-        # 清理活動日誌
-        removed_logs = cleanup_activity_log(days=30)
+            # ==========================================
+            # 2. 清理活動日誌同優惠碼 (保留你原本嘅邏輯)
+            # ==========================================
+            try:
+                removed_logs = cleanup_activity_log(days=30)
+                removed_promos = cleanup_expired_promos()
+                st.success(f"✅ 清理日誌：{removed_logs} 條 ｜ 清理優惠碼：{removed_promos} 個")
+            except Exception as e:
+                st.error(f"❌ 清理日誌/優惠碼失敗：{e}")
 
-        # 清理過期優惠碼
-        removed_promos = cleanup_expired_promos()
+            # ==========================================
+            # 3. 清理舊備份檔案 (保留最近 7 日)
+            # ==========================================
+            try:
+                now = time.time()
+                files = glob.glob("racecard_*.csv")
+                deleted_files = 0
+                for f in files:
+                    if os.path.getmtime(f) < now - (7 * 86400):
+                        os.remove(f)
+                        deleted_files += 1
+                st.success(f"✅ 清理舊備份檔案：刪除咗 {deleted_files} 個")
+            except Exception as e:
+                st.error(f"❌ 清理備份失敗：{e}")
 
-        # 顯示結果
-        st.success(f"✅ 維護完成")
-        st.write(f"   - 過期 VIP：{len(exp)} 位降級")
-        st.write(f"   - 舊活動日誌：{removed_logs} 條清理")
-        st.write(f"   - 過期優惠碼：{removed_promos} 個清理")
+            # ==========================================
+            # 4. 清理 Supabase 重複數據 (paper_trades)
+            # ==========================================
+            try:
+                supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+                response = supabase.table("paper_trades").select("*").order("id", desc=True).execute()
+                if response.data:
+                    df = pd.DataFrame(response.data)
+                    # 去除重複：同日期、同場次、同馬名、同策略，只保留最新 (id 最大)
+                    df_dedup = df.drop_duplicates(subset=['date', 'race', 'horse_name', 'source'], keep='first')
+                    ids_to_keep = set(df_dedup['id'].tolist())
+                    ids_to_delete = [i for i in df['id'].tolist() if i not in ids_to_keep]
+                    
+                    if ids_to_delete:
+                        for i in range(0, len(ids_to_delete), 50):
+                            batch = ids_to_delete[i:i+50]
+                            supabase.table("paper_trades").delete().in_("id", batch).execute()
+                        st.success(f"✅ 清理重複投注數據：刪除咗 {len(ids_to_delete)} 筆")
+                    else:
+                        st.info("ℹ️ 沒有發現重複投注記錄。")
+            except Exception as e:
+                st.error(f"❌ 清理重複數據失敗：{e}")
 
+            # ==========================================
+            # 5. 自動處理退賽馬 (超過 3 日未結算自動作廢)
+            # ==========================================
+            try:
+                if os.path.exists("race_results_clean.csv"):
+                    results_df = pd.read_csv("race_results_clean.csv", encoding="utf-8-sig")
+                    results_df['race_date'] = pd.to_datetime(results_df['race_date'], errors='coerce').dt.strftime('%Y-%m-%d')
+                    results_df['horse_name'] = results_df['horse_name'].astype(str).str.strip()
+                    
+                    response_unsettled = supabase.table("paper_trades").select("*").eq("settled", False).execute()
+                    unsettled = response_unsettled.data
+                    
+                    void_count = 0
+                    now_dt = datetime.now()
+                    
+                    for trade in unsettled:
+                        pred_date = trade.get('date', '')
+                        try:
+                            pred_dt = datetime.strptime(pred_date, '%Y-%m-%d')
+                            days_diff = (now_dt - pred_dt).days
+                            
+                            if days_diff > 3:
+                                race_res = results_df[
+                                    (results_df['race_date'] == pred_date) & 
+                                    (results_df['race_no'] == trade['race']) & 
+                                    (results_df['horse_name'] == trade['horse_name'])
+                                ]
+                                if race_res.empty:
+                                    supabase.table("paper_trades").update({
+                                        "result": "void",
+                                        "profit": 0,
+                                        "settled": True
+                                    }).eq("id", trade['id']).execute()
+                                    void_count += 1
+                        except:
+                            pass
+                    if void_count > 0:
+                        st.success(f"✅ 自動處理退賽馬：{void_count} 筆記錄已退款 $0")
+                    else:
+                        st.info("ℹ️ 沒有需要處理的退賽馬記錄。")
+            except Exception as e:
+                st.error(f"❌ 處理退賽馬失敗：{e}")
+
+            # ==========================================
+            # 6. 清理網站快取
+            # ==========================================
+            try:
+                st.cache_data.clear()
+                st.success("✅ 網站快取已清除")
+            except Exception as e:
+                st.error(f"❌ 清理快取失敗：{e}")
+
+        st.balloons()
+        st.success("🎉 系統維護完成！")
 def admin_automation():
     st.subheader("🤖 自動化工具")
     st.markdown("### ⚙️ 自動化排程")
