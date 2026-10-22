@@ -5,6 +5,13 @@ import re
 from scipy.stats import poisson
 
 # ==========================================
+# 新增：檢查登入狀態 (與賽馬主頁互通)
+# ==========================================
+if not st.session_state.get("logged_in", False):
+    st.warning("⚠️ 請先返回主頁登入！")
+    st.stop()  # 如果未登入，就停住，唔顯示下面啲足球預測內容
+
+# ==========================================
 # 頁面設定
 # ==========================================
 st.set_page_config(page_title="一鍵貼上預測", page_icon="⚽", layout="wide")
