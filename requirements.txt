@@ -3,10 +3,14 @@ streamlit
 pandas
 numpy
 scipy
-pytz
 plotly
-Pillow
-streamlit-autorefresh
+scikit-learn
+xgboost
+lightgbm
+requests
+beautifulsoup4
+openpyxl
+python-dotenv
 
 # ===== AI / 機器學習 =====
 scikit-learn
