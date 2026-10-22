@@ -1,0 +1,1 @@
+prob_home,prob_draw,prob_away,form_win_diff,home_home_win_rate,away_away_win_rate,h2h_home_win_rate,shot_diff,corner_diff,xg_diff
