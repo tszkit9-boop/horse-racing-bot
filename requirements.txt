@@ -4,13 +4,9 @@ pandas
 numpy
 scipy
 plotly
-scikit-learn
-xgboost
-lightgbm
-requests
-beautifulsoup4
-openpyxl
-python-dotenv
+pytz
+Pillow
+streamlit-autorefresh
 
 # ===== AI / 機器學習 =====
 scikit-learn
