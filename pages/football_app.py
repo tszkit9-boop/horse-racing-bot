@@ -10,22 +10,55 @@ from scipy.stats import poisson
 st.set_page_config(page_title="一鍵貼上預測", page_icon="⚽", layout="wide")
 
 # ==========================================
-# 頂部導航 (左邊標題，右邊賽馬按鈕)
+# 🎨 CSS 強制同一行按鈕垂直置中
 # ==========================================
-col_nav1, col_nav2 = st.columns([8, 2])
+st.markdown("""
+<style>
+div[data-testid="stHorizontalBlock"] {
+    align-items: center;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ==========================================
+# 頂部導航 (左邊標題，右邊按鈕)
+# ==========================================
+# 分成 5 欄：標題(5份)、FAQ(1)、賽馬(1)、個人中心(1.2)、登出(1)
+col_nav1, col_nav2, col_nav3, col_nav4, col_nav5 = st.columns([5, 1, 1, 1.2, 1])
 
 with col_nav1:
-    st.title("⚽足球預測")
+    st.title("⚽ 一鍵貼上賠率預測 (終極版)")
 
 with col_nav2:
-    st.write("") # 對齊高度用
-    st.write("")
-    # 改用 st.button，排版最靚而且唔會彈登入
-    if st.button("🏇 前往賽馬預測", use_container_width=True, key="go_horse_btn"):
+    if st.button("❓ 常見問題", use_container_width=True, key="faq_btn_football"):
+        st.switch_page("pages/FAQ.py")
+
+with col_nav3:
+    if st.button("🏇 前往賽馬", use_container_width=True, key="go_horse_btn"):
         st.switch_page("app_streamlit.py")
 
+with col_nav4:
+    if st.session_state.get('logged_in', False):
+        username = st.session_state.get('username', '用戶')
+        # 從 session_state 獲取基本資料，避免依賴未 import 嘅函數
+        group = st.session_state.get('group', 'free')
+        level = st.session_state.get('level', '🥉 銅牌會員')
+        
+        with st.popover("👤 個人中心", use_container_width=True):
+            st.markdown(f"### 👤 {username}")
+            st.markdown(f"**級別**：{group.upper()}　|　**等級**：{level}")
+            st.info("💡 如需查看完整推薦記錄、更改密碼或預測記錄，請點擊上方「前往賽馬」返回主頁查看。")
+
+with col_nav5:
+    if st.session_state.get('logged_in', False):
+        if st.button("🚪 登出", use_container_width=True, key="logout_football"):
+            for k in ['logged_in', 'username', 'role', 'group', 'level']:
+                if k in st.session_state:
+                    del st.session_state[k]
+            st.rerun()
+
 # ==========================================
-# 輸入區 (直接開始，冇咗提示句)
+# 輸入區
 # ==========================================
 with st.container(border=True):
     st.subheader("📋 請貼上賽事資料")
