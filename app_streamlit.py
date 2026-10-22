@@ -5126,6 +5126,7 @@ def main():
         st.write("") # 保持同其他掣嘅高度對齊
         if st.button("⚽ 前往足球", use_container_width=True, key="go_football_btn"):
             st.switch_page("pages/football_app.py")
+            
     with c5:
         if st.session_state.get('logged_in', False):
             username = st.session_state.username
@@ -5214,12 +5215,27 @@ def main():
                                 )
                             st.dataframe(df_show, use_container_width=True, hide_index=True)
 
-    # 👇 c4 完結，縮進 4 格
+    # ==========================================
+    # 👇 呢度係新加嘅 c6 (登出掣放喺呢度，同上面完美對齊)
+    # ==========================================
+    with c6:
+        if st.session_state.get('logged_in', False):
+            st.write("") # 對齊高度
+            if st.button("🚪 登出", use_container_width=True, key="logout_main"):
+                for k in ['logged_in', 'username', 'role']:
+                    if k in st.session_state:
+                        del st.session_state[k]
+                st.rerun()
+
+    # ==========================================
+    # 👇 以下係頁面下方嘅獨立內容 (簽到 & 聊天室)
+    # ==========================================
     if st.session_state.get('logged_in', False):
         _checkin_user = st.session_state.get('username')
         if _checkin_user:
             st.divider()
             show_checkin_button(_checkin_user)    
+
     # 🛡️ 聊天室（Popover - 加大版）
     if st.session_state.get('logged_in', False):
         st.divider()
@@ -5240,14 +5256,6 @@ def main():
         with chat_col1:
             with st.popover("💬 聊天室", use_container_width=True):
                 show_chat_room()
-
-    with c5:
-        if st.session_state.get('logged_in', False):
-            if st.button("🚪 登出", use_container_width=True, key="logout_main"):
-                for k in ['logged_in', 'username', 'role']:
-                    if k in st.session_state:
-                        del st.session_state[k]
-                st.rerun()
     # =========================================================================
     # 👇👇👇 倒數卡片（⏰ 距離下場賽事）自動偵測版本 👇👇👇
     # =========================================================================
