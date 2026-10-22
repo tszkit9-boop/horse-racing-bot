@@ -8,9 +8,6 @@ st.set_page_config(page_title="一鍵貼上預測", page_icon="⚽", layout="cen
 st.title("⚽ 一鍵貼上賠率預測")
 st.markdown("請直接將馬會嘅賽事及賠率 **Copy & Paste** 落下面，系統會自動分析！")
 
-# ==========================================
-# 輸入區
-# ==========================================
 with st.container(border=True):
     st.subheader("📋 請貼上賽事資料")
     st.markdown("""
@@ -19,7 +16,6 @@ with st.container(border=True):
     *   或者直接喺馬會 Copy 一大段掟落嚟。
     """)
     
-    # 預設填入你頭先打直嘅資料
     default_text = """比錫達斯
 永島拿
 1.85
@@ -29,18 +25,12 @@ with st.container(border=True):
 
 analyze_btn = st.button("🚀 自動解析並預測", type="primary", use_container_width=True)
 
-# ==========================================
-# 解析與計算邏輯 (無敵防呆版)
-# ==========================================
 if analyze_btn:
     if not pasted_text.strip():
         st.warning("⚠️ 請先貼上賽事資料！")
         st.stop()
     
-    # 將所有換行符號變成空格，等打直嘅字變成打橫
     flat_text = " ".join(pasted_text.split())
-    
-    # 無敵正則表達式：自動搵出「兩個隊名 + 三個小數賠率」
     pattern = r"(.*?)\s+(.*?)\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)"
     matches = re.findall(pattern, flat_text)
     
@@ -50,11 +40,9 @@ if analyze_btn:
         
     st.success(f"✅ 成功解析並預測 {len(matches)} 場賽事！")
     
-    # 逐場顯示預測
     for match in matches:
         home_team, away_team, odds_h_str, odds_d_str, odds_a_str = match
         
-        # 清理隊名 (移除 vs, 對 等字眼)
         home_team = re.sub(r'(?i)\bvs\b|對', '', home_team).strip()
         away_team = re.sub(r'(?i)\bvs\b|對', '', away_team).strip()
         
@@ -62,7 +50,6 @@ if analyze_btn:
         odds_d = float(odds_d_str)
         odds_a = float(odds_a_str)
         
-        # 泊松計算
         imp_h, imp_d, imp_a = 1/odds_h, 1/odds_d, 1/odds_a
         total = imp_h + imp_d + imp_a
         prob_h, prob_d, prob_a = imp_h/total, imp_d/total, imp_a/total
@@ -79,19 +66,19 @@ if analyze_btn:
         st.divider()
         st.header(f"🏆 {home_team} vs {away_team}")
         
-        # 主客和
         res1, res2, res3 = st.columns(3)
         res1.metric(f"主勝 ({home_team})", f"{prob_h:.2%}", f"賠率: {odds_h}")
         res2.metric("和局", f"{prob_d:.2%}", f"賠率: {odds_d}")
         res3.metric(f"客勝 ({away_team})", f"{prob_a:.2%}", f"賠率: {odds_a}")
 
-        # 波膽及大細
         col_left, col_right = st.columns(2)
         with col_left:
-            st.write("🎯 **波膽 Top 5**")
+            # 👇 改咗做 Top 3
+            st.write("🎯 **波膽 Top 3**")
             scores = [(f"{i}:{j}", matrix[i][j]) for i in range(max_goals+1) for j in range(max_goals+1)]
             scores.sort(key=lambda x: x[1], reverse=True)
-            df_scores = pd.DataFrame(scores[:5], columns=["波膽", "概率"])
+            # 👇 改咗做 [:3]
+            df_scores = pd.DataFrame(scores[:3], columns=["波膽", "概率"])
             df_scores["概率"] = df_scores["概率"].apply(lambda x: f"{x:.2%}")
             st.dataframe(df_scores, hide_index=True, use_container_width=True)
             
