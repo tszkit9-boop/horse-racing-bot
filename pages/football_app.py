@@ -14,8 +14,8 @@ st.set_page_config(page_title="一鍵貼上預測", page_icon="⚽", layout="wid
 # ==========================================
 # ☁️ 連接 Supabase (請填入你真實嘅 URL 同 Key)
 # ==========================================
-SUPABASE_URL = "YOUR_SUPABASE_URL"
-SUPABASE_KEY = "YOUR_SUPABASE_KEY"
+SUPABASE_URL = "https://fewanagxvezelufmuggq.supabase.co"
+SUPABASE_KEY = "sb_publishable_Ww_BGSKjqhGCvv5iNl8A0Q_UDkVqdtF"
 try:
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 except:
