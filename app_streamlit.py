@@ -5452,35 +5452,79 @@ def main():
                         status.text(f"⏳ 預測第 {rn} 場中...（{i+1}/{len(day_races)}）")
                         try:
                             result, pool = run_prediction(date_str, int(rn))
-                            st.write(f"第 {rn} 場嘅欄位名：{result.columns.tolist()}")
                             if result is not None and not result.empty:
                                 all_results[int(rn)] = result
                                 success_count += 1
 
-                                # 🆕 自動記錄兩種策略：預測首選 + 值博率推薦
-                                try:
-                                    _venue = "HV" if pd.to_datetime(date_str).weekday() == 2 else "ST"
-                                    records = []
-
-                                    # ===== 策略 1：模型預測首選（直接拎第一行，無視欄位名） =====
+                                # 🆕 只有 Admin 先可以寫入紙上回測，防止普通用戶搞亂數據
+                                if st.session_state.get('role') in ['admin', 'super_admin'] or st.session_state.get('user_group') in ['admin', 'super_admin']:
                                     try:
-                                        # result 已經喺 run_prediction 入面按贏出概率排好序，直接拎第一行
-                                        top_pick = result.head(1)
-                                        for _, row in top_pick.iterrows():
-                                            records.append({
-                                                "date": date_str,
-                                                "race": int(rn),
-                                                "venue": _venue,
-                                                "horse_no": str(row.get('馬號', '')),
-                                                "horse_name": row.get('馬名', ''),
-                                                "odds": float(row.get('賠率', 0)) if pd.notna(row.get('賠率')) else 0,
-                                                "value_rate": float(row.get('值博率', 0)) if pd.notna(row.get('值博率')) else 0,
-                                                "bet_amount": 100.0,
-                                                "settled": False,
-                                                "source": "prediction"
-                                            })
+                                        _venue = "HV" if pd.to_datetime(date_str).weekday() == 2 else "ST"
+                                        records = []
+
+                                        # ===== 策略 1：模型預測首選 =====
+                                        try:
+                                            # result 已經喺 run_prediction 入面按贏出概率排好序，直接拎第一行
+                                            top_pick = result.head(1)
+                                            for _, row in top_pick.iterrows():
+                                                records.append({
+                                                    "date": date_str,
+                                                    "race": int(rn),
+                                                    "venue": _venue,
+                                                    "horse_no": str(row.get('馬號', '')),
+                                                    "horse_name": row.get('馬名', ''),
+                                                    "odds": float(row.get('賠率', 0)) if pd.notna(row.get('賠率')) else 0,
+                                                    "value_rate": float(row.get('值博率', 0)) if pd.notna(row.get('值博率')) else 0,
+                                                    "bet_amount": 100.0,
+                                                    "settled": False,
+                                                    "source": "prediction"
+                                                })
+                                        except Exception as e:
+                                            st.warning(f"⚠️ 第 {rn} 場記錄預測首選失敗：{e}")
+
+                                        # ===== 策略 2：值博率推薦 =====
+                                        if '值博率' in result.columns and '賠率' in result.columns:
+                                            value_picks = result[
+                                                (result['值博率'] > 0.15) &
+                                                (result['賠率'] >= 3.0) &
+                                                (result['賠率'] <= 25.0)
+                                            ]
+                                            for _, row in value_picks.iterrows():
+                                                records.append({
+                                                    "date": date_str,
+                                                    "race": int(rn),
+                                                    "venue": _venue,
+                                                    "horse_no": str(row.get('馬號', '')),
+                                                    "horse_name": row.get('馬名', ''),
+                                                    "odds": float(row.get('賠率', 0)),
+                                                    "value_rate": float(row.get('值博率', 0)),
+                                                    "bet_amount": 100.0,
+                                                    "settled": False,
+                                                    "source": "value_bet"
+                                                })
+
+                                        # 寫入 Supabase
+                                        if records:
+                                            headers = {
+                                                "apikey": SUPABASE_KEY,
+                                                "Authorization": f"Bearer {SUPABASE_KEY}",
+                                                "Content-Type": "application/json",
+                                                "Prefer": "return=minimal"
+                                            }
+                                            requests.post(
+                                                f"{SUPABASE_URL}/rest/v1/paper_trades",
+                                                headers=headers,
+                                                json=records
+                                            )
+                                            _total_recorded += len(records)
                                     except Exception as e:
-                                        st.warning(f"⚠️ 第 {rn} 場記錄預測首選失敗：{e}")
+                                        st.warning(f"⚠️ 第 {rn} 場記錄失敗：{e}")
+
+                            else:
+                                fail_count += 1
+                        except Exception as e:
+                            fail_count += 1
+                        progress.progress((i + 1) / len(day_races))
 
                                     # ===== 策略 2：值博率推薦 =====
                                     if '值博率' in result.columns and '賠率' in result.columns:
@@ -5715,71 +5759,76 @@ def main():
                 st.session_state['last_pool'] = pool
                 log_user_activity(st.session_state.get('username', '未知'), "預測", f"{date.strftime('%Y-%m-%d')} 第{race_no}場")
 
-                # 🆕 單場預測自動記錄紙上回測
-                try:
-                    _venue = "HV" if pd.to_datetime(date.strftime("%Y-%m-%d")).weekday() == 2 else "ST"
-                    records = []
+                # 🆕 自動記錄紙上回測（只有 Admin 先可以寫入）
+                if st.session_state.get('role') in ['admin', 'super_admin'] or st.session_state.get('user_group') in ['admin', 'super_admin']:
+                    try:
+                        _venue = "HV" if pd.to_datetime(date.strftime("%Y-%m-%d")).weekday() == 2 else "ST"
+                        records = []
 
-                    # 策略 1：模型預測首選
-                    _prob_col = None
-                    for c in ['贏出概率', '預測勝率', '勝率', 'win_prob', 'prob']:
-                        if c in result.columns:
-                            _prob_col = c
-                            break
+                        # 策略 1：模型預測首選
+                        _prob_col = None
+                        for c in ['贏出概率', '預測勝率', '勝率', 'win_prob', 'prob']:
+                            if c in result.columns:
+                                _prob_col = c
+                                break
 
-                    if _prob_col:
-                        top_pick = result.sort_values(_prob_col, ascending=False).head(1)
-                        for _, row in top_pick.iterrows():
-                            records.append({
-                                "date": date.strftime("%Y-%m-%d"),
-                                "race": int(race_no),
-                                "venue": _venue,
-                                "horse_no": str(row.get('馬號', '')),
-                                "horse_name": row.get('馬名', ''),
-                                "odds": float(row.get('賠率', 0)) if pd.notna(row.get('賠率')) else 0,
-                                "value_rate": float(row.get('值博率', 0)) if pd.notna(row.get('值博率')) else 0,
-                                "bet_amount": 100.0,
-                                "settled": False,
-                                "source": "prediction"
-                            })
+                        if _prob_col:
+                            top_pick = result.sort_values(_prob_col, ascending=False).head(1)
+                            for _, row in top_pick.iterrows():
+                                records.append({
+                                    "date": date.strftime("%Y-%m-%d"),
+                                    "race": int(race_no),
+                                    "venue": _venue,
+                                    "horse_no": str(row.get('馬號', '')),
+                                    "horse_name": row.get('馬名', ''),
+                                    "odds": float(row.get('賠率', 0)) if pd.notna(row.get('賠率')) else 0,
+                                    "value_rate": float(row.get('值博率', 0)) if pd.notna(row.get('值博率')) else 0,
+                                    "bet_amount": 100.0,
+                                    "settled": False,
+                                    "source": "prediction"
+                                })
 
-                    # 策略 2：值博率推薦
-                    if '值博率' in result.columns and '賠率' in result.columns:
-                        value_picks = result[
-                            (result['值博率'] > 0.15) &
-                            (result['賠率'] >= 3.0) &
-                            (result['賠率'] <= 25.0)
-                        ]
-                        for _, row in value_picks.iterrows():
-                            records.append({
-                                "date": date.strftime("%Y-%m-%d"),
-                                "race": int(race_no),
-                                "venue": _venue,
-                                "horse_no": str(row.get('馬號', '')),
-                                "horse_name": row.get('馬名', ''),
-                                "odds": float(row.get('賠率', 0)),
-                                "value_rate": float(row.get('值博率', 0)),
-                                "bet_amount": 100.0,
-                                "settled": False,
-                                "source": "value_bet"
-                            })
+                        # 策略 2：值博率推薦
+                        if '值博率' in result.columns and '賠率' in result.columns:
+                            value_picks = result[
+                                (result['值博率'] > 0.15) &
+                                (result['賠率'] >= 3.0) &
+                                (result['賠率'] <= 25.0)
+                            ]
+                            for _, row in value_picks.iterrows():
+                                records.append({
+                                    "date": date.strftime("%Y-%m-%d"),
+                                    "race": int(race_no),
+                                    "venue": _venue,
+                                    "horse_no": str(row.get('馬號', '')),
+                                    "horse_name": row.get('馬名', ''),
+                                    "odds": float(row.get('賠率', 0)),
+                                    "value_rate": float(row.get('值博率', 0)),
+                                    "bet_amount": 100.0,
+                                    "settled": False,
+                                    "source": "value_bet"
+                                })
 
-                    if records:
-                        headers = {
-                            "apikey": SUPABASE_KEY,
-                            "Authorization": f"Bearer {SUPABASE_KEY}",
-                            "Content-Type": "application/json",
-                            "Prefer": "return=minimal"
-                        }
-                        requests.post(
-                            f"{SUPABASE_URL}/rest/v1/paper_trades",
-                            headers=headers,
-                            json=records
-                        )
-                        st.toast(f"📝 已自動記錄 {len(records)} 筆紙上投注！")
-                except Exception as e:
-                    st.warning(f"⚠️ 單場紙上回測記錄失敗：{e}")
-
+                        # 先刪除舊記錄，再寫入最新（只有 Admin 先會執行呢步）
+                        if records:
+                            headers = {
+                                "apikey": SUPABASE_KEY,
+                                "Authorization": f"Bearer {SUPABASE_KEY}",
+                                "Content-Type": "application/json"
+                            }
+                            _date_str = date.strftime("%Y-%m-%d")
+                            delete_url = f"{SUPABASE_URL}/rest/v1/paper_trades?date=eq.{_date_str}&race=eq.{int(race_no)}"
+                            requests.delete(delete_url, headers=headers)
+                            
+                            headers["Prefer"] = "return=minimal"
+                            requests.post(
+                                f"{SUPABASE_URL}/rest/v1/paper_trades",
+                                headers=headers,
+                                json=records
+                            )
+                            st.toast(f"📝 已自動記錄 {len(records)} 筆紙上投注！")
+                    except Exception as e:
+                        st.warning(f"⚠️ 單場紙上回測記錄失敗：{e}")
     if 'last_prediction' in st.session_state and st.session_state['last_prediction'] is not None:
         st.success("✅ 預測完成！")
         if st.session_state.get('last_pool'):
