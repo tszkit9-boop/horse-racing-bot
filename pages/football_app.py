@@ -148,6 +148,7 @@ if analyze_btn:
             st.dataframe(df_ht, hide_index=True, use_container_width=True)
             
         with col_ht3:
+        with col_ht3:
             st.write("**半全場 Top 2**")
             htft = {}
             for i in range(max_goals+1):
@@ -161,4 +162,16 @@ if analyze_btn:
             htft_sorted = sorted(htft.items(), key=lambda x: x[1], reverse=True)
             df_htft = pd.DataFrame(htft_sorted[:2], columns=["組合", "概率"])
             df_htft["概率"] = df_htft["概率"].apply(lambda x: f"{x:.2%}")
+            
+            # ==========================================
+            # 新增：將英文 H/D/A 替換為中文
+            # ==========================================
+            ht_ft_mapping = {
+                "H-H": "主-主", "H-D": "主-和", "H-A": "主-客",
+                "D-H": "和-主", "D-D": "和-和", "D-A": "和-客",
+                "A-H": "客-主", "A-D": "客-和", "A-A": "客-客"
+            }
+            df_htft["組合"] = df_htft["組合"].replace(ht_ft_mapping)
+            # ==========================================
+            
             st.dataframe(df_htft, hide_index=True, use_container_width=True)
