@@ -15,7 +15,7 @@ st.set_page_config(page_title="一鍵貼上預測", page_icon="⚽", layout="wid
 col_nav1, col_nav2 = st.columns([8, 2])
 
 with col_nav1:
-    st.title("⚽ 一鍵貼上賠率預測 (終極版)")
+    st.title("⚽ 足球預測")
 
 with col_nav2:
     st.write("") # 對齊高度用
