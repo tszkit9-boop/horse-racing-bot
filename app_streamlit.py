@@ -5448,7 +5448,7 @@ def main():
                     all_results = {}
                     _total_recorded = 0
 
-                     for i, rn in enumerate(day_races):
+                    for i, rn in enumerate(day_races):
                         status.text(f"⏳ 預測第 {rn} 場中...（{i+1}/{len(day_races)}）")
                         try:
                             result, pool = run_prediction(date_str, int(rn))
@@ -5456,7 +5456,7 @@ def main():
                                 all_results[int(rn)] = result
                                 success_count += 1
 
-                                # 🆕 只有 Admin 先可以寫入紙上回測，防止普通用戶搞亂數據
+                                # 🆕 只有 Admin 先可以寫入紙上回測
                                 if st.session_state.get('role') in ['admin', 'super_admin'] or st.session_state.get('user_group') in ['admin', 'super_admin']:
                                     try:
                                         _venue = "HV" if pd.to_datetime(date_str).weekday() == 2 else "ST"
@@ -5464,7 +5464,6 @@ def main():
 
                                         # ===== 策略 1：模型預測首選 =====
                                         try:
-                                            # result 已經喺 run_prediction 入面按贏出概率排好序，直接拎第一行
                                             top_pick = result.head(1)
                                             for _, row in top_pick.iterrows():
                                                 records.append({
@@ -5526,50 +5525,6 @@ def main():
                             fail_count += 1
                         progress.progress((i + 1) / len(day_races))
 
-                                        # ===== 策略 2：值博率推薦 =====
-                                        if '值博率' in result.columns and '賠率' in result.columns:
-                                            value_picks = result[
-                                                (result['值博率'] > 0.15) &
-                                                (result['賠率'] >= 3.0) &
-                                                (result['賠率'] <= 25.0)
-                                            ]
-                                            for _, row in value_picks.iterrows():
-                                                records.append({
-                                                    "date": date_str,
-                                                    "race": int(rn),
-                                                    "venue": _venue,
-                                                    "horse_no": str(row.get('馬號', '')),
-                                                    "horse_name": row.get('馬名', ''),
-                                                    "odds": float(row.get('賠率', 0)),
-                                                    "value_rate": float(row.get('值博率', 0)),
-                                                    "bet_amount": 100.0,
-                                                    "settled": False,
-                                                    "source": "value_bet"
-                                                })
-
-                                    # ===== 寫入 Supabase =====
-                                    if records:
-                                        headers = {
-                                            "apikey": SUPABASE_KEY,
-                                            "Authorization": f"Bearer {SUPABASE_KEY}",
-                                            "Content-Type": "application/json",
-                                            "Prefer": "return=minimal"
-                                        }
-                                        requests.post(
-                                            f"{SUPABASE_URL}/rest/v1/paper_trades",
-                                            headers=headers,
-                                            json=records
-                                        )
-                                        _total_recorded += len(records)
-                                except Exception as e:
-                                    st.warning(f"⚠️ 第 {rn} 場記錄失敗：{e}")
-
-                            else:
-                                fail_count += 1
-                        except Exception as e:
-                            fail_count += 1
-                        progress.progress((i + 1) / len(day_races))
-
                     status.text("✅ 完成！")
                     st.success(f"✅ 成功 {success_count} 場，失敗 {fail_count} 場")
                     if _total_recorded > 0:
@@ -5578,7 +5533,7 @@ def main():
                     st.session_state['batch_all_results'] = all_results
                     st.session_state['batch_date_str'] = date_str
             except Exception as e:
-                st.error(f"執行失敗：{e}")      
+                st.error(f"執行失敗：{e}")    
 # ===== 讀取 session_state 嘅結果 =====
         all_results = st.session_state.get('batch_all_results', {})
         date_str_saved = st.session_state.get('batch_date_str', '')
