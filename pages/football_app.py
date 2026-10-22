@@ -23,16 +23,6 @@ with col_nav2:
     # 改用 st.button 配合 st.switch_page，排版最靚而且唔會彈登入
     if st.button("🏇 前往賽馬預測", use_container_width=True, key="go_horse_btn"):
         st.switch_page("app_streamlit.py")
-
-st.markdown("請直接將馬會嘅賽事及賠率 **Copy & Paste** 落下面，系統會自動分析！")
-
-# ==========================================
-# 下面繼續你原本嘅輸入區...
-# ==========================================
-# with st.container(border=True):
-# ...
-st.markdown("請直接將馬會嘅賽事及賠率 **Copy & Paste** 落下面，系統會自動分析！")
-
 # ==========================================
 # 輸入區
 # ==========================================
