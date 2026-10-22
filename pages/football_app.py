@@ -4,6 +4,7 @@ import numpy as np
 import re
 import os
 from scipy.stats import poisson
+from supabase import create_client, Client
 
 # ==========================================
 # 頁面設定
@@ -11,73 +12,52 @@ from scipy.stats import poisson
 st.set_page_config(page_title="一鍵貼上預測", page_icon="⚽", layout="wide")
 
 # ==========================================
-# 🎨 全局美化 CSS (卡片、按鈕、輸入框)
+# ☁️ 連接 Supabase (請填入你真實嘅 URL 同 Key)
+# ==========================================
+SUPABASE_URL = "YOUR_SUPABASE_URL"
+SUPABASE_KEY = "YOUR_SUPABASE_KEY"
+try:
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+except:
+    st.error("⚠️ Supabase 連接失敗，請檢查 URL 同 Key 是否正確。")
+
+# ==========================================
+# 🎨 全局美化 CSS
 # ==========================================
 st.markdown("""
 <style>
-/* 整體背景稍微調亮 */
-.stApp {
-    background-color: #f8f9fa;
-}
-
-/* 讓輸入框變靚：加大、加圓角、加陰影 */
+.stApp { background-color: #f8f9fa; }
 .stTextArea textarea {
-    font-size: 16px !important;
-    border-radius: 10px !important;
-    border: 2px solid #e0e0e0 !important;
-    padding: 15px !important;
-    background-color: #ffffff !important;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.05) !important;
+    font-size: 16px !important; border-radius: 10px !important;
+    border: 2px solid #e0e0e0 !important; padding: 15px !important;
+    background-color: #ffffff !important; box-shadow: 0 4px 6px rgba(0,0,0,0.05) !important;
 }
 .stTextArea textarea:focus {
-    border-color: #1f77b4 !important;
-    box-shadow: 0 4px 12px rgba(31,119,180,0.2) !important;
+    border-color: #1f77b4 !important; box-shadow: 0 4px 12px rgba(31,119,180,0.2) !important;
 }
-
-/* 美化按鈕 (主按鈕加漸變色) */
 .stButton button {
     background: linear-gradient(135deg, #1f77b4 0%, #2b5c8f 100%) !important;
-    color: white !important;
-    border-radius: 8px !important;
-    font-weight: bold !important;
-    font-size: 16px !important;
-    padding: 10px 24px !important;
-    border: none !important;
+    color: white !important; border-radius: 8px !important;
+    font-weight: bold !important; font-size: 16px !important;
+    padding: 10px 24px !important; border: none !important;
     transition: all 0.3s ease !important;
 }
 .stButton button:hover {
-    transform: translateY(-2px) !important;
-    box-shadow: 0 5px 15px rgba(31,119,180,0.4) !important;
+    transform: translateY(-2px) !important; box-shadow: 0 5px 15px rgba(31,119,180,0.4) !important;
 }
-
-/* 卡片化容器 (用於包住結果) */
 div[data-testid="stVerticalBlockBorderWrapper"] {
-    background-color: #ffffff !important;
-    border-radius: 12px !important;
-    box-shadow: 0 6px 16px rgba(0,0,0,0.06) !important;
-    padding: 20px !important;
-    margin-bottom: 20px !important;
-    border: 1px solid #f0f0f0 !important;
+    background-color: #ffffff !important; border-radius: 12px !important;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.06) !important; padding: 20px !important;
+    margin-bottom: 20px !important; border: 1px solid #f0f0f0 !important;
 }
-
-/* Metric 字體加大 */
 div[data-testid="stMetricValue"] {
-    font-size: 28px !important;
-    font-weight: bold !important;
-    color: #2c3e50 !important;
-}
-
-/* 表格美化 */
-div[data-testid="stDataFrame"] {
-    border-radius: 8px !important;
-    overflow: hidden !important;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.05) !important;
+    font-size: 28px !important; font-weight: bold !important; color: #2c3e50 !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 頂部導航 (左邊標題，右邊按鈕)
+# 頂部導航
 # ==========================================
 col_nav1, col_nav2, col_nav3, col_nav4, col_nav5 = st.columns([5, 1, 1, 1.2, 1])
 
@@ -101,7 +81,23 @@ with col_nav4:
         with st.popover("👤 個人中心", use_container_width=True):
             st.markdown(f"### 👤 {username}")
             st.markdown(f"**級別**：{group.upper()}　|　**等級**：{level}")
-            st.info("💡 如需查看完整記錄，請點擊「前往賽馬」返回主頁。")
+            st.divider()
+            
+            # --- 足球預測記錄 (從 Supabase 讀取) ---
+            st.markdown("#### ⚽ 足球預測記錄 (最近10場)")
+            try:
+                response = supabase.table("football_predictions").select("*").eq("username", username).order("created_at", desc=True).limit(10).execute()
+                records = response.data
+                
+                if records:
+                    df_rec = pd.DataFrame(records)
+                    df_show = df_rec[['match_date', 'home_team', 'away_team', 'predicted_result']].copy()
+                    df_show.columns = ['日期', '主隊', '客隊', '預測賽果']
+                    st.dataframe(df_show, use_container_width=True, hide_index=True)
+                else:
+                    st.info("📭 暫無足球預測記錄")
+            except Exception as e:
+                st.warning("未能讀取記錄，請確保 Supabase 已建立 Table。")
 
 with col_nav5:
     if st.session_state.get('logged_in', False):
@@ -116,9 +112,7 @@ with col_nav5:
 # ==========================================
 with st.container(border=True):
     st.subheader("📋 請貼上賽事資料")
-    st.markdown("""
-    <span style='color: #666; font-size: 14px;'>支援任何格式（打直、打橫、連埋一齊都得），直接喺馬會 Copy 一大段掟落嚟：</span>
-    """, unsafe_allow_html=True)
+    st.markdown("<span style='color: #666; font-size: 14px;'>支援任何格式（打直、打橫、連埋一齊都得），直接喺馬會 Copy 一大段掟落嚟：</span>", unsafe_allow_html=True)
     
     default_text = """法國 比利時 1.32 4.60 6.20
 意大利 土耳其 1.25 5.00 7.50"""
@@ -144,7 +138,6 @@ if analyze_btn:
         
     st.success(f"✅ 成功解析並預測 {len(matches)} 場賽事！")
     
-    # 逐場顯示預測
     for match in matches:
         home_team, away_team, odds_h_str, odds_d_str, odds_a_str = match
         
@@ -155,13 +148,13 @@ if analyze_btn:
         odds_d = float(odds_d_str)
         odds_a = float(odds_a_str)
         
-        # 1. 計算隱含概率
+        # 1. 計算市場隱含概率
         imp_h, imp_d, imp_a = 1/odds_h, 1/odds_d, 1/odds_a
         total = imp_h + imp_d + imp_a
         prob_h, prob_d, prob_a = imp_h/total, imp_d/total, imp_a/total
 
         # ==========================================
-        # 🚀 Level 1 升級：讀取基本面數據 (team_stats_summary.csv)
+        # 🚀 Level 1：讀取基本面數據
         # ==========================================
         home_avg = None
         away_avg = None
@@ -169,32 +162,20 @@ if analyze_btn:
         if os.path.exists("team_stats_summary.csv"):
             try:
                 df_stats = pd.read_csv("team_stats_summary.csv")
-                
-                # 🔄 中文隊名轉英文隊名對照表 (請自行按需要增加)
                 team_mapping = {
-                    "曼聯": "Man United", "曼城": "Man City",
-                    "利物浦": "Liverpool", "阿仙奴": "Arsenal",
-                    "車路士": "Chelsea", "熱刺": "Tottenham",
-                    "愛華頓": "Everton", "紐卡素": "Newcastle",
-                    "李斯特城": "Leicester", "韋斯咸": "West Ham",
-                    "水晶宮": "Crystal Palace", "修咸頓": "Southampton",
-                    "般尼": "Burnley", "屈福特": "Watford",
-                    "般尼茅夫": "Bournemouth", "諾域治": "Norwich",
-                    "史雲斯": "Swansea", "史篤城": "Stoke",
-                    "西布朗": "West Brom", "新特蘭": "Sunderland",
-                    "阿士東維拉": "Aston Villa",
-                    "皇家馬德里": "Real Madrid", "巴塞隆拿": "Barcelona",
-                    "拜仁慕尼黑": "Bayern Munich", "祖雲達斯": "Juventus",
-                    "巴黎聖日耳門": "Paris SG", "多蒙特": "Dortmund",
-                    "法國": "France", "比利時": "Belgium",
-                    "意大利": "Italy", "土耳其": "Turkey"
+                    "曼聯": "Man United", "曼城": "Man City", "利物浦": "Liverpool", "阿仙奴": "Arsenal",
+                    "車路士": "Chelsea", "熱刺": "Tottenham", "愛華頓": "Everton", "紐卡素": "Newcastle",
+                    "李斯特城": "Leicester", "韋斯咸": "West Ham", "水晶宮": "Crystal Palace", "修咸頓": "Southampton",
+                    "般尼": "Burnley", "屈福特": "Watford", "般尼茅夫": "Bournemouth", "諾域治": "Norwich",
+                    "史雲斯": "Swansea", "史篤城": "Stoke", "西布朗": "West Brom", "新特蘭": "Sunderland",
+                    "阿士東維拉": "Aston Villa", "皇家馬德里": "Real Madrid", "巴塞隆拿": "Barcelona",
+                    "拜仁慕尼黑": "Bayern Munich", "祖雲達斯": "Juventus", "巴黎聖日耳門": "Paris SG",
+                    "多蒙特": "Dortmund", "法國": "France", "比利時": "Belgium", "意大利": "Italy", "土耳其": "Turkey"
                 }
                 
-                # 將輸入嘅中文轉做英文，如果冇喺字典入面就用返原本個名
                 eng_home = team_mapping.get(home_team, home_team)
                 eng_away = team_mapping.get(away_team, away_team)
                 
-                # 喺 CSV 入面搵隊名 (忽略大小寫)
                 h_row = df_stats[df_stats['Team'].str.lower() == eng_home.lower()]
                 a_row = df_stats[df_stats['Team'].str.lower() == eng_away.lower()]
                 
@@ -205,23 +186,18 @@ if analyze_btn:
                     a_attack = a_row['AvgScored'].values[0]
                     a_defense = a_row['AvgConceded'].values[0]
                     
-                    # 泊松分佈入球期望值公式
                     home_avg = (h_attack * a_defense) / league_avg
                     away_avg = (a_attack * h_defense) / league_avg
                     
                     st.info(f"📊 **已載入基本面數據**：{eng_home} 場均入球 {h_attack:.2f} / 失球 {h_defense:.2f}；{eng_away} 場均入球 {a_attack:.2f} / 失球 {a_defense:.2f}")
                 else:
-                    st.warning(f"⚠️ 喺數據庫搵唔到隊名 ({eng_home} vs {eng_away})，改用賠率反推。")
-                    
+                    st.warning(f"⚠️ 數據庫搵唔到隊名 ({eng_home} vs {eng_away})，改用賠率反推。")
             except Exception as e:
-                st.warning(f"讀取 CSV 數據出錯：{e}")
+                pass
 
-        # 如果搵唔到隊名，或者冇 CSV，退返用賠率反推
         if not home_avg or not away_avg:
             home_avg = prob_h * 2.5 + 0.1
             away_avg = prob_a * 2.5 + 0.1
-            if not os.path.exists("team_stats_summary.csv"):
-                st.warning("⚠️ 未上傳 CSV 數據庫，改用賠率反推估算。")
 
         # 3. 建立全場泊松矩陣
         max_goals = 6
@@ -230,29 +206,78 @@ if analyze_btn:
             for j in range(max_goals+1):
                 matrix[i, j] = poisson.pmf(i, home_avg) * poisson.pmf(j, away_avg)
 
-        # 用外框包住每場賽事，變成獨立卡片
+        # 計算模型概率
+        model_prob_h = sum(matrix[i][j] for i in range(max_goals+1) for j in range(max_goals+1) if i > j)
+        model_prob_d = sum(matrix[i][j] for i in range(max_goals+1) for j in range(max_goals+1) if i == j)
+        model_prob_a = sum(matrix[i][j] for i in range(max_goals+1) for j in range(max_goals+1) if i < j)
+
+        # 用外框包住每場賽事
         with st.container(border=True):
             st.header(f"🏆 {home_team} vs {away_team}")
             
-            # --- 主客和及 EV 分析 ---
-            res1, res2, res3 = st.columns(3)
-            res1.metric(f"主勝 ({home_team})", f"{prob_h:.2%}", f"賠率: {odds_h}")
-            res2.metric("和局", f"{prob_d:.2%}", f"賠率: {odds_d}")
-            res3.metric(f"客勝 ({away_team})", f"{prob_a:.2%}", f"賠率: {odds_a}")
+            # ==========================================
+            # 🚀 Level 2 升級：市場 vs 模型概率
+            # ==========================================
+            st.markdown("### 📊 市場賠率 vs 模型預測 (雙軌對比)")
+            col_cmp1, col_cmp2, col_cmp3 = st.columns(3)
+            
+            with col_cmp1:
+                st.metric("主勝 (市場)", f"{prob_h:.2%}", f"賠率: {odds_h}")
+                st.metric("主勝 (模型)", f"{model_prob_h:.2%}", delta=f"{(model_prob_h - prob_h):+.2%}", delta_color="normal")
+            with col_cmp2:
+                st.metric("和局 (市場)", f"{prob_d:.2%}", f"賠率: {odds_d}")
+                st.metric("和局 (模型)", f"{model_prob_d:.2%}", delta=f"{(model_prob_d - prob_d):+.2%}", delta_color="normal")
+            with col_cmp3:
+                st.metric("客勝 (市場)", f"{prob_a:.2%}", f"賠率: {odds_a}")
+                st.metric("客勝 (模型)", f"{model_prob_a:.2%}", delta=f"{(model_prob_a - prob_a):+.2%}", delta_color="normal")
+
+            # ==========================================
+            # 📥 新增：保存預測至 Supabase
+            # ==========================================
+            col_save1, col_save2 = st.columns([1, 4])
+            with col_save1:
+                if st.button("📥 保存此預測", key=f"save_{home_team}_{away_team}"):
+                    if st.session_state.get('logged_in', False):
+                        username = st.session_state.get('username', 'unknown')
+                        max_prob = max(model_prob_h, model_prob_d, model_prob_a)
+                        if max_prob == model_prob_h:
+                            pred_res = "主勝"
+                        elif max_prob == model_prob_d:
+                            pred_res = "和局"
+                        else:
+                            pred_res = "客勝"
+                            
+                        data = {
+                            "username": username,
+                            "match_date": pd.Timestamp.now().strftime('%Y-%m-%d'),
+                            "home_team": home_team, "away_team": away_team,
+                            "odds_h": odds_h, "odds_d": odds_d, "odds_a": odds_a,
+                            "prob_h": round(prob_h, 4), "prob_d": round(prob_d, 4), "prob_a": round(prob_a, 4),
+                            "model_prob_h": round(model_prob_h, 4), "model_prob_d": round(model_prob_d, 4), "model_prob_a": round(model_prob_a, 4),
+                            "predicted_result": pred_res, "bet_type": "主客和"
+                        }
+                        try:
+                            supabase.table("football_predictions").insert(data).execute()
+                            st.success("✅ 已成功保存至雲端！")
+                        except Exception as e:
+                            st.error(f"❌ 保存失敗：{e}")
+                    else:
+                        st.warning("⚠️ 請先登入！")
 
             # --- EV & 凱利 ---
-            ev_h = (prob_h * odds_h) - 1
-            ev_d = (prob_d * odds_d) - 1
-            ev_a = (prob_a * odds_a) - 1
+            ev_h = (model_prob_h * odds_h) - 1
+            ev_d = (model_prob_d * odds_d) - 1
+            ev_a = (model_prob_a * odds_a) - 1
             
-            kelly_h = (prob_h * odds_h - 1) / (odds_h - 1) if odds_h > 1 else 0
-            kelly_d = (prob_d * odds_d - 1) / (odds_d - 1) if odds_d > 1 else 0
-            kelly_a = (prob_a * odds_a - 1) / (odds_a - 1) if odds_a > 1 else 0
+            kelly_h = (model_prob_h * odds_h - 1) / (odds_h - 1) if odds_h > 1 else 0
+            kelly_d = (model_prob_d * odds_d - 1) / (odds_d - 1) if odds_d > 1 else 0
+            kelly_a = (model_prob_a * odds_a - 1) / (odds_a - 1) if odds_a > 1 else 0
 
-            with st.expander("💰 展開查看：投注價值 (EV) 及 凱利建議注碼", expanded=False):
+            with st.expander("💰 展開查看：基於模型概率嘅投注價值 (EV) 及 凱利建議注碼", expanded=False):
                 ev_data = {
                     "選項": [f"主勝 ({home_team})", "和局", f"客勝 ({away_team})"],
-                    "預測概率": [f"{prob_h:.2%}", f"{prob_d:.2%}", f"{prob_a:.2%}"],
+                    "市場概率": [f"{prob_h:.2%}", f"{prob_d:.2%}", f"{prob_a:.2%}"],
+                    "模型概率": [f"{model_prob_h:.2%}", f"{model_prob_d:.2%}", f"{model_prob_a:.2%}"],
                     "EV (期望值)": [f"{ev_h:+.2f}", f"{ev_d:+.2f}", f"{ev_a:+.2f}"],
                     "凱利建議注碼": [f"{max(0, kelly_h)*100:.1f}%", f"{max(0, kelly_d)*100:.1f}%", f"{max(0, kelly_a)*100:.1f}%"]
                 }
@@ -282,7 +307,7 @@ if analyze_btn:
 
             st.divider()
 
-            # --- 半場及半全場分析 ---
+            # --- 半場及半全場 ---
             st.write("⏱️ **半場及半全場預測 (按全場45%估算)**")
             
             ht_home_avg = home_avg * 0.45
@@ -326,15 +351,12 @@ if analyze_btn:
                 df_htft = pd.DataFrame(htft_sorted[:2], columns=["組合", "概率"])
                 df_htft["概率"] = df_htft["概率"].apply(lambda x: f"{x:.2%}")
                 
-                # 將英文 H/D/A 替換為中文
                 ht_ft_mapping = {
                     "H-H": "主-主", "H-D": "主-和", "H-A": "主-客",
                     "D-H": "和-主", "D-D": "和-和", "D-A": "和-客",
                     "A-H": "客-主", "A-D": "客-和", "A-A": "客-客"
                 }
                 df_htft["組合"] = df_htft["組合"].replace(ht_ft_mapping)
-                
                 st.dataframe(df_htft, hide_index=True, use_container_width=True)
 
-        # 每場賽事之間加少少空行
         st.write("")
