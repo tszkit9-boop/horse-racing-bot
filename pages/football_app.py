@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import requests
 from scipy.stats import poisson
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 st.set_page_config(page_title="全自動足球預測", page_icon="⚽", layout="centered")
 st.title("⚽ 馬會熱門賽事預測")
@@ -37,12 +37,24 @@ except:
     st.stop()
 
 # ==========================================
-# 1. 選擇日期與過濾設定
+# 1. 選擇日期與過濾設定 (限制免費版日期範圍)
 # ==========================================
 with st.container(border=True):
+    st.markdown("⚠️ **注意：API 免費版只支援查詢最近 3 日嘅賽事。**")
     col1, col2 = st.columns(2)
+    
+    # 計算可用日期範圍 (今日 -3 日 到 今日 +3 日)
+    today_date = date.today()
+    min_date = today_date - timedelta(days=3)
+    max_date = today_date + timedelta(days=3)
+    
     with col1:
-        selected_date = st.date_input("📅 請選擇比賽日期", date.today())
+        selected_date = st.date_input(
+            "📅 請選擇比賽日期", 
+            value=today_date,
+            min_value=min_date,
+            max_value=max_date
+        )
     with col2:
         show_all = st.checkbox("顯示所有賽事 (包括冷門/青年軍)", value=False)
     
@@ -53,7 +65,6 @@ def get_fixtures(query_date, fetch_all):
     headers = {'x-rapidapi-key': API_KEY, 'x-rapidapi-host': 'v3.football.api-sports.io'}
     url = f"https://v3.football.api-sports.io/fixtures?date={query_date}"
     
-    # 馬會常見聯賽關鍵字 (白名單)
     allowed_keywords = [
         "Premier League", "La Liga", "Serie A", "Bundesliga", "Ligue 1", 
         "Champions League", "Europa League", "Conference League",
@@ -61,17 +72,15 @@ def get_fixtures(query_date, fetch_all):
         "Championship", "Eredivisie", "Primeira Liga", "FA Cup", "Carabao Cup"
     ]
     
-    # 黑名單 (如果唔係 Fetch All 就會過濾)
     block_keywords = ["Women", "W ", "U19", "U20", "U21", "Reserve", "Youth", "Friendly", "Club Friendlies"]
 
     try:
         res = requests.get(url, headers=headers)
         data = res.json()
         
-        # 檢查 API 錯誤 (例如額度用完)
         if data.get('errors'):
             error_msg = str(data['errors'])
-            return {"error": f"API 錯誤 (可能係免費額度用完): {error_msg}"}
+            return {"error": f"API 錯誤: {error_msg}"}
             
         matches = []
         if 'response' in data:
@@ -81,9 +90,6 @@ def get_fixtures(query_date, fetch_all):
                 if not fetch_all:
                     is_blocked = any(bk.lower() in league_name.lower() for bk in block_keywords)
                     if is_blocked: continue
-                    
-                    is_allowed = any(ak.lower() in league_name.lower() for ak in allowed_keywords)
-                    # 放寬少少，非黑名單都照出
                 
                 h_eng = m['teams']['home']['name']
                 a_eng = m['teams']['away']['name']
