@@ -5123,12 +5123,9 @@ def main():
             st.switch_page("pages/FAQ.py")
             
     with c4:
-        # ==========================================
-        # 新增：前往足球預測的按鈕
-        # ==========================================
-        st.write("") # 加點空行，令按鈕同其他掣對齊
-        st.page_link("pages/football_app.py", label="前往足球", icon="⚽", use_container_width=True)
-
+        st.write("") # 保持同其他掣嘅高度對齊
+        if st.button("⚽ 前往足球", use_container_width=True, key="go_football_btn"):
+            st.switch_page("pages/football_app.py")
     with c5:
         if st.session_state.get('logged_in', False):
             username = st.session_state.username
