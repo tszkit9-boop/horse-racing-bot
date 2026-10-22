@@ -5526,26 +5526,26 @@ def main():
                             fail_count += 1
                         progress.progress((i + 1) / len(day_races))
 
-                                    # ===== 策略 2：值博率推薦 =====
-                                    if '值博率' in result.columns and '賠率' in result.columns:
-                                        value_picks = result[
-                                            (result['值博率'] > 0.15) &
-                                            (result['賠率'] >= 3.0) &
-                                            (result['賠率'] <= 25.0)
-                                        ]
-                                        for _, row in value_picks.iterrows():
-                                            records.append({
-                                                "date": date_str,
-                                                "race": int(rn),
-                                                "venue": _venue,
-                                                "horse_no": str(row.get('馬號', '')),
-                                                "horse_name": row.get('馬名', ''),
-                                                "odds": float(row.get('賠率', 0)),
-                                                "value_rate": float(row.get('值博率', 0)),
-                                                "bet_amount": 100.0,
-                                                "settled": False,
-                                                "source": "value_bet"
-                                            })
+                                        # ===== 策略 2：值博率推薦 =====
+                                        if '值博率' in result.columns and '賠率' in result.columns:
+                                            value_picks = result[
+                                                (result['值博率'] > 0.15) &
+                                                (result['賠率'] >= 3.0) &
+                                                (result['賠率'] <= 25.0)
+                                            ]
+                                            for _, row in value_picks.iterrows():
+                                                records.append({
+                                                    "date": date_str,
+                                                    "race": int(rn),
+                                                    "venue": _venue,
+                                                    "horse_no": str(row.get('馬號', '')),
+                                                    "horse_name": row.get('馬名', ''),
+                                                    "odds": float(row.get('賠率', 0)),
+                                                    "value_rate": float(row.get('值博率', 0)),
+                                                    "bet_amount": 100.0,
+                                                    "settled": False,
+                                                    "source": "value_bet"
+                                                })
 
                                     # ===== 寫入 Supabase =====
                                     if records:
