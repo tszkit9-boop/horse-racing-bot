@@ -21,7 +21,7 @@ with col_nav2:
     st.write("") # 加點空行讓按鈕同標題水平對齊
     st.write("")
     # 前往賽馬主頁的按鈕 (指向 app_streamlit.py)
-    st.page_link("app_streamlit.py", label="前往賽馬預測", icon="🏇")
+st.page_link("app_streamlit.py", label="前往賽馬預測", icon="🏇")
 
 st.markdown("請直接將馬會嘅賽事及賠率 **Copy & Paste** 落下面，系統會自動分析！")
 
