@@ -20,8 +20,7 @@ TEAM_NAMES = {
     "Newcastle": "紐卡素", "Aston Villa": "阿士東維拉",
     "Real Madrid": "皇家馬德里", "Barcelona": "巴塞隆拿", "Atletico Madrid": "馬德里體育會",
     "Kashima Antlers": "鹿島鹿角", "Gamba Osaka": "大阪飛腳", "Urawa Reds": "浦和紅鑽",
-    "Yokohama F. Marinos": "橫濱水手", "Vissel Kobe": "神戶勝利船", "Kawasaki Frontale": "川崎前鋒",
-    "W": "女足", "U21": "U21", "U20": "U20", "U19": "U19"
+    "W": "女足", "U21": "U21", "U20": "U20", "U19": "U19", "U17": "U17"
 }
 
 def translate_team(name):
@@ -38,15 +37,19 @@ except:
     st.stop()
 
 # ==========================================
-# 1. 選擇日期並自動抓取賽事 (加入馬會熱門過濾)
+# 1. 選擇日期與過濾設定
 # ==========================================
 with st.container(border=True):
-    st.subheader("📅 請選擇比賽日期")
-    selected_date = st.date_input("日期", date.today())
+    col1, col2 = st.columns(2)
+    with col1:
+        selected_date = st.date_input("📅 請選擇比賽日期", date.today())
+    with col2:
+        show_all = st.checkbox("顯示所有賽事 (包括冷門/青年軍)", value=False)
+    
     date_str = selected_date.strftime('%Y-%m-%d')
 
 @st.cache_data(ttl=3600)
-def get_hkjc_fixtures(query_date):
+def get_fixtures(query_date, fetch_all):
     headers = {'x-rapidapi-key': API_KEY, 'x-rapidapi-host': 'v3.football.api-sports.io'}
     url = f"https://v3.football.api-sports.io/fixtures?date={query_date}"
     
@@ -58,27 +61,29 @@ def get_hkjc_fixtures(query_date):
         "Championship", "Eredivisie", "Primeira Liga", "FA Cup", "Carabao Cup"
     ]
     
-    # 唔要嘅冷門字眼 (黑名單)
+    # 黑名單 (如果唔係 Fetch All 就會過濾)
     block_keywords = ["Women", "W ", "U19", "U20", "U21", "Reserve", "Youth", "Friendly", "Club Friendlies"]
 
     try:
         res = requests.get(url, headers=headers)
         data = res.json()
+        
+        # 檢查 API 錯誤 (例如額度用完)
+        if data.get('errors'):
+            error_msg = str(data['errors'])
+            return {"error": f"API 錯誤 (可能係免費額度用完): {error_msg}"}
+            
         matches = []
         if 'response' in data:
             for m in data['response']:
                 league_name = m['league']['name']
                 
-                # 檢查係咪黑名單
-                is_blocked = any(bk.lower() in league_name.lower() for bk in block_keywords)
-                if is_blocked:
-                    continue
+                if not fetch_all:
+                    is_blocked = any(bk.lower() in league_name.lower() for bk in block_keywords)
+                    if is_blocked: continue
                     
-                # 檢查係咪白名單 (如果係國際賽，通常有 World Cup 或 Nations 字眼)
-                is_allowed = any(ak.lower() in league_name.lower() for ak in allowed_keywords)
-                
-                # 如果你想嚴格啲，可以將 if not is_allowed: continue 解開註釋
-                # 但為咗確保下拉選單有嘢睇，我哋暫時保留熱門賽事，並加入聯賽名顯示
+                    is_allowed = any(ak.lower() in league_name.lower() for ak in allowed_keywords)
+                    # 放寬少少，非黑名單都照出
                 
                 h_eng = m['teams']['home']['name']
                 a_eng = m['teams']['away']['name']
@@ -86,24 +91,28 @@ def get_hkjc_fixtures(query_date):
                 a_zh = translate_team(a_eng)
                 fid = m['fixture']['id']
                 
-                # 顯示格式： [聯賽] 主隊 vs 客隊
                 display_name = f"[{league_name}] {h_zh} vs {a_zh}"
                 matches.append({"name": display_name, "id": fid, "home": h_zh, "away": a_zh})
                 
-        return matches
+        return {"matches": matches}
     except Exception as e:
-        return []
+        return {"error": f"連線失敗: {e}"}
 
-with st.spinner("正在篩選馬會熱門賽事..."):
-    today_matches = get_hkjc_fixtures(date_str)
+with st.spinner("正在讀取賽程..."):
+    result = get_fixtures(date_str, show_all)
+
+if "error" in result:
+    st.error(f"❌ {result['error']}")
+    st.stop()
+
+today_matches = result["matches"]
 
 if not today_matches:
-    st.error(f"❌ {date_str} 暫時沒有馬會熱門賽事數據。")
+    st.warning(f"⚠️ {date_str} 沒有符合條件的賽事。你可以剔上面個掣「顯示所有賽事」再試，或者換過另一日。")
     st.stop()
 
 match_options = {m['name']: m for m in today_matches}
-# 預設揀第一場
-selected_match_name = st.selectbox("👇 請選擇賽事 (已過濾冷門波)", list(match_options.keys()))
+selected_match_name = st.selectbox("👇 請選擇賽事", list(match_options.keys()))
 
 if st.button("🚀 立即預測", type="primary", use_container_width=True):
     match_info = match_options[selected_match_name]
@@ -113,7 +122,7 @@ if st.button("🚀 立即預測", type="primary", use_container_width=True):
 
     with st.spinner("正在抓取即時賠率..."):
         headers = {'x-rapidapi-key': API_KEY, 'x-rapidapi-host': 'v3.football.api-sports.io'}
-        odds_h, odds_d, odds_a = 2.00, 3.20, 3.50
+        odds_h, odds_d, odds_a = 2.00, 3.20, 3.50 
         
         try:
             odds_url = f"https://v3.football.api-sports.io/odds?fixture={fixture_id}&bookmaker=8"
@@ -135,7 +144,7 @@ if st.button("🚀 立即預測", type="primary", use_container_width=True):
         except:
             st.warning("⚠️ 暫未搵到即時賠率，使用預設賠率計算。")
 
-        # 泊松計算與顯示
+        # 泊松計算
         imp_h, imp_d, imp_a = 1/odds_h, 1/odds_d, 1/odds_a
         total = imp_h + imp_d + imp_a
         prob_h, prob_d, prob_a = imp_h/total, imp_d/total, imp_a/total
@@ -158,7 +167,6 @@ if st.button("🚀 立即預測", type="primary", use_container_width=True):
         res3.metric(f"客勝 ({real_away})", f"{prob_a:.2%}", f"賠率: {odds_a}")
 
         st.divider()
-
         st.subheader("🎯 波膽 Top 5")
         scores = [(f"{i}:{j}", matrix[i][j]) for i in range(max_goals+1) for j in range(max_goals+1)]
         scores.sort(key=lambda x: x[1], reverse=True)
