@@ -2,13 +2,16 @@
 streamlit
 pandas
 numpy
+scipy
 pytz
 plotly
 Pillow
 streamlit-autorefresh
+
 # ===== AI / 機器學習 =====
 scikit-learn
 xgboost
+lightgbm
 catboost
 
 # ===== 數據處理 =====
@@ -24,8 +27,6 @@ lxml
 # ===== 自動化 / 系統 =====
 python-dotenv
 
-# ===== 數據庫（可選） =====
-# supabase
-# psycopg2-binary
+# ===== 數據庫 =====
 supabase
 bcrypt
