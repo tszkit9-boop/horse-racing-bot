@@ -9,7 +9,7 @@ st.set_page_config(page_title="全自動足球預測", page_icon="⚽", layout="
 st.title("⚽ 馬會熱門賽事預測")
 
 # ==========================================
-# 0. 球隊英文轉中文對照表
+# 0. 球隊英文轉中文對照表 (可自行擴充)
 # ==========================================
 TEAM_NAMES = {
     "France": "法國", "Belgium": "比利時", "Italy": "意大利", "Turkey": "土耳其",
@@ -37,26 +37,20 @@ except:
     st.stop()
 
 # ==========================================
-# 1. 選擇日期與過濾設定 (限制免費版日期範圍)
+# 1. 選擇日期與過濾設定
 # ==========================================
 with st.container(border=True):
     st.markdown("⚠️ **注意：API 免費版只支援查詢最近 3 日嘅賽事。**")
     col1, col2 = st.columns(2)
     
-    # 計算可用日期範圍 (今日 -3 日 到 今日 +3 日)
     today_date = date.today()
     min_date = today_date - timedelta(days=3)
     max_date = today_date + timedelta(days=3)
     
     with col1:
-        selected_date = st.date_input(
-            "📅 請選擇比賽日期", 
-            value=today_date,
-            min_value=min_date,
-            max_value=max_date
-        )
+        selected_date = st.date_input("📅 請選擇比賽日期", value=today_date, min_value=min_date, max_value=max_date)
     with col2:
-        show_all = st.checkbox("顯示所有賽事 (包括冷門/青年軍)", value=False)
+        show_all = st.checkbox("顯示所有賽事 (包括冷門)", value=False)
     
     date_str = selected_date.strftime('%Y-%m-%d')
 
@@ -65,13 +59,6 @@ def get_fixtures(query_date, fetch_all):
     headers = {'x-rapidapi-key': API_KEY, 'x-rapidapi-host': 'v3.football.api-sports.io'}
     url = f"https://v3.football.api-sports.io/fixtures?date={query_date}"
     
-    allowed_keywords = [
-        "Premier League", "La Liga", "Serie A", "Bundesliga", "Ligue 1", 
-        "Champions League", "Europa League", "Conference League",
-        "J1", "K League", "World Cup", "Euro", "Copa", "Nations League", 
-        "Championship", "Eredivisie", "Primeira Liga", "FA Cup", "Carabao Cup"
-    ]
-    
     block_keywords = ["Women", "W ", "U19", "U20", "U21", "Reserve", "Youth", "Friendly", "Club Friendlies"]
 
     try:
@@ -79,8 +66,7 @@ def get_fixtures(query_date, fetch_all):
         data = res.json()
         
         if data.get('errors'):
-            error_msg = str(data['errors'])
-            return {"error": f"API 錯誤: {error_msg}"}
+            return {"error": f"API 錯誤: {data['errors']}"}
             
         matches = []
         if 'response' in data:
@@ -114,7 +100,7 @@ if "error" in result:
 today_matches = result["matches"]
 
 if not today_matches:
-    st.warning(f"⚠️ {date_str} 沒有符合條件的賽事。你可以剔上面個掣「顯示所有賽事」再試，或者換過另一日。")
+    st.warning(f"⚠️ {date_str} 沒有符合條件的賽事。你可以剔上面個掣「顯示所有賽事」再試。")
     st.stop()
 
 match_options = {m['name']: m for m in today_matches}
@@ -150,7 +136,6 @@ if st.button("🚀 立即預測", type="primary", use_container_width=True):
         except:
             st.warning("⚠️ 暫未搵到即時賠率，使用預設賠率計算。")
 
-        # 泊松計算
         imp_h, imp_d, imp_a = 1/odds_h, 1/odds_d, 1/odds_a
         total = imp_h + imp_d + imp_a
         prob_h, prob_d, prob_a = imp_h/total, imp_d/total, imp_a/total
@@ -168,9 +153,9 @@ if st.button("🚀 立即預測", type="primary", use_container_width=True):
         st.header(f"🏆 分析結果：{real_home} vs {real_away}")
 
         res1, res2, res3 = st.columns(3)
-        res1.metric(f"主勝 ({real_home})", f"{prob_h:.2%}", f"賠率: {odds_h}")
+        res1.metric(f"主勝", f"{prob_h:.2%}", f"賠率: {odds_h}")
         res2.metric("和局", f"{prob_d:.2%}", f"賠率: {odds_d}")
-        res3.metric(f"客勝 ({real_away})", f"{prob_a:.2%}", f"賠率: {odds_a}")
+        res3.metric(f"客勝", f"{prob_a:.2%}", f"賠率: {odds_a}")
 
         st.divider()
         st.subheader("🎯 波膽 Top 5")
