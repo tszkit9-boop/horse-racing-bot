@@ -5104,7 +5104,6 @@ def main():
         return
     c1, c2, c3, c4, c5 = st.columns([4, 1, 1, 1, 1])
     with c1:
-    with c1:
         st.title("🏇 賽馬預測系統")
         st.markdown("AI 驅動・即時預測・彩池推薦")
         st.caption(f"{datetime.now().strftime('%Y年%m月%d日')}")
