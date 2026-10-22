@@ -70,7 +70,27 @@ with st.container(border=True):
     
     default_text = """法國 比利時 1.32 4.60 6.20
 意大利 土耳其 1.25 5.00 7.50"""
-    pasted_text = st.text_area("貼上資料：", value=default_text, height=150)
+    # ==========================================
+    # 🎨 注入 CSS：放大輸入框字體同按鈕字體
+    # ==========================================
+    st.markdown("""
+    <style>
+    /* 放大輸入框內的字體 */
+    .stTextArea textarea {
+        font-size: 18px !important;
+        line-height: 1.5 !important;
+    }
+    /* 放大按鈕的字體 */
+    .stButton button {
+        font-size: 18px !important;
+        font-weight: bold !important;
+        height: 50px !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # 將高度由 150 加大到 300 (你可以自己再微調)
+    pasted_text = st.text_area("貼上資料：", value=default_text, height=300)
 
 analyze_btn = st.button("🚀 自動解析並全面預測", type="primary", use_container_width=True)
 
