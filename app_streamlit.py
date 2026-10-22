@@ -5102,7 +5102,7 @@ def main():
     if st.session_state.show_admin and CONFIG["enable_admin"]:
         admin_page()
         return
-    c1, c2, c3, c4, c5 = st.columns([4, 1, 1, 1, 1])
+    c1, c2, c3, c4, c5, c6 = st.columns([4, 1, 1, 1, 1, 1])
     with c1:
         st.title("🏇 賽馬預測系統")
         st.markdown("AI 驅動・即時預測・彩池推薦")
