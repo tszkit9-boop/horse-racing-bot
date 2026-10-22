@@ -5104,9 +5104,11 @@ def main():
         return
     c1, c2, c3, c4, c5 = st.columns([4, 1, 1, 1, 1])
     with c1:
+    with c1:
         st.title("🏇 賽馬預測系統")
         st.markdown("AI 驅動・即時預測・彩池推薦")
         st.caption(f"{datetime.now().strftime('%Y年%m月%d日')}")
+        
     with c2:
         # 🛡️ 穩健版檢查：兼容大小寫、空格，並防範設定檔出錯
         user_role = str(st.session_state.get("role", "")).strip().lower()
@@ -5116,10 +5118,19 @@ def main():
             if st.button("🔐 後台", use_container_width=True, key="go_admin"):
                 st.session_state.show_admin = True
                 st.rerun()
+                
     with c3:
         if st.button("❓ 常見問題", use_container_width=True, key="faq_btn"):
             st.switch_page("pages/FAQ.py")
+            
     with c4:
+        # ==========================================
+        # 新增：前往足球預測的按鈕
+        # ==========================================
+        st.write("") # 加點空行，令按鈕同其他掣對齊
+        st.page_link("pages/football_app.py", label="前往足球", icon="⚽", use_container_width=True)
+
+    with c5:
         if st.session_state.get('logged_in', False):
             username = st.session_state.username
             users = load_users()
@@ -5150,6 +5161,7 @@ def main():
                         st.dataframe(df_ref, use_container_width=True, hide_index=True)
                     else:
                         st.info("📭 暫時未邀請過朋友")
+                        
                 st.markdown(f"### 👤 {username}")
                 st.markdown(f"**級別**：{group.upper()}　|　**等級**：{level}")
                 st.metric("💰 虛擬幣結餘", f"${virtual_balance:,.0f}")
