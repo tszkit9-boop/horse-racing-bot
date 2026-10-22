@@ -15,16 +15,17 @@ st.set_page_config(page_title="一鍵貼上預測", page_icon="⚽", layout="wid
 col_nav1, col_nav2 = st.columns([8, 2])
 
 with col_nav1:
-    st.title("⚽ 足球預測")
+    st.title("⚽足球預測")
 
 with col_nav2:
     st.write("") # 對齊高度用
     st.write("")
-    # 改用 st.button 配合 st.switch_page，排版最靚而且唔會彈登入
+    # 改用 st.button，排版最靚而且唔會彈登入
     if st.button("🏇 前往賽馬預測", use_container_width=True, key="go_horse_btn"):
         st.switch_page("app_streamlit.py")
+
 # ==========================================
-# 輸入區
+# 輸入區 (直接開始，冇咗提示句)
 # ==========================================
 with st.container(border=True):
     st.subheader("📋 請貼上賽事資料")
