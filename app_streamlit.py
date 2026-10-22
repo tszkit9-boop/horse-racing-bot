@@ -5102,7 +5102,19 @@ def main():
     if st.session_state.show_admin and CONFIG["enable_admin"]:
         admin_page()
         return
+    # ==========================================
+    # 🎨 加入 CSS 強制同一行嘅按鈕垂直置中對齊
+    # ==========================================
+    st.markdown("""
+    <style>
+    div[data-testid="stHorizontalBlock"] {
+        align-items: center;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     c1, c2, c3, c4, c5, c6 = st.columns([4, 1, 1, 1, 1, 1])
+    
     with c1:
         st.title("🏇 賽馬預測系統")
         st.markdown("AI 驅動・即時預測・彩池推薦")
@@ -5123,7 +5135,6 @@ def main():
             st.switch_page("pages/FAQ.py")
             
     with c4:
-        st.write("") # 保持同其他掣嘅高度對齊
         if st.button("⚽ 前往足球", use_container_width=True, key="go_football_btn"):
             st.switch_page("pages/football_app.py")
             
@@ -5215,12 +5226,8 @@ def main():
                                 )
                             st.dataframe(df_show, use_container_width=True, hide_index=True)
 
-    # ==========================================
-    # 👇 呢度係新加嘅 c6 (登出掣放喺呢度，同上面完美對齊)
-    # ==========================================
     with c6:
         if st.session_state.get('logged_in', False):
-            st.write("") # 對齊高度
             if st.button("🚪 登出", use_container_width=True, key="logout_main"):
                 for k in ['logged_in', 'username', 'role']:
                     if k in st.session_state:
