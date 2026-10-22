@@ -5,13 +5,6 @@ import re
 from scipy.stats import poisson
 
 # ==========================================
-# 新增：檢查登入狀態 (與賽馬主頁互通)
-# ==========================================
-if not st.session_state.get("logged_in", False):
-    st.warning("⚠️ 請先返回主頁登入！")
-    st.stop()  # 如果未登入，就停住，唔顯示下面啲足球預測內容
-
-# ==========================================
 # 頁面設定
 # ==========================================
 st.set_page_config(page_title="一鍵貼上預測", page_icon="⚽", layout="wide")
@@ -25,11 +18,19 @@ with col_nav1:
     st.title("⚽ 一鍵貼上賠率預測 (終極版)")
 
 with col_nav2:
-    st.write("") # 加點空行讓按鈕同標題水平對齊
+    st.write("") # 對齊高度用
     st.write("")
-    # 前往賽馬主頁的按鈕 (指向 app_streamlit.py)
-st.page_link("app_streamlit.py", label="前往賽馬預測", icon="🏇")
+    # 改用 st.button 配合 st.switch_page，排版最靚而且唔會彈登入
+    if st.button("🏇 前往賽馬預測", use_container_width=True, key="go_horse_btn"):
+        st.switch_page("app_streamlit.py")
 
+st.markdown("請直接將馬會嘅賽事及賠率 **Copy & Paste** 落下面，系統會自動分析！")
+
+# ==========================================
+# 下面繼續你原本嘅輸入區...
+# ==========================================
+# with st.container(border=True):
+# ...
 st.markdown("請直接將馬會嘅賽事及賠率 **Copy & Paste** 落下面，系統會自動分析！")
 
 # ==========================================
