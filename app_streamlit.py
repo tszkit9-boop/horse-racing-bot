@@ -5448,7 +5448,7 @@ def main():
                     all_results = {}
                     _total_recorded = 0
 
-                    for i, rn in enumerate(day_races):
+                     for i, rn in enumerate(day_races):
                         status.text(f"⏳ 預測第 {rn} 場中...（{i+1}/{len(day_races)}）")
                         try:
                             result, pool = run_prediction(date_str, int(rn))
