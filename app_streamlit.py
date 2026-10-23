@@ -3434,9 +3434,10 @@ def admin_accuracy_monitor():
             df_compare_detail = pd.DataFrame(compare_rows)
 
             df_compare_detail['場次'] = pd.to_numeric(df_compare_detail['場次'], errors='coerce')
+        # 🆕 改咗做 False，最新日期排最頂
         df_compare_detail = df_compare_detail.sort_values(
             by=['日期', '場次'],
-            ascending=[False, True]  # 🆕 改咗做 False
+            ascending=[False, True]
         ).reset_index(drop=True)
 
         def highlight_prediction(row):
@@ -4562,6 +4563,9 @@ def admin_paper_trades():
                         
                         if '預測類型' in grouped.columns:
                             grouped['預測類型'] = grouped['預測類型'].map({'pre_day': '🐦 早鳥', 'live': '⚡ 臨場'}).fillna('🐦 早鳥')
+
+                        # 🆕 加呢句：按日期新到舊排序
+                        grouped = grouped.sort_values(by=['日期', '場次'], ascending=[False, True]).reset_index(drop=True)
 
                         st.dataframe(
                             grouped, 
