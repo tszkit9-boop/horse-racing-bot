@@ -8,19 +8,6 @@ from scipy.stats import poisson
 from supabase import create_client, Client
 
 # ==========================================
-# 🧠 載入 AI 模型 (使用 cache_resource 防止每次撳掣都重新載入)
-# ==========================================
-@st.cache_resource
-def load_ai_model():
-    if os.path.exists("football_ensemble.pkl"):
-        try:
-            return joblib.load("football_ensemble.pkl")
-        except Exception as e:
-            st.error(f"AI 模型載入失敗：{e}")
-    return None
-
-ai_model = load_ai_model()
-# ==========================================
 # 頁面設定
 # ==========================================
 st.set_page_config(page_title="一鍵貼上預測", page_icon="⚽", layout="wide")
@@ -28,12 +15,26 @@ st.set_page_config(page_title="一鍵貼上預測", page_icon="⚽", layout="wid
 # ==========================================
 # ☁️ 連接 Supabase (請填入你真實嘅 URL 同 Key)
 # ==========================================
-SUPABASE_URL = "https://fewanagxvezelufmuggq.supabase.co"
-SUPABASE_KEY = "sb_publishable_Ww_BGSKjqhGCvv5iNl8A0Q_UDkVqdtF"
+SUPABASE_URL = "YOUR_SUPABASE_URL"
+SUPABASE_KEY = "YOUR_SUPABASE_KEY"
 try:
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 except:
     st.error("⚠️ Supabase 連接失敗，請檢查 URL 同 Key 是否正確。")
+
+# ==========================================
+# 🧠 載入 AI 模型
+# ==========================================
+@st.cache_resource
+def load_ai_model():
+    if os.path.exists("football_ensemble.pkl"):
+        try:
+            return joblib.load("football_ensemble.pkl")
+        except Exception as e:
+            st.warning(f"AI 模型載入失敗：{e}")
+    return None
+
+ai_model = load_ai_model()
 
 # ==========================================
 # 🎨 全局美化 CSS
@@ -76,7 +77,7 @@ div[data-testid="stMetricValue"] {
 col_nav1, col_nav2, col_nav3, col_nav4, col_nav5 = st.columns([5, 1, 1, 1.2, 1])
 
 with col_nav1:
-    st.title("⚽ 一鍵貼上賠率預測 (終極版)")
+    st.title("⚽ 一鍵貼上賠率預測 (AI 終極版)")
 
 with col_nav2:
     if st.button("❓ 常見問題", use_container_width=True, key="faq_btn_football"):
@@ -97,7 +98,6 @@ with col_nav4:
             st.markdown(f"**級別**：{group.upper()}　|　**等級**：{level}")
             st.divider()
             
-            # --- 足球預測記錄 (從 Supabase 讀取) ---
             st.markdown("#### ⚽ 足球預測記錄 (最近10場)")
             try:
                 response = supabase.table("football_predictions").select("*").eq("username", username).order("created_at", desc=True).limit(10).execute()
@@ -128,9 +128,8 @@ with st.container(border=True):
     st.subheader("📋 請貼上賽事資料")
     st.markdown("<span style='color: #666; font-size: 14px;'>支援任何格式（打直、打橫、連埋一齊都得），直接喺馬會 Copy 一大段掟落嚟：</span>", unsafe_allow_html=True)
     
-    default_text = """法國 比利時 1.32 4.60 6.20
-意大利 土耳其 1.25 5.00 7.50"""
-    pasted_text = st.text_area("貼上資料：", value=default_text, height=200, label_visibility="collapsed")
+    default_text = """曼聯 車路士 2.10 3.50 3.20"""
+    pasted_text = st.text_area("貼上資料：", value=default_text, height=150, label_visibility="collapsed")
 
 analyze_btn = st.button("🚀 自動解析並全面預測", type="primary", use_container_width=True)
 
@@ -147,7 +146,7 @@ if analyze_btn:
     matches = re.findall(pattern, flat_text)
     
     if not matches:
-        st.error("❌ 認唔到資料格式，請確保有隊名同三個賠率（例如：法國 比利時 1.32 4.60 6.20）。")
+        st.error("❌ 認唔到資料格式，請確保有隊名同三個賠率（例如：曼聯 車路士 2.10 3.50 3.20）。")
         st.stop()
         
     st.success(f"✅ 成功解析並預測 {len(matches)} 場賽事！")
@@ -173,23 +172,24 @@ if analyze_btn:
         home_avg = None
         away_avg = None
         
+        # 🔄 中文隊名轉英文對照表
+        team_mapping = {
+            "曼聯": "Man United", "曼城": "Man City", "利物浦": "Liverpool", "阿仙奴": "Arsenal",
+            "車路士": "Chelsea", "熱刺": "Tottenham", "愛華頓": "Everton", "紐卡素": "Newcastle",
+            "李斯特城": "Leicester", "韋斯咸": "West Ham", "水晶宮": "Crystal Palace", "修咸頓": "Southampton",
+            "般尼": "Burnley", "屈福特": "Watford", "般尼茅夫": "Bournemouth", "諾域治": "Norwich",
+            "史雲斯": "Swansea", "史篤城": "Stoke", "西布朗": "West Brom", "新特蘭": "Sunderland",
+            "阿士東維拉": "Aston Villa", "皇家馬德里": "Real Madrid", "巴塞隆拿": "Barcelona",
+            "拜仁慕尼黑": "Bayern Munich", "祖雲達斯": "Juventus", "巴黎聖日耳門": "Paris SG",
+            "多蒙特": "Dortmund", "法國": "France", "比利時": "Belgium", "意大利": "Italy", "土耳其": "Turkey"
+        }
+        
+        eng_home = team_mapping.get(home_team, home_team)
+        eng_away = team_mapping.get(away_team, away_team)
+        
         if os.path.exists("team_stats_summary.csv"):
             try:
                 df_stats = pd.read_csv("team_stats_summary.csv")
-                team_mapping = {
-                    "曼聯": "Man United", "曼城": "Man City", "利物浦": "Liverpool", "阿仙奴": "Arsenal",
-                    "車路士": "Chelsea", "熱刺": "Tottenham", "愛華頓": "Everton", "紐卡素": "Newcastle",
-                    "李斯特城": "Leicester", "韋斯咸": "West Ham", "水晶宮": "Crystal Palace", "修咸頓": "Southampton",
-                    "般尼": "Burnley", "屈福特": "Watford", "般尼茅夫": "Bournemouth", "諾域治": "Norwich",
-                    "史雲斯": "Swansea", "史篤城": "Stoke", "西布朗": "West Brom", "新特蘭": "Sunderland",
-                    "阿士東維拉": "Aston Villa", "皇家馬德里": "Real Madrid", "巴塞隆拿": "Barcelona",
-                    "拜仁慕尼黑": "Bayern Munich", "祖雲達斯": "Juventus", "巴黎聖日耳門": "Paris SG",
-                    "多蒙特": "Dortmund", "法國": "France", "比利時": "Belgium", "意大利": "Italy", "土耳其": "Turkey"
-                }
-                
-                eng_home = team_mapping.get(home_team, home_team)
-                eng_away = team_mapping.get(away_team, away_team)
-                
                 h_row = df_stats[df_stats['Team'].str.lower() == eng_home.lower()]
                 a_row = df_stats[df_stats['Team'].str.lower() == eng_away.lower()]
                 
@@ -206,7 +206,7 @@ if analyze_btn:
                     st.info(f"📊 **已載入基本面數據**：{eng_home} 場均入球 {h_attack:.2f} / 失球 {h_defense:.2f}；{eng_away} 場均入球 {a_attack:.2f} / 失球 {a_defense:.2f}")
                 else:
                     st.warning(f"⚠️ 數據庫搵唔到隊名 ({eng_home} vs {eng_away})，改用賠率反推。")
-            except Exception as e:
+            except Exception:
                 pass
 
         if not home_avg or not away_avg:
@@ -220,7 +220,7 @@ if analyze_btn:
             for j in range(max_goals+1):
                 matrix[i, j] = poisson.pmf(i, home_avg) * poisson.pmf(j, away_avg)
 
-        # 計算模型概率
+        # 計算基本面概率
         model_prob_h = sum(matrix[i][j] for i in range(max_goals+1) for j in range(max_goals+1) if i > j)
         model_prob_d = sum(matrix[i][j] for i in range(max_goals+1) for j in range(max_goals+1) if i == j)
         model_prob_a = sum(matrix[i][j] for i in range(max_goals+1) for j in range(max_goals+1) if i < j)
@@ -230,23 +230,62 @@ if analyze_btn:
             st.header(f"🏆 {home_team} vs {away_team}")
             
             # ==========================================
-            # 🚀 Level 2 升級：市場 vs 模型概率
+            # 🤖 AI 模型預測 (CatBoost + LightGBM + 邏輯回歸)
             # ==========================================
-            st.markdown("### 📊 市場賠率 vs 模型預測 (雙軌對比)")
+            ai_prob_h, ai_prob_d, ai_prob_a = 0, 0, 0
+            has_ai_prediction = False
+            
+            if ai_model is not None:
+                try:
+                    if eng_home in ai_model['le_home'].classes_ and eng_away in ai_model['le_away'].classes_:
+                        home_id = ai_model['le_home'].transform([eng_home])[0]
+                        away_id = ai_model['le_away'].transform([eng_away])[0]
+                        
+                        X_input = pd.DataFrame({'HomeTeam_ID': [home_id], 'AwayTeam_ID': [away_id]})
+                        
+                        prob_cat = ai_model['model_cat'].predict_proba(X_input)[0]
+                        prob_lgb = ai_model['model_lgb'].predict_proba(X_input)[0]
+                        prob_lr = ai_model['model_lr'].predict_proba(X_input)[0]
+                        
+                        avg_prob = (prob_cat * 0.4) + (prob_lgb * 0.4) + (prob_lr * 0.2)
+                        
+                        # 注意 LabelEncoder 順序通常係 A(0), D(1), H(2)
+                        ai_prob_a = avg_prob[0]
+                        ai_prob_d = avg_prob[1]
+                        ai_prob_h = avg_prob[2]
+                        has_ai_prediction = True
+                    else:
+                        st.warning(f"🤖 AI 模型未有 {eng_home} 或 {eng_away} 的歷史數據，已略過 AI 預測。")
+                except Exception as e:
+                    st.warning(f"AI 預測出錯：{e}")
+
+            # ==========================================
+            # 📊 顯示對比 (市場 vs 基本面 vs AI)
+            # ==========================================
+            st.markdown("### 📊 預測大對決 (市場 vs 基本面 vs AI)")
+            
             col_cmp1, col_cmp2, col_cmp3 = st.columns(3)
             
             with col_cmp1:
                 st.metric("主勝 (市場)", f"{prob_h:.2%}", f"賠率: {odds_h}")
-                st.metric("主勝 (模型)", f"{model_prob_h:.2%}", delta=f"{(model_prob_h - prob_h):+.2%}", delta_color="normal")
+                st.metric("主勝 (基本面)", f"{model_prob_h:.2%}")
+                if has_ai_prediction:
+                    st.metric("主勝 (🤖 AI 融合)", f"{ai_prob_h:.2%}", delta=f"{(ai_prob_h - prob_h):+.2%}", delta_color="normal")
+                    
             with col_cmp2:
                 st.metric("和局 (市場)", f"{prob_d:.2%}", f"賠率: {odds_d}")
-                st.metric("和局 (模型)", f"{model_prob_d:.2%}", delta=f"{(model_prob_d - prob_d):+.2%}", delta_color="normal")
+                st.metric("和局 (基本面)", f"{model_prob_d:.2%}")
+                if has_ai_prediction:
+                    st.metric("和局 (🤖 AI 融合)", f"{ai_prob_d:.2%}", delta=f"{(ai_prob_d - prob_d):+.2%}", delta_color="normal")
+                    
             with col_cmp3:
                 st.metric("客勝 (市場)", f"{prob_a:.2%}", f"賠率: {odds_a}")
-                st.metric("客勝 (模型)", f"{model_prob_a:.2%}", delta=f"{(model_prob_a - prob_a):+.2%}", delta_color="normal")
+                st.metric("客勝 (基本面)", f"{model_prob_a:.2%}")
+                if has_ai_prediction:
+                    st.metric("客勝 (🤖 AI 融合)", f"{ai_prob_a:.2%}", delta=f"{(ai_prob_a - prob_a):+.2%}", delta_color="normal")
 
             # ==========================================
-            # 📥 新增：保存預測至 Supabase
+            # 📥 保存預測至 Supabase
             # ==========================================
             col_save1, col_save2 = st.columns([1, 4])
             with col_save1:
