@@ -27,14 +27,12 @@ except:
 # ==========================================
 @st.cache_resource
 def load_ai_model():
-    if os.path.exists("football_ensemble_v2.pkl"):
+    if os.path.exists("football_ensemble_v3.pkl"):
         try:
-            return joblib.load("football_ensemble_v2.pkl")
+            return joblib.load("football_ensemble_v3.pkl")
         except Exception as e:
             st.warning(f"AI 模型載入失敗：{e}")
     return None
-
-ai_model = load_ai_model()
 
 # ==========================================
 # 🎨 全局美化 CSS
