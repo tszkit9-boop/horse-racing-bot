@@ -23,13 +23,13 @@ except:
     st.error("⚠️ Supabase 連接失敗，請檢查 URL 同 Key 是否正確。")
 
 # ==========================================
-# 🧠 載入 AI 模型
+# 🧠 載入 V2 AI 模型
 # ==========================================
 @st.cache_resource
 def load_ai_model():
-    if os.path.exists("football_ensemble.pkl"):
+    if os.path.exists("football_ensemble_v2.pkl"):
         try:
-            return joblib.load("football_ensemble.pkl")
+            return joblib.load("football_ensemble_v2.pkl")
         except Exception as e:
             st.warning(f"AI 模型載入失敗：{e}")
     return None
@@ -77,7 +77,7 @@ div[data-testid="stMetricValue"] {
 col_nav1, col_nav2, col_nav3, col_nav4, col_nav5 = st.columns([5, 1, 1, 1.2, 1])
 
 with col_nav1:
-    st.title("⚽ 一鍵貼上賠率預測 (AI 終極版)")
+    st.title("⚽ 一鍵貼上賠率預測 (AI V2 終極版)")
 
 with col_nav2:
     if st.button("❓ 常見問題", use_container_width=True, key="faq_btn_football"):
@@ -166,13 +166,7 @@ if analyze_btn:
         total = imp_h + imp_d + imp_a
         prob_h, prob_d, prob_a = imp_h/total, imp_d/total, imp_a/total
 
-        # ==========================================
-        # 🚀 Level 1：讀取基本面數據
-        # ==========================================
-        home_avg = None
-        away_avg = None
-        
-        # 🔄 中文隊名轉英文對照表
+        # 中文隊名轉英文對照表
         team_mapping = {
             "曼聯": "Man United", "曼城": "Man City", "利物浦": "Liverpool", "阿仙奴": "Arsenal",
             "車路士": "Chelsea", "熱刺": "Tottenham", "愛華頓": "Everton", "紐卡素": "Newcastle",
@@ -186,6 +180,13 @@ if analyze_btn:
         
         eng_home = team_mapping.get(home_team, home_team)
         eng_away = team_mapping.get(away_team, away_team)
+
+        # ==========================================
+        # 🚀 Level 1：讀取基本面數據
+        # ==========================================
+        home_avg = None
+        away_avg = None
+        h_attack, h_defense, a_attack, a_defense = 1.0, 1.0, 1.0, 1.0 # 預設值
         
         if os.path.exists("team_stats_summary.csv"):
             try:
@@ -230,7 +231,7 @@ if analyze_btn:
             st.header(f"🏆 {home_team} vs {away_team}")
             
             # ==========================================
-            # 🤖 AI 模型預測 (CatBoost + LightGBM + 邏輯回歸)
+            # 🤖 V2 AI 模型預測 (結合走勢與賠率)
             # ==========================================
             ai_prob_h, ai_prob_d, ai_prob_a = 0, 0, 0
             has_ai_prediction = False
@@ -241,15 +242,30 @@ if analyze_btn:
                         home_id = ai_model['le_home'].transform([eng_home])[0]
                         away_id = ai_model['le_away'].transform([eng_away])[0]
                         
-                        X_input = pd.DataFrame({'HomeTeam_ID': [home_id], 'AwayTeam_ID': [away_id]})
+                        # 準備 V2 模型需要的 10 個特徵
+                        feature_data = {
+                            'HomeTeam_ID': home_id,
+                            'AwayTeam_ID': away_id,
+                            'Div_ID': 0, # 預設聯賽 (因為輸入無聯賽名，填 0)
+                            'H_Form_Scored': h_attack,
+                            'H_Form_Conceded': h_defense,
+                            'A_Form_Scored': a_attack,
+                            'A_Form_Conceded': a_defense,
+                            'B365H': odds_h, 'B365D': odds_d, 'B365A': odds_a,
+                            'AvgH': odds_h, 'AvgD': odds_d, 'AvgA': odds_a,
+                            'H': odds_h, 'D': odds_d, 'A': odds_a
+                        }
+                        
+                        # 根據模型儲存的 feature_cols 動態生成 DataFrame，確保特徵順序完全一致
+                        X_input = pd.DataFrame([{col: feature_data.get(col, 0) for col in ai_model['feature_cols']}])
                         
                         prob_cat = ai_model['model_cat'].predict_proba(X_input)[0]
                         prob_lgb = ai_model['model_lgb'].predict_proba(X_input)[0]
                         prob_lr = ai_model['model_lr'].predict_proba(X_input)[0]
                         
-                        avg_prob = (prob_cat * 0.4) + (prob_lgb * 0.4) + (prob_lr * 0.2)
+                        # 權重融合 (因為邏輯回歸表現極好，可以調高少少權重)
+                        avg_prob = (prob_cat * 0.35) + (prob_lgb * 0.35) + (prob_lr * 0.30)
                         
-                        # 注意 LabelEncoder 順序通常係 A(0), D(1), H(2)
                         ai_prob_a = avg_prob[0]
                         ai_prob_d = avg_prob[1]
                         ai_prob_h = avg_prob[2]
@@ -260,7 +276,7 @@ if analyze_btn:
                     st.warning(f"AI 預測出錯：{e}")
 
             # ==========================================
-            # 📊 顯示對比 (市場 vs 基本面 vs AI)
+            # 📊 顯示對比
             # ==========================================
             st.markdown("### 📊 預測大對決 (市場 vs 基本面 vs AI)")
             
@@ -292,13 +308,17 @@ if analyze_btn:
                 if st.button("📥 保存此預測", key=f"save_{home_team}_{away_team}"):
                     if st.session_state.get('logged_in', False):
                         username = st.session_state.get('username', 'unknown')
-                        max_prob = max(model_prob_h, model_prob_d, model_prob_a)
-                        if max_prob == model_prob_h:
-                            pred_res = "主勝"
-                        elif max_prob == model_prob_d:
-                            pred_res = "和局"
+                        # 優先使用 AI 概率判斷最高賽果
+                        if has_ai_prediction:
+                            max_prob = max(ai_prob_h, ai_prob_d, ai_prob_a)
+                            if max_prob == ai_prob_h: pred_res = "主勝"
+                            elif max_prob == ai_prob_d: pred_res = "和局"
+                            else: pred_res = "客勝"
                         else:
-                            pred_res = "客勝"
+                            max_prob = max(model_prob_h, model_prob_d, model_prob_a)
+                            if max_prob == model_prob_h: pred_res = "主勝"
+                            elif max_prob == model_prob_d: pred_res = "和局"
+                            else: pred_res = "客勝"
                             
                         data = {
                             "username": username,
@@ -317,20 +337,24 @@ if analyze_btn:
                     else:
                         st.warning("⚠️ 請先登入！")
 
-            # --- EV & 凱利 ---
-            ev_h = (model_prob_h * odds_h) - 1
-            ev_d = (model_prob_d * odds_d) - 1
-            ev_a = (model_prob_a * odds_a) - 1
+            # --- EV & 凱利 (如果有 AI 預測，用 AI 概率計 EV；否則用基本面) ---
+            calc_h = ai_prob_h if has_ai_prediction else model_prob_h
+            calc_d = ai_prob_d if has_ai_prediction else model_prob_d
+            calc_a = ai_prob_a if has_ai_prediction else model_prob_a
             
-            kelly_h = (model_prob_h * odds_h - 1) / (odds_h - 1) if odds_h > 1 else 0
-            kelly_d = (model_prob_d * odds_d - 1) / (odds_d - 1) if odds_d > 1 else 0
-            kelly_a = (model_prob_a * odds_a - 1) / (odds_a - 1) if odds_a > 1 else 0
+            ev_h = (calc_h * odds_h) - 1
+            ev_d = (calc_d * odds_d) - 1
+            ev_a = (calc_a * odds_a) - 1
+            
+            kelly_h = (calc_h * odds_h - 1) / (odds_h - 1) if odds_h > 1 else 0
+            kelly_d = (calc_d * odds_d - 1) / (odds_d - 1) if odds_d > 1 else 0
+            kelly_a = (calc_a * odds_a - 1) / (odds_a - 1) if odds_a > 1 else 0
 
-            with st.expander("💰 展開查看：基於模型概率嘅投注價值 (EV) 及 凱利建議注碼", expanded=False):
+            with st.expander("💰 展開查看：基於終極概率嘅投注價值 (EV) 及 凱利建議注碼", expanded=False):
                 ev_data = {
                     "選項": [f"主勝 ({home_team})", "和局", f"客勝 ({away_team})"],
                     "市場概率": [f"{prob_h:.2%}", f"{prob_d:.2%}", f"{prob_a:.2%}"],
-                    "模型概率": [f"{model_prob_h:.2%}", f"{model_prob_d:.2%}", f"{model_prob_a:.2%}"],
+                    "AI/模型概率": [f"{calc_h:.2%}", f"{calc_d:.2%}", f"{calc_a:.2%}"],
                     "EV (期望值)": [f"{ev_h:+.2f}", f"{ev_d:+.2f}", f"{ev_a:+.2f}"],
                     "凱利建議注碼": [f"{max(0, kelly_h)*100:.1f}%", f"{max(0, kelly_d)*100:.1f}%", f"{max(0, kelly_a)*100:.1f}%"]
                 }
