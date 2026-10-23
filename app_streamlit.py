@@ -3434,10 +3434,10 @@ def admin_accuracy_monitor():
             df_compare_detail = pd.DataFrame(compare_rows)
 
             df_compare_detail['場次'] = pd.to_numeric(df_compare_detail['場次'], errors='coerce')
-            df_compare_detail = df_compare_detail.sort_values(
-                by=['日期', '場次'],
-                ascending=[True, True]
-            ).reset_index(drop=True)
+        df_compare_detail = df_compare_detail.sort_values(
+            by=['日期', '場次'],
+            ascending=[False, True]  # 🆕 改咗做 False
+        ).reset_index(drop=True)
 
             def highlight_prediction(row):
                 pred = str(row['預測頭3名'])
