@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import re
 import os
+import joblib
 from scipy.stats import poisson
 from supabase import create_client, Client
 
@@ -21,6 +22,20 @@ try:
 except:
     st.error("⚠️ Supabase 連接失敗，請檢查 URL 同 Key 是否正確。")
 
+# ==========================================
+# 🧠 載入 V3 AI 模型
+# ==========================================
+@st.cache_resource
+def load_ai_model():
+    if os.path.exists("football_ensemble_v3.pkl"):
+        try:
+            return joblib.load("football_ensemble_v3.pkl")
+        except Exception as e:
+            st.warning(f"AI 模型載入失敗：{e}")
+    return None
+
+# ⬇️ 就係漏咗呢一句！⬇️
+ai_model = load_ai_model() 
 # ==========================================
 # 🎨 全局美化 CSS
 # ==========================================
@@ -62,7 +77,7 @@ div[data-testid="stMetricValue"] {
 col_nav1, col_nav2, col_nav3, col_nav4, col_nav5 = st.columns([5, 1, 1, 1.2, 1])
 
 with col_nav1:
-    st.title("⚽ 一鍵貼上賠率預測 (終極版)")
+    st.title("⚽ 一鍵貼上賠率預測 (AI V2 終極版)")
 
 with col_nav2:
     if st.button("❓ 常見問題", use_container_width=True, key="faq_btn_football"):
@@ -83,7 +98,6 @@ with col_nav4:
             st.markdown(f"**級別**：{group.upper()}　|　**等級**：{level}")
             st.divider()
             
-            # --- 足球預測記錄 (從 Supabase 讀取) ---
             st.markdown("#### ⚽ 足球預測記錄 (最近10場)")
             try:
                 response = supabase.table("football_predictions").select("*").eq("username", username).order("created_at", desc=True).limit(10).execute()
@@ -114,9 +128,8 @@ with st.container(border=True):
     st.subheader("📋 請貼上賽事資料")
     st.markdown("<span style='color: #666; font-size: 14px;'>支援任何格式（打直、打橫、連埋一齊都得），直接喺馬會 Copy 一大段掟落嚟：</span>", unsafe_allow_html=True)
     
-    default_text = """法國 比利時 1.32 4.60 6.20
-意大利 土耳其 1.25 5.00 7.50"""
-    pasted_text = st.text_area("貼上資料：", value=default_text, height=200, label_visibility="collapsed")
+    default_text = """曼聯 車路士 2.10 3.50 3.20"""
+    pasted_text = st.text_area("貼上資料：", value=default_text, height=150, label_visibility="collapsed")
 
 analyze_btn = st.button("🚀 自動解析並全面預測", type="primary", use_container_width=True)
 
@@ -133,7 +146,7 @@ if analyze_btn:
     matches = re.findall(pattern, flat_text)
     
     if not matches:
-        st.error("❌ 認唔到資料格式，請確保有隊名同三個賠率（例如：法國 比利時 1.32 4.60 6.20）。")
+        st.error("❌ 認唔到資料格式，請確保有隊名同三個賠率（例如：曼聯 車路士 2.10 3.50 3.20）。")
         st.stop()
         
     st.success(f"✅ 成功解析並預測 {len(matches)} 場賽事！")
@@ -153,29 +166,68 @@ if analyze_btn:
         total = imp_h + imp_d + imp_a
         prob_h, prob_d, prob_a = imp_h/total, imp_d/total, imp_a/total
 
+        # 🔄 中文隊名轉英文隊名對照表 (主流聯賽全集)
+        team_mapping = {
+            # ===== 英格蘭 (英超/英冠) =====
+            "曼聯": "Man United", "曼城": "Man City", "利物浦": "Liverpool", "阿仙奴": "Arsenal",
+            "車路士": "Chelsea", "熱刺": "Tottenham", "愛華頓": "Everton", "紐卡素": "Newcastle",
+            "李斯特城": "Leicester", "韋斯咸": "West Ham", "水晶宮": "Crystal Palace", "修咸頓": "Southampton",
+            "般尼": "Burnley", "屈福特": "Watford", "般尼茅夫": "Bournemouth", "諾域治": "Norwich",
+            "史雲斯": "Swansea", "史篤城": "Stoke", "西布朗": "West Brom", "新特蘭": "Sunderland",
+            "阿士東維拉": "Aston Villa", "狼隊": "Wolves", "錫菲聯": "Sheffield United", "列斯聯": "Leeds",
+            "白禮頓": "Brighton", "富咸": "Fulham", "賓福特": "Brentford", "諾定咸森林": "Nott'm Forest",
+            "葉士域治": "Ipswich",
+
+            # ===== 西班牙 (西甲) =====
+            "皇家馬德里": "Real Madrid", "巴塞隆拿": "Barcelona", "馬德里體育會": "Atletico Madrid",
+            "西維爾": "Sevilla", "皇家蘇斯達": "Real Sociedad", "畢爾包": "Athletic Bilbao",
+            "維拉利爾": "Villarreal", "貝迪斯": "Betis", "華倫西亞": "Valencia", "基羅納": "Girona",
+
+            # ===== 意大利 (意甲) =====
+            "祖雲達斯": "Juventus", "國際米蘭": "Inter", "AC米蘭": "AC Milan", "拿玻里": "Napoli",
+            "羅馬": "Roma", "拉素": "Lazio", "阿特蘭大": "Atalanta", "費倫天拿": "Fiorentina",
+
+            # ===== 德國 (德甲) =====
+            "拜仁慕尼黑": "Bayern Munich", "多蒙特": "Dortmund", "利華古遜": "Leverkusen",
+            "RB萊比錫": "RB Leipzig", "法蘭克福": "Eintracht Frankfurt", "史特加": "Stuttgart",
+
+            # ===== 法國 (法甲) =====
+            "巴黎聖日耳門": "Paris SG", "馬賽": "Marseille", "里昂": "Lyon", "摩納哥": "Monaco", "里爾": "Lille",
+
+            # ===== 日本 (日職聯 J1) =====
+            "廣島三箭": "Sanfrecce Hiroshima", "清水心跳": "Shimizu S-Pulse", "橫濱水手": "Yokohama F. Marinos",
+            "浦和紅鑽": "Urawa Reds", "川崎前鋒": "Kawasaki Frontale", "鹿島鹿角": "Kashima Antlers",
+            "大阪飛腳": "Gamba Osaka", "大阪櫻花": "Cerezo Osaka", "神戶勝利船": "Vissel Kobe",
+            "名古屋鯨魚": "Nagoya Grampus", "鳥棲砂岩": "Sagan Tosu", "柏雷素爾": "Kashiwa Reysol",
+            "新潟天鵝": "Albirex Niigata", "FC東京": "FC Tokyo", "湘南比馬": "Shonan Bellmare",
+            "磐田山葉": "Jubilo Iwata", "京都不死鳥": "Kyoto Sanga", "札幌岡薩多": "Consadole Sapporo",
+            "福岡黃蜂": "Avispa Fukuoka", "東京綠茵": "Tokyo Verdy",
+
+            # ===== 澳洲 (A-League) =====
+            "南墨爾本": "South Melbourne", "悉尼聯": "Sydney FC", "墨爾本勝利": "Melbourne Victory",
+            "墨爾本城": "Melbourne City", "阿德萊德聯": "Adelaide United", "布里斯班獅吼": "Brisbane Roar",
+            "中岸水手": "Central Coast Mariners", "威靈頓鳳凰": "Wellington Phoenix",
+            "西部聯": "Western United", "麥克阿瑟": "Macarthur FC",
+
+            # ===== 國家隊 (世界盃/歐洲盃) =====
+            "法國": "France", "比利時": "Belgium", "意大利": "Italy", "土耳其": "Turkey",
+            "英格蘭": "England", "西班牙": "Spain", "德國": "Germany", "葡萄牙": "Portugal",
+            "阿根廷": "Argentina", "巴西": "Brazil", "荷蘭": "Netherlands"
+        }
+        
+        eng_home = team_mapping.get(home_team, home_team)
+        eng_away = team_mapping.get(away_team, away_team)
+
         # ==========================================
         # 🚀 Level 1：讀取基本面數據
         # ==========================================
         home_avg = None
         away_avg = None
+        h_attack, h_defense, a_attack, a_defense = 1.0, 1.0, 1.0, 1.0 # 預設值
         
         if os.path.exists("team_stats_summary.csv"):
             try:
                 df_stats = pd.read_csv("team_stats_summary.csv")
-                team_mapping = {
-                    "曼聯": "Man United", "曼城": "Man City", "利物浦": "Liverpool", "阿仙奴": "Arsenal",
-                    "車路士": "Chelsea", "熱刺": "Tottenham", "愛華頓": "Everton", "紐卡素": "Newcastle",
-                    "李斯特城": "Leicester", "韋斯咸": "West Ham", "水晶宮": "Crystal Palace", "修咸頓": "Southampton",
-                    "般尼": "Burnley", "屈福特": "Watford", "般尼茅夫": "Bournemouth", "諾域治": "Norwich",
-                    "史雲斯": "Swansea", "史篤城": "Stoke", "西布朗": "West Brom", "新特蘭": "Sunderland",
-                    "阿士東維拉": "Aston Villa", "皇家馬德里": "Real Madrid", "巴塞隆拿": "Barcelona",
-                    "拜仁慕尼黑": "Bayern Munich", "祖雲達斯": "Juventus", "巴黎聖日耳門": "Paris SG",
-                    "多蒙特": "Dortmund", "法國": "France", "比利時": "Belgium", "意大利": "Italy", "土耳其": "Turkey"
-                }
-                
-                eng_home = team_mapping.get(home_team, home_team)
-                eng_away = team_mapping.get(away_team, away_team)
-                
                 h_row = df_stats[df_stats['Team'].str.lower() == eng_home.lower()]
                 a_row = df_stats[df_stats['Team'].str.lower() == eng_away.lower()]
                 
@@ -192,7 +244,7 @@ if analyze_btn:
                     st.info(f"📊 **已載入基本面數據**：{eng_home} 場均入球 {h_attack:.2f} / 失球 {h_defense:.2f}；{eng_away} 場均入球 {a_attack:.2f} / 失球 {a_defense:.2f}")
                 else:
                     st.warning(f"⚠️ 數據庫搵唔到隊名 ({eng_home} vs {eng_away})，改用賠率反推。")
-            except Exception as e:
+            except Exception:
                 pass
 
         if not home_avg or not away_avg:
@@ -206,7 +258,7 @@ if analyze_btn:
             for j in range(max_goals+1):
                 matrix[i, j] = poisson.pmf(i, home_avg) * poisson.pmf(j, away_avg)
 
-        # 計算模型概率
+        # 計算基本面概率
         model_prob_h = sum(matrix[i][j] for i in range(max_goals+1) for j in range(max_goals+1) if i > j)
         model_prob_d = sum(matrix[i][j] for i in range(max_goals+1) for j in range(max_goals+1) if i == j)
         model_prob_a = sum(matrix[i][j] for i in range(max_goals+1) for j in range(max_goals+1) if i < j)
@@ -216,36 +268,94 @@ if analyze_btn:
             st.header(f"🏆 {home_team} vs {away_team}")
             
             # ==========================================
-            # 🚀 Level 2 升級：市場 vs 模型概率
+            # 🤖 V2 AI 模型預測 (結合走勢與賠率)
             # ==========================================
-            st.markdown("### 📊 市場賠率 vs 模型預測 (雙軌對比)")
+            ai_prob_h, ai_prob_d, ai_prob_a = 0, 0, 0
+            has_ai_prediction = False
+            
+            if ai_model is not None:
+                try:
+                    if eng_home in ai_model['le_home'].classes_ and eng_away in ai_model['le_away'].classes_:
+                        home_id = ai_model['le_home'].transform([eng_home])[0]
+                        away_id = ai_model['le_away'].transform([eng_away])[0]
+                        
+                        # 準備 V2 模型需要的 10 個特徵
+                        feature_data = {
+                            'HomeTeam_ID': home_id,
+                            'AwayTeam_ID': away_id,
+                            'Div_ID': 0, # 預設聯賽 (因為輸入無聯賽名，填 0)
+                            'H_Form_Scored': h_attack,
+                            'H_Form_Conceded': h_defense,
+                            'A_Form_Scored': a_attack,
+                            'A_Form_Conceded': a_defense,
+                            'B365H': odds_h, 'B365D': odds_d, 'B365A': odds_a,
+                            'AvgH': odds_h, 'AvgD': odds_d, 'AvgA': odds_a,
+                            'H': odds_h, 'D': odds_d, 'A': odds_a
+                        }
+                        
+                        # 根據模型儲存的 feature_cols 動態生成 DataFrame，確保特徵順序完全一致
+                        X_input = pd.DataFrame([{col: feature_data.get(col, 0) for col in ai_model['feature_cols']}])
+                        
+                        prob_cat = ai_model['model_cat'].predict_proba(X_input)[0]
+                        prob_lgb = ai_model['model_lgb'].predict_proba(X_input)[0]
+                        prob_lr = ai_model['model_lr'].predict_proba(X_input)[0]
+                        
+                        # 權重融合 (因為邏輯回歸表現極好，可以調高少少權重)
+                        avg_prob = (prob_cat * 0.35) + (prob_lgb * 0.35) + (prob_lr * 0.30)
+                        
+                        ai_prob_a = avg_prob[0]
+                        ai_prob_d = avg_prob[1]
+                        ai_prob_h = avg_prob[2]
+                        has_ai_prediction = True
+                    else:
+                        st.warning(f"🤖 AI 模型未有 {eng_home} 或 {eng_away} 的歷史數據，已略過 AI 預測。")
+                except Exception as e:
+                    st.warning(f"AI 預測出錯：{e}")
+
+            # ==========================================
+            # 📊 顯示對比
+            # ==========================================
+            st.markdown("### 📊 預測大對決 (市場 vs 基本面 vs AI)")
+            
             col_cmp1, col_cmp2, col_cmp3 = st.columns(3)
             
             with col_cmp1:
                 st.metric("主勝 (市場)", f"{prob_h:.2%}", f"賠率: {odds_h}")
-                st.metric("主勝 (模型)", f"{model_prob_h:.2%}", delta=f"{(model_prob_h - prob_h):+.2%}", delta_color="normal")
+                st.metric("主勝 (基本面)", f"{model_prob_h:.2%}")
+                if has_ai_prediction:
+                    st.metric("主勝 (🤖 AI 融合)", f"{ai_prob_h:.2%}", delta=f"{(ai_prob_h - prob_h):+.2%}", delta_color="normal")
+                    
             with col_cmp2:
                 st.metric("和局 (市場)", f"{prob_d:.2%}", f"賠率: {odds_d}")
-                st.metric("和局 (模型)", f"{model_prob_d:.2%}", delta=f"{(model_prob_d - prob_d):+.2%}", delta_color="normal")
+                st.metric("和局 (基本面)", f"{model_prob_d:.2%}")
+                if has_ai_prediction:
+                    st.metric("和局 (🤖 AI 融合)", f"{ai_prob_d:.2%}", delta=f"{(ai_prob_d - prob_d):+.2%}", delta_color="normal")
+                    
             with col_cmp3:
                 st.metric("客勝 (市場)", f"{prob_a:.2%}", f"賠率: {odds_a}")
-                st.metric("客勝 (模型)", f"{model_prob_a:.2%}", delta=f"{(model_prob_a - prob_a):+.2%}", delta_color="normal")
+                st.metric("客勝 (基本面)", f"{model_prob_a:.2%}")
+                if has_ai_prediction:
+                    st.metric("客勝 (🤖 AI 融合)", f"{ai_prob_a:.2%}", delta=f"{(ai_prob_a - prob_a):+.2%}", delta_color="normal")
 
             # ==========================================
-            # 📥 新增：保存預測至 Supabase
+            # 📥 保存預測至 Supabase
             # ==========================================
             col_save1, col_save2 = st.columns([1, 4])
             with col_save1:
                 if st.button("📥 保存此預測", key=f"save_{home_team}_{away_team}"):
                     if st.session_state.get('logged_in', False):
                         username = st.session_state.get('username', 'unknown')
-                        max_prob = max(model_prob_h, model_prob_d, model_prob_a)
-                        if max_prob == model_prob_h:
-                            pred_res = "主勝"
-                        elif max_prob == model_prob_d:
-                            pred_res = "和局"
+                        # 優先使用 AI 概率判斷最高賽果
+                        if has_ai_prediction:
+                            max_prob = max(ai_prob_h, ai_prob_d, ai_prob_a)
+                            if max_prob == ai_prob_h: pred_res = "主勝"
+                            elif max_prob == ai_prob_d: pred_res = "和局"
+                            else: pred_res = "客勝"
                         else:
-                            pred_res = "客勝"
+                            max_prob = max(model_prob_h, model_prob_d, model_prob_a)
+                            if max_prob == model_prob_h: pred_res = "主勝"
+                            elif max_prob == model_prob_d: pred_res = "和局"
+                            else: pred_res = "客勝"
                             
                         data = {
                             "username": username,
@@ -264,20 +374,24 @@ if analyze_btn:
                     else:
                         st.warning("⚠️ 請先登入！")
 
-            # --- EV & 凱利 ---
-            ev_h = (model_prob_h * odds_h) - 1
-            ev_d = (model_prob_d * odds_d) - 1
-            ev_a = (model_prob_a * odds_a) - 1
+            # --- EV & 凱利 (如果有 AI 預測，用 AI 概率計 EV；否則用基本面) ---
+            calc_h = ai_prob_h if has_ai_prediction else model_prob_h
+            calc_d = ai_prob_d if has_ai_prediction else model_prob_d
+            calc_a = ai_prob_a if has_ai_prediction else model_prob_a
             
-            kelly_h = (model_prob_h * odds_h - 1) / (odds_h - 1) if odds_h > 1 else 0
-            kelly_d = (model_prob_d * odds_d - 1) / (odds_d - 1) if odds_d > 1 else 0
-            kelly_a = (model_prob_a * odds_a - 1) / (odds_a - 1) if odds_a > 1 else 0
+            ev_h = (calc_h * odds_h) - 1
+            ev_d = (calc_d * odds_d) - 1
+            ev_a = (calc_a * odds_a) - 1
+            
+            kelly_h = (calc_h * odds_h - 1) / (odds_h - 1) if odds_h > 1 else 0
+            kelly_d = (calc_d * odds_d - 1) / (odds_d - 1) if odds_d > 1 else 0
+            kelly_a = (calc_a * odds_a - 1) / (odds_a - 1) if odds_a > 1 else 0
 
-            with st.expander("💰 展開查看：基於模型概率嘅投注價值 (EV) 及 凱利建議注碼", expanded=False):
+            with st.expander("💰 展開查看：基於終極概率嘅投注價值 (EV) 及 凱利建議注碼", expanded=False):
                 ev_data = {
                     "選項": [f"主勝 ({home_team})", "和局", f"客勝 ({away_team})"],
                     "市場概率": [f"{prob_h:.2%}", f"{prob_d:.2%}", f"{prob_a:.2%}"],
-                    "模型概率": [f"{model_prob_h:.2%}", f"{model_prob_d:.2%}", f"{model_prob_a:.2%}"],
+                    "AI/模型概率": [f"{calc_h:.2%}", f"{calc_d:.2%}", f"{calc_a:.2%}"],
                     "EV (期望值)": [f"{ev_h:+.2f}", f"{ev_d:+.2f}", f"{ev_a:+.2f}"],
                     "凱利建議注碼": [f"{max(0, kelly_h)*100:.1f}%", f"{max(0, kelly_d)*100:.1f}%", f"{max(0, kelly_a)*100:.1f}%"]
                 }

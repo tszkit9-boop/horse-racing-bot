@@ -8,21 +8,14 @@ pytz
 Pillow
 streamlit-autorefresh
 
-# ===== AI / 機器學習 =====
+# ===== AI / 機器學習 (保留足球模型所需的 3 個) =====
 scikit-learn
-xgboost
 lightgbm
 catboost
+joblib
 
 # ===== 數據處理 =====
 openpyxl
-
-# ===== 爬蟲相關 =====
-requests
-beautifulsoup4
-selenium
-webdriver-manager
-lxml
 
 # ===== 自動化 / 系統 =====
 python-dotenv
