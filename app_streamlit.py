@@ -4828,6 +4828,39 @@ def login_page():
     mode = st.session_state.get("page_mode", "login")
 
     if mode == "login":
+        # ===== 🆕 顯示註冊成功提示（10秒後自動消失） =====
+        if st.session_state.get('register_success'):
+            msg = st.session_state['register_success']
+            
+            # 使用自訂 HTML 實作 10 秒後自動淡出
+            st.markdown(f"""
+            <div id="register-success-alert" style="
+                padding: 1rem; 
+                border-radius: 0.5rem; 
+                background-color: #d4edda; 
+                color: #155724; 
+                border: 1px solid #c3e6cb; 
+                margin-bottom: 1rem;
+                font-size: 16px;
+                font-weight: bold;
+            ">
+                {msg}
+            </div>
+            <script>
+                setTimeout(function() {{
+                    var el = document.getElementById("register-success-alert");
+                    if (el) {{
+                        el.style.transition = "opacity 1s ease-out";
+                        el.style.opacity = "0";
+                        setTimeout(function() {{ el.style.display = "none"; }}, 1000);
+                    }}
+                }}, 10000); // 10000 毫秒 = 10 秒
+            </script>
+            """, unsafe_allow_html=True)
+            
+            st.balloons()  # 彈出氣球特效
+            st.session_state['register_success'] = None  # 顯示完即刻清空
+
         with st.form("login_form"):
             u = st.text_input("用戶名稱", key="login_user")
             p = st.text_input("密碼", type="password", key="login_pass")
