@@ -3,9 +3,23 @@ import pandas as pd
 import numpy as np
 import re
 import os
+import joblib
 from scipy.stats import poisson
 from supabase import create_client, Client
 
+# ==========================================
+# 🧠 載入 AI 模型 (使用 cache_resource 防止每次撳掣都重新載入)
+# ==========================================
+@st.cache_resource
+def load_ai_model():
+    if os.path.exists("football_ensemble.pkl"):
+        try:
+            return joblib.load("football_ensemble.pkl")
+        except Exception as e:
+            st.error(f"AI 模型載入失敗：{e}")
+    return None
+
+ai_model = load_ai_model()
 # ==========================================
 # 頁面設定
 # ==========================================
