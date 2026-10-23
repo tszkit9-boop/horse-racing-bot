@@ -4628,6 +4628,9 @@ def admin_paper_trades():
                 if '預測類型' in grouped_unsettled.columns:
                     grouped_unsettled['預測類型'] = grouped_unsettled['預測類型'].map({'pre_day': '🐦 早鳥', 'live': '⚡ 臨場'}).fillna('🐦 早鳥')
 
+                # 🆕 加呢句：按日期新到舊排序
+                grouped_unsettled = grouped_unsettled.sort_values(by=['日期', '場次'], ascending=[False, True]).reset_index(drop=True)
+
                 st.dataframe(grouped_unsettled, use_container_width=True, hide_index=True)
             except Exception:
                 st.dataframe(unsettled.rename(columns=rename_map), use_container_width=True, hide_index=True)
