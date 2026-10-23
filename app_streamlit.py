@@ -2633,10 +2633,28 @@ def admin_user_management():
             else:
                 confirm = st.checkbox(f"確認刪除 {del_user}？", key="confirm_del")
                 if confirm and st.button("🗑️ 確認刪除", key="del_user_btn"):
-                    users.pop(del_user)
-                    if save_users(users):
-                        st.success(f"✅ 用戶 {del_user} 已刪除")
-                        st.rerun()
+                    try:
+                        # 1. 先從 Supabase 刪除（最重要！）
+                        import requests
+                        headers = {
+                            "apikey": SUPABASE_KEY,
+                            "Authorization": f"Bearer {SUPABASE_KEY}"
+                        }
+                        # 發送 DELETE 請求
+                        delete_url = f"{SUPABASE_URL}/rest/v1/users?username=eq.{del_user}"
+                        res = requests.delete(delete_url, headers=headers)
+                        
+                        # 2. 如果 Supabase 刪除成功，先再更新本機記憶體
+                        if res.status_code in (200, 204):
+                            users.pop(del_user)
+                            save_users(users) # 呢句係為咗同步本機 JSON
+                            st.success(f"✅ 用戶 {del_user} 已從資料庫及本機成功刪除")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ Supabase 刪除失敗：{res.text}")
+                            
+                    except Exception as e:
+                        st.error(f"❌ 刪除出錯：{e}")
 
     st.divider()
 
