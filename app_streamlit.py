@@ -5554,7 +5554,6 @@ def main():
                                 if st.session_state.get('role') in ['admin', 'super_admin'] or st.session_state.get('user_group') in ['admin', 'super_admin']:
                                     try:
                                         # 1. 自動判斷場地同開跑時間
-                                        import datetime
                                         # 星期三 = HV (跑馬地 18:40)，其他 = ST (沙田 12:40)
                                         if pd.to_datetime(date_str).weekday() == 2:
                                             race_time = pd.to_datetime(f"{date_str} 18:40:00")
@@ -5843,7 +5842,6 @@ def main():
                 if st.session_state.get('role') in ['admin', 'super_admin'] or st.session_state.get('user_group') in ['admin', 'super_admin']:
                     try:
                         # 1. 自動判斷場地同開跑時間
-                        import datetime
                         # 星期三 = HV (跑馬地 18:40)，其他 = ST (沙田 12:40)
                         if pd.to_datetime(date.strftime("%Y-%m-%d")).weekday() == 2:
                             race_time = pd.to_datetime(f"{date.strftime('%Y-%m-%d')} 18:40:00")
