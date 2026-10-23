@@ -5135,8 +5135,11 @@ def main():
             st.switch_page("pages/FAQ.py")
             
     with c4:
-        if st.button("⚽ 前往足球", use_container_width=True, key="go_football_btn"):
-            st.switch_page("pages/football_app.py")
+        # 🛡️ 檢查當前用戶角色，只有 Admin 先見到個掣
+        user_role = str(st.session_state.get("role", "")).strip().lower()
+        if "super_admin" in user_role or "admin" in user_role:
+            if st.button("⚽ 前往足球", use_container_width=True, key="go_football_btn"):
+                st.switch_page("pages/football_app.py")
             
     with c5:
         if st.session_state.get('logged_in', False):
