@@ -5590,7 +5590,7 @@ def main():
 
                                             # 策略 1：模型預測首選
                                             try:
-                                                top_pick = result.head(1)
+                                                top_pick = result.head(3)
                                                 for _, row in top_pick.iterrows():
                                                     records.append({
                                                         "date": date_str,
@@ -5876,7 +5876,7 @@ def main():
                             _venue = "HV" if pd.to_datetime(_date_str).weekday() == 2 else "ST"
                             records = []
 
-                            # 策略 1：模型預測首選
+                            # 策略 1：模型預測 Top 3
                             _prob_col = None
                             for c in ['贏出概率', '預測勝率', '勝率', 'win_prob', 'prob']:
                                 if c in result.columns:
@@ -5884,7 +5884,7 @@ def main():
                                     break
 
                             if _prob_col:
-                                top_pick = result.sort_values(_prob_col, ascending=False).head(1)
+                                top_pick = result.sort_values(_prob_col, ascending=False).head(3)  # 🆕 改做 head(3)
                                 for _, row in top_pick.iterrows():
                                     records.append({
                                         "date": _date_str,
@@ -5896,7 +5896,7 @@ def main():
                                         "value_rate": float(row.get('值博率', 0)) if pd.notna(row.get('值博率')) else 0,
                                         "bet_amount": 100.0,
                                         "settled": False,
-                                        "source": "prediction",
+                                        "source": "prediction",  # 保持呢個名
                                         "predict_type": predict_type
                                     })
 
