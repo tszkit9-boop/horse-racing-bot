@@ -166,16 +166,53 @@ if analyze_btn:
         total = imp_h + imp_d + imp_a
         prob_h, prob_d, prob_a = imp_h/total, imp_d/total, imp_a/total
 
-        # 中文隊名轉英文對照表
+        # 🔄 中文隊名轉英文隊名對照表 (主流聯賽全集)
         team_mapping = {
+            # ===== 英格蘭 (英超/英冠) =====
             "曼聯": "Man United", "曼城": "Man City", "利物浦": "Liverpool", "阿仙奴": "Arsenal",
             "車路士": "Chelsea", "熱刺": "Tottenham", "愛華頓": "Everton", "紐卡素": "Newcastle",
             "李斯特城": "Leicester", "韋斯咸": "West Ham", "水晶宮": "Crystal Palace", "修咸頓": "Southampton",
             "般尼": "Burnley", "屈福特": "Watford", "般尼茅夫": "Bournemouth", "諾域治": "Norwich",
             "史雲斯": "Swansea", "史篤城": "Stoke", "西布朗": "West Brom", "新特蘭": "Sunderland",
-            "阿士東維拉": "Aston Villa", "皇家馬德里": "Real Madrid", "巴塞隆拿": "Barcelona",
-            "拜仁慕尼黑": "Bayern Munich", "祖雲達斯": "Juventus", "巴黎聖日耳門": "Paris SG",
-            "多蒙特": "Dortmund", "法國": "France", "比利時": "Belgium", "意大利": "Italy", "土耳其": "Turkey"
+            "阿士東維拉": "Aston Villa", "狼隊": "Wolves", "錫菲聯": "Sheffield United", "列斯聯": "Leeds",
+            "白禮頓": "Brighton", "富咸": "Fulham", "賓福特": "Brentford", "諾定咸森林": "Nott'm Forest",
+            "葉士域治": "Ipswich",
+
+            # ===== 西班牙 (西甲) =====
+            "皇家馬德里": "Real Madrid", "巴塞隆拿": "Barcelona", "馬德里體育會": "Atletico Madrid",
+            "西維爾": "Sevilla", "皇家蘇斯達": "Real Sociedad", "畢爾包": "Athletic Bilbao",
+            "維拉利爾": "Villarreal", "貝迪斯": "Betis", "華倫西亞": "Valencia", "基羅納": "Girona",
+
+            # ===== 意大利 (意甲) =====
+            "祖雲達斯": "Juventus", "國際米蘭": "Inter", "AC米蘭": "AC Milan", "拿玻里": "Napoli",
+            "羅馬": "Roma", "拉素": "Lazio", "阿特蘭大": "Atalanta", "費倫天拿": "Fiorentina",
+
+            # ===== 德國 (德甲) =====
+            "拜仁慕尼黑": "Bayern Munich", "多蒙特": "Dortmund", "利華古遜": "Leverkusen",
+            "RB萊比錫": "RB Leipzig", "法蘭克福": "Eintracht Frankfurt", "史特加": "Stuttgart",
+
+            # ===== 法國 (法甲) =====
+            "巴黎聖日耳門": "Paris SG", "馬賽": "Marseille", "里昂": "Lyon", "摩納哥": "Monaco", "里爾": "Lille",
+
+            # ===== 日本 (日職聯 J1) =====
+            "廣島三箭": "Sanfrecce Hiroshima", "清水心跳": "Shimizu S-Pulse", "橫濱水手": "Yokohama F. Marinos",
+            "浦和紅鑽": "Urawa Reds", "川崎前鋒": "Kawasaki Frontale", "鹿島鹿角": "Kashima Antlers",
+            "大阪飛腳": "Gamba Osaka", "大阪櫻花": "Cerezo Osaka", "神戶勝利船": "Vissel Kobe",
+            "名古屋鯨魚": "Nagoya Grampus", "鳥棲砂岩": "Sagan Tosu", "柏雷素爾": "Kashiwa Reysol",
+            "新潟天鵝": "Albirex Niigata", "FC東京": "FC Tokyo", "湘南比馬": "Shonan Bellmare",
+            "磐田山葉": "Jubilo Iwata", "京都不死鳥": "Kyoto Sanga", "札幌岡薩多": "Consadole Sapporo",
+            "福岡黃蜂": "Avispa Fukuoka", "東京綠茵": "Tokyo Verdy",
+
+            # ===== 澳洲 (A-League) =====
+            "南墨爾本": "South Melbourne", "悉尼聯": "Sydney FC", "墨爾本勝利": "Melbourne Victory",
+            "墨爾本城": "Melbourne City", "阿德萊德聯": "Adelaide United", "布里斯班獅吼": "Brisbane Roar",
+            "中岸水手": "Central Coast Mariners", "威靈頓鳳凰": "Wellington Phoenix",
+            "西部聯": "Western United", "麥克阿瑟": "Macarthur FC",
+
+            # ===== 國家隊 (世界盃/歐洲盃) =====
+            "法國": "France", "比利時": "Belgium", "意大利": "Italy", "土耳其": "Turkey",
+            "英格蘭": "England", "西班牙": "Spain", "德國": "Germany", "葡萄牙": "Portugal",
+            "阿根廷": "Argentina", "巴西": "Brazil", "荷蘭": "Netherlands"
         }
         
         eng_home = team_mapping.get(home_team, home_team)
