@@ -6054,15 +6054,12 @@ def main():
             df_top3 = df.copy()
             
             # 🆕 1. 計算「綜合分數」 (前三概率佔 50%，贏出概率佔 30%)
-            # 如果有 avg_rank_last3 (近3場平均名次)，就加埋落去 (名次越細越好)
             df_top3['綜合分數'] = (df_top3['前三概率'] * 0.5) + (df_top3['贏出概率'] * 0.3)
             
             if 'avg_rank_last3' in df_top3.columns:
-                # 將近況轉化為分數：如果平均名次係 1，加 0.2；如果係 10，加 0.02
                 df_top3['綜合分數'] += (1 / df_top3['avg_rank_last3'].fillna(10)) * 0.2
 
             # 🆕 2. 賠率保底 (如果賠率 <= 4.0，強制加分，確保大熱門唔會漏)
-            # 給予大熱門額外 0.15 嘅保底分數
             df_top3.loc[df_top3['賠率'] <= 4.0, '綜合分數'] += 0.15
 
             # 🆕 3. 剔除「死火馬」 (近3場平均名次大過 8 嘅馬，除非佢賠率極熱)
@@ -6078,7 +6075,6 @@ def main():
                 name = row.get('馬名', '未知')
                 prob = row.get('前三概率', 0)
                 odds = row.get('賠率', 0)
-                # 顯示時可以順便顯示近況（如果有）
                 recent = f" ｜ 近3場: {row.get('avg_rank_last3'):.1f}" if 'avg_rank_last3' in row and pd.notna(row.get('avg_rank_last3')) else ""
                 
                 st.markdown(f"**{medal} 第 {i+1} 選：{name}**（前三概率：{prob:.1%} ｜ 賠率：{odds:.1f}{recent}）")
@@ -6089,6 +6085,55 @@ def main():
         else:
             st.info("ℹ️ 暫時未有足夠數據計算 Top 3。")
         # ===== Top 3 推薦結束 =====
+
+        # ===== 🆕 終極雙料推薦（合併早鳥與臨場） =====
+        st.divider()
+        st.subheader("🌟 終極雙料推薦")
+        
+        try:
+            import datetime
+            import requests
+            
+            _date_str = date.strftime("%Y-%m-%d")
+            # 判斷依家係咪臨場時段 (夜馬 18:40, 日馬 12:40)
+            if pd.to_datetime(_date_str).weekday() == 2:
+                race_time = pd.to_datetime(f"{_date_str} 18:40:00")
+            else:
+                race_time = pd.to_datetime(f"{_date_str} 12:40:00")
+                
+            now = datetime.datetime.now()
+            time_diff = (race_time - now).total_seconds() / 60
+            
+            if time_diff <= 30:
+                st.caption("結合「早鳥（實力）」與「臨場（資金）」嘅終極名單：")
+                
+                # 1. 去資料庫搵返同場嘅「早鳥」預測
+                headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+                check_url = f"{SUPABASE_URL}/rest/v1/paper_trades?date=eq.{_date_str}&race=eq.{int(race_no)}&predict_type=eq.pre_day"
+                res = requests.get(check_url, headers=headers)
+                
+                early_horses = []
+                if res.status_code == 200 and res.json():
+                    for item in res.json():
+                        early_horses.append(item['horse_name'])
+                
+                # 2. 對比當前（臨場）嘅 Top 3
+                if '馬名' in df.columns:
+                    current_top3 = top3_df['馬名'].tolist() if 'top3_df' in locals() else df.head(3)['馬名'].tolist()
+                    
+                    # 3. 搵出交集（兩邊都有嘅馬）
+                    double_horses = [h for h in current_top3 if h in early_horses]
+                    
+                    if double_horses:
+                        for h in double_horses:
+                            st.success(f"🔥 **{h}**：早鳥有實力，臨場有資金落飛！")
+                    else:
+                        st.info("ℹ️ 今場暫時未有馬匹同時符合早鳥及臨場條件。")
+            else:
+                st.info("ℹ️ 請喺開跑前 30 分鐘內撳「執行預測」，系統就會自動為你合併早鳥名單。")
+        except Exception as e:
+            st.warning(f"⚠️ 無法計算雙料推薦：{e}")
+        # ===== 終極雙料推薦結束 =====
 
         # ===== 原本嘅預測結果表 =====
         def _get_col_local(df, candidates):
