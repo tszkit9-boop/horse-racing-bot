@@ -10,6 +10,7 @@ streamlit-autorefresh
 
 # ===== AI / 機器學習 (保留足球模型所需的 3 個) =====
 scikit-learn
+xgboost
 lightgbm
 catboost
 joblib
