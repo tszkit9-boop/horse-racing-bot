@@ -4569,13 +4569,12 @@ def admin_paper_trades():
                         display_sub['date_str'] = pd.to_datetime(display_sub['date']).dt.strftime('%Y-%m-%d')
                         
                         # 按日期、場次、馬場、策略分組
-                        grouped = display_sub.groupby(['date_str', 'race', 'venue', 'source', 'predict_type']).agg({
-                            'horse_name': lambda x: ', '.join([str(h) for h in x]),
-                            'odds': lambda x: ', '.join([f"{o:.1f}" for o in x]),
-                            'result': lambda x: ', '.join([str(r) for r in x]),
-                            'profit': 'sum',
-                            'predict_type': 'first'
-                        }).reset_index()
+                    grouped = display_sub.groupby(['date_str', 'race', 'venue', 'source', 'predict_type']).agg({
+                        'horse_name': lambda x: ', '.join([str(h) for h in x]),
+                        'odds': lambda x: ', '.join([f"{o:.1f}" for o in x]),
+                        'result': lambda x: ', '.join([str(r) for r in x]),
+                        'profit': 'sum'
+                    }).reset_index()
                         
                         grouped = grouped.rename(columns={
                             'date_str': '日期', 'race': '場次', 'venue': '馬場',
@@ -4641,8 +4640,7 @@ def admin_paper_trades():
                 grouped_unsettled = unsettled.groupby(['date_str', 'race', 'venue', 'source', 'predict_type']).agg({
                     'horse_name': lambda x: ', '.join([str(h) for h in x]),
                     'odds': lambda x: ', '.join([f"{o:.1f}" for o in x]),
-                    'value_rate': lambda x: ', '.join([f"{v:.1%}" for v in x]),
-                    'predict_type': 'first'
+                    'value_rate': lambda x: ', '.join([f"{v:.1%}" for v in x])
                 }).reset_index()
                 
                 grouped_unsettled = grouped_unsettled.rename(columns={
