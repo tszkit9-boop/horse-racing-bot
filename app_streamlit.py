@@ -3449,31 +3449,37 @@ def admin_accuracy_monitor():
         st.divider()
         with st.expander("📋 點擊查看詳細記錄（預測頭3名 vs 真實頭3名）", expanded=False):
             df_compare_detail = pd.DataFrame(compare_rows)
-                df_compare_detail['場次'] = pd.to_numeric(df_compare_detail['場次'], errors='coerce')
-        # 🆕 改咗做 False，最新日期排最頂
-        df_compare_detail = df_compare_detail.sort_values(
-            by=['日期', '場次'],
-            ascending=[False, True]
-        ).reset_index(drop=True)
+            
+            # 解決 PyArrow 錯誤
+            if '命中數' in df_compare_detail.columns:
+                df_compare_detail['命中數'] = df_compare_detail['命中數'].astype(str)
+            
+            df_compare_detail['場次'] = pd.to_numeric(df_compare_detail['場次'], errors='coerce')
+            
+            # 排序：日期新到舊，場次細到大
+            df_compare_detail = df_compare_detail.sort_values(
+                by=['日期', '場次'],
+                ascending=[False, True]
+            ).reset_index(drop=True)
 
-        def highlight_prediction(row):
-            pred = str(row['預測頭3名'])
-            if pred == 'nan' or pred == '':
-                return pred
+            def highlight_prediction(row):
+                pred = str(row['預測頭3名'])
+                if pred == 'nan' or pred == '':
+                    return pred
 
-            real = str(row['真實頭3名'])
-            real_names = []
-            if '⏳' not in real:
-                real_names = [re.sub(r'\(.*\)', '', name).strip() for name in real.split(',')]
+                real = str(row['真實頭3名'])
+                real_names = []
+                if '⏳' not in real:
+                    real_names = [re.sub(r'\(.*\)', '', name).strip() for name in real.split(',')]
 
-            pred_list = [h.strip() for h in pred.split(',')]
-            colored = []
-            for h in pred_list:
-                if h in real_names:
-                    colored.append(f'<span style="color:green; font-weight:bold;">{h}</span>')
-                else:
-                    colored.append(f'<span style="color:red;">{h}</span>')
-            return ', '.join(colored)
+                pred_list = [h.strip() for h in pred.split(',')]
+                colored = []
+                for h in pred_list:
+                    if h in real_names:
+                        colored.append(f'<span style="color:green; font-weight:bold;">{h}</span>')
+                    else:
+                        colored.append(f'<span style="color:red;">{h}</span>')
+                return ', '.join(colored)
 
             df_compare_detail['預測頭3名'] = df_compare_detail.apply(highlight_prediction, axis=1)
 
