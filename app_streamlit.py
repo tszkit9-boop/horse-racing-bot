@@ -2633,10 +2633,28 @@ def admin_user_management():
             else:
                 confirm = st.checkbox(f"確認刪除 {del_user}？", key="confirm_del")
                 if confirm and st.button("🗑️ 確認刪除", key="del_user_btn"):
-                    users.pop(del_user)
-                    if save_users(users):
-                        st.success(f"✅ 用戶 {del_user} 已刪除")
-                        st.rerun()
+                    try:
+                        # 1. 先從 Supabase 刪除（最重要！）
+                        import requests
+                        headers = {
+                            "apikey": SUPABASE_KEY,
+                            "Authorization": f"Bearer {SUPABASE_KEY}"
+                        }
+                        # 發送 DELETE 請求
+                        delete_url = f"{SUPABASE_URL}/rest/v1/users?username=eq.{del_user}"
+                        res = requests.delete(delete_url, headers=headers)
+                        
+                        # 2. 如果 Supabase 刪除成功，先再更新本機記憶體
+                        if res.status_code in (200, 204):
+                            users.pop(del_user)
+                            save_users(users) # 呢句係為咗同步本機 JSON
+                            st.success(f"✅ 用戶 {del_user} 已從資料庫及本機成功刪除")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ Supabase 刪除失敗：{res.text}")
+                            
+                    except Exception as e:
+                        st.error(f"❌ 刪除出錯：{e}")
 
     st.divider()
 
@@ -4828,6 +4846,39 @@ def login_page():
     mode = st.session_state.get("page_mode", "login")
 
     if mode == "login":
+        # ===== 🆕 顯示註冊成功提示（10秒後自動消失） =====
+        if st.session_state.get('register_success'):
+            msg = st.session_state['register_success']
+            
+            # 使用自訂 HTML 實作 10 秒後自動淡出
+            st.markdown(f"""
+            <div id="register-success-alert" style="
+                padding: 1rem; 
+                border-radius: 0.5rem; 
+                background-color: #d4edda; 
+                color: #155724; 
+                border: 1px solid #c3e6cb; 
+                margin-bottom: 1rem;
+                font-size: 16px;
+                font-weight: bold;
+            ">
+                {msg}
+            </div>
+            <script>
+                setTimeout(function() {{
+                    var el = document.getElementById("register-success-alert");
+                    if (el) {{
+                        el.style.transition = "opacity 1s ease-out";
+                        el.style.opacity = "0";
+                        setTimeout(function() {{ el.style.display = "none"; }}, 1000);
+                    }}
+                }}, 10000); // 10000 毫秒 = 10 秒
+            </script>
+            """, unsafe_allow_html=True)
+            
+            st.balloons()  # 彈出氣球特效
+            st.session_state['register_success'] = None  # 顯示完即刻清空
+
         with st.form("login_form"):
             u = st.text_input("用戶名稱", key="login_user")
             p = st.text_input("密碼", type="password", key="login_pass")
@@ -5590,7 +5641,7 @@ def main():
 
                                             # 策略 1：模型預測首選
                                             try:
-                                                top_pick = result.head(1)
+                                                top_pick = result.head(3)
                                                 for _, row in top_pick.iterrows():
                                                     records.append({
                                                         "date": date_str,
@@ -5876,7 +5927,7 @@ def main():
                             _venue = "HV" if pd.to_datetime(_date_str).weekday() == 2 else "ST"
                             records = []
 
-                            # 策略 1：模型預測首選
+                            # 策略 1：模型預測 Top 3
                             _prob_col = None
                             for c in ['贏出概率', '預測勝率', '勝率', 'win_prob', 'prob']:
                                 if c in result.columns:
@@ -5884,7 +5935,7 @@ def main():
                                     break
 
                             if _prob_col:
-                                top_pick = result.sort_values(_prob_col, ascending=False).head(1)
+                                top_pick = result.sort_values(_prob_col, ascending=False).head(3)  # 🆕 改做 head(3)
                                 for _, row in top_pick.iterrows():
                                     records.append({
                                         "date": _date_str,
@@ -5896,7 +5947,7 @@ def main():
                                         "value_rate": float(row.get('值博率', 0)) if pd.notna(row.get('值博率')) else 0,
                                         "bet_amount": 100.0,
                                         "settled": False,
-                                        "source": "prediction",
+                                        "source": "prediction",  # 保持呢個名
                                         "predict_type": predict_type
                                     })
 
