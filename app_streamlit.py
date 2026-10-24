@@ -6090,10 +6090,11 @@ def main():
         st.divider()
         st.subheader("🌟 終極雙料推薦")
         
+        # 🔴 修正：將 import 移出 try 區塊，避免 UnboundLocalError
+        import datetime
+        import requests
+        
         try:
-            import datetime
-            import requests
-            
             _date_str = date.strftime("%Y-%m-%d")
             # 判斷依家係咪臨場時段 (夜馬 18:40, 日馬 12:40)
             if pd.to_datetime(_date_str).weekday() == 2:
