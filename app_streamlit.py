@@ -4569,7 +4569,7 @@ def admin_paper_trades():
                         display_sub['date_str'] = pd.to_datetime(display_sub['date']).dt.strftime('%Y-%m-%d')
                         
                         # 按日期、場次、馬場、策略分組
-                        grouped = display_sub.groupby(['date_str', 'race', 'venue', 'source']).agg({
+                        grouped = display_sub.groupby(['date_str', 'race', 'venue', 'source', 'predict_type']).agg({
                             'horse_name': lambda x: ', '.join([str(h) for h in x]),
                             'odds': lambda x: ', '.join([f"{o:.1f}" for o in x]),
                             'result': lambda x: ', '.join([str(r) for r in x]),
@@ -4638,7 +4638,7 @@ def admin_paper_trades():
             # 🆕 未結算記錄都做按場次合併
             try:
                 unsettled['date_str'] = pd.to_datetime(unsettled['date']).dt.strftime('%Y-%m-%d')
-                grouped_unsettled = unsettled.groupby(['date_str', 'race', 'venue', 'source']).agg({
+                grouped_unsettled = unsettled.groupby(['date_str', 'race', 'venue', 'source', 'predict_type']).agg({
                     'horse_name': lambda x: ', '.join([str(h) for h in x]),
                     'odds': lambda x: ', '.join([f"{o:.1f}" for o in x]),
                     'value_rate': lambda x: ', '.join([f"{v:.1%}" for v in x]),
