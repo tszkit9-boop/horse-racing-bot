@@ -4568,13 +4568,13 @@ def admin_paper_trades():
                         display_sub = sub.copy()
                         display_sub['date_str'] = pd.to_datetime(display_sub['date']).dt.strftime('%Y-%m-%d')
                         
-                        # 按日期、場次、馬場、策略分組
-                    grouped = display_sub.groupby(['date_str', 'race', 'venue', 'source', 'predict_type']).agg({
-                        'horse_name': lambda x: ', '.join([str(h) for h in x]),
-                        'odds': lambda x: ', '.join([f"{o:.1f}" for o in x]),
-                        'result': lambda x: ', '.join([str(r) for r in x]),
-                        'profit': 'sum'
-                    }).reset_index()
+                        # 按日期、場次、馬場、策略及預測類型分組
+                        grouped = display_sub.groupby(['date_str', 'race', 'venue', 'source', 'predict_type']).agg({
+                            'horse_name': lambda x: ', '.join([str(h) for h in x]),
+                            'odds': lambda x: ', '.join([f"{o:.1f}" for o in x]),
+                            'result': lambda x: ', '.join([str(r) for r in x]),
+                            'profit': 'sum'
+                        }).reset_index()
                         
                         grouped = grouped.rename(columns={
                             'date_str': '日期', 'race': '場次', 'venue': '馬場',
@@ -4585,7 +4585,7 @@ def admin_paper_trades():
                         if '預測類型' in grouped.columns:
                             grouped['預測類型'] = grouped['預測類型'].map({'pre_day': '🐦 早鳥', 'live': '⚡ 臨場'}).fillna('🐦 早鳥')
 
-                        # 🆕 加呢句：按日期新到舊排序
+                        # 排序：日期新到舊，場次細到大
                         grouped = grouped.sort_values(by=['日期', '場次'], ascending=[False, True]).reset_index(drop=True)
 
                         st.dataframe(
@@ -4607,7 +4607,6 @@ def admin_paper_trades():
                     except Exception as e:
                         st.warning(f"無法彙總顯示：{e}")
                         st.dataframe(sub.rename(columns=rename_map), use_container_width=True, hide_index=True)
-                st.divider()
 
             # ===== 整體 =====
             st.markdown("#### 📊 整體總計")
