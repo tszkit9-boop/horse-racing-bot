@@ -2,23 +2,21 @@
 # -*- coding: utf-8 -*-
 """賽馬預測系統 v16.0 - 完整可用版"""
 
-import streamlit as st
+mport streamlit as st
 import pandas as pd
 import numpy as np
 import os
 import json
 import random
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta  # ✅ 保留呢句
 import pytz
 import warnings
 import requests
-import datetime
 import re
 warnings.filterwarnings('ignore')
 
 import bcrypt
-
 def hash_password(password):
     """將密碼加密（bcrypt）"""
     salt = bcrypt.gensalt()
@@ -6089,12 +6087,7 @@ def main():
 
         # ===== 🆕 終極雙料推薦（合併早鳥與臨場） =====
         st.divider()
-        st.subheader("🌟 終極雙料推薦")
-        
-        # 🔴 修正：將 import 移出 try 區塊，避免 UnboundLocalError
-        import datetime
-        import requests
-        
+        st.subheader("🌟 終極雙料推薦")     
         try:
             _date_str = date.strftime("%Y-%m-%d")
             # 判斷依家係咪臨場時段 (夜馬 18:40, 日馬 12:40)
