@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """賽馬預測系統 v16.0 - 完整可用版"""
 
-mport streamlit as st
+import streamlit as st
 import pandas as pd
 import numpy as np
 import os
