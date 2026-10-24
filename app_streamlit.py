@@ -6087,7 +6087,8 @@ def main():
 
         # ===== 🆕 終極雙料推薦（合併早鳥與臨場） =====
         st.divider()
-        st.subheader("🌟 終極雙料推薦")     
+        st.subheader("🌟 終極雙料推薦")
+        
         try:
             _date_str = date.strftime("%Y-%m-%d")
             # 判斷依家係咪臨場時段 (夜馬 18:40, 日馬 12:40)
@@ -6096,7 +6097,8 @@ def main():
             else:
                 race_time = pd.to_datetime(f"{_date_str} 12:40:00")
                 
-            now = datetime.datetime.now()
+            # ✅ 核心修正：直接用 datetime.now()，唔好加 datetime.
+            now = datetime.now()
             time_diff = (race_time - now).total_seconds() / 60
             
             if time_diff <= 30:
