@@ -5903,7 +5903,7 @@ def main():
                         else:
                             race_time = pd.to_datetime(f"{date.strftime('%Y-%m-%d')} 12:40:00")
                             
-                        now = datetime.datetime.now()
+                        now =datetime.now()
                         time_diff = (race_time - now).total_seconds() / 60
 
                         if time_diff > 30:
